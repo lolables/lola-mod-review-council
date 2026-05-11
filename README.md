@@ -3,8 +3,32 @@
 Instead of one AI reviewer catching what it can, six specialized agents review your code in parallel — security,
 architecture, testing, operations, governance, and documentation — then produce a unified verdict.
 
-A multi-persona code and specification review system for AI coding tools. Installs as a
-[Lola](https://github.com/LobsterTrap/lola) module and works with Claude Code, Cursor, Gemini CLI, and OpenCode.
+A multi-persona code and specification review [harness](https://martinfowler.com/articles/harness-engineering.html) for
+AI coding tools. Installs as a [Lola](https://github.com/LobsterTrap/lola) module and works with Claude Code, Cursor,
+Gemini CLI, and OpenCode.
+
+## Review Council as a Harness
+
+Review Council is a **harness** — the infrastructure around AI agents that guides their behavior and validates their
+output. Following [harness engineering principles](https://martinfowler.com/articles/harness-engineering.html), it
+combines feedforward and feedback controls to increase the probability of correct initial results and enable
+self-correction:
+
+**Guides (feedforward controls)** — anticipatory controls that steer reviewer behavior before action:
+- Convention packs defining coding and documentation standards
+- Reviewer protocol specifying evidence discipline and output format
+- Project governance documents (Constitution extension point)
+- Prior learnings from previous review runs (Knowledge tool extension point)
+
+**Sensors (feedback controls)** — observational controls that enable self-correction after action:
+- Self-attestation verification against the changeset
+- Evidence checking to confirm quoted code exists in cited files
+- Correction round for fixable errors (hallucinations, stale evidence)
+- Quality gates (CI checks, build/test/lint results)
+- Deduplication to strip redundant findings
+
+Both control types operate computationally (deterministic CI checks, evidence verification) and inferentially (semantic
+analysis by specialized reviewer agents).
 
 ## What It Does
 
@@ -290,7 +314,7 @@ specification artifacts. Everything else is code. No branch-naming conventions a
 ### Superpowers spec directory support (new)
 
 The extracted version adds `docs/superpowers/` as a recognized spec artifact location. This directory is where the
-[superpowers](https://github.com/claude-plugins-official/superpowers) brainstorming skill writes design specs
+[superpowers](https://github.com/obra/superpowers) brainstorming skill writes design specs
 (`docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`) and where the writing-plans skill stores implementation plans.
 Unbound Force did not use this convention — the path is a net-new addition, not a migration from an existing UF path.
 

@@ -59,13 +59,21 @@ is the single source of truth for run state.
 - Agents absent: {comma-separated names or "none"}
 - Changeset: {count} files
 - Prior run: {none | prior run_id}
+- Input type: {auto | pr_number | ref_range | url}
+- Forge: {github | gitlab | local}
+- Tooling: {gh | glab | api | none}
+- PR: #{number} or "none"
+- Linked issues: {count}
+- Prior reviews: {count}
 
 ## Phase: Quality Gates
 - Status: {pending | complete | failed | skipped}
 - Started: {ISO 8601}
 - Finished: {ISO 8601}
-- CI result: {pass | fail}
-- CI failures: {list or "none"}
+- CI checks run: {count}
+- CI checks passed: {count}
+- CI checks failed: {count} ({N} pr-caused, {N} pre-existing, {N} unknown)
+- CI source: {local | forge | both}
 - Quality tool: {available | skipped | failed}
 
 ## Phase: Delegation (iteration {N})
@@ -107,7 +115,10 @@ is the single source of truth for run state.
 
 2. Read and follow `quality-gates.md`
    → Update tracking: Quality Gates
-   → If CI fails: stop with CRITICAL findings
+   → CI failures are recorded with causality tags
+     (pr-caused, pre-existing, unknown). Review
+     continues regardless — failures are reported
+     in the final report, not used as a gate.
 
 3. Read and follow `delegate.md` (Code Review section)
    → Update tracking: Delegation (iteration 1)

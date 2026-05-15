@@ -1,9 +1,33 @@
 # Review Council
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 
 A multi-persona code and specification review system.
 Run `/review-council` to invoke the full council.
+
+## Usage
+
+```
+/review-council              # auto-detect from current branch
+/review-council code         # force code review mode
+/review-council specs        # force spec review mode
+/review-council 42           # review PR #42
+/review-council main..feat   # review a ref range
+/review-council https://github.com/org/repo/pull/42  # review by URL
+```
+
+**Input forms:**
+
+- **Empty**: auto-detect mode from current branch, diff
+  against base branch
+- **PR number**: fetch PR metadata, diff, linked issues,
+  and prior reviews from the forge
+- **Ref range**: diff between two refs in the local repo
+- **URL**: review a PR from any GitHub/GitLab repo
+  (requires `gh` or `glab` CLI with authentication)
+
+All forms support an optional mode prefix (`code` or
+`specs`) as the first argument.
 
 ## What It Does
 

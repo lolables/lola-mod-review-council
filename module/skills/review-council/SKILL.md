@@ -22,9 +22,12 @@ review to each in parallel.
 ## Quick Start
 
 ```
-/review-council        # auto-detect mode from workspace
-/review-council code   # force code review
-/review-council specs  # force spec review
+/review-council              # auto-detect from current branch
+/review-council code         # force code review mode
+/review-council specs        # force spec review mode
+/review-council 42           # review PR #42
+/review-council main..feat   # review a ref range
+/review-council https://github.com/org/repo/pull/42  # review by URL
 ```
 
 ## Reviewer Personas

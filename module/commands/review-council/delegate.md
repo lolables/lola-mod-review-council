@@ -10,6 +10,9 @@ agents, and collect verdicts.
 - Discovered agents list (from preparation phase)
 - Quality Report (if available, from quality gates)
 - Prior Run Context (if available, from preparation)
+- `${session_dir}/linked-issues.txt` — linked issue details and acceptance criteria (when available)
+- `${session_dir}/prior-reviews.txt` — prior forge reviews (when available)
+- `${session_dir}/ci-causality.txt` — CI results with causality tags (when available)
 
 ## Outputs
 
@@ -102,6 +105,35 @@ Report summary.
 from the prior run. Instruct agents not to re-flag
 these unless the fix introduced a new problem.
 
+**When linked issues are available**
+(`${session_dir}/linked-issues.txt` exists): append a
+"Linked Issues" section to each delegation prompt
+containing the full content of `linked-issues.txt`,
+followed by:
+
+> When reviewing, consider whether the changes address
+> the acceptance criteria listed above. Note any criteria
+> that appear unaddressed by the changes.
+
+**When prior forge reviews are available**
+(`${session_dir}/prior-reviews.txt` exists): append a
+"Prior Reviews" section containing the full content of
+`prior-reviews.txt`, followed by:
+
+> These reviews were previously submitted on this PR.
+> Do not re-flag issues that have already been raised
+> unless the current changes make them worse or the
+> prior feedback was not addressed.
+
+**When CI causality data is available**
+(`${session_dir}/ci-causality.txt` exists): append a
+"CI Results" section containing the full content of
+`ci-causality.txt`, followed by:
+
+> CI failures tagged as "pre-existing" also fail on the
+> base branch and are not caused by the changes under
+> review.
+
 For each agent, instruct it to return its verdict
 (**APPROVE** or **REQUEST CHANGES**) along with all
 findings. Remind agents that every finding must
@@ -159,6 +191,35 @@ Persona Roles table (Spec Review Focus column).
 Instruct agents to review the listed spec artifacts
 (not code), plus the project context and governance
 documents. Include prior run context if available.
+
+**When linked issues are available**
+(`${session_dir}/linked-issues.txt` exists): append a
+"Linked Issues" section to each delegation prompt
+containing the full content of `linked-issues.txt`,
+followed by:
+
+> When reviewing, consider whether the changes address
+> the acceptance criteria listed above. Note any criteria
+> that appear unaddressed by the changes.
+
+**When prior forge reviews are available**
+(`${session_dir}/prior-reviews.txt` exists): append a
+"Prior Reviews" section containing the full content of
+`prior-reviews.txt`, followed by:
+
+> These reviews were previously submitted on this PR.
+> Do not re-flag issues that have already been raised
+> unless the current changes make them worse or the
+> prior feedback was not addressed.
+
+**When CI causality data is available**
+(`${session_dir}/ci-causality.txt` exists): append a
+"CI Results" section containing the full content of
+`ci-causality.txt`, followed by:
+
+> CI failures tagged as "pre-existing" also fail on the
+> base branch and are not caused by the changes under
+> review.
 
 ---
 

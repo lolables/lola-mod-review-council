@@ -31,15 +31,15 @@ and [MAY] for optional best practices.
   MUST NOT be mixed with logic changes in the same
   commit.
 
-- **CS-003** [MUST] The \`any\` type MUST NOT be used.
-  Use \`unknown\` for truly unknown types, then narrow
-  with type guards. Existing \`any\` usages SHOULD be
-  eliminated incrementally; new \`any\` introductions
+- **CS-003** [MUST] The `any` type MUST NOT be used.
+  Use `unknown` for truly unknown types, then narrow
+  with type guards. Existing `any` usages SHOULD be
+  eliminated incrementally; new `any` introductions
   are always rejected.
 
 - **CS-004** [MUST] Strict null checks MUST be enabled
-  (\`strictNullChecks: true\` in tsconfig.json). Code
-  MUST handle \`null\` and \`undefined\` explicitly —
+  (`strictNullChecks: true` in tsconfig.json). Code
+  MUST handle `null` and `undefined` explicitly —
   no reliance on loose truthiness checks for nullable
   values.
 
@@ -50,11 +50,11 @@ and [MAY] for optional best practices.
   type inference for public API surfaces.
 
 - **CS-006** [MUST] Naming MUST follow TypeScript
-  conventions: \`camelCase\` for variables, functions,
-  and methods; \`PascalCase\` for classes, interfaces,
-  type aliases, and enums; \`UPPER_SNAKE_CASE\` for
-  constants. Interface names MUST NOT use the \`I\`
-  prefix (e.g., use \`UserService\` not \`IUserService\`).
+  conventions: `camelCase` for variables, functions,
+  and methods; `PascalCase` for classes, interfaces,
+  type aliases, and enums; `UPPER_SNAKE_CASE` for
+  constants. Interface names MUST NOT use the `I`
+  prefix (e.g., use `UserService` not `IUserService`).
 
 - **CS-007** [MUST] Imports MUST be organized in groups
   separated by blank lines: (1) Node.js built-ins,
@@ -62,8 +62,8 @@ and [MAY] for optional best practices.
   (4) relative imports. Within each group, imports
   SHOULD be sorted alphabetically.
 
-- **CS-008** [MUST] Use \`const\` by default. Use \`let\`
-  only when reassignment is required. \`var\` MUST NOT
+- **CS-008** [MUST] Use `const` by default. Use `let`
+  only when reassignment is required. `var` MUST NOT
   be used under any circumstances.
 
 - **CS-009** [SHOULD] Complex functions (more than one
@@ -82,7 +82,7 @@ and [MAY] for optional best practices.
 ## Architectural Patterns
 
 - **AP-001** [SHOULD] Modules SHOULD use barrel exports
-  (\`index.ts\`) to define their public API. Internal
+  (`index.ts`) to define their public API. Internal
   implementation files SHOULD NOT be imported directly
   by consumers outside the module boundary.
 
@@ -98,16 +98,16 @@ and [MAY] for optional best practices.
   or handlers SHOULD be thin — delegating to services.
 
 - **AP-004** [MUST] Data structures SHOULD prefer
-  immutability. Use \`readonly\` properties, \`ReadonlyArray\`,
-  and \`Readonly<T>\` utility types where appropriate.
+  immutability. Use `readonly` properties, `ReadonlyArray`,
+  and `Readonly<T>` utility types where appropriate.
   Avoid mutating function arguments. MUST NOT mutate
   shared state without explicit synchronization.
 
 - **AP-005** [MUST] All Promises MUST be handled. No
-  fire-and-forget \`async\` calls. Use \`await\` for
-  sequential async operations. Prefer \`Promise.all()\`
-  or \`Promise.allSettled()\` for concurrent operations.
-  The \`@typescript-eslint/no-floating-promises\` rule
+  fire-and-forget `async` calls. Use `await` for
+  sequential async operations. Prefer `Promise.all()`
+  or `Promise.allSettled()` for concurrent operations.
+  The `@typescript-eslint/no-floating-promises` rule
   MUST be enabled.
 
 - **AP-006** [SHOULD] Module boundaries SHOULD be
@@ -120,7 +120,7 @@ and [MAY] for optional best practices.
 
 ## Security Checks
 
-- **SC-001** [MUST] \`eval()\` and \`setTimeout\` or \`setInterval\`
+- **SC-001** [MUST] `eval()` and `setTimeout` or `setInterval`
   with string arguments MUST NOT be used. These introduce
   code injection vulnerabilities.
 
@@ -133,8 +133,8 @@ and [MAY] for optional best practices.
 - **SC-003** [MUST] Secrets, API keys, tokens, and
   credentials MUST NOT be hardcoded in source files.
   Use environment variables or a secrets manager.
-  Files matching common secret patterns (\`.env\`,
-  \`credentials.json\`, \`*.pem\`, \`*.key\`) MUST NOT
+  Files matching common secret patterns (`.env`,
+  `credentials.json`, `*.pem`, `*.key`) MUST NOT
   be committed.
 
 - **SC-004** [SHOULD] Web applications SHOULD set
@@ -147,11 +147,11 @@ and [MAY] for optional best practices.
   XSS attacks. Use framework-provided escaping (React
   JSX auto-escaping, Angular sanitization) or a
   dedicated library like DOMPurify. Never use
-  \`innerHTML\` or \`dangerouslySetInnerHTML\` with
+  `innerHTML` or `dangerouslySetInnerHTML` with
   unsanitized input.
 
 - **SC-006** [SHOULD] Dependencies SHOULD be audited
-  regularly with \`npm audit\` or equivalent tooling.
+  regularly with `npm audit` or equivalent tooling.
   PRs that introduce new dependencies SHOULD note the
   package's maintenance status, license, and known
   vulnerabilities. Dependencies with critical CVEs
@@ -189,7 +189,7 @@ and [MAY] for optional best practices.
   its own fixtures and tear them down.
 
 - **TC-006** [MUST] Async tests MUST properly await
-  all asynchronous operations. Use \`async\`/\`await\`
+  all asynchronous operations. Use `async`/`await`
   in test functions. Ensure the test framework is
   configured to detect unhandled Promise rejections.
   Never return a Promise without awaiting it in the
@@ -198,13 +198,13 @@ and [MAY] for optional best practices.
 - **TC-007** [SHOULD] Test descriptions SHOULD be
   meaningful and describe the expected behavior, not
   the implementation. Use the pattern: "should [verb]
-  when [condition]" (e.g., \`"should return 404 when
-  user not found"\`).
+  when [condition]" (e.g., `"should return 404 when
+  user not found"`).
 
 - **TC-008** [SHOULD] Test files SHOULD be co-located
-  with their source files (e.g., \`user.service.ts\`
-  and \`user.service.test.ts\` in the same directory)
-  or placed in a \`__tests__/\` directory at the same
+  with their source files (e.g., `user.service.ts`
+  and `user.service.test.ts` in the same directory)
+  or placed in a `__tests__/` directory at the same
   level. Test file naming MUST follow the project's
   established convention consistently.
 
@@ -214,9 +214,9 @@ and [MAY] for optional best practices.
 
 - **DR-001** [MUST] All exported functions, classes,
   interfaces, and type aliases MUST have JSDoc
-  comments. JSDoc MUST include a description, \`@param\`
-  tags for each parameter, and \`@returns\` for the
-  return value. Complex types SHOULD include \`@example\`
+  comments. JSDoc MUST include a description, `@param`
+  tags for each parameter, and `@returns` for the
+  return value. Complex types SHOULD include `@example`
   blocks.
 
 - **DR-002** [SHOULD] README.md SHOULD be updated when
@@ -240,4 +240,4 @@ and [MAY] for optional best practices.
 
 ## Custom Rules
 
-<!-- This section is intentionally empty in the canonical pack. Project-specific custom rules can be added in a separate file in your project's \`.review-council/packs/\` directory. -->
+<!-- This section is intentionally empty in the canonical pack. Project-specific custom rules can be added in a separate file in your project's `.review-council/packs/` directory. -->

@@ -39,8 +39,13 @@ Provide a final report to the user containing:
   reviewer roles were absent
 - **Verification summary**: how many findings were
   verified, corrected, and stripped, per agent
+- **Severity calibration summary**: how many findings
+  were downgraded, with original and adjusted levels
 - **Deduplication summary**: how many duplicate
   findings were consolidated
+- **Validation gate summary**: how many findings were
+  confirmed, corrected, or retracted by the
+  independent validator
 - What was found in each iteration
 - What was fixed
 - If stopped early, the current set of outstanding
@@ -114,19 +119,26 @@ include them.
 If a knowledge layer tool is configured (see "Review
 Council Configuration" → "Knowledge tool"):
 
-a. Record stripped findings as **false positive
-   patterns** — include the agent name, the fabricated
-   claim, and why it was stripped. These become negative
-   learnings for future runs.
-b. Record validated findings that led to accepted fixes
-   as **positive patterns** — include the file, the
+a. **False positive patterns** — record stripped
+   findings (from Step 4) and validator retractions
+   (from Step 5.5). Include the agent name, the
+   fabricated claim, why it was stripped or retracted,
+   and the validator's reasoning where applicable.
+   For findings that were corrected in Step 3 but
+   retracted in Step 5.5, also record as a
+   **correction failure** (the agent doubled down).
+b. **Positive patterns** — record validated findings
+   that led to accepted fixes. Include the file, the
    issue, and the fix applied.
-c. Record correction round outcomes — findings that
-   were corrected successfully are informational
-   (agent made an evidence error but the finding was
-   real).
-d. Store these learnings via the configured knowledge
-   tool so future Prior Learnings queries surface them.
+c. **Evidence quality patterns** — record correction
+   round outcomes (findings where the agent's
+   evidence was wrong but the finding was real) and
+   validator corrections (findings with inaccurate
+   line numbers, wrong identifiers, or miscalibrated
+   severity).
+
+Store all learnings via the configured knowledge
+tool so future Prior Learnings queries surface them.
 
 If no knowledge layer is configured, write the
 learnings to `${session_dir}/learnings.txt` as a

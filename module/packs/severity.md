@@ -21,7 +21,7 @@ risk — actual breakage or exposure.
 | Persona | Examples |
 |---------|---------|
 | Adversary | Hardcoded production secret, SQL injection vector, panic in library code |
-| Tester | Missing coverage strategy in spec/plan (Constitution IV violation), test that masks a real failure |
+| Tester | Missing coverage strategy in spec/plan (constitution violation, if configured), test that masks a real failure |
 | Guard | Constitution principle violated without justification, implementation contradicts spec acceptance criteria |
 | SRE | Release pipeline broken (won't produce artifacts), destructive operation without guard, critical CVE in dependency |
 | Architect | Fundamental misalignment with project architecture (score 1-2), circular dependency introduced |

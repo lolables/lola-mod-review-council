@@ -140,6 +140,29 @@ findings. Remind agents that every finding must
 include an **Evidence** field quoting the actual code
 or content observed.
 
+**Grounding requirement**: append to every code
+review delegation prompt:
+
+> When citing line numbers, confirm them by reading
+> the actual file — do not compute line numbers from
+> the diff. When claiming something is absent or not
+> referenced, search for it with `grep -rn` and
+> include the search result in your Evidence field.
+> Only reference identifiers (variable names, file
+> names, targets) you have directly read in source
+> files.
+
+**Severity calibration**: append to every code
+review delegation prompt:
+
+> Before submitting your verdict, re-read the
+> severity pack definitions. Verify each finding's
+> severity meets the stated boundary for that level.
+> CRITICAL requires immediate concrete harm, not
+> theoretical risk. HIGH requires likely near-term
+> problems, not possible future issues under unlikely
+> conditions.
+
 ### Batching
 
 Check the project's "Review Council Configuration"
@@ -191,6 +214,23 @@ Persona Roles table (Spec Review Focus column).
 Instruct agents to review the listed spec artifacts
 (not code), plus the project context and governance
 documents. Include prior run context if available.
+
+**Grounding requirement**: append to every spec
+review delegation prompt:
+
+> Only reference identifiers, file names, section
+> headings, and spec fields you have directly read
+> in the artifacts. When claiming a cross-reference
+> is missing or a section is absent, search for it
+> and include the search result in your Evidence
+> field.
+
+**Severity calibration**: append to every spec
+review delegation prompt:
+
+> Before submitting your verdict, re-read the
+> severity pack definitions. Verify each finding's
+> severity meets the stated boundary for that level.
 
 **When linked issues are available**
 (`${session_dir}/linked-issues.txt` exists): append a

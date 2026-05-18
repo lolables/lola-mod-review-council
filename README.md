@@ -124,6 +124,53 @@ Each phase loads only when reached — the orchestrating LLM never needs to hold
 
 ### Pipeline
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#2f6dab',
+  'primaryTextColor': '#1e1e1e',
+  'primaryBorderColor': '#7c8ba1',
+  'lineColor': '#7c8ba1',
+  'edgeLabelBackground': '#eef2f8',
+  'tertiaryColor': 'transparent',
+  'tertiaryTextColor': '#7c8ba1',
+  'tertiaryBorderColor': '#7c8ba1',
+  'clusterBkg': 'transparent',
+  'clusterBorder': '#7c8ba1',
+  'titleColor': '#7c8ba1',
+  'noteBkgColor': '#eef2f8',
+  'noteTextColor': '#1e1e1e',
+  'fontFamily': 'system-ui, sans-serif'
+}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
+flowchart TD
+  prep["Prepare: detect mode, discover agents, capture changeset"]
+  qg{"Code review mode?"}
+  qgrun["Quality Gates: run CI checks"]
+  del["Delegate: construct prompts, dispatch agents in parallel"]
+  ver["Verify: attestation, evidence, correction, dedup"]
+  iter{"Verified findings remain? Iterations < 3?"}
+  report["Report: produce verdict, record learnings"]
+
+  prep --> qg
+  qg -->|yes| qgrun
+  qgrun --> del
+  qg -->|no| del
+  del --> ver
+  ver --> iter
+  iter -->|yes| del
+  iter -->|done| report
+
+  classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
+  classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
+  classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
+  classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
+  classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
+  class prep,del sysA
+  class qgrun sysB
+  class ver sysC
+  class report sysD
+  class qg,iter sysF
+```
+
 1. **Prepare** — detect mode, discover agents, set up session cache at `$XDG_CACHE_HOME/review-council/`, capture
    changeset and diff
 2. **Quality Gates** — read CI config, run build/test/lint locally (code review only)

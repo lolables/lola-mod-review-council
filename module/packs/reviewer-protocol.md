@@ -1,5 +1,5 @@
 ---
-description: "Shared procedures for all Divisor Council reviewer agents."
+description: "Shared procedures for all Review Council reviewer agents."
 ---
 
 # Reviewer Protocol
@@ -23,27 +23,66 @@ in your review process.
   function, type, or interface exists, read the file
   that would contain it and confirm.
 - **Verify absence.** Before claiming something is
-  missing from a file, read the file and confirm
-  the absence.
+  missing from a file or not referenced anywhere,
+  read the file and confirm the absence. Then run
+  `grep -rn` for the term across the repository and
+  include the search result (or confirmed absence)
+  in your Evidence field. "I did not find it" is not
+  evidence — show the search.
 - **Verify line references.** If you cite a specific
-  line number, you must have read that line.
+  line number, confirm it by reading the file with
+  line numbers or using `grep -n`. Do not compute
+  line numbers from diff offsets or excerpt positions.
+- **Ground every identifier.** Only reference
+  identifiers (variable names, file names, target
+  names, input parameters, function signatures) that
+  you have directly observed in a file you read
+  during this review. Never infer or guess names from
+  context, conventions, or partial information.
 
 ### Prohibited:
 
 - Fabricating file paths, function signatures, line
   numbers, or code excerpts
+- Inferring identifiers, file names, or target names
+  from conventions or partial context rather than
+  reading the source
 - Generating findings based on what "typical" projects
   of this type contain
 - Reporting on files you have not read in this review
 - Citing specific line numbers you have not observed
+- Computing line numbers from diff hunk offsets or
+  excerpt positions instead of reading the actual file
 - Claiming a file has specific content without reading it
-- Claiming a file lacks content without reading it
+- Claiming a file lacks content without searching for it
 
 ### When you cannot verify:
 
 If you cannot read a file (binary, too large, access
 error), note it as an informational skip. Do not
 guess at its contents or generate findings about it.
+
+### Severity Self-Check
+
+Before assigning a severity level to a finding,
+re-read the severity pack definition for that level.
+Verify your finding meets the stated boundary:
+
+- **CRITICAL**: Does this cause immediate, concrete
+  harm (data loss, security breach, build failure)?
+  If the harm is theoretical or requires unlikely
+  conditions to materialize, use HIGH or lower.
+- **HIGH**: Will this likely cause problems before
+  merge? If the risk requires a compromised upstream,
+  specific attacker capability, or misconfiguration
+  not present in the current code, use MEDIUM.
+- **MEDIUM/LOW**: Does the finding match the
+  severity pack's examples for your persona and
+  this type of issue?
+
+When in doubt, use the lower severity. Severity
+inflation erodes trust in the review and causes
+real issues to be overlooked.
 
 ## Prior Learnings (optional)
 

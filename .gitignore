@@ -31,3 +31,6 @@ node_modules/
 .unbound-force/
 .muti-mind/
 .mx-f/
+
+# Working artifacts — specs and plans (never committed)
+docs/superpowers/

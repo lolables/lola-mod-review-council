@@ -5,6 +5,18 @@ description: >
 ---
 # Command: /review-council
 
+## Path Anchoring
+
+Set `COMMAND_DIR` to the directory containing this
+command file. All phase file references below are
+relative to `${COMMAND_DIR}`. When reading a phase
+file, construct the full path — do not search by
+filename.
+
+```
+COMMAND_DIR=$(dirname "<path-to-this-file>")
+```
+
 ## User Input
 
 ```text
@@ -28,11 +40,11 @@ focused on the current work.
 
 | Phase | File | Responsibility |
 |-------|------|---------------|
-| Preparation | `prepare.md` | Mode detection, agent discovery, session setup, changeset capture |
-| Quality Gates | `quality-gates.md` | CI checks, quality tool (Code Review only) |
-| Delegation | `delegate.md` | Prompt construction, batching, agent dispatch, verdict collection |
-| Verification | `verify.md` | Attestation, evidence checking, correction round, deduplication |
-| Report | `report.md` | Final report, prior learnings feedback |
+| Preparation | `${COMMAND_DIR}/review-council/prepare.md` | Mode detection, agent discovery, session setup, changeset capture |
+| Quality Gates | `${COMMAND_DIR}/review-council/quality-gates.md` | CI checks, quality tool (Code Review only) |
+| Delegation | `${COMMAND_DIR}/review-council/delegate.md` | Prompt construction, batching, agent dispatch, verdict collection |
+| Verification | `${COMMAND_DIR}/review-council/verify.md` | Attestation, evidence checking, correction round, deduplication |
+| Report | `${COMMAND_DIR}/review-council/report.md` | Final report, prior learnings feedback |
 
 ---
 
@@ -109,21 +121,21 @@ is the single source of truth for run state.
 ### Code Review Mode
 
 ```
-1. Read and follow `prepare.md`
+1. Read and follow `${COMMAND_DIR}/review-council/prepare.md`
    → Update tracking: Preparation
    → If changeset empty: stop
 
-2. Read and follow `quality-gates.md`
+2. Read and follow `${COMMAND_DIR}/review-council/quality-gates.md`
    → Update tracking: Quality Gates
    → CI failures are recorded with causality tags
      (pr-caused, pre-existing, unknown). Review
      continues regardless — failures are reported
      in the final report, not used as a gate.
 
-3. Read and follow `delegate.md` (Code Review section)
+3. Read and follow `${COMMAND_DIR}/review-council/delegate.md` (Code Review section)
    → Update tracking: Delegation (iteration 1)
 
-4. Read and follow `verify.md`
+4. Read and follow `${COMMAND_DIR}/review-council/verify.md`
    → Update tracking: Verification (iteration 1)
    → If all APPROVE: go to step 7
 
@@ -134,23 +146,23 @@ is the single source of truth for run state.
 6. If 3 iterations exceeded, ask the user whether
    to continue or stop.
 
-7. Read and follow `report.md` (Code Review section)
+7. Read and follow `${COMMAND_DIR}/review-council/report.md` (Code Review section)
    → Update tracking: Report
 ```
 
 ### Spec Review Mode
 
 ```
-1. Read and follow `prepare.md`
+1. Read and follow `${COMMAND_DIR}/review-council/prepare.md`
    → Update tracking: Preparation
 
 2. Skip quality gates (Spec Review does not run CI).
    → Update tracking: Quality Gates — Status: skipped
 
-3. Read and follow `delegate.md` (Spec Review section)
+3. Read and follow `${COMMAND_DIR}/review-council/delegate.md` (Spec Review section)
    → Update tracking: Delegation (iteration 1)
 
-4. Read and follow `verify.md`
+4. Read and follow `${COMMAND_DIR}/review-council/verify.md`
    → Update tracking: Verification (iteration 1)
    → If all APPROVE: go to step 7
 
@@ -164,7 +176,7 @@ is the single source of truth for run state.
 6. If 3 iterations exceeded, ask the user whether
    to continue or stop.
 
-7. Read and follow `report.md` (Spec Review section)
+7. Read and follow `${COMMAND_DIR}/review-council/report.md` (Spec Review section)
    → Update tracking: Report
 ```
 

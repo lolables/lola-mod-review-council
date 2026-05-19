@@ -123,7 +123,7 @@ corresponding checks are skipped gracefully.
 
 | Extension Point | Purpose                              | Default                  |
 |-----------------|--------------------------------------|--------------------------|
-| Constitution    | Path to project governance document  | Skip constitution checks |
+| Constitution    | Path to project governance document  | Auto-discover from `.specify/memory/constitution.md`; skip if not found or still a template |
 | Knowledge tool  | MCP tool name for semantic search    | Skip prior learnings     |
 | Docs repo       | GitHub repo for documentation issues | Report gaps as findings  |
 | Quality tool    | Agent name for quality analysis      | Skip quality analysis    |

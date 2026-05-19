@@ -300,6 +300,27 @@ immediately after creation:**
 
 > "Review session: `{session_dir}`"
 
+### Resolve Constitution
+
+Determine which governance document (if any) agents
+should read during this review. Use this priority chain:
+
+1. Check the project's AGENTS.md or CLAUDE.md for a
+   "Review Council Configuration" section with a
+   "Constitution" entry. If found, use that path.
+2. If no explicit configuration exists, check whether
+   `.specify/memory/constitution.md` exists in the
+   project root.
+   - Read the first heading line. If it contains
+     `[PROJECT_NAME]`, the file is an unfilled template
+     — treat it as absent.
+   - Otherwise, use this path.
+3. If neither source is found, set the constitution
+   field to "none".
+
+Record the resolved constitution source (explicit path,
+auto-discovered path, or "none") in session metadata.
+
 ### Session Metadata
 
 Write a human-readable `session.txt` to the session
@@ -308,18 +329,19 @@ directory:
 ```
 Review Council Session
 ======================
-Project:   {absolute path to working directory}
-Branch:    {current branch name}
-Base:      {base branch (main or master)}
-Mode:      {Code Review or Spec Review}
-Started:   {ISO 8601 timestamp}
-Agents:    {comma-separated list of discovered agents}
-Input:     {auto|pr_number|ref_range|url}
-Forge:     {github|gitlab|local}
-PR:        #{number} "{title}" ({url}) -- or "none"
-Tooling:   {gh|glab|api|none}
-Issues:    {count} linked -- or "none"
-Reviews:   {count} prior -- or "none"
+Project:      {absolute path to working directory}
+Branch:       {current branch name}
+Base:         {base branch (main or master)}
+Mode:         {Code Review or Spec Review}
+Started:      {ISO 8601 timestamp}
+Agents:       {comma-separated list of discovered agents}
+Input:        {auto|pr_number|ref_range|url}
+Forge:        {github|gitlab|local}
+PR:           #{number} "{title}" ({url}) -- or "none"
+Tooling:      {gh|glab|api|none}
+Issues:       {count} linked -- or "none"
+Reviews:      {count} prior -- or "none"
+Constitution: {path} (explicit|auto-discovered) -- or "none"
 ```
 
 ### Initialize Tracking File
@@ -338,6 +360,7 @@ include these fields:
 - PR: #{number} or "none"
 - Linked issues: {count}
 - Prior reviews: {count}
+- Constitution: {path} ({source}) or "none"
 ```
 
 ---

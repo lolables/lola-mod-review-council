@@ -109,11 +109,19 @@ and proceed with the standard review.
 In addition to the role-specific source document listed
 in your agent file, read:
 
-1. The project governance document — if a "Review
-   Council Configuration" section exists with a
-   "Constitution" entry, read that file for core
-   principles. If not configured, skip constitution-
-   specific checks.
+1. The project governance document — resolved using
+   this priority chain:
+   a. **Explicit configuration**: if a "Review Council
+      Configuration" section exists with a
+      "Constitution" entry, read that file.
+   b. **Auto-discovery**: if no explicit configuration
+      exists, check whether `.specify/memory/constitution.md`
+      exists in the project root. If it exists **and**
+      its first heading does not contain `[PROJECT_NAME]`
+      (which indicates an unfilled template), read it
+      for core principles.
+   c. If neither source is found, skip constitution-
+      specific checks.
 2. The project's specification or design artifacts
    (if present) for the current work.
 3. Convention packs — see Pack Loading Rules below.

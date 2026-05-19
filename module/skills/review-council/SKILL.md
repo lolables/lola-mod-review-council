@@ -73,7 +73,9 @@ AGENTS.md or CLAUDE.md:
 ```
 
 All extension points are optional and degrade gracefully
-when omitted.
+when omitted. The Constitution is auto-discovered from
+`.specify/memory/constitution.md` if no explicit path is
+configured and the file is not an unfilled template.
 
 ## Convention Packs
 

@@ -20,7 +20,7 @@ risk — actual breakage or exposure.
 
 | Persona | Examples |
 |---------|---------|
-| Adversary | Hardcoded production secret, SQL injection vector, panic in library code |
+| Adversary | Hardcoded production secret, SQL injection vector, explicit `panic()` used for expected error conditions |
 | Tester | Missing coverage strategy in spec/plan (constitution violation, if configured), test that masks a real failure |
 | Guard | Constitution principle violated without justification, implementation contradicts spec acceptance criteria |
 | SRE | Release pipeline broken (won't produce artifacts), destructive operation without guard, critical CVE in dependency |
@@ -33,7 +33,9 @@ technical debt that will cause problems if not addressed
 before merge. Blocks the review.
 
 **Boundary**: Likely to cause problems in the near term.
-Requires action but not an emergency.
+Requires action but not an emergency. Style preferences,
+optional test expansion, and idiomatic language patterns
+do NOT meet this boundary — use MEDIUM or LOW.
 
 | Persona | Examples |
 |---------|---------|

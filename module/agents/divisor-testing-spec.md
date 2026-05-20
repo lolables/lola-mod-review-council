@@ -88,8 +88,8 @@ Use the output format defined in reviewer-protocol.md.
 
 ## Decision Criteria
 
-- **APPROVE** only if all requirements are testable, coverage expectations are defined, and contract surfaces are specified clearly enough to write tests from the spec alone.
-- **REQUEST CHANGES** if you find any test quality issue of MEDIUM severity or above.
+- **APPROVE** if requirements are testable and coverage expectations are defined, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if you find a test quality issue of HIGH or CRITICAL severity. MEDIUM and LOW findings are non-blocking recommendations.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

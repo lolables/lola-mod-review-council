@@ -114,12 +114,12 @@ For each finding, include these extra fields:
 
 ## Decision Criteria
 
-- **APPROVE** if the change is cohesive, aligned with the spec, integrated without neighborhood damage, and valuable to the project.
-- **REQUEST CHANGES** if:
-  - The implementation (or specification) has drifted from the spec's acceptance criteria
-  - Sibling components or repositories are negatively impacted
-  - There is scope creep or zero-waste violations at MEDIUM severity or above
+- **APPROVE** if the change is cohesive, aligned with the spec, and valuable to the project, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if:
+  - The implementation has drifted from spec acceptance criteria at HIGH or CRITICAL severity
+  - Sibling components or repositories are negatively impacted at HIGH or CRITICAL severity
   - A constitution principle is violated (automatically CRITICAL)
+- MEDIUM and LOW findings (minor scope additions, documentation gaps) are non-blocking recommendations.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

@@ -15,7 +15,7 @@ version: 1.0.0
 - **CS-002** [MUST] Organize imports with `goimports` in three groups separated by blank lines: standard library, third-party packages, internal packages.
 - **CS-003** [MUST] Use PascalCase for exported identifiers and camelCase for unexported identifiers.
 - **CS-004** [MUST] Add GoDoc-style comments on all exported functions, methods, and types. The comment MUST start with the identifier name.
-- **CS-005** [MUST] Return `error` values from functions that can fail. Never use `panic` for expected error conditions.
+- **CS-005** [MUST] Return `error` values from functions that can fail. Never use `panic` for expected error conditions. Note: constructor-based initialization (requiring callers to use `New()`) is idiomatic Go. Pointer receiver methods that panic on nil receivers are NOT violations of this rule — they follow Go's standard nil-pointer semantics. Do NOT flag missing nil guards on library methods as defects.
 - **CS-006** [MUST] Wrap errors with `fmt.Errorf("context: %w", err)` to preserve the error chain. The context MUST describe what operation failed.
 - **CS-007** [MUST] Avoid mutable package-level variables. No global mutable state. Prefer functional style and dependency injection.
 - **CS-008** [SHOULD] Keep functions focused on a single responsibility. Extract helper functions when a function exceeds ~50 lines.
@@ -61,7 +61,7 @@ version: 1.0.0
 
 - **TC-001** [MUST] Use the standard library `testing` package only. Do not import testify, gomega, or any external assertion library.
 - **TC-002** [MUST] Use `t.Errorf` or `t.Fatalf` for assertions directly. No third-party assertion helper functions.
-- **TC-003** [MUST] Name tests following the `TestXxx_Description` pattern (e.g., `TestRun_CreatesFiles`, `TestIsToolOwned_ToolFiles`).
+- **TC-003** [SHOULD] Name tests following the `TestXxx_Description` pattern (e.g., `TestRun_CreatesFiles`, `TestIsToolOwned_ToolFiles`). The Go language requires only `TestXxx`; the underscore-description suffix is a readability convention, not a language requirement.
 - **TC-004** [MUST] Use `t.TempDir()` for all tests that touch the filesystem. No shared mutable state between test cases.
 - **TC-005** [MUST] Run tests with `-race -count=1`. All tests MUST pass under the race detector.
 - **TC-006** [SHOULD] Use table-driven tests when exercising multiple input/output combinations for the same function.

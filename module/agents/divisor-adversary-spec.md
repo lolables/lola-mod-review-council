@@ -88,8 +88,8 @@ Use the output format defined in reviewer-protocol.md.
 
 ## Decision Criteria
 
-- **APPROVE** only if the specs are free of ambiguity, completeness gaps, and cross-spec contradictions that would introduce security or resilience risks in implementation.
-- **REQUEST CHANGES** if you find any security or resilience issue of MEDIUM severity or above.
+- **APPROVE** if the specs are free of ambiguity and contradictions that would introduce security risks, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if you find a security or resilience issue of HIGH or CRITICAL severity. MEDIUM and LOW findings are non-blocking recommendations.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

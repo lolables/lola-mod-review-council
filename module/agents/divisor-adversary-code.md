@@ -54,9 +54,12 @@ Your review scope is the changeset provided in your delegation prompt. Read ever
 
 - Do all functions that can fail handle errors properly? Are errors wrapped with sufficient context?
 - What happens on I/O failure (missing directories, permission denied, partial writes)?
-- Are there panics that should be errors? Unchecked type assertions or nil dereferences?
+- Are there explicit `panic()` calls used for expected error conditions that should return `error` instead?
+- Are there unchecked type assertions (missing the `ok` form: `v := x.(Type)` instead of `v, ok := x.(Type)`)?
 - What happens when external dependencies are unavailable or return unexpected data?
 - Are recovery paths tested, not just the happy path?
+
+> **Calibration note — nil pointers**: In Go, calling a method on a nil pointer receiver panics. This is standard, expected Go behavior — it is NOT a bug, vulnerability, or resilience defect. Do NOT flag nil receiver panics, nil map access, or nil slice operations as findings. Only flag nil handling when: (1) the function accepts external/user input that could be nil AND (2) the function is at a system boundary (public API, CLI handler, HTTP handler) AND (3) there is no caller-side validation. Internal library methods with pointer receivers are NOT system boundaries.
 
 #### 4. Path and Injection Safety
 
@@ -96,8 +99,8 @@ Use the output format defined in reviewer-protocol.md.
 
 ## Decision Criteria
 
-- **APPROVE** only if the code (or specs) is resilient to failure and meets all security constraints.
-- **REQUEST CHANGES** if you find any security or resilience issue of MEDIUM severity or above.
+- **APPROVE** if the code is resilient to failure and meets all security constraints, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if you find a security or resilience issue of HIGH or CRITICAL severity. MEDIUM and LOW findings are non-blocking recommendations — include them but do not block the merge.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

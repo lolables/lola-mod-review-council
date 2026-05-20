@@ -108,8 +108,8 @@ Also provide an **Architectural Alignment Score** (1-10):
 
 ## Decision Criteria
 
-- **APPROVE** if the architecture is sound, conventions are followed, and the structure is clean.
-- **REQUEST CHANGES** if the code (or specs) introduces technical debt, breaks project structure, or deviates from conventions at MEDIUM severity or above.
+- **APPROVE** if the architecture is sound and conventions are broadly followed, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if the code introduces structural issues of HIGH or CRITICAL severity. MEDIUM and LOW findings are non-blocking recommendations — include them but do not block the merge.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict, the Architectural Alignment Score, and a summary of findings.
 

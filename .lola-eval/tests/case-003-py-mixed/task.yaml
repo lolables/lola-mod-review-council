@@ -1,0 +1,18 @@
+task_version: "2"
+description: |
+  Python data processing library with seven intentional flaws spanning
+  security, correctness, testing, and architecture. Tests multi-agent
+  coordination and the verify phase's deduplication of findings that
+  multiple agents may independently discover.
+timeout_seconds: 900
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>

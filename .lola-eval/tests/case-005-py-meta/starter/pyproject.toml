@@ -1,0 +1,9 @@
+[project]
+name = "taskq"
+version = "0.1.0"
+description = "A simple task queue for background processing"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

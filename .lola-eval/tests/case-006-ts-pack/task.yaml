@@ -1,0 +1,20 @@
+task_version: "2"
+description: |
+  TypeScript Express API with five convention violations from the
+  typescript.md convention pack: non-standard naming (CS-006),
+  missing strict mode (CS-004), 'any' type usage (CS-003), barrel
+  export anti-pattern, and missing readonly on immutable properties
+  (AP-004). Tests whether the convention pack improves detection of
+  TypeScript-specific issues.
+timeout_seconds: 900
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>

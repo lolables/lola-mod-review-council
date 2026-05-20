@@ -72,6 +72,8 @@ Your review scope is the changeset provided in your delegation prompt. Read ever
 - When a bug was fixed, was a regression test added that would catch the same bug if reintroduced?
 - Do schema validation tests exist for structured output contracts?
 
+> **Calibration note**: Test coverage suggestions for code that is already well-tested (comprehensive test suite exists, all methods exercised, edge cases covered) should be MEDIUM or LOW, not HIGH. Additional assertion depth, table-driven refactoring, or optional edge case expansion are improvement opportunities, not blocking issues. Reserve HIGH for genuinely missing test coverage — untested code paths that could hide real bugs.
+
 #### 6. Convention Compliance [PACK]
 
 - Check the convention pack's `testing_conventions` for test execution patterns (e.g., required flags, test runners, naming conventions). If no pack is loaded, skip language-specific checks.
@@ -96,8 +98,8 @@ Use the output format defined in reviewer-protocol.md.
 
 ## Decision Criteria
 
-- **APPROVE** only if tests are well-structured, coverage strategy is sound, assertions are deep, tests are isolated, and conventions are followed.
-- **REQUEST CHANGES** if you find any test quality issue of MEDIUM severity or above.
+- **APPROVE** if tests are well-structured with sound coverage, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if you find a test quality issue of HIGH or CRITICAL severity. MEDIUM and LOW findings are non-blocking recommendations — include them but do not block the merge.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

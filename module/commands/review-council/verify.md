@@ -178,6 +178,15 @@ b. Apply these calibration rules:
      documentation, or convention issue**: downgrade
      to the level matching the severity pack's
      examples for that persona and issue type.
+   - **CRITICAL/HIGH assigned to standard language
+     semantics** (e.g., Go nil-pointer panics, Python
+     AttributeError on None, JS TypeError on
+     undefined): downgrade to MEDIUM or strip. These
+     are expected runtime behaviors, not defects.
+   - **HIGH assigned to test coverage preferences**
+     (table-driven tests, additional edge cases,
+     assertion depth) when a comprehensive test suite
+     already exists: downgrade to MEDIUM or LOW.
 
 c. Log each downgrade:
    > "Finding `{title}` severity downgraded
@@ -314,6 +323,20 @@ quotes — those were already verified mechanically.
 > quote what you read or show the grep output that
 > supports it. Do not assert "I checked and it's
 > fine" without showing your work.
+>
+> **Common false positive patterns — retract these:**
+> - Standard nil-pointer behavior flagged as a security
+>   defect (e.g., "nil receiver will panic"). In Go,
+>   nil receiver panics are expected semantics, not bugs.
+> - Test coverage style preferences (table-driven tests,
+>   additional assertion depth, edge case expansion)
+>   flagged as HIGH when a comprehensive test suite
+>   already exists and all methods are exercised.
+> - Idiomatic language patterns treated as defects
+>   (e.g., Go's `map[K]struct{}` for sets, short
+>   receiver names, error-return conventions).
+> - Optional improvements (godoc examples, benchmark
+>   tests, additional documentation) elevated above LOW.
 >
 > For each finding, return one of:
 >

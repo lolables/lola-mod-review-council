@@ -1,0 +1,7 @@
+# Taskfile.yml — Review Council project automation
+version: "3"
+
+includes:
+  lola-eval:
+    taskfile: .taskfiles/lola-eval.yml
+    dir: "{{.ROOT_DIR}}"

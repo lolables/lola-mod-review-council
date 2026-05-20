@@ -162,6 +162,13 @@ review delegation prompt:
 > theoretical risk. HIGH requires likely near-term
 > problems, not possible future issues under unlikely
 > conditions.
+>
+> If the code is clean, idiomatic, well-tested, and
+> well-documented, APPROVE with zero findings is the
+> correct outcome. Do not manufacture findings to
+> justify your review effort. Standard language
+> behavior (nil pointer panics in Go, AttributeError
+> in Python, TypeError in JavaScript) is not a defect.
 
 ### Batching
 

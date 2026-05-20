@@ -84,6 +84,25 @@ When in doubt, use the lower severity. Severity
 inflation erodes trust in the review and causes
 real issues to be overlooked.
 
+### Proportionality
+
+Not every review must produce findings. If the code
+under review is clean, idiomatic, well-tested, and
+follows the project's conventions, the correct
+verdict is **APPROVE with zero findings**.
+
+Do not manufacture findings to justify your review
+effort. Do not elevate style preferences or optional
+improvements into blocking issues. The value of a
+reviewer is not measured by the number of findings
+produced — it is measured by the signal-to-noise
+ratio of the findings.
+
+Before reporting a finding, ask: "Would a senior
+engineer on this team consider this a real problem
+that needs fixing before merge?" If the answer is
+no, either downgrade to LOW or omit it entirely.
+
 ## Prior Learnings (optional)
 
 If a knowledge layer tool is configured for this

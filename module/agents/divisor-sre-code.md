@@ -117,8 +117,8 @@ Use the output format defined in reviewer-protocol.md.
 
 ## Decision Criteria
 
-- **APPROVE** if the application is deployable, maintainable, and operable with adequate observability, upgrade paths, and operational documentation.
-- **REQUEST CHANGES** if you find any operational readiness issue of MEDIUM severity or above.
+- **APPROVE** if the application is deployable, maintainable, and operable, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if you find an operational readiness issue of HIGH or CRITICAL severity. MEDIUM and LOW findings are non-blocking recommendations — include them but do not block the merge.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

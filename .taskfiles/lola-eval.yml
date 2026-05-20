@@ -1,0 +1,106 @@
+# .taskfiles/lola-eval.yml — eval automation for Review Council
+version: "3"
+
+vars:
+  LOLA_EVAL: /opt/lola-eval/bin/lola-eval
+  PROVISION: "{{.ROOT_DIR}}/.lola-eval/provision.sh"
+  MODULE_DIR: "{{.ROOT_DIR}}/module"
+  RESULTS_DIR: "{{.ROOT_DIR}}/.lola-eval"
+
+tasks:
+  doctor:
+    desc: Verify lola-eval installation and config
+    cmds:
+      - "{{.LOLA_EVAL}} doctor"
+
+  provision:
+    desc: Copy current module/ into all starter repos
+    cmds:
+      - bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+    sources:
+      - "{{.MODULE_DIR}}/**/*"
+
+  test:
+    desc: Provision starters and run full eval suite
+    deps: [provision]
+    cmds:
+      - "{{.LOLA_EVAL}} test"
+
+  test-case:
+    desc: Run a single eval case (set CASE=case-001-go-security)
+    deps: [provision]
+    requires:
+      vars: [CASE]
+    cmds:
+      - "{{.LOLA_EVAL}} test --case {{.CASE}}"
+
+  baseline-update:
+    desc: Promote last-run results to baseline.json
+    cmds:
+      - "{{.LOLA_EVAL}} baseline update"
+
+  baseline-diff:
+    desc: Compare current baseline against last run
+    cmds:
+      - "{{.LOLA_EVAL}} baseline diff"
+
+  report:
+    desc: Generate HTML report from latest run
+    cmds:
+      - "{{.LOLA_EVAL}} report"
+
+  compare-commits:
+    desc: Compare eval results at merge-base vs HEAD
+    vars:
+      BRANCH:
+        sh: git rev-parse --abbrev-ref HEAD
+      MERGE_BASE:
+        sh: git merge-base main HEAD
+    cmds:
+      - echo "=== Comparing {{.MERGE_BASE}} (merge-base) vs {{.BRANCH}} (HEAD) ==="
+      - git stash --include-untracked --quiet || true
+      - git checkout --quiet {{.MERGE_BASE}}
+      - bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+      - "{{.LOLA_EVAL}} test || true"
+      - "{{.LOLA_EVAL}} baseline update"
+      - git checkout --quiet {{.BRANCH}}
+      - git stash pop --quiet || true
+      - bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+      - "{{.LOLA_EVAL}} test || true"
+      - echo ""
+      - echo "=== Baseline Diff ==="
+      - "{{.LOLA_EVAL}} baseline diff"
+      - echo ""
+      - echo "=== Report ==="
+      - "{{.LOLA_EVAL}} report"
+
+  drift:
+    desc: Show score drift over time per cell
+    cmds:
+      - "{{.LOLA_EVAL}} drift"
+
+  graph:
+    desc: ANSI time-series chart (set CELL for specific cell)
+    cmds:
+      - "{{.LOLA_EVAL}} graph {{if .CELL}}--cell {{.CELL}}{{end}}"
+
+  snapshot:
+    desc: Capture eval results with git provenance to ledger.jsonl
+    cmds:
+      - bash "{{.RESULTS_DIR}}/snapshot.sh" "{{.MODULE_DIR}}" "{{.RESULTS_DIR}}"
+
+  clean:
+    desc: Remove ephemeral eval artifacts
+    cmds:
+      - "{{.LOLA_EVAL}} clean --cache"
+      - |
+        for starter in {{.ROOT_DIR}}/.lola-eval/tests/*/starter; do
+          rm -rf "$starter/.lola" "$starter/.gitconfig"
+        done
+      - echo "Cleaned eval artifacts and provisioned starters"
+
+  clean-all:
+    desc: Remove all eval artifacts including runs.db
+    cmds:
+      - "{{.LOLA_EVAL}} clean --cache --state"
+      - task: clean

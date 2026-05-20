@@ -1,6 +1,6 @@
 # Review Council
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 
 A multi-persona code and specification review system.
 Run `/review-council` to invoke the full council.

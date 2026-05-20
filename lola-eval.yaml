@@ -1,0 +1,38 @@
+# Review Council eval suite — Mode 1 (in-repo provisioning).
+#
+# Each starter repo gets the current commit's module/ copied in
+# by provision.sh before the eval runs. This means the agent under
+# test always reviews with the version of Review Council at HEAD.
+#
+# If opencode is not installed, comment out its target block.
+
+targets:
+  - cli: claude-code
+    models:
+      - sonnet
+  - cli: opencode
+    models:
+      - sonnet
+
+calculate_baseline: false
+
+threshold:
+  mode: absolute
+  tolerance: 0.05
+  timeout_is_failure: true
+
+concurrency: 2
+runner_timeout_seconds: 3600
+tests_dir: .lola-eval/tests
+results_dir: .lola-eval
+
+judges:
+  - {cli: claude-code, model: sonnet}
+
+aggregation: mean
+disagreement_threshold: 0.15
+
+ci:
+  junit_xml: true
+  github_summary: true
+  html_report: true

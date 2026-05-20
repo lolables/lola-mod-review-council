@@ -206,8 +206,8 @@ Use the output format defined in reviewer-protocol.md.
 
 ## Decision Criteria
 
-- **APPROVE** if all documentation is current, all required documentation issues exist (or were just filed), and no content opportunities were missed for significant changes.
-- **REQUEST CHANGES** if any documentation gap (MEDIUM+) or missing content issue (MEDIUM+) is found.
+- **APPROVE** if documentation is broadly current, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if a documentation gap of HIGH or CRITICAL severity is found (e.g., missing docs for a breaking change). MEDIUM and LOW findings are non-blocking recommendations — include them but do not block the merge.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

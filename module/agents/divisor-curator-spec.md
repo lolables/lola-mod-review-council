@@ -74,8 +74,8 @@ These domains are owned by other agents — do NOT produce findings for them:
 
 ## Decision Criteria
 
-- **APPROVE** if the spec adequately identifies documentation impact and content opportunities for all user-facing changes described.
-- **REQUEST CHANGES** if any documentation gap (MEDIUM+) is found — spec describes user-facing behavior changes but does not acknowledge documentation impact.
+- **APPROVE** if the spec adequately identifies documentation impact, or if only MEDIUM/LOW findings remain.
+- **REQUEST CHANGES** only if a documentation gap of HIGH or CRITICAL severity is found. MEDIUM and LOW findings are non-blocking recommendations.
 
 End your review with a clear **APPROVE** or **REQUEST CHANGES** verdict and a summary of findings.
 

@@ -1,0 +1,19 @@
+task_version: "2"
+description: |
+  Python project with one issue targeting each of the six Review Council
+  personas: Guard (feature contradicts README goals), Architect (circular
+  dependency), Adversary (pickle deserialization), Tester (meaningless
+  assertions), SRE (Dockerfile issues), Curator (no API docs/changelog).
+  Tests that all personas contribute relevant findings.
+timeout_seconds: 900
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>

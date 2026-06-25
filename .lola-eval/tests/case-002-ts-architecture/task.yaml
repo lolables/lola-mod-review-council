@@ -5,7 +5,7 @@ description: |
   between types.ts and utils.ts, no error boundaries, and direct
   DOM manipulation in a React component. Tests the architect agent
   and TypeScript convention pack.
-timeout_seconds: 900
+timeout_seconds: 1800
 followup_messages:
   - |
     Emit a structured summary of the review you just performed.

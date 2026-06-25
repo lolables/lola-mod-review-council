@@ -18,7 +18,11 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LEDGER="$RESULTS_DIR/ledger.jsonl"
 SNAPSHOTS_DIR="$RESULTS_DIR/snapshots"
 TESTS_DIR="$RESULTS_DIR/tests"
-LOLA_EVAL="${LOLA_EVAL:-/opt/lola-eval/bin/lola-eval}"
+LOLA_EVAL="${LOLA_EVAL:-$(command -v lola-eval 2>/dev/null || echo "")}"
+if [[ -z "$LOLA_EVAL" ]]; then
+  echo "snapshot.sh: lola-eval not found in PATH or LOLA_EVAL env var" >&2
+  exit 1
+fi
 
 for cmd in jq git; do
   command -v "$cmd" >/dev/null 2>&1 || {
@@ -141,6 +145,18 @@ if [[ "$GIT_DIRTY" == "true" ]]; then DIRTY_LABEL="dirty"; fi
     def fmt_comp: if .composite then "\(.composite)" else "-" end;
     "| \(.task_id) | \(.cli)/\(.model) | **\(fmt_comp)** | \(fmt_cost) | \(fmt_dur) | \(.exit_status) |"
   ' "$TMPFILE"
+  # Summary row for matrix
+  jq -r '
+    def fmt_cost: "$\(. | tostring | split(".") | .[0] + "." + (.[1] + "00")[0:2])";
+    def fmt_dur: if . >= 60 then "\(. / 60 | . * 10 | floor / 10)m" else "\(. | floor)s" end;
+    (length) as $n |
+    ([.[] | select(.composite != null) | .composite] | if length > 0 then (add / length | . * 100 | floor / 100) else 0 end) as $avg |
+    ([.[] | select(.cost_usd != null) | .cost_usd] | add // 0) as $cost |
+    ([.[] | select(.duration_s != null) | .duration_s] | add // 0) as $dur |
+    ([.[] | select(.exit_status == "success")] | length) as $pass |
+    ($n - $pass) as $fail |
+    "| **Total** | **\($n) cells** | **avg \($avg)** | **\($cost | fmt_cost)** | **\($dur | fmt_dur)** | **\($pass)p/\($fail)f** |"
+  ' "$TMPFILE"
   echo ""
 
   # Per-dimension breakdown — collect all component names dynamically
@@ -186,6 +202,17 @@ if [[ "$GIT_DIRTY" == "true" ]]; then DIRTY_LABEL="dirty"; fi
     def fmt_tok: if . and . > 0 then (if . >= 1000 then "\(. / 1000 | . * 10 | floor / 10)K" else "\(.)" end) else "-" end;
     def fmt_cost: if .cost_usd then "$\(.cost_usd | tostring | split(".") | .[0] + "." + (.[1] + "00")[0:2])" else "-" end;
     "| \(.task_id) | \(.cli)/\(.model) | \(.input_tokens | fmt_tok) | \(.output_tokens | fmt_tok) | \(.cache_read_tokens | fmt_tok) | \(.cache_creation_tokens | fmt_tok) | \(fmt_cost) |"
+  ' "$TMPFILE"
+  # Summary row for token economics
+  jq -r '
+    def fmt_tok: if . and . > 0 then (if . >= 1000 then "\(. / 1000 | . * 10 | floor / 10)K" else "\(.)" end) else "-" end;
+    def fmt_cost: "$\(. | tostring | split(".") | .[0] + "." + (.[1] + "00")[0:2])";
+    ([.[] | .input_tokens // 0] | add) as $in |
+    ([.[] | .output_tokens // 0] | add) as $out |
+    ([.[] | .cache_read_tokens // 0] | add) as $cr |
+    ([.[] | .cache_creation_tokens // 0] | add) as $cw |
+    ([.[] | .cost_usd // 0] | add) as $cost |
+    "| **Total** | **\(length) cells** | **\($in | fmt_tok)** | **\($out | fmt_tok)** | **\($cr | fmt_tok)** | **\($cw | fmt_tok)** | **\($cost | fmt_cost)** |"
   ' "$TMPFILE"
   echo ""
 } > "$SNAPSHOT_MD"

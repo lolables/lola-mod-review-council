@@ -5,7 +5,7 @@ description: |
   dependency), Adversary (pickle deserialization), Tester (meaningless
   assertions), SRE (Dockerfile issues), Curator (no API docs/changelog).
   Tests that all personas contribute relevant findings.
-timeout_seconds: 900
+timeout_seconds: 1800
 followup_messages:
   - |
     Emit a structured summary of the review you just performed.

@@ -56,6 +56,44 @@ points but do not participate in the review council flow:
 | **The Herald** | Blog posts, release notes, announcements  | 0.4         |
 | **The Envoy**  | PR/comms, social media, community updates | 0.5         |
 
+## Model Performance
+
+Review Council has been evaluated across Claude model tiers and AI coding tools using a suite of six test cases
+covering security flaws (Go), architecture issues (TypeScript/React), multi-concern codebases (Python), false-positive
+resistance (clean Go), per-persona coverage (Python), and convention pack detection (TypeScript). Each case has a rubric
+with weighted dimensions and a pass threshold.
+
+Results from the latest eval run (30 cells, 6 cases x 5 CLI/model combinations):
+
+| Model | CLI | Avg Score | Cases Passed | Cost/Review |
+|-------|-----|-----------|--------------|-------------|
+| Sonnet 4 | OpenCode | **0.94** | 6/6 | ~$1.30 |
+| Sonnet 4 | Claude Code | 0.90 | 6/6 | ~$2.20 |
+| Opus 4 | Claude Code | 0.89 | 6/6 | ~$5.35 |
+| Opus 4 | OpenCode | 0.88 | 6/6 | ~$2.50 |
+| Haiku 4 | Claude Code | 0.72 | 4/6 | ~$0.34 |
+
+**Sonnet 4 is the recommended model.** It achieves the highest average score across all test cases, passes every case
+on both CLIs, and costs roughly half of what Opus does per review. Opus matches Sonnet on detection quality but does not
+meaningfully outperform it on any dimension while costing 2-4x more.
+
+Haiku passes the majority of cases but struggles with false-positive suppression on clean codebases and convention pack
+attribution. It is suitable for quick scans where cost matters more than precision.
+
+Per-case scores:
+
+| Case | CC/Opus | CC/Sonnet | CC/Haiku | OC/Opus | OC/Sonnet |
+|------|---------|-----------|----------|---------|-----------|
+| Go security (4 flaws) | 1.00 | 1.00 | 0.85 | 1.00 | 1.00 |
+| TS/React architecture (5 flaws) | 0.73 | 0.73 | 0.73 | 0.73 | **1.00** |
+| Python multi-concern (7 flaws) | 0.88 | 1.00 | 1.00 | 0.88 | 1.00 |
+| Go clean code (0 flaws) | 1.00 | 1.00 | 0.40 | 1.00 | 1.00 |
+| Python per-persona (6 flaws) | 1.00 | 0.84 | 0.90 | 0.90 | 0.84 |
+| TS convention pack (5 violations) | 0.75 | 0.85 | 0.45 | 0.79 | 0.79 |
+
+The eval harness lives in `.lola-eval/` and uses [promptfoo](https://www.promptfoo.dev/) with custom providers and a
+trajectory judge. Run `task lola-eval:test` to reproduce.
+
 ## Install
 
 ### Via Lola (recommended)
@@ -73,25 +111,23 @@ Clone and copy the module directory into your project's AI tool configuration:
 git clone https://github.com/unbound-force/review-council.git
 # For Claude Code:
 cp review-council/module/agents/divisor-*.md .claude/agents/
-cp review-council/module/commands/review-council.md .claude/commands/
-cp -r review-council/module/commands/review-council/ .claude/commands/review-council/
 cp -r review-council/module/skills/review-council/ .claude/skills/review-council/
 ```
 
-Convention packs are required — all reviewer agents depend on `reviewer-protocol.md`. Copy them to your user or project
-pack directory:
+Convention references are required — all reviewer agents depend on `reviewer-protocol.md`. Copy them to your user or project
+references directory:
 
 ```bash
 # User-level (applies to all projects):
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs"
-cp review-council/module/packs/*.md "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs/"
+cp review-council/module/references/*.md "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs/"
 
 # Or project-level (applies to this repo only):
 mkdir -p .review-council/packs
-cp review-council/module/packs/*.md .review-council/packs/
+cp review-council/module/references/*.md .review-council/packs/
 ```
 
-Adjust agent and command paths for your AI tool (`.cursor/`, `.gemini/`, etc.).
+Adjust agent and skill paths for your AI tool (`.cursor/`, `.gemini/`, etc.).
 
 ### Optional Dependency: `gh` CLI
 
@@ -109,18 +145,19 @@ Without `gh`, the Curator reports gaps as review findings instead.
 
 ## How It Works
 
-The `/review-council` command is a thin coordinator that dispatches five phases, each in its own procedure file under
-`commands/review-council/`:
+The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates five phases
+using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work):
 
-| Phase             | File               | Purpose                                                           |
-|-------------------|--------------------|-------------------------------------------------------------------|
-| **Prepare**       | `prepare.md`       | Mode detection, agent discovery, session setup, changeset capture |
-| **Quality Gates** | `quality-gates.md` | CI checks and quality tool (Code Review only)                     |
-| **Delegate**      | `delegate.md`      | Prompt construction, batching, agent dispatch                     |
-| **Verify**        | `verify.md`        | Attestation, evidence checking, correction round, dedup           |
-| **Report**        | `report.md`        | Final report, prior learnings feedback                            |
+| Phase             | Implementation             | Purpose                                  |
+|-------------------|----------------------------|------------------------------------------|
+| **Prepare**       | `rc-prepare.sh`            | Mode detection, discovery, session setup |
+| **Quality Gates** | inline in `SKILL.md`       | CI checks (Code Review only)             |
+| **Delegate**      | `phases/delegate.md`       | Prompt construction, dispatch            |
+| **Verify**        | `rc-verify-evidence.sh`    | Attestation, evidence, correction, dedup |
+| **Report**        | `rc-render-report.sh`      | Final report, learnings feedback         |
 
-Each phase loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context.
+Scripts live in `skills/review-council/scripts/`. Phase files live in `skills/review-council/phases/`. Each phase
+loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context.
 
 ### Pipeline
 
@@ -205,6 +242,7 @@ these packs:
 | `typescript.md`        | TypeScript | Self-contained TypeScript conventions           |
 | `content.md`           | Any        | Content writing standards (content agents only) |
 | `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format    |
+| `model-guidance.md`    | Any        | Model selection guidance and eval data          |
 
 ### Customization
 
@@ -278,7 +316,7 @@ Zero matches means the module is clean.
 its equivalent agents directory.
 
 **`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. Ensure you copied all files from
-`module/packs/` — not just language-specific packs.
+`module/references/` — not just language-specific packs.
 
 **Curator cannot file issues**: Install and authenticate the `gh` CLI: `gh auth login`. Without authentication, the
 Curator reports documentation gaps as findings instead of filing GitHub issues.
@@ -291,9 +329,9 @@ restructured as a standalone Lola module. This section documents the differences
 ### Command structure: monolithic to modular
 
 In Unbound Force, the entire review pipeline lives in a single file (`.opencode/commands/review-council.md`, ~283
-lines). The extracted version splits this into a thin coordinator plus five phase files under
-`commands/review-council/` — prepare, quality-gates, delegate, verify, and report. The orchestrating LLM loads each
-phase only when reached, so no single context window needs to hold the full pipeline.
+lines). The extracted version uses a hybrid architecture: a `SKILL.md` state machine coordinates bash scripts
+(`rc-prepare.sh`, `rc-verify-evidence.sh`, `rc-render-report.sh`) for deterministic work and LLM phase files
+(`delegate.md`, `verify.md`, `report.md`) for judgment work. Each phase loads only when reached.
 
 ### Agent split: one file per mode
 
@@ -371,14 +409,14 @@ recognize this path.
 
 ### Directory layout
 
-| Purpose          | Unbound Force                    | Extracted                         |
-|------------------|----------------------------------|-----------------------------------|
-| Agents           | `.opencode/agents/`              | `module/agents/`                  |
-| Commands         | `.opencode/commands/`            | `module/commands/`                |
-| Command phases   | (embedded in single command)     | `module/commands/review-council/` |
-| Convention packs | `.opencode/uf/packs/`            | `module/packs/`                   |
-| Skills           | `.opencode/skills/` (shared)     | `module/skills/review-council/`   |
-| Module metadata  | `AGENTS.md` (project-level)      | `module/AGENTS.md` (module-level) |
+| Purpose          | Unbound Force                    | Extracted                                                           |
+|------------------|----------------------------------|---------------------------------------------------------------------|
+| Agents           | `.opencode/agents/`              | `module/agents/`                                                    |
+| Entry point      | `.opencode/commands/`            | `module/skills/review-council/SKILL.md`                             |
+| Pipeline phases  | (embedded in single command)     | `module/skills/review-council/phases/` + `scripts/`                 |
+| Convention refs  | `.opencode/uf/packs/`            | `module/references/`                                                |
+| Skills           | `.opencode/skills/` (shared)     | `module/skills/review-council/`                                     |
+| Module metadata  | `AGENTS.md` (project-level)      | `module/AGENTS.md` (module-level)                                   |
 
 ## License
 

@@ -181,17 +181,21 @@ Read every artifact before producing findings.
 
 ## Pack Loading Rules
 
-Load convention packs from the resolution chain in
-this order. Higher-priority locations override
-same-named files from lower-priority locations.
+Module references are at `${REFERENCES_DIR}`
+(`.lola/modules/review-council/module/references`). Load
+packs from the resolution chain in this order.
+Higher-priority locations override same-named files
+from lower-priority locations.
 
-1. Always load `severity.md`.
+1. Always load `${REFERENCES_DIR}/severity.md`.
 2. Identify the project's primary language. If a
-   language-specific pack exists (e.g., `go.md`,
-   `typescript.md`), load ONLY that pack — it
-   includes all base conventions.
+   language-specific pack exists (e.g.,
+   `${REFERENCES_DIR}/go.md`,
+   `${REFERENCES_DIR}/typescript.md`), load ONLY that
+   pack — it includes all base conventions.
 3. If no language-specific pack exists, load
-   `base.md` (the language-agnostic default).
+   `${REFERENCES_DIR}/base.md` (the language-agnostic
+   default).
 4. Do NOT load `content.md` — it is for content
    production agents only.
 5. Load any additional packs from:

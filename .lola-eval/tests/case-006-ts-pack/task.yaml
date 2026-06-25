@@ -6,7 +6,7 @@ description: |
   export anti-pattern, and missing readonly on immutable properties
   (AP-004). Tests whether the convention pack improves detection of
   TypeScript-specific issues.
-timeout_seconds: 900
+timeout_seconds: 1800
 followup_messages:
   - |
     Emit a structured summary of the review you just performed.

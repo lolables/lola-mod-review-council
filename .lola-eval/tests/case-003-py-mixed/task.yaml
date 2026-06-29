@@ -4,7 +4,7 @@ description: |
   security, correctness, testing, and architecture. Tests multi-agent
   coordination and the verify phase's deduplication of findings that
   multiple agents may independently discover.
-timeout_seconds: 900
+timeout_seconds: 1800
 followup_messages:
   - |
     Emit a structured summary of the review you just performed.

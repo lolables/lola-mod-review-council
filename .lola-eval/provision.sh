@@ -71,21 +71,20 @@ YAML
   # straight copies of the module source files.
   for target_dir in .claude .opencode; do
     mkdir -p "$starter/$target_dir/agents"
-    mkdir -p "$starter/$target_dir/commands"
 
     # Copy agents
     if [[ -d "$MODULE_DIR/agents" ]]; then
       cp "$MODULE_DIR/agents/"*.md "$starter/$target_dir/agents/" 2>/dev/null || true
     fi
 
-    # Copy commands
-    if [[ -d "$MODULE_DIR/commands" ]]; then
-      cp "$MODULE_DIR/commands/"*.md "$starter/$target_dir/commands/" 2>/dev/null || true
+    # Copy skills (recursive — includes scripts/, phases/ subdirectories)
+    if [[ -d "$MODULE_DIR/skills" ]]; then
+      cp -a "$MODULE_DIR/skills/." "$starter/$target_dir/skills/"
     fi
 
-    # Copy skills (claude-code only — opencode doesn't use skills/)
-    if [[ "$target_dir" == ".claude" && -d "$MODULE_DIR/skills" ]]; then
-      cp -a "$MODULE_DIR/skills/." "$starter/$target_dir/skills/"
+    # Copy references (convention packs, model guidance)
+    if [[ -d "$MODULE_DIR/references" ]]; then
+      cp -a "$MODULE_DIR/references/." "$starter/$target_dir/references/"
     fi
   done
 
@@ -100,8 +99,32 @@ YAML
     defaultBranch = main
 GIT
 
+  # Create starter-clean/ — same source code, no module artifacts.
+  # Used by pack_id=none baseline runs for genuine bare-model comparison.
+  clean="$TESTS_DIR/$case_name/starter-clean"
+  rm -rf "$clean"
+  cp -a "$starter" "$clean"
+  # Strip all module artifacts from the clean starter
+  rm -rf "$clean/.lola"
+  rm -rf "$clean/.claude"
+  rm -rf "$clean/.opencode"
+  # Strip all lola-injected blocks from system context files
+  for f in AGENTS.md CLAUDE.md; do
+    if [[ -f "$clean/$f" ]]; then
+      sed -i '/<!-- lola:module:.*:start -->/,/<!-- lola:module:.*:end -->/d' "$clean/$f"
+      sed -i '/<!-- lola:skills:start -->/,/<!-- lola:skills:end -->/d' "$clean/$f"
+      sed -i '/<!-- lola:instructions:start -->/d; /<!-- lola:instructions:end -->/d' "$clean/$f"
+      # Remove the "Lola Skills" preamble section if present
+      sed -i '/^## Lola Skills$/,/^<!-- lola:skills:start -->/d' "$clean/$f" 2>/dev/null || true
+      # Remove file if now empty (only whitespace)
+      if [[ ! -s "$clean/$f" ]] || ! grep -q '[^[:space:]]' "$clean/$f" 2>/dev/null; then
+        rm -f "$clean/$f"
+      fi
+    fi
+  done
+
   provisioned=$((provisioned + 1))
-  echo "provision.sh: provisioned $case_name"
+  echo "provision.sh: provisioned $case_name (+ starter-clean)"
 done
 
 if [[ $provisioned -eq 0 ]]; then

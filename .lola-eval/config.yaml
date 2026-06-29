@@ -1,0 +1,85 @@
+# .lola-eval/config.yaml — Mode 1 (in-repo) scaffold.
+#
+# This is the default flow for a project's own CI: the project under
+# evaluation provisions its packs however it wants (user-scope
+# `lola install` before CI runs, project-level install script, baked
+# starter dirs, …) and the harness measures the agent's behaviour
+# against that environment.
+#
+# Set `calculate_baseline: true` if you also want a clean-workdir
+# "none" pass for lift comparison. Two passes per cell, doubled cost.
+#
+# If you instead want to evaluate one or more *external* lola packs
+# that the harness should install per row, switch to Mode 2 by
+# replacing `calculate_baseline:` with a `packs:` list. See the
+# walkthrough for the Mode 2 schema and a worked example.
+
+# Models are pinned to concrete ids so composite scores are reproducible.
+# Replace `sonnet`/`haiku` aliases here only if you want drift across model
+# versions to feed into the metric — `lola-eval test` will warn loudly when
+# it sees an unpinned alias in a config.
+targets:
+  - cli: claude-code
+    models:
+      # - claude-opus-4-6            # Opus results not better than Sonnet to warrant ~4x cost
+      - claude-sonnet-4-6
+      # - claude-haiku-4-5           # Haiku not viable for review-council: fabricates findings
+                                     #   (nil panics, concurrent access bugs) that don't exist.
+                                     #   case-004 scores across 3 runs: bare 0.28/0.00/0.12,
+                                     #   project 0.12/0.12/0.00. Model capability floor, not
+                                     #   fixable via module instructions.
+  - cli: opencode
+    models:
+      # - claude-opus-4-6            # Opus results not better than Sonnet to warrant ~4x cost
+      - claude-sonnet-4-6
+
+calculate_baseline: true                # run bare-model "none" pass alongside "project" for lift comparison
+
+threshold:
+  mode: absolute
+  tolerance: 0.05
+  timeout_is_failure: true
+
+concurrency: 4
+
+timeouts:
+  runner_seconds: 14400             # 4 hours; don't let the harness kill slow cells
+  agent_seconds: 1800               # 30 min per agent (matches task.yaml timeout_seconds)
+
+judges:
+  - {cli: claude-code, model: claude-sonnet-4-6}  # single judge keeps drift comparable
+
+aggregation: mean
+disagreement_threshold: 0.15
+
+ci:
+  junit_xml: true
+  github_summary: true
+  html_report: true
+
+# Cost-estimate overrides for `lola-eval test --estimate-cost`. Defaults
+# pull per-model rates and context limits from the bundled models.dev
+# snapshot (refresh via `task pricing:update`). Uncomment any of these
+# to override:
+#
+# cost_estimate:
+#   flat_per_call_usd: 0.50          # one number for everything; bypasses lookup
+#   pricing_file: ../shared/corp-pricing.json   # external file (models.dev shape);
+#                                               #   wins over bundled; optional
+#                                               #   <file>.sha256 sidecar verified
+#                                               #   when present
+#   rates:                           # USD per million tokens (matches models.dev shape)
+#     claude-sonnet-4-6: {input: 3.00, output: 15.00}
+#   tokens_per_call:                 # per-call token budget (tighter than context window)
+#     claude-sonnet-4-6: {input: 80000, output: 8000}
+#
+# Calibration: empirical token/cost data shipped with lola-eval and
+# refreshed via `task calibration:update`. The estimator consults this
+# automatically. To override with your own calibration JSONL (e.g. for
+# private models or corp pricing), set:
+#
+# calibration:
+#   pricing_file: ../shared/corp-calibration.jsonl   # external file (same shape as bundled);
+#                                                    #   wins over bundle; optional
+#                                                    #   <file>.sha256 sidecar verified
+#                                                    #   when present

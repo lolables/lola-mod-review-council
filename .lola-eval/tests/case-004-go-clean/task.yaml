@@ -3,7 +3,7 @@ description: |
   Well-written Go library with idiomatic code, full test coverage,
   and proper documentation. Review Council should APPROVE with
   zero or minimal findings. Tests false positive control.
-timeout_seconds: 900
+timeout_seconds: 1800
 followup_messages:
   - |
     Emit a structured summary of the review you just performed.

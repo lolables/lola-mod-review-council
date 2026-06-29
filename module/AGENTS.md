@@ -5,6 +5,8 @@
 A multi-persona code and specification review system.
 Run `/review-council` to invoke the full council.
 
+Tested on Claude Code and OpenCode. Patches welcome for other clients.
+
 ## Usage
 
 ```
@@ -14,6 +16,10 @@ Run `/review-council` to invoke the full council.
 /review-council 42           # review PR #42
 /review-council main..feat   # review a ref range
 /review-council https://github.com/org/repo/pull/42  # review by URL
+/review-council HEAD         # review only the latest commit
+/review-council module/      # review changes under a directory
+/review-council everything   # explicit full-changeset review
+/review-council code HEAD -> focus on security  # mode + target + review instructions
 ```
 
 **Input forms:**
@@ -25,6 +31,14 @@ Run `/review-council` to invoke the full council.
 - **Ref range**: diff between two refs in the local repo
 - **URL**: review a PR from any GitHub/GitLab repo
   (requires `gh` or `glab` CLI with authentication)
+- **Alias** (`everything`, `all`): explicit full-changeset
+  review, equivalent to empty input
+- **Directory path**: review only changes under that directory
+- **Git ref** (`HEAD`, tag, SHA, branch name): resolve to
+  a ref range automatically
+- **Review instructions**: freeform text after `->` or
+  trailing natural language is carried to reviewers as
+  additional guidance, not passed to the script
 
 All forms support an optional mode prefix (`code` or
 `specs`) as the first argument.
@@ -33,26 +47,25 @@ All forms support an optional mode prefix (`code` or
 
 Review Council dynamically discovers reviewer agents
 by matching `divisor-*-code.md` or `divisor-*-spec.md`
-in the agents directory (based on the review mode) and
+in `${AGENTS_DIR}` (based on the review mode) and
 delegates review to each persona in parallel. It
 verifies findings against actual file content, strips
 fabricated evidence, and produces a council verdict
 (APPROVE or REQUEST CHANGES).
 
-The `/review-council` command is a thin coordinator
-that dispatches five phases, each documented in its
-own procedure file under `commands/review-council/`:
+The `/review-council` command orchestrates five phases:
 
-| Phase         | File               | Purpose                                  |
-|---------------|--------------------|------------------------------------------|
-| Preparation   | `prepare.md`       | Mode detection, discovery, session setup |
-| Quality Gates | `quality-gates.md` | CI checks (Code Review only)             |
-| Delegation    | `delegate.md`      | Prompt construction, dispatch            |
-| Verification  | `verify.md`        | Attestation, evidence, correction, dedup |
-| Report        | `report.md`        | Final report, learnings feedback         |
+| Phase         | Implementation             | Purpose                                  |
+|---------------|----------------------------|------------------------------------------|
+| Preparation   | `rc-prepare.sh`            | Mode detection, discovery, session setup |
+| Quality Gates | inline in `SKILL.md`       | CI checks (Code Review only)             |
+| Delegation    | `phases/delegate.md`       | Prompt construction, dispatch            |
+| Verification  | `rc-verify-evidence.sh`    | Attestation, evidence, correction, dedup |
+| Report        | `rc-render-report.sh`      | Final report, learnings feedback         |
 
-Run state is tracked in `${session_dir}/tracking.md`
-in the session cache at `$XDG_CACHE_HOME/review-council/`.
+Scripts live in `${SKILL_DIR}/scripts/`. Phase references
+live in `${SKILL_DIR}/phases/`. Run state is tracked in
+`${session_dir}/tracking.md` at `$XDG_CACHE_HOME/review-council/`.
 
 ## Personas
 
@@ -73,9 +86,14 @@ Reviewer agents are split by mode (`-code.md` and
 > via the `gh` CLI when a Docs repo is configured. In spec review mode
 > (`divisor-curator-spec.md`), it reports documentation gaps as
 > findings only — no bash access, no issue filing.
-| `divisor-scribe` | The Scribe | Technical docs, READMEs, API docs         |
-| `divisor-herald` | The Herald | Blog posts, release notes, announcements  |
-| `divisor-envoy`  | The Envoy  | PR/comms, social media, community updates |
+
+Content agents are invoked directly for writing tasks:
+
+| Agent              | Persona       | Focus                                     |
+|--------------------|---------------|-------------------------------------------|
+| `divisor-scribe`   | The Scribe    | Technical docs, READMEs, API docs         |
+| `divisor-herald`   | The Herald    | Blog posts, release notes, announcements  |
+| `divisor-envoy`    | The Envoy     | PR/comms, social media, community updates |
 
 ## Convention Packs
 
@@ -84,15 +102,21 @@ standards that reviewer agents check against.
 
 Packs are resolved in priority order (later wins):
 
-1. **Module packs** — shipped with this module
+1. **Module references** — at `${REFERENCES_DIR}` (shipped with the module)
 2. **User packs** — `$XDG_CONFIG_HOME/review-council/packs/`
 3. **Project packs** — `.review-council/packs/` in your repo
 
-Shipped packs: `severity.md` (shared severity levels),
+The `${REFERENCES_DIR}` variable resolves to
+`skills/review-council/../../references/` relative to the
+loaded `SKILL.md` file, typically
+`.lola/modules/review-council/module/references/`.
+
+Shipped references: `severity.md` (shared severity levels),
 `base.md` (language-agnostic fallback), `go.md`
 (self-contained), `typescript.md` (self-contained),
 `content.md` (content agents only),
-`reviewer-protocol.md` (shared reviewer procedures).
+`reviewer-protocol.md` (shared reviewer procedures),
+`model-guidance.md` (model selection and eval data).
 
 ### Pack Update Policy
 
@@ -103,6 +127,16 @@ the CR-NNN identifier prefix are stable across minor and
 patch versions of shipped packs.
 
 To check for module updates: `lola mod update review-council`.
+
+## Requirements
+
+- **Git** — all modes require a git repository
+- **Bash 4+** — scripts use associative arrays and other Bash 4+ features. macOS ships Bash 3; install a modern version with `brew install bash`
+- **jq** — JSON processing in preparation and verification scripts
+- **`gh` CLI** (optional) — required for PR review, linked issues, and prior review fetching on GitHub
+- **`glab` CLI** (optional) — required for MR review on GitLab
+
+If `jq` or a modern Bash is missing, scripts exit gracefully with install instructions.
 
 ## Review Council Configuration
 

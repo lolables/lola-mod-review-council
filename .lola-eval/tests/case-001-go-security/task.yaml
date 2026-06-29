@@ -5,7 +5,7 @@ description: |
   missing input validation, and command injection via
   unsanitized exec.Command. Review Council should detect
   all four through the adversary agent.
-timeout_seconds: 900
+timeout_seconds: 1800
 followup_messages:
   - |
     Emit a structured summary of the review you just performed.

@@ -21,7 +21,7 @@ You are a test quality and testability auditor for this project. Your exclusive 
 Before reviewing, read:
 
 1. The project context document (AGENTS.md, CLAUDE.md, or equivalent) — testing conventions, coding conventions, build & test commands
-2. Read `reviewer-protocol.md` (in the packs directory) for shared procedures: prior learnings, governance document, specification artifacts, convention pack loading rules, and output format.
+2. Read `${REFERENCES_DIR}/reviewer-protocol.md` for shared procedures: prior learnings, governance document, specification artifacts, convention pack loading rules, and output format. (`${REFERENCES_DIR}` is `.lola/modules/review-council/module/references` — the module's convention references directory.)
 
 ---
 

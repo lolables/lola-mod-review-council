@@ -2,14 +2,47 @@
 version: "3"
 
 vars:
-  LOLA_EVAL: /opt/lola-eval/bin/lola-eval
+  LOLA_EVAL:
+    sh: command -v lola-eval 2>/dev/null || { [ -x "{{.ROOT_DIR}}/.venv/bin/lola-eval" ] && echo "{{.ROOT_DIR}}/.venv/bin/lola-eval"; } || echo "__LOLA_EVAL_NOT_FOUND__"
   PROVISION: "{{.ROOT_DIR}}/.lola-eval/provision.sh"
   MODULE_DIR: "{{.ROOT_DIR}}/module"
   RESULTS_DIR: "{{.ROOT_DIR}}/.lola-eval"
 
 tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  _require-lola-eval:
+    internal: true
+    desc: Guard — abort with install instructions when lola-eval is missing
+    silent: true
+    preconditions:
+      - sh: '[ "{{.LOLA_EVAL}}" != "__LOLA_EVAL_NOT_FOUND__" ]'
+        msg: |
+          lola-eval is not installed.
+
+          Install via RPM:
+            sudo dnf install ./dist/lola-eval-<version>.el10.x86_64.rpm
+
+          Or install from source (requires Python >=3.11):
+            uv pip install git+https://github.com/complytime-labs/lola-eval.git
+
+          Then re-run this task.
+
+  _ensure-init:
+    internal: true
+    desc: Auto-run lola-eval init when config.yaml is missing
+    deps: [_require-lola-eval]
+    status:
+      - test -f "{{.RESULTS_DIR}}/config.yaml"
+    cmds:
+      - "{{.LOLA_EVAL}} init"
+
   doctor:
     desc: Verify lola-eval installation and config
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} doctor"
 
@@ -22,13 +55,13 @@ tasks:
 
   test:
     desc: Provision starters and run full eval suite
-    deps: [provision]
+    deps: [provision, _ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} test"
 
   test-case:
     desc: Run a single eval case (set CASE=case-001-go-security)
-    deps: [provision]
+    deps: [provision, _ensure-init]
     requires:
       vars: [CASE]
     cmds:
@@ -36,61 +69,75 @@ tasks:
 
   baseline-update:
     desc: Promote last-run results to baseline.json
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} baseline update"
 
   baseline-diff:
     desc: Compare current baseline against last run
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} baseline diff"
 
   report:
     desc: Generate HTML report from latest run
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} report"
 
   compare-commits:
     desc: Compare eval results at merge-base vs HEAD
+    deps: [_ensure-init]
     vars:
       BRANCH:
         sh: git rev-parse --abbrev-ref HEAD
       MERGE_BASE:
         sh: git merge-base main HEAD
     cmds:
-      - echo "=== Comparing {{.MERGE_BASE}} (merge-base) vs {{.BRANCH}} (HEAD) ==="
-      - git stash --include-untracked --quiet || true
-      - git checkout --quiet {{.MERGE_BASE}}
-      - bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
-      - "{{.LOLA_EVAL}} test || true"
-      - "{{.LOLA_EVAL}} baseline update"
-      - git checkout --quiet {{.BRANCH}}
-      - git stash pop --quiet || true
-      - bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
-      - "{{.LOLA_EVAL}} test || true"
-      - echo ""
-      - echo "=== Baseline Diff ==="
-      - "{{.LOLA_EVAL}} baseline diff"
-      - echo ""
-      - echo "=== Report ==="
-      - "{{.LOLA_EVAL}} report"
+      - |
+        set -e
+        trap 'echo "Error during compare-commits, restoring branch..."; git checkout --quiet {{.BRANCH}} 2>/dev/null; git stash pop --quiet 2>/dev/null || true' EXIT
+        echo "=== Comparing {{.MERGE_BASE}} (merge-base) vs {{.BRANCH}} (HEAD) ==="
+        git stash --include-untracked --quiet || true
+        git checkout --quiet {{.MERGE_BASE}}
+        bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+        {{.LOLA_EVAL}} test || true
+        {{.LOLA_EVAL}} baseline update
+        git checkout --quiet {{.BRANCH}}
+        git stash pop --quiet || true
+        trap - EXIT
+        bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+        {{.LOLA_EVAL}} test || true
+        echo ""
+        echo "=== Baseline Diff ==="
+        {{.LOLA_EVAL}} baseline diff
+        echo ""
+        echo "=== Report ==="
+        {{.LOLA_EVAL}} report
 
   drift:
     desc: Show score drift over time per cell
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} drift"
 
   graph:
     desc: ANSI time-series chart (set CELL for specific cell)
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} graph {{if .CELL}}--cell {{.CELL}}{{end}}"
 
   snapshot:
     desc: Capture eval results with git provenance to ledger.jsonl
+    deps: [_ensure-init]
+    env:
+      LOLA_EVAL: "{{.LOLA_EVAL}}"
     cmds:
       - bash "{{.RESULTS_DIR}}/snapshot.sh" "{{.MODULE_DIR}}" "{{.RESULTS_DIR}}"
 
   clean:
     desc: Remove ephemeral eval artifacts
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} clean --cache"
       - |
@@ -101,6 +148,7 @@ tasks:
 
   clean-all:
     desc: Remove all eval artifacts including runs.db
+    deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} clean --cache --state"
       - task: clean

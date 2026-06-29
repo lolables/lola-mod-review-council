@@ -47,7 +47,7 @@ Any other bash usage is a violation of your operating contract.
 Before reviewing, read:
 
 1. The project context document (AGENTS.md, CLAUDE.md, or equivalent) — project overview, behavioral constraints, recent changes, project structure
-2. Read `reviewer-protocol.md` (in the packs directory) for shared procedures: prior learnings, governance document, specification artifacts, convention pack loading rules, and output format.
+2. Read `${REFERENCES_DIR}/reviewer-protocol.md` for shared procedures: prior learnings, governance document, specification artifacts, convention pack loading rules, and output format. (`${REFERENCES_DIR}` is `.lola/modules/review-council/module/references` — the module's convention references directory.)
 3. Content convention pack (if present in pack resolution chain) — skip content quality checks if not loaded
 4. `README.md` — Project description and installation steps
 5. Existing documentation issues — if Docs repo is configured, query via `gh issue list --repo <DOCS_REPO> --state open`

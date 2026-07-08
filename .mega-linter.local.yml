@@ -1,0 +1,40 @@
+# Local MegaLinter overrides for this repository.
+#
+# The runner detects this file and passes MEGALINTER_CONFIG=.mega-linter.local.yml
+# to MegaLinter, staging the shared .mega-linter.yml as .mega-linter.shared.yml
+# so we can inherit from it with EXTENDS.
+
+EXTENDS: .mega-linter.shared.yml
+
+# Append to parent lists instead of replacing them.
+CONFIG_PROPERTIES_TO_APPEND:
+  - ADDITIONAL_EXCLUDED_DIRECTORIES
+
+# ---------------------------------------------------------------------------
+# Path exclusions
+# ---------------------------------------------------------------------------
+# .lola-eval/ contains evaluation test fixtures with deliberately planted
+# bugs (hardcoded secrets, missing Dockerfile directives, ruff violations,
+# eval() calls, etc.). These are scored by the eval harness — fixing them
+# would break the test cases. Excluding the directory silences file-level
+# linters (ruff, devskim, gitleaks, secretlint). Repository-level scanners
+# (Trivy) need their own exclusion — see trivy.yaml in the repo root.
+ADDITIONAL_EXCLUDED_DIRECTORIES:
+  - ".lola-eval"
+
+# ---------------------------------------------------------------------------
+# jscpd (copy-paste detection)
+# ---------------------------------------------------------------------------
+# jscpd runs in project CLI lint mode and ignores FILTER_REGEX_EXCLUDE.
+# Pass --ignore via CLI arguments to supplement the shared .jscpd.json
+# config without replacing it.
+#
+# module/agents/, module/skills/, and module/references/ contain LLM prompt
+# documents (agent personas, phase instructions, convention packs) that are
+# dispatched in isolated subagent contexts. Each file carries its own copy of
+# shared protocol sections because agents run without access to shared
+# includes. The duplication is intentional and structural. module/tests/ is
+# kept visible so test duplication is still surfaced.
+COPYPASTE_JSCPD_ARGUMENTS:
+  - "--ignore"
+  - "**/.git/**,**/.lola-eval/**,**/module/agents/**,**/module/skills/**,**/module/references/**"

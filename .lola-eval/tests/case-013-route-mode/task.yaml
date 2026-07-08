@@ -1,0 +1,19 @@
+task_version: "2"
+description: |
+  Routing test: /review-council specs should set mode to specs,
+  which reviews documentation and specifications rather than code.
+  The scope should default to all files (specs mode default).
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>
+    MODE_USED: <code or specs>

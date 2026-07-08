@@ -4,6 +4,8 @@ This file guides the orchestrator's interpretation of evidence-check results, co
 
 **THIS PHASE IS MANDATORY.** Do not skip any step. A verification phase that produces no tool calls is not a verification phase; it is a rubber stamp.
 
+> **Step mapping to SKILL.md**: These steps (1-6) are executed within SKILL.md Step 4 (VERIFICATION).
+
 ---
 
 ## Interpreting Evidence Check Results
@@ -15,7 +17,7 @@ The mechanical evidence checking is performed by `rc-verify-evidence.sh`. The sc
   "verified": [
     {
       "agent": "divisor-adversary-code",
-      "finding_title": "...",
+      "title": "...",
       "file": "...",
       "evidence": "...",
       "result": "verified"
@@ -23,18 +25,18 @@ The mechanical evidence checking is performed by `rc-verify-evidence.sh`. The sc
   ],
   "correctable": [
     {
-      "agent": "divisor-architect-code",
-      "finding_title": "...",
+      "agent": "divisor-guard-code",
+      "title": "...",
       "file": "...",
       "evidence": "...",
-      "result": "evidence_not_found",
+      "result": "EVIDENCE_NOT_FOUND",
       "reason": "Evidence quote not found in file"
     }
   ],
   "stripped": [
     {
       "agent": "divisor-testing-code",
-      "finding_title": "...",
+      "title": "...",
       "file": "...",
       "evidence": "...",
       "result": "file_not_found",
@@ -59,7 +61,7 @@ The mechanical evidence checking is performed by `rc-verify-evidence.sh`. The sc
 
 ---
 
-## Step 3 — Correction Round
+## Step 1 — Correction Round
 
 For findings classified as **correctable** (file exists but evidence quote is wrong), give the originating agent ONE chance to fix it.
 
@@ -84,7 +86,7 @@ Send the agent a focused correction prompt:
 
 ---
 
-## Step 3.5 — Severity Calibration
+## Step 2 — Severity Calibration
 
 For each finding that is now classified as **verified** (either verified in the mechanical check or upgraded to verified during the correction round), compare the assigned severity against the severity pack boundary definitions:
 
@@ -92,11 +94,11 @@ a. Read the severity pack definition for the finding's assigned level. Compare t
 
 b. Apply these calibration rules:
 
-   - **CRITICAL assigned, but harm is theoretical** (requires unlikely conditions, compromised upstream, or hypothetical attack vector): downgrade to **HIGH**.
-   - **HIGH assigned, but risk requires unlikely conditions** (compromised upstream, specific attacker capability, or misconfiguration not present in the current code): downgrade to **MEDIUM**.
-   - **CRITICAL/HIGH assigned to a style, documentation, or convention issue**: downgrade to the level matching the severity pack's examples for that persona and issue type.
-   - **CRITICAL/HIGH assigned to standard language semantics** (e.g., Go nil-pointer panics, Python AttributeError on None, JS TypeError on undefined): downgrade to MEDIUM or strip. These are expected runtime behaviors, not defects.
-   - **HIGH assigned to test coverage preferences** (table-driven tests, additional edge cases, assertion depth) when a comprehensive test suite already exists: downgrade to MEDIUM or LOW.
+- **CRITICAL assigned, but harm is theoretical** (requires unlikely conditions, compromised upstream, or hypothetical attack vector): downgrade to **HIGH**.
+- **HIGH assigned, but risk requires unlikely conditions** (compromised upstream, specific attacker capability, or misconfiguration not present in the current code): downgrade to **MEDIUM**.
+- **CRITICAL/HIGH assigned to a style, documentation, or convention issue**: downgrade to the level matching the severity pack's examples for that persona and issue type.
+- **CRITICAL/HIGH assigned to standard language semantics** (e.g., Go nil-pointer panics, Python AttributeError on None, JS TypeError on undefined): downgrade to MEDIUM or strip. These are expected runtime behaviors, not defects.
+- **HIGH assigned to test coverage preferences** (table-driven tests, additional edge cases, assertion depth) when a comprehensive test suite already exists: downgrade to MEDIUM or LOW.
 
 c. Log each downgrade:
    > "Finding `{title}` severity downgraded {from} → {to} — {reason}"
@@ -105,7 +107,7 @@ d. Downgrades do NOT strip findings. The finding remains verified at the lower s
 
 ---
 
-## Step 4 — Strip Unverified Findings
+## Step 3 — Strip Unverified Findings
 
 After the correction round, remove all findings that remain unverified:
 
@@ -117,7 +119,7 @@ After the correction round, remove all findings that remain unverified:
 
 ---
 
-## Step 5.5 — Validation Gate
+## Step 4 — Validation Gate
 
 After deduplication, dispatch a fresh-context sub-agent to perform independent validation. This agent has NOT participated in any prior phase of the review — it sees only the surviving findings and has access to the source files.
 
@@ -157,10 +159,11 @@ The validator performs checks that the mechanical verification steps cannot: ide
 > **Evidence discipline**: For every claim you make, quote what you read or show the grep output that supports it. Do not assert "I checked and it's fine" without showing your work.
 >
 > **Common false positive patterns — retract these:**
-> - Standard nil-pointer behavior flagged as a security defect (e.g., "nil receiver will panic"). In Go, nil receiver panics are expected semantics, not bugs.
+> - Standard language behavior flagged as a security defect: Go nil-pointer panics, Python `AttributeError` on `None`, JavaScript/TypeScript `TypeError` on `undefined`, Rust `unwrap()` on `Option::None` in test code.
 > - Test coverage style preferences (table-driven tests, additional assertion depth, edge case expansion) flagged as HIGH when a comprehensive test suite already exists and all methods are exercised.
-> - Idiomatic language patterns treated as defects (e.g., Go's `map[K]struct{}` for sets, short receiver names, error-return conventions).
-> - Optional improvements (godoc examples, benchmark tests, additional documentation) elevated above LOW.
+> - Idiomatic language patterns treated as defects: Go's `map[K]struct{}` for sets, short receiver names, error-return conventions; Python list comprehensions, `__dunder__` methods; TypeScript discriminated unions, type guards.
+> - Optional improvements (documentation examples, benchmark tests, additional docs) elevated above LOW.
+> - Framework-specific patterns flagged without checking the framework version: React class components in pre-hooks codebases, Express middleware patterns, Django class-based views.
 >
 > For each finding, return one of:
 >
@@ -176,7 +179,7 @@ The validator performs checks that the mechanical verification steps cannot: ide
 - **RETRACTED**: strip the finding. Log the retraction with the validator's reasoning:
   > "Finding `{title}` retracted by validator — {reason}"
 
-If the validator retracts ALL findings from an agent whose verdict was REQUEST CHANGES, upgrade that agent's verdict to APPROVE (same logic as Step 4).
+If the validator retracts ALL findings from an agent whose verdict was REQUEST CHANGES, upgrade that agent's verdict to APPROVE (same logic as Step 3).
 
 Record retracted findings as false positive patterns in learnings (same as existing stripped-findings logic in the report phase).
 
@@ -185,7 +188,7 @@ Record retracted findings as false positive patterns in learnings (same as exist
 For each RETRACTED finding, verify the validator's claim before applying it:
 
 - The validator must have quoted evidence or shown grep output supporting the retraction. If the retraction contains no supporting evidence (just an assertion like "I checked and it's not there"), disregard the retraction and keep the finding as verified. Log as a validator error.
-- If the validator retracts a finding that was upgraded to verified during the correction round (Step 3), this indicates the agent's corrected evidence was also fabricated. Log as a **correction failure pattern** in learnings — the agent doubled down on a false claim. Record both the original and corrected evidence as false positives.
+- If the validator retracts a finding that was upgraded to verified during the correction round (Step 1), this indicates the agent's corrected evidence was also fabricated. Log as a **correction failure pattern** in learnings — the agent doubled down on a false claim. Record both the original and corrected evidence as false positives.
 
 ### When to Skip
 
@@ -195,7 +198,7 @@ Skip the validation gate if:
 
 ---
 
-## Step 6 — Write Verification Summary
+## Step 5 — Write Verification Summary
 
 Write the combined verification, correction, and validation results to `${session_dir}/verdicts/verification.txt`.
 
@@ -242,10 +245,14 @@ Update `${session_dir}/tracking.md` Phase: Verification with these fields: findi
 
 ---
 
-## Verdict Upgrade Logic
+## Step 6 — Verdict Upgrade Logic
 
 If stripping leaves an agent with zero findings, upgrade to APPROVE.
 
 If all verified verdicts are **APPROVE** after stripping and deduplication, the verification phase returns APPROVE. Include stripped findings and deduplication notes as warnings in the output.
 
 If any verified verdict remains **REQUEST CHANGES**, return REQUEST CHANGES with the verified findings.
+
+### Verdict Coherence Rule
+
+If all individual agent verdicts are APPROVE after verification and no remaining finding exceeds MEDIUM severity, the final council verdict MUST be APPROVE. The coordinator cannot override unanimous agent consensus without citing a specific HIGH or CRITICAL finding that survived the verification pipeline. This rule is mechanical — it is not subject to coordinator judgment.

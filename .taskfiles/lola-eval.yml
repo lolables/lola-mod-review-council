@@ -67,6 +67,27 @@ tasks:
     cmds:
       - "{{.LOLA_EVAL}} test --case {{.CASE}}"
 
+  test-routing:
+    desc: Run targeted routing test cases only (case-010 through case-016)
+    deps: [provision, _ensure-init]
+    cmds:
+      - |
+        failed=0
+        for case in case-010-route-head case-011-route-range \
+                    case-012-route-dir case-013-route-mode \
+                    case-014-route-mixed case-015-route-instructions \
+                    case-016-route-pr-number; do
+          echo "=== Running $case ==="
+          if ! {{.LOLA_EVAL}} test --case "$case"; then
+            failed=$((failed + 1))
+          fi
+        done
+        if [ "$failed" -gt 0 ]; then
+          echo "FAIL: $failed routing case(s) failed"
+          exit 1
+        fi
+        echo "PASS: all routing cases passed"
+
   baseline-update:
     desc: Promote last-run results to baseline.json
     deps: [_ensure-init]

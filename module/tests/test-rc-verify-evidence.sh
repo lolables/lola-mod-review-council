@@ -4,21 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-verify-evidence.sh"
 
-PASS=0
-FAIL=0
-
-assert_json_field() {
-  local json="$1" field="$2" expected="$3" test_name="$4"
-  local actual
-  actual=$(echo "$json" | jq -r ".$field // empty")
-  if [[ "$actual" == "$expected" ]]; then
-    echo "  PASS: $test_name"
-    PASS=$((PASS + 1))
-  else
-    echo "  FAIL: $test_name (expected '$expected', got '$actual')"
-    FAIL=$((FAIL + 1))
-  fi
-}
+# shellcheck source=module/tests/test-helpers.sh
+source "$SCRIPT_DIR/test-helpers.sh"
 
 # Test 1: No session directory
 echo "Test 1: Missing session directory"
@@ -29,7 +16,7 @@ assert_json_field "$result" "status" "nothing_to_do" "status is nothing_to_do"
 echo "Test 2: No verdict files"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
-echo "main.go" > "$session/changeset.txt"
+echo "main.go" >"$session/changeset.txt"
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 assert_json_field "$result" "status" "nothing_to_do" "status is nothing_to_do"
 rm -rf "$session"
@@ -40,9 +27,9 @@ session=$(mktemp -d)
 mkdir -p "$session/verdicts"
 # Create a source file
 src=$(mktemp -d)
-echo 'func main() { fmt.Println("hello") }' > "$src/main.go"
-echo "main.go" > "$session/changeset.txt"
-cat > "$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
+echo 'func main() { fmt.Println("hello") }' >"$src/main.go"
+echo "main.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
 Files read:
 - main.go
 
@@ -58,11 +45,11 @@ result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 verified_count=$(echo "$result" | jq '.verified')
 if [[ "$verified_count" -gt 0 ]]; then
-  echo "  PASS: has verified findings ($verified_count)"
-  PASS=$((PASS + 1))
+	echo "  PASS: has verified findings ($verified_count)"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: no verified findings"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: no verified findings"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session" "$src"
 
@@ -71,9 +58,9 @@ echo "Test 4: Fabricated file reference"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
 src=$(mktemp -d)
-echo "real.go" > "$session/changeset.txt"
-echo "package main" > "$src/real.go"
-cat > "$session/verdicts/divisor-testing-code.md" <<'VERDICT'
+echo "real.go" >"$session/changeset.txt"
+echo "package main" >"$src/real.go"
+cat >"$session/verdicts/divisor-testing-code.md" <<'VERDICT'
 Files read:
 - fake.go
 
@@ -88,11 +75,11 @@ VERDICT
 result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
 stripped_count=$(echo "$result" | jq '.stripped')
 if [[ "$stripped_count" -gt 0 ]]; then
-  echo "  PASS: fabricated finding stripped ($stripped_count)"
-  PASS=$((PASS + 1))
+	echo "  PASS: fabricated finding stripped ($stripped_count)"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: fabricated finding not stripped"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: fabricated finding not stripped"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session" "$src"
 
@@ -101,9 +88,9 @@ echo "Test 5: Deduplication"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
 src=$(mktemp -d)
-echo 'func main() { fmt.Println("hello") }' > "$src/main.go"
-echo "main.go" > "$session/changeset.txt"
-cat > "$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
+echo 'func main() { fmt.Println("hello") }' >"$src/main.go"
+echo "main.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
 Files read:
 - main.go
 
@@ -115,7 +102,7 @@ Files read:
 **Description**: No error handling in main
 **Recommendation**: Add error handling
 VERDICT
-cat > "$session/verdicts/divisor-architect-code.md" <<'VERDICT'
+cat >"$session/verdicts/divisor-guard-code.md" <<'VERDICT'
 Files read:
 - main.go
 
@@ -130,11 +117,11 @@ VERDICT
 result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
 verified_count=$(echo "$result" | jq '.verified')
 if [[ "$verified_count" -eq 1 ]]; then
-  echo "  PASS: duplicate findings consolidated to 1"
-  PASS=$((PASS + 1))
+	echo "  PASS: duplicate findings consolidated to 1"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: expected 1 verified finding after dedup, got $verified_count"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: expected 1 verified finding after dedup, got $verified_count"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session" "$src"
 
@@ -144,9 +131,9 @@ session=$(mktemp -d)
 mkdir -p "$session/verdicts"
 src=$(mktemp -d)
 # Create a file where the evidence is on line 3
-printf 'line1\nline2\nfunc main() { fmt.Println("hello") }\nline4\n' > "$src/main.go"
-echo "main.go" > "$session/changeset.txt"
-cat > "$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
+printf 'line1\nline2\nfunc main() { fmt.Println("hello") }\nline4\n' >"$src/main.go"
+echo "main.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
 Files read:
 - main.go
 
@@ -161,11 +148,11 @@ VERDICT
 result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
 verified_count=$(echo "$result" | jq '.verified')
 if [[ "$verified_count" -eq 1 ]]; then
-  echo "  PASS: finding within +-5 line tolerance verified"
-  PASS=$((PASS + 1))
+	echo "  PASS: finding within +-5 line tolerance verified"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: finding within tolerance not verified (got $verified_count)"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: finding within tolerance not verified (got $verified_count)"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session" "$src"
 
@@ -175,10 +162,10 @@ session=$(mktemp -d)
 mkdir -p "$session/verdicts"
 src=$(mktemp -d)
 # Create a file where the evidence is on line 1, but claim line 20
-printf 'func main() { fmt.Println("hello") }\n' > "$src/main.go"
-for i in $(seq 2 20); do echo "line$i" >> "$src/main.go"; done
-echo "main.go" > "$session/changeset.txt"
-cat > "$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
+printf 'func main() { fmt.Println("hello") }\n' >"$src/main.go"
+for i in $(seq 2 20); do echo "line$i" >>"$src/main.go"; done
+echo "main.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
 Files read:
 - main.go
 
@@ -191,13 +178,21 @@ Files read:
 **Recommendation**: Add error handling
 VERDICT
 result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
-stripped_count=$(echo "$result" | jq '.stripped')
-if [[ "$stripped_count" -eq 1 ]]; then
-  echo "  PASS: finding outside tolerance stripped"
-  PASS=$((PASS + 1))
+correctable_count=$(echo "$result" | jq '.correctable')
+if [[ "$correctable_count" -eq 1 ]]; then
+	echo "  PASS: finding outside tolerance classified as correctable"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: finding outside tolerance not stripped (got $stripped_count)"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: finding outside tolerance not correctable (got correctable=$correctable_count)"
+	FAIL=$((FAIL + 1))
+fi
+reason=$(jq -r '.correctable[0].reason' "$session/verdicts/evidence-check.json" 2>/dev/null)
+if [[ "$reason" == "LINE_MISMATCH" ]]; then
+	echo "  PASS: correctable reason is LINE_MISMATCH"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected LINE_MISMATCH reason, got '$reason'"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session" "$src"
 

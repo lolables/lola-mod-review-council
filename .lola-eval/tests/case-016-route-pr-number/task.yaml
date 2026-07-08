@@ -1,0 +1,21 @@
+task_version: "2"
+description: |
+  Routing test: /review-council 42 should route the number to
+  --scope pr --scope-value 42. The PR lookup will fail (no forge
+  configured), but the test validates that the LLM correctly
+  interpreted the number as a PR reference.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES or SKIPPED>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>
+
+    If the PR lookup failed, report that as the reason for SKIPPED.

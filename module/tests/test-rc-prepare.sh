@@ -7,36 +7,23 @@ TEST_OUTPUT="${SCRIPT_DIR}/../../.test-output/rc-prepare"
 rm -rf "$TEST_OUTPUT"
 mkdir -p "$TEST_OUTPUT"
 
-PASS=0
-FAIL=0
-
-assert_json_field() {
-  local json="$1" field="$2" expected="$3" test_name="$4"
-  local actual
-  actual=$(echo "$json" | jq -r ".$field // empty")
-  if [[ "$actual" == "$expected" ]]; then
-    echo "  PASS: $test_name"
-    PASS=$((PASS + 1))
-  else
-    echo "  FAIL: $test_name (expected '$expected', got '$actual')"
-    FAIL=$((FAIL + 1))
-  fi
-}
+# shellcheck source=module/tests/test-helpers.sh
+source "$SCRIPT_DIR/test-helpers.sh"
 
 assert_json_status() {
-  local json="$1" expected="$2" test_name="$3"
-  assert_json_field "$json" "status" "$expected" "$test_name"
+	local json="$1" expected="$2" test_name="$3"
+	assert_json_field "$json" "status" "$expected" "$test_name"
 }
 
 assert_file_exists() {
-  local path="$1" test_name="$2"
-  if [[ -f "$path" ]]; then
-    echo "  PASS: $test_name"
-    PASS=$((PASS + 1))
-  else
-    echo "  FAIL: $test_name (file not found: $path)"
-    FAIL=$((FAIL + 1))
-  fi
+	local path="$1" test_name="$2"
+	if [[ -f "$path" ]]; then
+		echo "  PASS: $test_name"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $test_name (file not found: $path)"
+		FAIL=$((FAIL + 1))
+	fi
 }
 
 # Test 1: Non-git directory
@@ -45,11 +32,11 @@ tmpdir=$(mktemp -d)
 result=$(cd "$tmpdir" && AGENTS_DIR="$SCRIPT_DIR/../agents" GIT_CONFIG_NOSYSTEM=1 bash "$SCRIPT" 2>/dev/null)
 assert_json_status "$result" "skip" "status is skip"
 if echo "$result" | jq -r '.message' | grep -qi "git"; then
-  echo "  PASS: message mentions git"
-  PASS=$((PASS + 1))
+	echo "  PASS: message mentions git"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: message doesn't mention git"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: message doesn't mention git"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$tmpdir"
 
@@ -66,7 +53,7 @@ echo "Test 3: Normal git repo with changes"
 tmpdir=$(mktemp -d)
 cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
 git checkout -b feature -q
-echo "package main" > main.go && git add main.go && git commit -m "add main" -q
+echo "package main" >main.go && git add main.go && git commit -m "add main" -q
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_status "$result" "ok" "status is ok"
 session_dir=$(echo "$result" | jq -r '.session_dir')
@@ -81,8 +68,8 @@ rm -rf "$tmpdir"
 echo "Test 4: Explicit mode override"
 tmpdir=$(mktemp -d)
 cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
-mkdir -p specs && echo "# Spec" > specs/feature.md
-result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" "specs" 2>/dev/null)
+mkdir -p specs && echo "# Spec" >specs/feature.md
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode specs 2>/dev/null)
 assert_json_status "$result" "ok" "status is ok"
 assert_json_field "$result" "mode" "spec" "mode is spec"
 rm -rf "$tmpdir"
@@ -92,15 +79,15 @@ echo "Test 5: Agent discovery"
 tmpdir=$(mktemp -d)
 cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
 git checkout -b feature -q
-echo "x" > file.go && git add file.go && git commit -m "add" -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 agent_count=$(echo "$result" | jq '.agents | length')
 if [[ "$agent_count" -gt 0 ]]; then
-  echo "  PASS: discovered $agent_count agents"
-  PASS=$((PASS + 1))
+	echo "  PASS: discovered $agent_count agents"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: no agents discovered"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: no agents discovered"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$tmpdir"
 
@@ -109,15 +96,15 @@ echo "Test 6: Impossible session directory"
 tmpdir=$(mktemp -d)
 cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
 git checkout -b feature -q
-echo "x" > file.go && git add file.go && git commit -m "add" -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
 result=$(XDG_CACHE_HOME="/dev/null/impossible" AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_status "$result" "skip" "status is skip when mkdir fails"
 if echo "$result" | jq -r '.message' | grep -qi "directory"; then
-  echo "  PASS: message mentions directory"
-  PASS=$((PASS + 1))
+	echo "  PASS: message mentions directory"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: message doesn't mention directory"
-  FAIL=$((FAIL + 1))
+	echo "  FAIL: message doesn't mention directory"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$tmpdir"
 
@@ -126,15 +113,16 @@ echo "Test 7: Verify stderr is clean"
 tmpdir=$(mktemp -d)
 cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
 git checkout -b feature -q
-echo "package main" > main.go && git add main.go && git commit -m "add main" -q
+echo "package main" >main.go && git add main.go && git commit -m "add main" -q
 stderr_file=$(mktemp)
 AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>"$stderr_file" >/dev/null
 if [[ ! -s "$stderr_file" ]]; then
-  echo "  PASS: no stderr output"
-  PASS=$((PASS + 1))
+	echo "  PASS: no stderr output"
+	PASS=$((PASS + 1))
 else
-  echo "  FAIL: stderr output detected: $(cat "$stderr_file")"
-  FAIL=$((FAIL + 1))
+	stderr_content=$(cat "$stderr_file")
+	echo "  FAIL: stderr output detected: ${stderr_content}"
+	FAIL=$((FAIL + 1))
 fi
 rm -f "$stderr_file"
 rm -rf "$tmpdir"
@@ -144,7 +132,7 @@ echo "Test 8: Spec mode auto-detection"
 tmpdir=$(mktemp -d)
 cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
 git checkout -b feature -q
-mkdir -p specs && echo "# Feature spec" > specs/feature.md && git add specs/feature.md && git commit -m "add spec" -q
+mkdir -p specs && echo "# Feature spec" >specs/feature.md && git add specs/feature.md && git commit -m "add spec" -q
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_field "$result" "mode" "spec" "auto-detected spec mode"
 rm -rf "$tmpdir"

@@ -1,0 +1,21 @@
+task_version: "2"
+description: |
+  Routing test: /review-council code HEAD -> focus on error handling
+  should set mode to code, scope to HEAD~1..HEAD, and pass "focus on
+  error handling" as review instructions. The scaffold adds a commit
+  with multiple ignored errors.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-014-route-mixed/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>
+    REVIEW_INSTRUCTIONS: <any review instructions you received>

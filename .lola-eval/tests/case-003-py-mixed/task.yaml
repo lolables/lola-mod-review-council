@@ -16,3 +16,5 @@ followup_messages:
     - <severity>: <one-line description>
     - <severity>: <one-line description>
     FALSE_POSITIVES: <number you believe are false positives, if any>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

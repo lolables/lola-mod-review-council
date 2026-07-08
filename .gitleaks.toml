@@ -1,0 +1,16 @@
+# Gitleaks allowlist — evaluation framework test fixtures and snapshots
+#
+# .lola-eval/tests/*/starter/ contains intentionally vulnerable source code
+# (e.g. hardcoded fake API keys) used to evaluate the review council's
+# detection capabilities. Snapshots quote detected secrets verbatim as
+# evidence of successful detection.
+#
+# The fake key triggering these findings: sk-prod-8kZ3mN7xR2vL9qW4jH6pY1tA5cF0bD
+# It is not a real credential for any service.
+
+[allowlist]
+  description = "Evaluation framework — test fixtures and snapshots contain intentional fake secrets"
+  paths = [
+    '''.lola-eval/tests/.*/starter/.*''',
+    '''.lola-eval/snapshots/.*'''
+  ]

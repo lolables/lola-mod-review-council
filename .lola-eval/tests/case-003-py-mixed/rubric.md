@@ -2,9 +2,11 @@
 rubric_version: "1"
 pass_threshold: 0.6
 weights:
-  coverage: 0.4
-  structure: 0.3
-  cross_agent_dedup: 0.3
+  coverage: 0.34
+  structure: 0.255
+  cross_agent_dedup: 0.255
+  routing_accuracy: 0.10
+  no_flapping: 0.05
 ---
 
 # Rubric: case-003-py-mixed
@@ -31,7 +33,7 @@ The starter contains these intentional flaws:
 
 Score three components, each in [0.0, 1.0]:
 
-## coverage (weight 0.4)
+## coverage (weight 0.34)
 
 How many of the seven flaws were identified in the review?
 
@@ -40,7 +42,7 @@ How many of the seven flaws were identified in the review?
 - 0.4 — 2 or 3 flaws identified.
 - 0.0 — 0 or 1 flaw identified.
 
-## structure (weight 0.3)
+## structure (weight 0.255)
 
 Is the review consistently structured?
 
@@ -51,12 +53,12 @@ Is the review consistently structured?
 - 0.0 — the review is unstructured prose, or findings use wildly
   different formats.
 
-## cross_agent_dedup (weight 0.3)
+## cross_agent_dedup (weight 0.255)
 
 Did the verification phase successfully deduplicate overlapping findings
-from different agents? Multiple agents (adversary, architect, testing)
+from different agents? Multiple agents (adversary, guard, testing)
 may independently flag the same issue (e.g., both adversary and testing
-agents might flag the missing tests, or both adversary and architect
+agents might flag the missing tests, or both adversary and guard
 might flag the eval() usage).
 
 - 1.0 — no duplicate findings. Each issue appears exactly once in the
@@ -65,6 +67,26 @@ might flag the eval() usage).
   (clearly the same underlying problem described twice).
 - 0.0 — 3 or more clearly duplicated findings in the final report.
 
+## routing_accuracy (weight 0.10)
+
+Did the agent correctly handle the bare `/review-council` invocation
+(no arguments)?
+
+- 1.0 — the agent used default routing (auto-detect mode, changed
+  files scope) without adding unnecessary flags.
+- 0.5 — the agent completed the review but added unnecessary flags
+  or showed confusion about how to handle the bare invocation.
+- 0.0 — the agent failed to route the bare invocation or required
+  user intervention to proceed.
+
+## no_flapping (weight 0.05)
+
+Did the agent find its instruction files cleanly on the first attempt?
+
+- 1.0 — clean load, no searching or retrying.
+- 0.5 — minor searching behavior.
+- 0.0 — extensive searching, multiple retries, or errors.
+
 ## output
 
 Return strict JSON:
@@ -72,9 +94,11 @@ Return strict JSON:
 ```
 {
   "components": {
-    "coverage": <float>,
-    "structure": <float>,
-    "cross_agent_dedup": <float>
+    "coverage": "<float>",
+    "structure": "<float>",
+    "cross_agent_dedup": "<float>",
+    "routing_accuracy": "<float>",
+    "no_flapping": "<float>"
   },
   "explanation": "<one-paragraph rationale>"
 }

@@ -38,6 +38,12 @@ trap 'rm -f "$TMPFILE"' EXIT
 
 "$LOLA_EVAL" report --format json --out "$TMPFILE" >/dev/null 2>&1
 
+# Handle both flat array and {rows:[…]} envelope formats
+if jq -e 'type == "object" and has("rows")' "$TMPFILE" >/dev/null 2>&1; then
+  # New envelope format — extract .rows to a flat array in-place
+  jq '.rows' "$TMPFILE" > "${TMPFILE}.flat" && mv "${TMPFILE}.flat" "$TMPFILE"
+fi
+
 ROW_COUNT=$(jq 'length' "$TMPFILE")
 if [[ "$ROW_COUNT" -eq 0 ]]; then
   echo "snapshot.sh: no results in report (run 'task eval:test' first)" >&2
@@ -110,11 +116,11 @@ while IFS= read -r row; do
     --arg desc "$TASK_DESC" \
     '$prov + . + {task_description: $desc} | del(.transcript_path)' \
     >> "$LEDGER"
-done < <(jq -c '.[]' "$TMPFILE")
+done < <(jq -c '.[]' "$TMPFILE" || true)
 
 # --- Generate markdown snapshot ---
 SNAPSHOT_MD="$SNAPSHOTS_DIR/${SNAPSHOT_ID}.md"
-TS_HUMAN=$(echo "$SNAPSHOT_ID" | sed 's/\(....\)\(..\)\(..\)T\(..\)\(..\)\(..\)Z/\1-\2-\3 \4:\5 UTC/')
+TS_HUMAN="${SNAPSHOT_ID:0:4}-${SNAPSHOT_ID:4:2}-${SNAPSHOT_ID:6:2} ${SNAPSHOT_ID:9:2}:${SNAPSHOT_ID:11:2} UTC"
 DIRTY_LABEL="clean"
 if [[ "$GIT_DIRTY" == "true" ]]; then DIRTY_LABEL="dirty"; fi
 

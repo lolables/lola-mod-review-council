@@ -1,0 +1,20 @@
+task_version: "2"
+description: |
+  Routing test: /review-council fix the auth bug should treat the
+  entire phrase as review instructions, NOT as a scope. The text
+  is freeform guidance for reviewers, not a git ref, PR number,
+  or directory path.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>
+    REVIEW_INSTRUCTIONS: <any review instructions you received>

@@ -1,10 +1,11 @@
 task_version: "2"
 description: |
-  Python project with one issue targeting each of the six Review Council
-  personas: Guard (feature contradicts README goals), Architect (circular
-  dependency), Adversary (pickle deserialization), Tester (meaningless
-  assertions), SRE (Dockerfile issues), Curator (no API docs/changelog).
+  Python project with one issue targeting each of the five Review Council
+  personas: Guard (feature contradicts README goals + circular dependency),
+  Adversary (pickle deserialization), Tester (meaningless assertions),
+  SRE (Dockerfile issues), Curator (no API docs/changelog).
   Tests that all personas contribute relevant findings.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-005-py-meta/scaffold.sh" "$PWD"
 timeout_seconds: 1800
 followup_messages:
   - |
@@ -17,3 +18,5 @@ followup_messages:
     - <severity>: <one-line description>
     - <severity>: <one-line description>
     FALSE_POSITIVES: <number you believe are false positives, if any>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

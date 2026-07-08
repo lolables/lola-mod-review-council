@@ -1,0 +1,42 @@
+# Local MegaLinter overrides for this repository.
+#
+# The runner detects this file and passes MEGALINTER_CONFIG=.mega-linter.local.yml
+# to MegaLinter, staging the shared .mega-linter.yml as .mega-linter.shared.yml
+# so we can inherit from it with EXTENDS.
+
+EXTENDS: .mega-linter.shared.yml
+
+# Append to parent lists instead of replacing them.
+CONFIG_PROPERTIES_TO_APPEND:
+  - ADDITIONAL_EXCLUDED_DIRECTORIES
+
+# ---------------------------------------------------------------------------
+# Path exclusions
+# ---------------------------------------------------------------------------
+# .lola-eval/ contains evaluation test fixtures with deliberately planted
+# bugs (hardcoded secrets, missing Dockerfile directives, ruff violations,
+# eval() calls, etc.). These are scored by the eval harness — fixing them
+# would break the test cases. Excluding the directory silences findings
+# from ruff, devskim, gitleaks, trivy, and secretlint in one rule.
+ADDITIONAL_EXCLUDED_DIRECTORIES:
+  - ".lola-eval"
+
+# ---------------------------------------------------------------------------
+# jscpd (copy-paste detection)
+# ---------------------------------------------------------------------------
+# jscpd runs in project CLI lint mode and ignores FILTER_REGEX_EXCLUDE.
+# Pass --ignore via CLI arguments to supplement the shared .jscpd.json
+# config without replacing it.
+#
+# Agent persona files (module/agents/divisor-*.md) are self-contained LLM
+# prompt documents dispatched in isolated subagent contexts. Each file MUST
+# carry its own copy of shared protocol sections (frontmatter, role header,
+# source documents, severity tables) because agents run without access to
+# shared includes. The duplication is intentional and structural.
+#
+# The delegation phase reference (phases/delegate.md) repeats conditional-
+# section instructions (linked issues, prior reviews, CI status) under both
+# Code Review and Spec Review templates — intentional parallel documentation.
+COPYPASTE_JSCPD_ARGUMENTS:
+  - "--ignore"
+  - "**/.lola-eval/**,**/module/agents/divisor-*.md,**/module/skills/review-council/phases/delegate.md"

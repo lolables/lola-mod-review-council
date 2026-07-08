@@ -1,7 +1,7 @@
 {
   "_schema_version": 2,
   "claude-code/claude-sonnet-4-6/case-001-go-security/none/none": {
-    "composite": 1.0,
+    "composite": 0.9,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-001-go-security/project/none": {
@@ -9,23 +9,23 @@
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-002-ts-architecture/none/none": {
-    "composite": 0.7899999999999999,
+    "composite": 0.745,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-002-ts-architecture/project/none": {
-    "composite": 0.76,
+    "composite": 0.6399999999999999,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-003-py-mixed/none/none": {
-    "composite": 0.8799999999999999,
+    "composite": 1.0,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-003-py-mixed/project/none": {
-    "composite": 0.88,
+    "composite": 1.0,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-004-go-clean/none/none": {
-    "composite": 1.0,
+    "composite": 0.4,
     "rubric_pass_threshold": 0.7
   },
   "claude-code/claude-sonnet-4-6/case-004-go-clean/project/none": {
@@ -33,11 +33,11 @@
     "rubric_pass_threshold": 0.7
   },
   "claude-code/claude-sonnet-4-6/case-005-py-meta/none/none": {
-    "composite": 0.91,
+    "composite": 0.81,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-005-py-meta/project/none": {
-    "composite": 0.75,
+    "composite": 1.0,
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-006-ts-pack/none/none": {
@@ -45,7 +45,7 @@
     "rubric_pass_threshold": 0.6
   },
   "claude-code/claude-sonnet-4-6/case-006-ts-pack/project/none": {
-    "composite": 0.7899999999999999,
+    "composite": 0.85,
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-001-go-security/none/none": {
@@ -57,11 +57,11 @@
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-002-ts-architecture/none/none": {
-    "composite": 1.0,
+    "composite": 0.85,
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-002-ts-architecture/project/none": {
-    "composite": 0.94,
+    "composite": 0.73,
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-003-py-mixed/none/none": {
@@ -69,7 +69,7 @@
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-003-py-mixed/project/none": {
-    "composite": 0.88,
+    "composite": 0.85,
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-004-go-clean/none/none": {
@@ -81,19 +81,19 @@
     "rubric_pass_threshold": 0.7
   },
   "opencode/claude-sonnet-4-6/case-005-py-meta/none/none": {
-    "composite": 1.0,
-    "rubric_pass_threshold": 0.6
-  },
-  "opencode/claude-sonnet-4-6/case-005-py-meta/project/none": {
     "composite": 0.81,
     "rubric_pass_threshold": 0.6
   },
+  "opencode/claude-sonnet-4-6/case-005-py-meta/project/none": {
+    "composite": 0.9,
+    "rubric_pass_threshold": 0.6
+  },
   "opencode/claude-sonnet-4-6/case-006-ts-pack/none/none": {
-    "composite": 0.6,
+    "composite": 1.0,
     "rubric_pass_threshold": 0.6
   },
   "opencode/claude-sonnet-4-6/case-006-ts-pack/project/none": {
-    "composite": 1.0,
+    "composite": 0.85,
     "rubric_pass_threshold": 0.6
   }
 }

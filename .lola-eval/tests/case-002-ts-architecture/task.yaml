@@ -3,8 +3,9 @@ description: |
   React/TypeScript app with five intentional architectural flaws:
   god component, prop drilling through 4 levels, circular imports
   between types.ts and utils.ts, no error boundaries, and direct
-  DOM manipulation in a React component. Tests the architect agent
+  DOM manipulation in a React component. Tests the guard agent
   and TypeScript convention pack.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-002-ts-architecture/scaffold.sh" "$PWD"
 timeout_seconds: 1800
 followup_messages:
   - |
@@ -17,3 +18,5 @@ followup_messages:
     - <severity>: <one-line description>
     - <severity>: <one-line description>
     FALSE_POSITIVES: <number you believe are false positives, if any>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

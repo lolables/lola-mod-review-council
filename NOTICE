@@ -1,0 +1,29 @@
+Review Council
+Copyright 2026 Unbound Force Contributors
+Copyright 2026 Lolables Contributors
+
+https://github.com/lolables/lola-mod-review-council
+
+This project includes work originally developed as part of the
+Unbound Force project (https://github.com/unbound-force/unbound-force),
+specifically the review-council command at:
+  internal/scaffold/assets/opencode/commands/review-council.md
+
+The original copyright is retained per Apache License 2.0, Section 4(c).
+
+Changes from the original Unbound Force implementation:
+
+  - Restructured from a monolithic command file (~283 lines) into a
+    hybrid SKILL.md state machine with bash scripts and LLM phase files
+  - Split each reviewer agent into separate -code.md and -spec.md
+    variants for mode-specific reviews
+  - Extracted shared procedures (evidence discipline, pack loading,
+    output format, self-attestation) into reviewer-protocol.md
+  - Replaced hardcoded Unbound Force tool references (Gaze, Dewey,
+    Speckit/OpenSpec) with configurable extension points
+  - Generalized mode detection from UF-specific branch patterns
+    (NNN-*, opsx/*) to a file-path heuristic
+  - Added superpowers spec directory (docs/superpowers/) as a
+    recognized spec artifact location
+  - Reorganized convention packs: renamed default.md to base.md,
+    removed -custom.md companions in favor of priority-based overrides

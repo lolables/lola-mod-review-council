@@ -26,6 +26,19 @@ REFERENCES_DIR="${MODULE_DIR}/references"
 All script and phase references below use these paths.
 Construct full paths — do not search by filename.
 
+**When invoking scripts**, export these variables as environment variables:
+
+```bash
+export AGENTS_DIR SCRIPTS_DIR PHASES_DIR REFERENCES_DIR
+```
+
+Scripts require `AGENTS_DIR` to discover reviewer agents. Pass it when
+calling `rc-prepare.sh`:
+
+```bash
+AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [user args]
+```
+
 ## Quick Reference
 
 ### Usage
@@ -37,6 +50,10 @@ Construct full paths — do not search by filename.
 /review-council 42           # review PR #42
 /review-council main..feat   # review a ref range
 /review-council https://github.com/org/repo/pull/42  # review by URL
+/review-council HEAD         # review only the latest commit
+/review-council module/      # review changes under a directory
+/review-council everything   # explicit full-project review
+/review-council code HEAD -> focus on security  # mode + target + instructions
 ```
 
 ### What It Does
@@ -47,19 +64,55 @@ and delegates review to each persona in parallel. It verifies
 findings against actual file content, strips fabricated evidence,
 and produces a council verdict (APPROVE or REQUEST CHANGES).
 
-Six reviewer personas run in parallel: Guard (intent drift,
-governance), Architect (structure, patterns, DRY), Adversary
-(security, resilience), Tester (test quality, coverage), Operator
-(deployment, dependencies), Curator (documentation gaps).
+Five reviewer personas run in parallel: Guard (intent drift,
+governance, structural coherence), Adversary (security, resilience),
+Tester (test quality, coverage), Operator (deployment, dependencies),
+Curator (documentation gaps).
 
 ## Execution Flow
 
 This skill is a re-entrant state machine. If invoked mid-run,
 it reads the tracking file and resumes from the last completed phase.
 
+### Step 0: INTERPRET INPUT (LLM judgment)
+
+Before calling the script, interpret the user's input and resolve it
+to explicit CLI flags. The script accepts only structured flags — it
+does NOT parse raw user input.
+
+**Decision table:**
+
+| User says | Flags |
+|-----------|-------|
+| *(empty)* | *(no flags — defaults apply)* |
+| `code` | `--mode code` |
+| `specs` | `--mode specs` |
+| `42` | `--scope pr --scope-value 42` |
+| `main..feat` | `--scope range --scope-value "main..feat"` |
+| `HEAD` | `--scope range --scope-value "HEAD~1..HEAD"` |
+| `v1.2.3` | `--scope range --scope-value "v1.2.3~1..v1.2.3"` |
+| `module/` | `--scope changed --scope paths --scope-value "module/"` |
+| `everything` | `--scope all` |
+| `https://...pull/42` | `--scope url --scope-value "https://...pull/42"` |
+| `code HEAD -> focus on security` | `--mode code --scope range --scope-value "HEAD~1..HEAD" --review-instructions "focus on security"` |
+| `review the auth module` | `--scope changed --scope paths --scope-value "src/auth/"` |
+| `do stuff and make it good` | `--review-instructions "make it good"` |
+
+**Rules:**
+
+1. **Scope** (what to review) vs **instructions** (how to review): separate them. Anything that describes *what files/commits* is scope. Anything that describes *what to look for* is instructions.
+2. **Git refs** resolve to range: `REF` → `--scope range --scope-value "REF~1..REF"`. Ref ranges pass through: `X..Y` → `--scope range --scope-value "X..Y"`.
+3. **Directory paths** become a secondary filter: `--scope changed --scope paths --scope-value "dir/"`.
+4. **Defaults**: if scope is unclear, omit `--scope` (code defaults to `changed`, specs to `all`). If mode is unclear, omit `--mode` (auto-detect).
+5. **Fallback**: if the input doesn't clearly specify scope or mode, pass what you can and let defaults apply. Unrecognized text becomes `--review-instructions`.
+
 ### Step 1: PREPARE (scripted)
 
-Run `${SCRIPTS_DIR}/rc-prepare.sh` with user arguments.
+Run `${SCRIPTS_DIR}/rc-prepare.sh` with the flags resolved in Step 0.
+
+```bash
+AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [resolved flags from Step 0]
+```
 
 The script creates a session directory, captures changeset and diff,
 discovers agents, detects forge/framework/language, fetches CI status,
@@ -72,14 +125,13 @@ linked issues, and prior reviews (if PR), and initializes the tracking file.
   "message": "human-readable status or instruction",
   "session_dir": "/absolute/path/to/session",
   "mode": "code | specs",
-  "agents": ["divisor-guard-code", "divisor-architect-code", ...],
-  "changeset_size": 42,
+  "agents": ["divisor-guard-code", "divisor-adversary-code", ...],
   "language": "Go",
   "framework": "none",
-  "forge": "github | gitlab | local",
-  "pr_number": "42 | null",
-  "ci_status": {...},
-  "linked_issues_count": 3
+  "review_instructions": "",
+  "scope_type": "changed | all | range | paths | pr | url",
+  "scope_value": "",
+  "scope_dir": ""
 }
 ```
 
@@ -102,14 +154,36 @@ Determine the current state from the tracking file:
 This enables re-entry: if the skill is invoked mid-run,
 it resumes without repeating completed work.
 
+### Step 2.5: QUALITY GATES (code review with PR only)
+
+If `${session_dir}/ci-status.txt` exists (created by rc-prepare.sh for
+PR-based code reviews with forge CI data):
+
+1. Read `${session_dir}/ci-status.txt`
+2. If there are failing CI checks:
+   - Present the failures to the user
+   - Ask: "CI checks are failing. Proceed with review or abort?"
+   - If abort: stop and report "Review aborted due to failing CI"
+3. If all checks pass or user chooses to proceed: continue to Step 3
+
+If `${session_dir}/ci-status.txt` does not exist, skip this step.
+
+**Update tracking:** Set Phase: Quality Gates status to `complete`.
+
 ### Step 3: DELEGATION (iteration N)
 
 **Read `${PHASES_DIR}/delegate.md`** for prompt construction
 guidance and dispatch instructions.
 
+**Before constructing prompts**, read these session files:
+- `${session_dir}/changeset.txt` — the file list (scope-filtered)
+- `${session_dir}/diff.patch` — the diff (may be empty for `--scope all`)
+- `${session_dir}/tracking.md` — scope, mode, language, framework metadata
+
 For each reviewer agent in the agents array from Step 1:
-- Construct a prompt using the changeset context, convention
-  packs from `${REFERENCES_DIR}`, and project configuration
+- Construct a prompt using the changeset from `changeset.txt`,
+  the diff from `diff.patch`, convention packs from
+  `${REFERENCES_DIR}`, and project configuration
 - Dispatch the agent using `subagent_type = agent filename`
   (e.g., "divisor-guard-code")
 - Collect the verdict and write to `${session_dir}/verdicts/{agent-name}.md`
@@ -188,64 +262,57 @@ verdict and learnings count.
 ## Tracking File Template
 
 Maintain `${session_dir}/tracking.md` throughout the run.
-Update it after each phase completes. This file is the single
-source of truth for run state.
+Update it after each phase completes. The Preparation and
+Quality Gates phases are written by `rc-prepare.sh`. The
+orchestrator writes subsequent phases.
 
 ```markdown
-# Review Council Run
-
-## Configuration
-- Mode: {Code Review | Spec Review}
-- Branch: {branch name}
-- Base: {main | master}
-- Session: {session_dir path}
+# Review Council Session Tracking
 
 ## Phase: Preparation
-- Status: {pending | complete | failed}
-- Started: {ISO 8601}
-- Finished: {ISO 8601}
-- Agents discovered: {count} ({comma-separated names})
-- Agents absent: {comma-separated names or "none"}
-- Changeset: {count} files
-- Prior run: {none | prior run_id}
-- Input type: {auto | pr_number | ref_range | url}
+
+- Input type: {auto | pr_number | ref_range | url | dir_scope | all}
+- Scope: {changed | all | range | paths | pr | url}
+- Scope value: {resolved scope value or base...HEAD}
 - Forge: {github | gitlab | local}
-- Tooling: {gh | glab | api | none}
-- PR: #{number} or "none"
+- Tooling: {gh | glab | none}
+- PR: {none | PR number}
 - Linked issues: {count}
 - Prior reviews: {count}
+- Constitution: {none | path (source)}
+- Mode: {code | spec} ({reason})
+- Branch: {branch name}
+- Base: {main | master}
+- Language: {language}
+- Framework: {framework | none}
+- Agents discovered: {count}
+- Agents absent: none
+- Changeset size: {count} files
 
 ## Phase: Quality Gates
-- Status: {pending | complete | failed | skipped}
-- Started: {ISO 8601}
-- Finished: {ISO 8601}
-- CI checks run: {count}
-- CI checks passed: {count}
-- CI checks failed: {count} ({N} pr-caused, {N} pre-existing, {N} unknown)
-- CI source: {local | forge | both}
-- Quality tool: {available | skipped | failed}
+
+- Forge CI: {available | unavailable}
+- Forge CI failures: {count}
 
 ## Phase: Delegation (iteration {N})
+
 - Status: {pending | complete | failed}
-- Started: {ISO 8601}
-- Finished: {ISO 8601}
-- Batches: {count}
 - Agents dispatched: {count}
 - Verdicts received: {count}
 - Agent failures: {list or "none"}
 
 ## Phase: Verification (iteration {N})
+
 - Status: {pending | complete | failed}
-- Started: {ISO 8601}
-- Finished: {ISO 8601}
 - Findings total: {count}
 - Findings verified: {count}
-- Findings corrected: {count}
+- Findings correctable: {count}
 - Findings stripped: {count}
 - Duplicates consolidated: {count}
 - Verdict: {APPROVE | REQUEST CHANGES}
 
 ## Phase: Report
+
 - Status: {pending | complete}
 - Council verdict: {APPROVE | REQUEST CHANGES | APPROVE WITH ADVISORIES}
 - Learnings recorded: {count}
@@ -267,8 +334,7 @@ Configure optional integrations in your project's AGENTS.md or CLAUDE.md:
 ```
 
 All extension points are optional and degrade gracefully when omitted.
-The Constitution is auto-discovered from `.specify/memory/constitution.md`
-if no explicit path is configured and the file is not an unfilled template.
+If no Constitution path is configured, constitution-specific checks are skipped.
 
 Convention packs define project-specific coding standards. Override or
 extend the shipped packs by placing files in `.review-council/packs/`

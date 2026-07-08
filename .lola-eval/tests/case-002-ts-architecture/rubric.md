@@ -2,9 +2,11 @@
 rubric_version: "1"
 pass_threshold: 0.6
 weights:
-  detection: 0.4
-  recommendations: 0.3
-  severity_accuracy: 0.3
+  detection: 0.34
+  recommendations: 0.255
+  severity_accuracy: 0.255
+  routing_accuracy: 0.10
+  no_flapping: 0.05
 ---
 
 # Rubric: case-002-ts-architecture
@@ -33,7 +35,7 @@ The starter contains these intentional flaws:
 
 Score three components, each in [0.0, 1.0]:
 
-## detection (weight 0.4)
+## detection (weight 0.34)
 
 How many of the five flaws were explicitly identified?
 
@@ -42,7 +44,7 @@ How many of the five flaws were explicitly identified?
 - 0.4 — 2 flaws identified.
 - 0.0 — 0 or 1 flaw identified.
 
-## recommendations (weight 0.3)
+## recommendations (weight 0.255)
 
 Are the suggested fixes idiomatic and actionable?
 
@@ -55,7 +57,7 @@ Are the suggested fixes idiomatic and actionable?
 - 0.0 — no suggestions, or suggestions that would not address the
   identified issues.
 
-## severity_accuracy (weight 0.3)
+## severity_accuracy (weight 0.255)
 
 Are severity levels appropriate for each finding?
 
@@ -66,6 +68,27 @@ Are severity levels appropriate for each finding?
   systematically over- or under-rated.
 - 0.0 — severity levels are random or all set to the same level.
 
+## routing_accuracy (weight 0.10)
+
+Did the agent correctly interpret `/review-council code HEAD` and
+pass `--mode code --scope range --scope-value "HEAD~1..HEAD"` (or
+equivalent)?
+
+- 1.0 — the agent used code mode AND scoped to the latest commit.
+  Findings primarily reference `src/GlobalState.tsx` (the latest
+  commit).
+- 0.5 — the agent set the mode correctly but did not scope to HEAD,
+  or scoped correctly but did not set the mode.
+- 0.0 — neither mode nor scope was correctly applied.
+
+## no_flapping (weight 0.05)
+
+Did the agent find its instruction files cleanly on the first attempt?
+
+- 1.0 — clean load, no searching or retrying.
+- 0.5 — minor searching behavior.
+- 0.0 — extensive searching, multiple retries, or errors.
+
 ## output
 
 Return strict JSON:
@@ -73,9 +96,11 @@ Return strict JSON:
 ```
 {
   "components": {
-    "detection": <float>,
-    "recommendations": <float>,
-    "severity_accuracy": <float>
+    "detection": "<float>",
+    "recommendations": "<float>",
+    "severity_accuracy": "<float>",
+    "routing_accuracy": "<float>",
+    "no_flapping": "<float>"
   },
   "explanation": "<one-paragraph rationale>"
 }

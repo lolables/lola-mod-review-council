@@ -110,9 +110,9 @@ The discovery summary is included regardless of the verdict. Absent reviewers (k
 
 | Check | Status |
 |-------|--------|
-| build | pass |
-| test | fail |
-| lint | fail |
+| build | pass   |
+| test  | fail   |
+| lint  | fail   |
 
 Failing checks:
 - test: FAILURE (see forge CI tab for details)

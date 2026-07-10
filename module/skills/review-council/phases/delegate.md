@@ -8,14 +8,13 @@ This table provides context when constructing delegation prompts. The **invocati
 
 Agent files use the naming convention `divisor-{name}-code.md` and `divisor-{name}-spec.md`.
 
-| Base Name | Persona | Code Review Focus | Spec Review Focus |
-|-----------|---------|-------------------|-------------------|
-| `divisor-adversary` | The Adversary | Secrets, CVEs, error handling, injection safety | Completeness, ambiguity, security gaps |
-| `divisor-architect` | The Architect | Architecture, conventions [PACK], DRY | Template consistency, spec-plan alignment |
-| `divisor-guard` | The Guard | Intent drift, zero-waste, constitution | Intent fidelity, scope discipline |
-| `divisor-testing` | The Tester | Test architecture [PACK], coverage, isolation | Testability, fixtures, contract surface |
-| `divisor-sre` | The Operator | Permissions, efficiency, pipeline [PACK] | Deployment, operational requirements |
-| `divisor-curator` | The Curator | Documentation gaps, issue filing | Documentation completeness in specs |
+| Base Name           | Persona       | Code Review Focus                               | Spec Review Focus                       |
+|---------------------|---------------|-------------------------------------------------|-----------------------------------------|
+| `divisor-adversary` | The Adversary | Secrets, CVEs, error handling, injection safety | Completeness, ambiguity, security gaps  |
+| `divisor-guard`     | The Guard     | Intent drift, zero-waste, constitution          | Intent fidelity, scope discipline       |
+| `divisor-testing`   | The Tester    | Test architecture [PACK], coverage, isolation   | Testability, fixtures, contract surface |
+| `divisor-sre`       | The Operator  | Permissions, efficiency, pipeline [PACK]        | Deployment, operational requirements    |
+| `divisor-curator`   | The Curator   | Documentation gaps, issue filing                | Documentation completeness in specs     |
 
 For any discovered agent not in this table, use a generic review prompt appropriate to the current mode.
 
@@ -37,9 +36,9 @@ Adding questions like "What happens when X is nil?" or "Is Y missing?" biases th
 
 When the orchestrating tool supports model selection for subagents, use these tiers:
 
-| Tier | Reasoning Demand | Personas |
-|------|------------------|----------|
-| **Capable** | Deep judgment, security/intent analysis | Adversary, Architect, Guard |
+| Tier         | Reasoning Demand                        | Personas                  |
+|--------------|-----------------------------------------|---------------------------|
+| **Capable**  | Deep judgment, security/intent analysis | Adversary, Guard          |
 | **Standard** | Checklist-driven with moderate judgment | Tester, Operator, Curator |
 
 If the tool does not support model selection, all agents run on the default model. For empirical performance data by model class, see `${REFERENCES_DIR}/model-guidance.md`.
@@ -50,23 +49,32 @@ If the tool does not support model selection, all agents run on the default mode
 
 ### Prompt Template
 
-**Every delegation prompt MUST include** the changeset AND the diff:
+**Every delegation prompt MUST include** the changeset AND the diff (when available).
+
+**Data sources:** Read the file list from `${session_dir}/changeset.txt` and the diff from `${session_dir}/diff.patch`. Read the scope from `${session_dir}/tracking.md` (the `Scope:` and `Scope value:` fields).
+
+**Scope framing:** Use the scope from tracking.md to frame the review accurately:
+- If scope is `changed`: "The following files changed on branch `{branch}` vs `{base}`:"
+- If scope is `range`: "The following files changed in `{scope_value}`:"
+- If scope is `all`: "The following project files are in scope for review:"
+- If scope is `pr`: "The following files changed in PR #{scope_value}:"
+- For any scope, if a path filter was applied: append "filtered to `{scope_dir}`"
 
 > ## Changeset
 >
-> The following files changed on branch `{branch}` vs `{base}`:
+> {scope framing sentence from above}
 >
 > ```
-> {file list, one per line}
+> {file list from ${session_dir}/changeset.txt, one per line}
 > ```
 >
 > ## Diff
 >
 > ```diff
-> {full patch}
+> {diff from ${session_dir}/diff.patch — if the file is empty, state "No diff available. Read the files directly for review."}
 > ```
 >
-> The diff shows exactly what changed. Read every file in the changeset for full context, but focus your analysis on the lines that changed.
+> The diff shows exactly what changed. Read every file in the changeset for full context, but focus your analysis on the lines that changed. If no diff is available (e.g., `--scope all`), read every file in the changeset directly.
 >
 > **Read every file in this changeset before producing any findings.** Do not report on files you have not read. See reviewer-protocol.md for evidence discipline rules.
 
@@ -76,28 +84,28 @@ For each discovered agent, add the focus area from the Persona Roles table (Code
 
 If the language is `unknown` or no matching row exists, skip this section and rely on the generic Persona Roles focus areas.
 
-| Language/Framework | Persona | Detection Hints |
-|--------------------|---------|-----------------|
-| **Go** | Adversary | Check for `sql.Query`/`sql.Exec` with string interpolation (SQL injection); `exec.Command` with user-controlled arguments (command injection); hardcoded credentials in source |
-| **Go** | Architect | Check for interface pollution (interfaces with >5 methods or single-implementation interfaces); package-level mutable globals; circular package dependencies |
-| **Go** | Tester | Check for missing error-path tests; table-driven tests that only check the happy path; test helpers that swallow errors |
-| **TypeScript/React** | Architect | Check for prop drilling (props passed through 3+ component levels unchanged); god components (>300 lines or >10 state variables); circular module imports |
-| **TypeScript/React** | Adversary | Check for `dangerouslySetInnerHTML` with unsanitized input; inline event handlers with user data; missing CSRF tokens on forms |
-| **TypeScript/React** | Tester | Check for missing error boundary components; tests that mock everything (no integration coverage); missing accessibility attribute tests |
-| **TypeScript** | Architect | Check for `any` type usage; missing strict mode; barrel export cycles |
-| **Python** | Adversary | Check for `eval()`/`exec()` with user input; `pickle.loads()` on untrusted data; `subprocess.call(shell=True)` with string formatting; hardcoded secrets |
-| **Python** | Architect | Check for circular imports; mutable default arguments; missing `__init__.py` exports; god modules (>500 lines) |
-| **Python** | Tester | Check for `assert True` tautologies; broad `except: pass` in test setup; missing edge-case tests for off-by-one errors |
-| **Rust** | Adversary | Check for `unsafe` blocks without safety comments; unchecked `.unwrap()` on user input; raw pointer arithmetic |
-| **Rust** | Architect | Check for unnecessary `clone()` calls; overly broad trait bounds; modules with >500 lines |
-| **Java** | Adversary | Check for SQL injection via string concatenation in JDBC; deserialization of untrusted data; hardcoded credentials |
-| **Java** | Architect | Check for god classes (>500 lines); deep inheritance hierarchies (>3 levels); package-level circular dependencies |
+| Language/Framework   | Persona   | Detection Hints                                                                                                                                                                            |
+|----------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Go**               | Adversary | Check for `sql.Query`/`sql.Exec` with string interpolation (SQL injection); `exec.Command` with user-controlled arguments (command injection); hardcoded credentials in source             |
+| **Go**               | Guard     | Check for interface pollution (interfaces with >5 methods or single-implementation interfaces); package-level mutable globals; circular package dependencies                               |
+| **Go**               | Tester    | Check for missing error-path tests; table-driven tests that only check the happy path; test helpers that swallow errors                                                                    |
+| **TypeScript/React** | Guard     | Check for prop drilling (props passed through 3+ component levels unchanged); god components (>200 lines or >5 state hooks with mixed concerns); circular module imports                   |
+| **TypeScript/React** | Adversary | Check for `dangerouslySetInnerHTML` with unsanitized input; missing error boundary components (crash propagation risk); inline event handlers with user data; missing CSRF tokens on forms |
+| **TypeScript/React** | Tester    | Check for tests that mock everything (no integration coverage); missing accessibility attribute tests                                                                                      |
+| **TypeScript**       | Guard     | Check for `any` type usage; missing strict mode; barrel export cycles                                                                                                                      |
+| **Python**           | Adversary | Check for `eval()`/`exec()` with user input; `pickle.loads()` on untrusted data; `subprocess.call(shell=True)` with string formatting; hardcoded secrets                                   |
+| **Python**           | Guard     | Check for circular imports; mutable default arguments; missing `__init__.py` exports; god modules (>500 lines)                                                                             |
+| **Python**           | Tester    | Check for `assert True` tautologies; broad `except: pass` in test setup; missing edge-case tests for off-by-one errors                                                                     |
+| **Rust**             | Adversary | Check for `unsafe` blocks without safety comments; unchecked `.unwrap()` on user input; raw pointer arithmetic                                                                             |
+| **Rust**             | Guard     | Check for unnecessary `clone()` calls; overly broad trait bounds; modules with >500 lines                                                                                                  |
+| **Java**             | Adversary | Check for SQL injection via string concatenation in JDBC; deserialization of untrusted data; hardcoded credentials                                                                         |
+| **Java**             | Guard     | Check for god classes (>500 lines); deep inheritance hierarchies (>3 levels); package-level circular dependencies                                                                          |
 
 Hints are additive — they supplement, not replace, the generic focus area. Do NOT frame them as questions (e.g., "What happens if..."). Frame them as check instructions (e.g., "Check for X pattern").
 
 **Convention pack loading**: include this instruction in every delegation prompt:
 
-> Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language-specific pack (e.g., `${REFERENCES_DIR}/go.md`) or `${REFERENCES_DIR}/base.md` if no language pack exists.
+> Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language pack (`lang-{language}.md`) or `base.md` if none exists, then the framework pack (`fw-{framework}.md`) if one exists.
 
 **When quality analysis data is available**: append a "Quality Context" section containing the Quality Report summary.
 
@@ -163,7 +171,7 @@ For each discovered agent, add the focus area from the Persona Roles table (Spec
 
 **Convention pack loading**: include this instruction in every delegation prompt:
 
-> Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language-specific pack or `${REFERENCES_DIR}/base.md` if no language pack exists.
+> Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language pack (`lang-{language}.md`) or `base.md` if none exists, then the framework pack (`fw-{framework}.md`) if one exists.
 
 Instruct agents to review the listed spec artifacts (not code), plus the project context and governance documents. Include prior run context if available.
 

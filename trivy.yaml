@@ -1,0 +1,9 @@
+# Trivy configuration
+# https://aquasecurity.github.io/trivy/latest/docs/references/configuration/config-file/
+
+scan:
+  # .lola-eval/ contains eval test fixtures with deliberately planted security
+  # and misconfiguration flaws (missing USER/HEALTHCHECK in Dockerfiles, etc.).
+  # These are scored by the eval harness — fixing them breaks the tests.
+  skip-dirs:
+    - ".lola-eval"

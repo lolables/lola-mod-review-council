@@ -2,9 +2,11 @@
 rubric_version: "1"
 pass_threshold: 0.6
 weights:
-  detection: 0.5
-  evidence: 0.3
-  false_positives: 0.2
+  detection: 0.425
+  evidence: 0.255
+  false_positives: 0.17
+  routing_accuracy: 0.10
+  no_flapping: 0.05
 ---
 
 # Rubric: case-001-go-security
@@ -31,7 +33,7 @@ subsumes the validation gap.
 
 Score three components, each in [0.0, 1.0]:
 
-## detection (weight 0.5)
+## detection (weight 0.425)
 
 How many of the four flaws were explicitly identified in the review?
 
@@ -40,7 +42,7 @@ How many of the four flaws were explicitly identified in the review?
 - 0.4 — 2 flaws identified.
 - 0.0 — 0 or 1 flaws identified.
 
-## evidence (weight 0.3)
+## evidence (weight 0.255)
 
 Do findings cite specific file locations with real code?
 
@@ -50,7 +52,7 @@ Do findings cite specific file locations with real code?
   or missing.
 - 0.0 — no file:line citations, or citations point to non-existent lines.
 
-## false_positives (weight 0.2)
+## false_positives (weight 0.17)
 
 Did the review avoid fabricating findings that do not exist in the code?
 
@@ -59,6 +61,25 @@ Did the review avoid fabricating findings that do not exist in the code?
 - 0.5 — one finding that describes a problem not present in the code.
 - 0.0 — two or more fabricated findings.
 
+## routing_accuracy (weight 0.10)
+
+Did the agent correctly interpret `/review-council code` and pass
+`--mode code` to rc-prepare.sh?
+
+- 1.0 — the agent used code mode (passed `--mode code` or the
+  review clearly operated in code review mode with code-variant
+  agents).
+- 0.0 — the agent used specs mode or failed to set the mode.
+
+## no_flapping (weight 0.05)
+
+Did the agent find its instruction files (SKILL.md, phase files,
+agent definitions) cleanly on the first attempt?
+
+- 1.0 — clean load, no searching or retrying.
+- 0.5 — minor searching behavior.
+- 0.0 — extensive searching, multiple retries, or errors.
+
 ## output
 
 Return strict JSON:
@@ -66,10 +87,12 @@ Return strict JSON:
 ```
 {
   "components": {
-    "detection": <float>,
-    "evidence": <float>,
-    "false_positives": <float>
+    "detection": "<float>",
+    "evidence": "<float>",
+    "false_positives": "<float>",
+    "routing_accuracy": "<float>",
+    "no_flapping": "<float>"
   },
-  "explanation": "<one-paragraph rationale citing which flaws were caught and any false positives>"
+  "explanation": "<one-paragraph rationale>"
 }
 ```

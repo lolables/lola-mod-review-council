@@ -1,0 +1,19 @@
+task_version: "2"
+description: |
+  Routing test: /review-council module/ should filter the review scope
+  to only files under the module/ directory. The scaffold adds flawed
+  files in both module/ and cmd/; only module/ findings should appear.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-012-route-dir/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

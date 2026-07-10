@@ -1,0 +1,20 @@
+task_version: "2"
+description: |
+  Routing test: /review-council HEAD should translate to
+  --scope range --scope-value "HEAD~1..HEAD". The eval harness
+  creates bookkeeping commits after scaffold, so HEAD may contain
+  only config changes. This tests flag translation and honest
+  handling of empty/minimal scopes.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

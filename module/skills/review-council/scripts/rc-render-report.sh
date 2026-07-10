@@ -2,18 +2,18 @@
 set -euo pipefail
 
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
-  echo "# Review Council Report"
-  echo ""
-  echo "**Error:** Bash 4+ is required. macOS ships Bash 3 — install a modern version: \`brew install bash\`"
-  exit 0
+	echo "# Review Council Report"
+	echo ""
+	echo "**Error:** Bash 4+ is required. macOS ships Bash 3 — install a modern version: \`brew install bash\`"
+	exit 0
 fi
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "# Review Council Report"
-  echo ""
-  echo "**Error:** jq is required but not installed."
-  echo "Install it: \`apt-get install jq\` | \`brew install jq\` | \`dnf install jq\`"
-  exit 0
+	echo "# Review Council Report"
+	echo ""
+	echo "**Error:** jq is required but not installed."
+	echo "Install it: \`apt-get install jq\` | \`brew install jq\` | \`dnf install jq\`"
+	exit 0
 fi
 
 # rc-render-report.sh: renders structured markdown report template
@@ -24,18 +24,18 @@ session_dir="${1:-}"
 
 # Graceful handling of missing session
 if [[ -z "$session_dir" ]] || [[ ! -d "$session_dir" ]]; then
-  echo "# Review Council Report"
-  echo ""
-  echo "Session data not available."
-  exit 0
+	echo "# Review Council Report"
+	echo ""
+	echo "Session data not available."
+	exit 0
 fi
 
 tracking_file="$session_dir/tracking.md"
 if [[ ! -f "$tracking_file" ]]; then
-  echo "# Review Council Report"
-  echo ""
-  echo "Session tracking data not found."
-  exit 0
+	echo "# Review Council Report"
+	echo ""
+	echo "Session tracking data not found."
+	exit 0
 fi
 
 evidence_file="$session_dir/verdicts/evidence-check.json"
@@ -52,13 +52,15 @@ changeset=$(grep "^- Changeset size:" "$tracking_file" | cut -d: -f2- | xargs ||
 # Parse evidence-check.json if exists
 total_findings=0
 verified_count=0
+correctable_count=0
 stripped_count=0
 dedup_count=0
 if [[ -f "$evidence_file" ]]; then
-  total_findings=$(jq -r '.total_findings // 0' "$evidence_file" 2>/dev/null || echo 0)
-  verified_count=$(jq -r '.verified | length' "$evidence_file" 2>/dev/null || echo 0)
-  stripped_count=$(jq -r '.stripped | length' "$evidence_file" 2>/dev/null || echo 0)
-  dedup_count=$(jq -r '.duplicates_consolidated // 0' "$evidence_file" 2>/dev/null || echo 0)
+	total_findings=$(jq -r '.total_findings // 0' "$evidence_file" 2>/dev/null || echo 0)
+	verified_count=$(jq -r '.verified | length' "$evidence_file" 2>/dev/null || echo 0)
+	correctable_count=$(jq -r '.correctable | length' "$evidence_file" 2>/dev/null || echo 0)
+	stripped_count=$(jq -r '.stripped | length' "$evidence_file" 2>/dev/null || echo 0)
+	dedup_count=$(jq -r '.duplicates_consolidated // 0' "$evidence_file" 2>/dev/null || echo 0)
 fi
 
 # Start rendering report
@@ -82,10 +84,8 @@ EOF
 # CI Status section if available
 ci_status_file="$session_dir/ci-status.txt"
 if [[ -f "$ci_status_file" ]]; then
-  echo "## Forge CI Status"
-  echo ""
-  cat "$ci_status_file"
-  echo ""
+	cat "$ci_status_file"
+	echo ""
 fi
 
 # Verification Summary
@@ -93,6 +93,7 @@ cat <<EOF
 ## Verification Summary
 - **Total findings**: $total_findings
 - **Verified**: $verified_count
+- **Correctable**: $correctable_count
 - **Stripped**: $stripped_count
 - **Duplicates consolidated**: $dedup_count
 
@@ -100,19 +101,19 @@ EOF
 
 # Findings by Severity (from verified list)
 if [[ -f "$evidence_file" ]] && [[ $verified_count -gt 0 ]]; then
-  echo "## Findings by Severity"
-  echo ""
+	echo "## Findings by Severity"
+	echo ""
 
-  # Extract verified findings and group by severity
-  for severity in CRITICAL HIGH MEDIUM LOW; do
-    count=$(jq -r --arg sev "$severity" '[.verified[] | select(.severity == $sev)] | length' "$evidence_file" 2>/dev/null || echo 0)
-    if [[ $count -gt 0 ]]; then
-      echo "### $severity ($count)"
-      echo ""
-      jq -r --arg sev "$severity" '.verified[] | select(.severity == $sev) | "- **\(.title)** (\(.file)) — \(.agent)"' "$evidence_file" 2>/dev/null || true
-      echo ""
-    fi
-  done
+	# Extract verified findings and group by severity
+	for severity in CRITICAL HIGH MEDIUM LOW; do
+		count=$(jq -r --arg sev "$severity" '[.verified[] | select(.severity == $sev)] | length' "$evidence_file" 2>/dev/null || echo 0)
+		if [[ $count -gt 0 ]]; then
+			echo "### $severity ($count)"
+			echo ""
+			jq -r --arg sev "$severity" '.verified[] | select(.severity == $sev) | "- **\(.title)** (\(.file)) — \(.agent)"' "$evidence_file" 2>/dev/null || true
+			echo ""
+		fi
+	done
 fi
 
 # Per-agent verdict table
@@ -124,24 +125,25 @@ echo "|-------|---------|----------|"
 # Read verdict files if they exist
 verdict_dir="$session_dir/verdicts"
 if [[ -d "$verdict_dir" ]]; then
-  for verdict_file in "$verdict_dir"/*.md; do
-    [[ -f "$verdict_file" ]] || continue
-    agent_name=$(basename "$verdict_file" .md)
+	for verdict_file in "$verdict_dir"/*.md; do
+		[[ -f "$verdict_file" ]] || continue
+		agent_name=$(basename "$verdict_file" .md)
 
-    # Parse verdict from file (look for REQUEST CHANGES or APPROVE)
-    verdict="APPROVE"
-    if grep -q "REQUEST CHANGES" "$verdict_file" 2>/dev/null; then
-      verdict="REQUEST CHANGES"
-    fi
+		# Parse verdict from file (look for REQUEST CHANGES or APPROVE)
+		verdict="APPROVE"
+		# Match structured verdict: **Verdict**: REQUEST CHANGES or a standalone verdict line
+		if grep -qE '^\*\*Verdict\*\*:.*REQUEST CHANGES|^(REQUEST CHANGES)$' "$verdict_file" 2>/dev/null; then
+			verdict="REQUEST CHANGES"
+		fi
 
-    # Count findings in this agent's verdict
-    finding_count=0
-    if [[ -f "$evidence_file" ]]; then
-      finding_count=$(jq -r --arg agent "$agent_name" '[.verified[] | select(.agent == $agent)] | length' "$evidence_file" 2>/dev/null || echo 0)
-    fi
+		# Count findings in this agent's verdict
+		finding_count=0
+		if [[ -f "$evidence_file" ]]; then
+			finding_count=$(jq -r --arg agent "$agent_name" '[.verified[] | select(.agent == $agent)] | length' "$evidence_file" 2>/dev/null || echo 0)
+		fi
 
-    echo "| $agent_name | $verdict | $finding_count |"
-  done
+		echo "| $agent_name | $verdict | $finding_count |"
+	done
 fi
 
 echo ""

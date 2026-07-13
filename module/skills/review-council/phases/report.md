@@ -25,6 +25,13 @@ Only proceed to generate the report once verification.txt passes all five checks
 
 ## Narrative Synthesis
 
+**Effort gate — quick mode:** If effort is `quick`, skip narrative
+synthesis entirely. The compact report consists of:
+1. The findings list from the rendered template (sorted by severity)
+2. The final verdict
+
+Skip to the Final Verdict Determination section.
+
 The template rendering is performed by `rc-render-report.sh`, which produces a report file with a `<!-- NARRATIVE -->` marker. Your job is to fill this marker with a narrative summary of the review story.
 
 The narrative should cover:
@@ -40,6 +47,9 @@ Keep the narrative concise (2-4 paragraphs). Do not repeat the detailed findings
 
 ## Learnings Extraction
 
+**Effort gate — quick mode:** If effort is `quick`, skip learnings
+extraction entirely.
+
 If a knowledge layer tool is configured (see "Review Council Configuration" → "Knowledge tool"):
 
 a. **False positive patterns** — record stripped findings (from Step 4) and validator retractions (from Step 5.5). Include the agent name, the fabricated claim, why it was stripped or retracted, and the validator's reasoning where applicable. For findings that were corrected in Step 3 but retracted in Step 5.5, also record as a **correction failure** (the agent doubled down).
@@ -51,6 +61,39 @@ c. **Evidence quality patterns** — record correction round outcomes (findings 
 Store all learnings via the configured knowledge tool so future Prior Learnings queries surface them.
 
 If no knowledge layer is configured, write the learnings to `${session_dir}/learnings.txt` as a human-readable record. They will be available to future runs via Prior Run Awareness.
+
+---
+
+## Subsystem Analysis (Deep Mode Only)
+
+**Skip this section unless effort is `deep` and
+`${session_dir}/subsystems.json` exists.**
+
+Read `${session_dir}/subsystems.json` and the verified findings.
+Render a subsystem tree before the findings list:
+
+```
+## Subsystem Analysis
+
+{subsystem-name} ({severity counts})
+  {file1}
+  {file2}
+
+{subsystem-name} ({severity counts})
+  {file1}
+  {file2}          <- also in: {other-subsystem}
+```
+
+**Rendering rules:**
+- Subsystem name on header line with severity counts in parentheses
+  (e.g., `auth-middleware (1 CRITICAL, 2 HIGH)`).
+- Files indented with 2-space indent.
+- Cross-cutting files (appearing in multiple subsystems) get
+  `<- also in: {other-subsystem-names}` annotation.
+- Subsystems with zero findings show `(clean)` instead of counts.
+- Finding counts come from verified findings, not raw agent output.
+- Sort subsystems by highest severity first: subsystems with CRITICAL
+  findings first, then HIGH, etc.
 
 ---
 
@@ -95,7 +138,7 @@ End the report with the council verdict:
 
 - **APPROVE** — all discovered reviewers returned APPROVE (after verification).
 - **REQUEST CHANGES** — one or more reviewers returned REQUEST CHANGES with verified findings.
-- **APPROVE WITH ADVISORIES** (Spec Review Mode only) — all LOW/MEDIUM findings were auto-fixed but HIGH/CRITICAL findings remain that require human judgment.
+- **APPROVE WITH ADVISORIES** (Spec Review Mode only) — only LOW/MEDIUM findings remain; no HIGH/CRITICAL findings are present. The remaining findings are advisory and do not block merge.
 
 The discovery summary is included regardless of the verdict. Absent reviewers (known roles not found during discovery) do not affect the verdict.
 

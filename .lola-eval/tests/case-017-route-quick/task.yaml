@@ -1,0 +1,18 @@
+task_version: "2"
+description: |
+  Routing test: /review-council quick code HEAD should translate to
+  --effort quick --mode code --scope range --scope-value "HEAD~1..HEAD".
+  Tests that the "quick" token is extracted as an effort flag.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES or SKIPPED>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

@@ -1,0 +1,20 @@
+task_version: "2"
+description: |
+  Routing test: /review-council deep main..feat should translate to
+  --effort deep --scope range --scope-value "main..feat".
+  Tests that the "deep" token is extracted as an effort flag alongside
+  a ref range scope. Scaffold creates a feat branch with changes.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-018-route-deep/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

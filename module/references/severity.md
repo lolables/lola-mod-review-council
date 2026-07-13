@@ -22,13 +22,13 @@ Significant risk or technical debt that will cause problems if not addressed bef
 
 ### MEDIUM
 
-Quality issue that should be addressed but does not block merge. Auto-fixable in Spec Review Mode.
+Quality issue that should be addressed but does not block merge.
 
 **Boundary**: Improvement opportunity — code/spec works but could be better.
 
 ### LOW
 
-Minor style or documentation improvement. Non-blocking. Auto-fixable in Spec Review Mode.
+Minor style or documentation improvement. Non-blocking.
 
 **Boundary**: Cosmetic or informational. No functional impact.
 
@@ -41,11 +41,14 @@ Minor style or documentation improvement. Non-blocking. Auto-fixable in Spec Rev
 | MEDIUM   | Broad file permissions, missing error context, redundant read         | Missing fixture spec, test isolation concern, convention deviation                       | Minor scope addition (gold plating), stale cross-reference, metadata inconsistency  | Missing operational docs, incomplete platform support, unquantified perf requirement |
 | LOW      | Comment suggesting future security review, minor naming inconsistency | Minor test naming issue, optional observability enhancement                              | Minor wording improvement, optional cross-reference                                 | Style improvement in errors, optional health check, minor doc gap                    |
 
-## Auto-Fix Policy (Spec Review Mode)
+## Fix Policy
+
+All findings are reported to the user. No findings are fixed automatically,
+regardless of severity. The user decides which findings to address.
 
 | Severity | Action      | Rationale                               |
 |----------|-------------|-----------------------------------------|
-| LOW      | Auto-fix    | Cosmetic; safe without human judgment   |
-| MEDIUM   | Auto-fix    | Quality improvement; deterministic fix  |
+| LOW      | Report only | User decides if cosmetic fix is wanted  |
+| MEDIUM   | Report only | User decides on quality improvements    |
 | HIGH     | Report only | Requires human judgment on intent/scope |
 | CRITICAL | Report only | May indicate design issue               |

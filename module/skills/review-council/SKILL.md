@@ -9,6 +9,16 @@ description: >
 
 # Review Council
 
+<HARD-GATE>
+Review Council is READ-ONLY by default. After producing a verdict, STOP
+and present findings to the user. Do NOT fix, edit, or modify any
+reviewed code or spec unless the user explicitly instructs you to do so
+in the current session. This applies to ALL iterations, ALL severity
+levels, and both code and spec review modes. The only write operations
+permitted without user consent are session bookkeeping (tracking files,
+verdict files, learnings) inside the session directory.
+</HARD-GATE>
+
 ## Path Anchoring
 
 Set `SKILL_DIR` to the directory containing this file.
@@ -97,6 +107,11 @@ does NOT parse raw user input.
 | `code HEAD -> focus on security` | `--mode code --scope range --scope-value "HEAD~1..HEAD" --review-instructions "focus on security"` |
 | `review the auth module`         | `--scope changed --scope paths --scope-value "src/auth/"`                                          |
 | `do stuff and make it good`      | `--review-instructions "make it good"`                                                             |
+| `quick`                          | `--effort quick`                                                                                   |
+| `deep`                           | `--effort deep`                                                                                    |
+| `quick code HEAD`               | `--effort quick --mode code --scope range --scope-value "HEAD~1..HEAD"`                            |
+| `deep main..feat`               | `--effort deep --scope range --scope-value "main..feat"`                                           |
+| `quick 42`                      | `--effort quick --scope pr --scope-value 42`                                                       |
 
 **Rules:**
 
@@ -105,6 +120,7 @@ does NOT parse raw user input.
 3. **Directory paths** become a secondary filter: `--scope changed --scope paths --scope-value "dir/"`.
 4. **Defaults**: if scope is unclear, omit `--scope` (code defaults to `changed`, specs to `all`). If mode is unclear, omit `--mode` (auto-detect).
 5. **Fallback**: if the input doesn't clearly specify scope or mode, pass what you can and let defaults apply. Unrecognized text becomes `--review-instructions`.
+6. **Effort** words: `quick` → `--effort quick`, `deep` → `--effort deep`. If neither appears, omit `--effort` (defaults to `standard`). Effort words can appear in any position alongside scope and mode tokens.
 
 ### Step 1: PREPARE (scripted)
 
@@ -131,14 +147,15 @@ linked issues, and prior reviews (if PR), and initializes the tracking file.
   "review_instructions": "",
   "scope_type": "changed | all | range | paths | pr | url",
   "scope_value": "",
-  "scope_dir": ""
+  "scope_dir": "",
+  "effort": "standard"
 }
 ```
 
 **If status is `skip` or `empty`:** Read the message field, report to
 the user, and stop. Do not proceed to delegation.
 
-**If status is `ok`:** Capture session_dir and mode, proceed to Step 2.
+**If status is `ok`:** Capture session_dir, mode, and effort, proceed to Step 2.
 
 ### Step 2: READ TRACKING (re-entry support)
 
@@ -153,6 +170,24 @@ Determine the current state from the tracking file:
 
 This enables re-entry: if the skill is invoked mid-run,
 it resumes without repeating completed work.
+
+### Step 2.1: DECOMPOSITION (deep mode only)
+
+**Skip this step unless effort is `deep`.**
+
+Read `${PHASES_DIR}/decompose.md` for decomposition instructions.
+
+Analyze the changeset from `${session_dir}/changeset.txt` and the diff
+from `${session_dir}/diff.patch`. Produce a subsystem map and write it
+to `${session_dir}/subsystems.json`.
+
+If decomposition produces a single subsystem (changeset is already
+cohesive), fall back to standard-mode delegation — do not create
+`subsystems.json`.
+
+**Update tracking:** Record subsystem count and names.
+
+Proceed to Step 2.5 (Quality Gates).
 
 ### Step 2.5: QUALITY GATES (code review with PR only)
 
@@ -190,6 +225,16 @@ For each reviewer agent in the agents array from Step 1:
 
 Dispatch all agents in parallel for speed.
 
+**Effort-conditional behavior:**
+- **quick / standard**: Delegate once over the whole changeset as
+  described above.
+- **deep**: If `${session_dir}/subsystems.json` exists, run one
+  delegation round per subsystem. For each subsystem, scope the
+  changeset and diff to that subsystem's files. Write verdicts to
+  `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md`.
+  Dispatch all agents for a given subsystem in parallel, then proceed
+  to the next subsystem.
+
 **Update tracking:** Set Delegation (iteration N) status to `complete`,
 record agents dispatched, verdicts received, and any failures.
 
@@ -220,6 +265,17 @@ and validation gate procedures.
 - Consolidate duplicates across agents
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
+**Effort-conditional behavior:**
+- **quick**: Skip the correction round, severity calibration, and
+  validation gate. Run only `rc-verify-evidence.sh` (mechanical
+  evidence check). Proceed directly to Step 5 with surviving findings.
+- **standard**: Full verification as described above.
+- **deep**: Run Steps 1-3 of verify.md per-subsystem (iterate over
+  subdirectories in `${session_dir}/verdicts/`). Then run the
+  validation gate once over aggregated findings from all subsystems,
+  providing the subsystem map from `${session_dir}/subsystems.json`
+  as context.
+
 **Update tracking:** Set Verification (iteration N) status to `complete`,
 record findings total/verified/corrected/stripped, duplicates
 consolidated, and iteration verdict.
@@ -229,14 +285,20 @@ Proceed to Step 5.
 ### Step 5: ITERATION CHECK
 
 - **If all agents APPROVE:** Proceed to Step 6 (Report).
-- **If any REQUEST CHANGES and iteration < 3:**
-  - Fix verified findings
-  - Increment iteration counter
-  - Return to Step 3 (Delegation)
-- **If iteration >= 3:**
-  - Ask the user whether to continue fixing or stop and report
-  - If user says continue: increment iteration, return to Step 3
-  - If user says stop: proceed to Step 6 with REQUEST CHANGES verdict
+- **If any REQUEST CHANGES:**
+  - Present the verified findings to the user
+  - Ask: "Would you like me to fix these issues and re-review?"
+  - **If user says yes:** Fix the findings, increment iteration counter,
+    return to Step 3 (Delegation)
+  - **If user says no (or stop):** Proceed to Step 6 with
+    REQUEST CHANGES verdict
+  - **Iteration limits by effort level:**
+    - **quick**: Max 1 iteration. After delegation and verification,
+      proceed directly to Step 6 regardless of verdict.
+    - **standard**: Max 3 iterations. If iteration >= 3 and user
+      says yes, warn that this is iteration N and ask the user to
+      confirm before continuing.
+    - **deep**: Max 5 iterations. If iteration >= 3, warn as above.
 
 ### Step 6: REPORT
 
@@ -253,6 +315,15 @@ and learnings extraction guidance.
 - Record learnings using the Knowledge tool (if configured) or
   write to `${session_dir}/learnings.txt`
 - Output final report with council verdict
+
+**Effort-conditional behavior:**
+- **quick**: Produce a compact report: findings list (sorted by
+  severity) and verdict only. Skip learnings extraction and narrative
+  synthesis.
+- **standard**: Full report as described above.
+- **deep**: Full report plus a **Subsystem Analysis** section before
+  the findings list. Read `${session_dir}/subsystems.json` and render
+  a tree with finding counts per subsystem. Include learnings.
 
 **Update tracking:** Set Report status to `complete`, record council
 verdict and learnings count.
@@ -281,6 +352,7 @@ orchestrator writes subsequent phases.
 - Prior reviews: {count}
 - Constitution: {none | path (source)}
 - Mode: {code | spec} ({reason})
+- Effort: {quick | standard | deep}
 - Branch: {branch name}
 - Base: {main | master}
 - Language: {language}
@@ -288,6 +360,13 @@ orchestrator writes subsequent phases.
 - Agents discovered: {count}
 - Agents absent: none
 - Changeset size: {count} files
+
+## Phase: Decomposition (deep mode only)
+
+- Subsystems: {count}
+- Names: {comma-separated}
+- Cross-cutting files: {count}
+- Fallback to standard: {yes|no}
 
 ## Phase: Quality Gates
 

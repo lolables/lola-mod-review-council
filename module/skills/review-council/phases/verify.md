@@ -63,6 +63,8 @@ The mechanical evidence checking is performed by `rc-verify-evidence.sh`. The sc
 
 ## Step 1 — Correction Round
 
+**Effort gate:** If effort is `quick`, skip this step entirely.
+
 For findings classified as **correctable** (file exists but evidence quote is wrong), give the originating agent ONE chance to fix it.
 
 Send the agent a focused correction prompt:
@@ -87,6 +89,8 @@ Send the agent a focused correction prompt:
 ---
 
 ## Step 2 — Severity Calibration
+
+**Effort gate:** If effort is `quick`, skip this step entirely.
 
 For each finding that is now classified as **verified** (either verified in the mechanical check or upgraded to verified during the correction round), compare the assigned severity against the severity pack boundary definitions:
 
@@ -120,6 +124,23 @@ After the correction round, remove all findings that remain unverified:
 ---
 
 ## Step 4 — Validation Gate
+
+**Effort gate:** If effort is `quick`, skip this step entirely.
+
+**Deep mode behavior:** If effort is `deep`, run Steps 1-3 separately
+for each subsystem's verdicts (iterate subdirectories in
+`${session_dir}/verdicts/`). Then run this validation gate once over
+the aggregated findings from all subsystems. Include the subsystem
+map from `${session_dir}/subsystems.json` as additional context in
+the validator prompt — append:
+
+> ## Subsystem Map
+>
+> This review was decomposed into subsystems. The finding you are
+> validating came from the **{subsystem name}** subsystem. Consider
+> whether cross-subsystem interactions affect the finding's validity.
+>
+> {JSON contents of subsystems.json}
 
 After deduplication, dispatch a fresh-context sub-agent to perform independent validation. This agent has NOT participated in any prior phase of the review — it sees only the surviving findings and has access to the source files.
 

@@ -137,6 +137,74 @@ result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_field "$result" "mode" "spec" "auto-detected spec mode"
 rm -rf "$tmpdir"
 
+# Test 9: --effort flag with valid values
+echo "Test 9: --effort flag (valid values)"
+tmpdir=$(mktemp -d)
+cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
+git checkout -b feature -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort quick 2>/dev/null)
+assert_json_field "$result" "effort" "quick" "effort=quick in JSON"
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort standard 2>/dev/null)
+assert_json_field "$result" "effort" "standard" "effort=standard in JSON"
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort deep 2>/dev/null)
+assert_json_field "$result" "effort" "deep" "effort=deep in JSON"
+rm -rf "$tmpdir"
+
+# Test 10: --effort flag with invalid value
+echo "Test 10: --effort flag (invalid value)"
+tmpdir=$(mktemp -d)
+cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
+git checkout -b feature -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort banana 2>/dev/null)
+assert_json_status "$result" "skip" "invalid effort value returns skip"
+rm -rf "$tmpdir"
+
+# Test 11: --effort defaults to standard when omitted
+echo "Test 11: --effort default"
+tmpdir=$(mktemp -d)
+cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
+git checkout -b feature -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
+assert_json_field "$result" "effort" "standard" "effort defaults to standard"
+rm -rf "$tmpdir"
+
+# Test 12: --effort value appears in session.txt
+echo "Test 12: --effort in session.txt"
+tmpdir=$(mktemp -d)
+cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
+git checkout -b feature -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort deep 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+if grep -q "Effort:.*deep" "$session_dir/session.txt"; then
+	echo "  PASS: effort=deep in session.txt"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: effort=deep not found in session.txt"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$tmpdir"
+
+# Test 13: --effort value appears in tracking.md
+echo "Test 13: --effort in tracking.md"
+tmpdir=$(mktemp -d)
+cd "$tmpdir" && git -c init.defaultBranch=main init -q && git commit --allow-empty -m "init" -q
+git checkout -b feature -q
+echo "x" >file.go && git add file.go && git commit -m "add" -q
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort quick 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+if grep -q "Effort: quick" "$session_dir/tracking.md"; then
+	echo "  PASS: effort=quick in tracking.md"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: effort=quick not found in tracking.md"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$tmpdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

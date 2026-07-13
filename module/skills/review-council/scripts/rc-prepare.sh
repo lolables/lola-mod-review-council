@@ -18,6 +18,7 @@ scope_type=""
 scope_value=""
 scope_filters=() # Secondary --scope paths filters
 base_override=""
+effort="standard"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -74,6 +75,20 @@ while [[ $# -gt 0 ]]; do
 		base_override="$2"
 		shift 2
 		;;
+	--effort)
+		[[ $# -lt 2 ]] && {
+			json_output "skip" "--effort requires a value (quick, standard, or deep)"
+			exit 0
+		}
+		case "$2" in
+		quick | standard | deep) effort="$2" ;;
+		*)
+			json_output "skip" "Invalid --effort value: $2. Valid values: quick, standard, deep"
+			exit 0
+			;;
+		esac
+		shift 2
+		;;
 	--help)
 		cat <<-'HELP'
 			Usage: rc-prepare.sh [flags]
@@ -84,6 +99,7 @@ while [[ $# -gt 0 ]]; do
 			  --scope-value <value>            Value for the preceding --scope
 			  --review-instructions <text>     Freeform review guidance for agents
 			  --base <branch>                  Override base branch (default: main or master)
+			  --effort <quick|standard|deep>   Review depth (default: standard)
 
 			Scope types:
 			  changed     base...HEAD + uncommitted changes (code default)
@@ -877,6 +893,7 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 	echo "Branch:       ${current_branch}"
 	echo "Base:         ${base_branch}"
 	echo "Mode:         ${mode} (${mode_reason})"
+	echo "Effort:       ${effort}"
 	echo "Started:      ${iso_timestamp}"
 	echo "Agents:       $(
 		IFS=,
@@ -916,6 +933,7 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 	echo "- Prior reviews: ${prior_reviews_count}"
 	echo "- Constitution: ${constitution} ${constitution_source:+(${constitution_source})}"
 	echo "- Mode: ${mode} (${mode_reason})"
+	echo "- Effort: ${effort}"
 	echo "- Branch: ${current_branch}"
 	echo "- Base: ${base_branch}"
 	echo "- Language: ${language}"
@@ -1020,6 +1038,7 @@ jq -n \
 	--arg scope_type "${scope_type:-changed}" \
 	--arg scope_value "${input_value:-}" \
 	--arg scope_dir "${scope_dir:-}" \
+	--arg effort "$effort" \
 	--argjson agents "$agents_json" \
 	'{
     status: $status,
@@ -1032,5 +1051,6 @@ jq -n \
     scope_type: $scope_type,
     scope_value: $scope_value,
     scope_dir: $scope_dir,
+    effort: $effort,
     agents: $agents
   }'

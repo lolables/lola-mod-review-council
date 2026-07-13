@@ -51,7 +51,7 @@ If the tool does not support model selection, all agents run on the default mode
 
 **Every delegation prompt MUST include** the changeset AND the diff (when available).
 
-**Data sources:** Read the file list from `${session_dir}/changeset.txt` and the diff from `${session_dir}/diff.patch`. Read the scope from `${session_dir}/tracking.md` (the `Scope:` and `Scope value:` fields).
+**Data sources:** Read the file list from `${session_dir}/changeset.txt` and the diff from `${session_dir}/diff.patch`. Read the scope from `${session_dir}/tracking.md` (the `Scope:` and `Scope value:` fields). Also read the `Effort:` field from tracking.md to determine delegation mode.
 
 **Scope framing:** Use the scope from tracking.md to frame the review accurately:
 - If scope is `changed`: "The following files changed on branch `{branch}` vs `{base}`:"
@@ -149,6 +149,31 @@ e. Write `${session_dir}/batches.txt` listing which files went into which batch.
 
 If the orchestrating tool has native batching or context management, it may use its own mechanism instead.
 
+### Deep Mode — Per-Subsystem Delegation
+
+**When effort is `deep` and `${session_dir}/subsystems.json` exists:**
+
+Instead of delegating over the whole changeset, run one delegation
+round per subsystem:
+
+1. Read `${session_dir}/subsystems.json`.
+2. For each subsystem:
+   a. Filter `changeset.txt` to only the subsystem's files.
+   b. Filter `diff.patch` to only the hunks for the subsystem's files.
+   c. Replace the scope framing sentence with:
+      > "The following files belong to the **{subsystem name}** subsystem ({subsystem description}):"
+   d. Dispatch all 5 personas for this subsystem in parallel.
+   e. Write verdicts to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md`.
+      Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
+3. After all subsystems complete, proceed to verification.
+
+**Batching within subsystems:** If a subsystem's file count exceeds the
+batch size, apply the same batching rules within that subsystem.
+
+**Cross-cutting files** (files appearing in multiple subsystems) are
+included in each subsystem's delegation round. Each agent reviews the
+file in the context of that subsystem's concern.
+
 ---
 
 ## Spec Review Delegation
@@ -212,6 +237,11 @@ to a rubber stamp with zero findings.
 Copy the agent's return value as-is. If it includes a
 `Files read:` attestation header, finding blocks, and a verdict
 line, all of those must appear in the verdict file unchanged.
+
+**Deep mode paths:** When effort is `deep`, write verdicts to
+`${session_dir}/verdicts/{subsystem-name}/{agent-name}.md` instead
+of `${session_dir}/verdicts/{agent-name}.md`. The subsystem name
+matches the `name` field from `subsystems.json`.
 
 **Handling agent failures**:
 - If an agent fails to return a valid verdict (neither APPROVE nor REQUEST CHANGES, or crashes/times out), treat as a **warning** and continue collecting from remaining agents.

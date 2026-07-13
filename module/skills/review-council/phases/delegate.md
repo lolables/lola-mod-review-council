@@ -199,7 +199,19 @@ Instruct agents to review the listed spec artifacts (not code), plus the project
 
 ## Verdict Collection
 
-As each agent returns, write its full output to `${session_dir}/verdicts/{agent-name}.md`.
+**CRITICAL: Write each agent's RAW output verbatim** to
+`${session_dir}/verdicts/{agent-name}.md`. Do NOT summarize,
+paraphrase, reformat, or editorialize the agent's response.
+The downstream verification script (`rc-verify-evidence.sh`)
+parses finding structure from these files — specifically the
+`### [SEVERITY] Title`, `**File**:`, and `**Evidence**:` fields.
+If you rewrite or summarize the output, the parser cannot extract
+findings, and the entire verification pipeline silently degrades
+to a rubber stamp with zero findings.
+
+Copy the agent's return value as-is. If it includes a
+`Files read:` attestation header, finding blocks, and a verdict
+line, all of those must appear in the verdict file unchanged.
 
 **Handling agent failures**:
 - If an agent fails to return a valid verdict (neither APPROVE nor REQUEST CHANGES, or crashes/times out), treat as a **warning** and continue collecting from remaining agents.

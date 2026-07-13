@@ -3,6 +3,7 @@ description: |
   Routing test: /review-council quick code HEAD should translate to
   --effort quick --mode code --scope range --scope-value "HEAD~1..HEAD".
   Tests that the "quick" token is extracted as an effort flag.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-017-route-quick/scaffold.sh" "$PWD"
 timeout_seconds: 1800
 followup_messages:
   - |

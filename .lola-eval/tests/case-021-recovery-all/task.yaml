@@ -1,0 +1,21 @@
+task_version: "2"
+description: |
+  Recovery test: /review-council specs on a repo where documentation
+  lives under docs/ but NOT in any of the spec-mode scan directories
+  (specs/, docs/specs/, docs/design/, docs/superpowers/, design/).
+  The --scope all scan finds no spec artifacts and returns empty.
+  Per the SKILL.md recovery table, there is no automatic retry for
+  --scope all. The agent should explain what directories were searched,
+  tell the user nothing was found, and ask what they want reviewed.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of what happened.
+    Use this exact format:
+
+    OUTCOME: <REVIEW COMPLETED or NO SPEC ARTIFACTS FOUND>
+    EMPTY_EXPLANATION: <what did you tell the user about what was searched?>
+    DIRECTORIES_MENTIONED: <list the directories you told the user were searched>
+    USER_PROMPTED: <yes or no — did you ask the user what to review instead?>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>
+    MODE_USED: <code or specs>

@@ -1,0 +1,21 @@
+task_version: "2"
+description: |
+  Recovery test: /review-council code on a repo where all code is
+  committed to main with no feature branch. --scope changed resolves
+  to an empty diff (main...HEAD is empty). The agent should follow
+  the SKILL.md recovery table: report the empty result, then retry
+  with --scope all, which finds the committed source files.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh, including any recovery retry>
+    RECOVERY_USED: <yes or no — did you retry with different scope flags after an empty result?>

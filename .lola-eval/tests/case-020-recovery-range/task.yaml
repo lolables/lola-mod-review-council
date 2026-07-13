@@ -1,0 +1,25 @@
+task_version: "2"
+description: |
+  Recovery test: /review-council HEAD on a repo where the latest
+  commit (HEAD) is an empty commit (no file changes). The agent
+  translates HEAD to --scope range --scope-value "HEAD~1..HEAD",
+  which returns empty. The SKILL.md recovery table says: when
+  --scope range returns empty, retry with --scope changed. The
+  scaffold creates a feature branch with code changes, then adds
+  an empty commit on top, so --scope changed finds files but
+  --scope range on HEAD does not.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-020-recovery-range/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh, including any recovery retry>
+    RECOVERY_USED: <yes or no — did you retry with different scope flags after an empty result?>

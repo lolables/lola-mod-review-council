@@ -11,6 +11,11 @@ description: >
 
 Diagnostic skill for validating review-council script output quality and clarity.
 
+**HARD-GATE exemption:** The review-council SKILL.md prohibits running
+local builds, tests, linters, and CI commands during reviews. This skill
+is a maintainer diagnostic, not a review run. Executing rc-prepare.sh,
+rc-verify-evidence.sh, and rc-render-report.sh is its entire purpose.
+
 ## Path Anchoring
 
 This skill references the review-council scripts from the parent module. Derive the script directory:
@@ -149,7 +154,9 @@ Test these scenarios for robustness:
 - **Non-git directory**: Run scripts outside a git repo
 - **Empty repository**: Init a git repo with no commits
 - **No forge CLI**: Verify graceful degradation when `gh` and `glab` are unavailable
-- **Empty changeset**: Test mode detection when no files changed
+- **Empty changeset (--scope changed)**: Run `rc-prepare.sh --mode code` on a repo where HEAD is main (no feature branch). Expect `status: "empty"`. Verify `message` is clear enough for the orchestrator to know it should retry with `--scope all`.
+- **Empty changeset (--scope range)**: Run `rc-prepare.sh --scope range --scope-value "HEAD~1..HEAD"` where HEAD is an empty commit. Expect `status: "empty"`. Verify `message` guides the orchestrator to retry with `--scope changed`.
+- **Empty changeset (--scope all, terminal)**: Run `rc-prepare.sh --mode specs` on a repo with no spec directories. Expect `status: "empty"`. Verify `message` makes clear that no retry is available and the orchestrator should ask the user what to review.
 - **No verdict files**: Session created but verdicts directory is empty
 - **Malformed verdict files**: Verdicts with missing fields or invalid format
 - **Missing tracking.md**: Session exists but tracking.md was not created

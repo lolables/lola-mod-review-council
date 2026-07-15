@@ -51,6 +51,15 @@ table are two halves of one contract:
   SKILL.md is the source of truth for how to map user intent to those
   flags.
 
+### SKILL.md ↔ debug skill sync
+
+When updating `module/skills/review-council/SKILL.md`, check whether
+`module/skills/review-council-debug/SKILL.md` needs a corresponding
+update. The debug skill exercises the scripts and validates their
+output messages — changes to status handling (e.g., the recovery
+table), new flags, or new output fields may need new edge cases in
+the debug skill's diagnostic procedure.
+
 ## Working on agents
 
 Agent definitions live at `module/agents/divisor-*.md`. Each has a

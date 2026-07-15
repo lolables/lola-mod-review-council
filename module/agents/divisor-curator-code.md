@@ -39,11 +39,11 @@ bash. Instead, report the documentation gap as a finding with the note:
 Your bash access is restricted to exactly one read-only operation —
 searching existing issues to check for duplicates:
 
-| Forge tool | Command                                          |
-|------------|--------------------------------------------------|
-| `gh`       | `gh issue list --repo <DOCS_REPO> ...`           |
-| `glab`     | `glab issue list --repo <DOCS_REPO> ...`         |
-| `none`     | Do NOT use bash. Report gaps as findings only.   |
+| Forge tool | Command                                        |
+|------------|------------------------------------------------|
+| `gh`       | `gh issue list --repo <DOCS_REPO> ...`         |
+| `glab`     | `glab issue list --repo <DOCS_REPO> ...`       |
+| `none`     | Do NOT use bash. Report gaps as findings only. |
 
 where `<DOCS_REPO>` is the documentation repository configured
 in the project's "Review Council Configuration" section (the
@@ -233,13 +233,13 @@ The Curator identifies **what** needs documenting and files tracking issues. The
 
 ## Graceful Degradation
 
-| Condition                                              | Behavior                                                                                                                                |
-|--------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
-| `gh` not available                                     | Skip duplicate checking. Include the full `gh issue create` command in the finding's recommendation as usual.                           |
-| Docs repo inaccessible                                 | Skip duplicate checking. Include the full `gh issue create` command in the finding's recommendation for manual filing.                  |
-| `Docs repo` value is invalid (not `owner/repo` format) | Report documentation gaps as findings. Do not invoke bash. Note the misconfiguration.                                                   |
-| Knowledge layer not available                          | Skip Prior Learnings (see reviewer-protocol.md), proceed with standard review.                                                          |
-| No content pack loaded                                 | Skip content quality checks on issue descriptions. Recommend issues with best-effort descriptions.                                      |
+| Condition                                              | Behavior                                                                                                               |
+|--------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
+| `gh` not available                                     | Skip duplicate checking. Include the full `gh issue create` command in the finding's recommendation as usual.          |
+| Docs repo inaccessible                                 | Skip duplicate checking. Include the full `gh issue create` command in the finding's recommendation for manual filing. |
+| `Docs repo` value is invalid (not `owner/repo` format) | Report documentation gaps as findings. Do not invoke bash. Note the misconfiguration.                                  |
+| Knowledge layer not available                          | Skip Prior Learnings (see reviewer-protocol.md), proceed with standard review.                                         |
+| No content pack loaded                                 | Skip content quality checks on issue descriptions. Recommend issues with best-effort descriptions.                     |
 
 ## Red Flags — STOP
 

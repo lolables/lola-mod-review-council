@@ -114,9 +114,9 @@ does NOT parse raw user input.
 | `do stuff and make it good`      | `--review-instructions "make it good"`                                                             |
 | `quick`                          | `--effort quick`                                                                                   |
 | `deep`                           | `--effort deep`                                                                                    |
-| `quick code HEAD`               | `--effort quick --mode code --scope range --scope-value "HEAD~1..HEAD"`                            |
-| `deep main..feat`               | `--effort deep --scope range --scope-value "main..feat"`                                           |
-| `quick 42`                      | `--effort quick --scope pr --scope-value 42`                                                       |
+| `quick code HEAD`                | `--effort quick --mode code --scope range --scope-value "HEAD~1..HEAD"`                            |
+| `deep main..feat`                | `--effort deep --scope range --scope-value "main..feat"`                                           |
+| `quick 42`                       | `--effort quick --scope pr --scope-value 42`                                                       |
 
 **Rules:**
 
@@ -169,12 +169,12 @@ giving up, try exactly ONE recovery attempt using the table below.
 If you already retried once, report the empty result to the user and
 ask what they would like to review instead.
 
-| Original scope | Recovery action |
-|----------------|-----------------|
-| `--scope changed` (with or without `--scope paths`) | Re-run with `--scope all` (keep `--scope paths` and `--scope-value` if present, keep `--mode`) |
-| `--scope range --scope-value "X..Y"` | Re-run with `--scope changed` (keep `--mode`) |
-| `--scope all` | **Terminal — no retry permitted.** Output the message below verbatim (filling in the blanks), then end the task. Do not call rc-prepare.sh again. Do not read project files. Do not produce findings. |
-| Any other | Re-run with `--scope all` (keep `--mode`) |
+| Original scope                                      | Recovery action                                                                                                                                                                                       |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--scope changed` (with or without `--scope paths`) | Re-run with `--scope all` (keep `--scope paths` and `--scope-value` if present, keep `--mode`)                                                                                                        |
+| `--scope range --scope-value "X..Y"`                | Re-run with `--scope changed` (keep `--mode`)                                                                                                                                                         |
+| `--scope all`                                       | **Terminal — no retry permitted.** Output the message below verbatim (filling in the blanks), then end the task. Do not call rc-prepare.sh again. Do not read project files. Do not produce findings. |
+| Any other                                           | Re-run with `--scope all` (keep `--mode`)                                                                                                                                                             |
 
 When `--scope all` returns `empty`, output exactly this and stop:
 

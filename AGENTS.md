@@ -119,7 +119,7 @@ test cases need corresponding updates:
 
 ### Targeted routing tests
 
-Cases `case-010` through `case-016` test specific routing paths in
+Cases `case-010` through `case-018` test specific routing paths in
 isolation. Run with `task lola-eval:test-routing`.
 
 | Case | Input | What It Tests |
@@ -131,6 +131,19 @@ isolation. Run with `task lola-eval:test-routing`.
 | case-014 | `code HEAD -> ...` | Mixed mode+scope+instructions |
 | case-015 | `fix the auth bug` | Freeform → review-instructions |
 | case-016 | `42` | Number → PR scope |
+| case-017 | `quick code HEAD` | Effort extraction + compound |
+| case-018 | `deep main..feat` | Effort extraction + range |
+
+### Recovery tests
+
+Cases `case-019` through `case-021` test the SKILL.md empty-status
+recovery table. Run with `task lola-eval:test-recovery`.
+
+| Case | Scenario | Recovery Path |
+|------|----------|---------------|
+| case-019 | `code` on main-only repo | `--scope changed` → empty → retry `--scope all` |
+| case-020 | `HEAD` where HEAD is empty commit | `--scope range` → empty → retry `--scope changed` |
+| case-021 | `specs` with docs outside spec dirs | `--scope all` → empty → explain + ask user |
 
 ## scaffold.sh contract
 

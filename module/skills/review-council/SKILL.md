@@ -17,6 +17,11 @@ in the current session. This applies to ALL iterations, ALL severity
 levels, and both code and spec review modes. The only write operations
 permitted without user consent are session bookkeeping (tracking files,
 verdict files, learnings) inside the session directory.
+
+Do NOT run local builds, tests, linters, or CI commands. Review Council
+analyzes source code statically — it never executes project code. Reading
+upstream CI status from the forge (Step 2.2) is permitted; launching
+local processes is not.
 </HARD-GATE>
 
 ## Path Anchoring
@@ -121,10 +126,14 @@ does NOT parse raw user input.
 4. **Defaults**: if scope is unclear, omit `--scope` (code defaults to `changed`, specs to `all`). If mode is unclear, omit `--mode` (auto-detect).
 5. **Fallback**: if the input doesn't clearly specify scope or mode, pass what you can and let defaults apply. Unrecognized text becomes `--review-instructions`.
 6. **Effort** words: `quick` → `--effort quick`, `deep` → `--effort deep`. If neither appears, omit `--effort` (defaults to `standard`). Effort words can appear in any position alongside scope and mode tokens.
+7. **No preemptive optimization**: The first rc-prepare.sh call MUST use exactly the flags from this table. Do not anticipate that a scope will be empty and skip ahead to a broader scope. The recovery table in Step 1 handles empty results — let it work.
 
 ### Step 1: PREPARE (scripted)
 
-Run `${SCRIPTS_DIR}/rc-prepare.sh` with the flags resolved in Step 0.
+Run `${SCRIPTS_DIR}/rc-prepare.sh` with **exactly** the flags from Step 0's
+decision table. Do not add `--scope` if the table omits it — the script has
+its own defaults. Do not substitute a broader scope because you expect the
+default will be empty.
 
 ```bash
 AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [resolved flags from Step 0]
@@ -152,8 +161,41 @@ linked issues, and prior reviews (if PR), and initializes the tracking file.
 }
 ```
 
-**If status is `skip` or `empty`:** Read the message field, report to
-the user, and stop. Do not proceed to delegation.
+**If status is `skip`:** Read the message field, report to the user,
+and stop. Do not proceed to delegation.
+
+**If status is `empty`:** The scope resolved to zero files. Before
+giving up, try exactly ONE recovery attempt using the table below.
+If you already retried once, report the empty result to the user and
+ask what they would like to review instead.
+
+| Original scope | Recovery action |
+|----------------|-----------------|
+| `--scope changed` (with or without `--scope paths`) | Re-run with `--scope all` (keep `--scope paths` and `--scope-value` if present, keep `--mode`) |
+| `--scope range --scope-value "X..Y"` | Re-run with `--scope changed` (keep `--mode`) |
+| `--scope all` | **Terminal — no retry permitted.** Output the message below verbatim (filling in the blanks), then end the task. Do not call rc-prepare.sh again. Do not read project files. Do not produce findings. |
+| Any other | Re-run with `--scope all` (keep `--mode`) |
+
+When `--scope all` returns `empty`, output exactly this and stop:
+
+> **Review Council: no files in scope.**
+> Mode: {code or specs}
+> Searched: {list directories the mode scans — code: all tracked files; specs: specs/, docs/specs/, docs/design/, design/}
+> Result: no matching files found.
+>
+> To continue, tell me which path or scope you'd like reviewed — for example:
+> - `/review-council code` to review code instead of specs
+> - `/review-council specs module/docs/` to review a specific directory
+
+**Be explicit when changing scope.** Before re-running with recovery
+flags, tell the user what happened and what you are trying instead.
+Example: "The diff for HEAD~1..HEAD contained no files. Falling back
+to reviewing uncommitted and staged changes (--scope changed)."
+
+Do NOT invent flags and do NOT fall back to a manual review. Run
+rc-prepare.sh exactly once more with the recovery flags. If the second
+attempt also returns `empty`, report both results to the user and ask
+what they would like to review.
 
 **If status is `ok`:** Capture session_dir, mode, and effort, proceed to Step 2.
 

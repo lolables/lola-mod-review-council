@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # scaffold.sh — create git history for case-012-route-dir.
-# Adds changes to both module/ and cmd/ so the directory filter
-# can be verified — only module/ changes should be in scope.
+# Adds changes on a feature branch so --scope changed (base...HEAD)
+# finds a non-empty changeset. Both module/ and cmd/ get flawed files
+# so the directory filter can be verified — only module/ should be in scope.
 set -euo pipefail
 workdir="$1"
 cd "$workdir"
+
+# Create a feature branch off main so --scope changed has a diff
+git -c user.name="scaffold" -c user.email="scaffold@test" checkout -b feat/admin-debug
 
 # Add a flawed file outside module/ (should be OUT of scope)
 cat >cmd/debug.go <<'GO'

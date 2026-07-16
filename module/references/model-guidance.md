@@ -25,7 +25,7 @@ Composites (0.0-1.0) across weighted rubric dimensions. Pass thresholds: 0.60-0.
 | TS convention pack (5 violations) | 0.77     | 0.82     | 0.45     |
 | **Average**                       | **0.89** | **0.92** | **0.72** |
 
-Scores averaged across CLI hosts (Claude Code, OpenCode).
+Scores averaged across multiple CLI hosts.
 
 > Haiku scores 0.40 on clean codebases (Go clean code), indicating 60% false positive rate — primary reason not recommended for reviewer subagents.
 

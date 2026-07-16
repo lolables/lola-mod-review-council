@@ -146,16 +146,11 @@ After deduplication, dispatch fresh-context sub-agent for independent validation
 
 ### Agent Profile
 
-```yaml
-mode: subagent
-temperature: 0.0
-tools:
-  read: true
-  bash: restricted   # grep, find, wc, head, tail only
-  write: false
-  edit: false
-  webfetch: false
-```
+The validation agent operates read-only with restricted shell access:
+may read files and run search commands (`grep`, `find`, `wc`, `head`,
+`tail`). Must not write, edit, or delete files. Must not fetch external
+resources. Temperature should be set to minimum (most deterministic)
+if the hosting tool supports it.
 
 Validator does NOT receive:
 - Diff or patch

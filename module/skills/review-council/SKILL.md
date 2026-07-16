@@ -256,8 +256,9 @@ For each reviewer agent in agents array from Step 1:
 - Construct prompt using changeset from `changeset.txt`, diff from
   `diff.patch`, convention packs from `${REFERENCES_DIR}`, project
   configuration
-- Dispatch agent using `subagent_type = agent filename`
-  (e.g., "divisor-guard-code")
+- Dispatch agent using agent filename as identifier
+  (e.g., "divisor-guard-code") — mechanism varies by host;
+  see `${PHASES_DIR}/delegate.md` Dispatch Mechanism section
 - Collect verdict, write to `${session_dir}/verdicts/{agent-name}.md`
 
 Dispatch all agents in parallel for speed.

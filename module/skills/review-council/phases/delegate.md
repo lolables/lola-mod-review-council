@@ -36,10 +36,15 @@ Questions like "What happens when X is nil?" bias reviewer toward manufacturing 
 
 When orchestrating tool supports model selection for subagents, use these tiers:
 
-| Tier         | Reasoning Demand                        | Personas                  |
-|--------------|-----------------------------------------|---------------------------|
-| **Capable**  | Deep judgment, security/intent analysis | Adversary, Guard          |
-| **Standard** | Checklist-driven with moderate judgment | Tester, Operator, Curator |
+| Tier         | Reasoning Demand                        | Personas                  | Temperature |
+|--------------|-----------------------------------------|---------------------------|-------------|
+| **Capable**  | Deep judgment, security/intent analysis | Adversary, Guard          | 0.1         |
+| **Standard** | Checklist-driven with moderate judgment | Tester, Operator, Curator | 0.1 – 0.2  |
+
+Temperature controls output determinism (lower = more focused). Set if
+hosting tool supports it; omit if not — agents produce usable output at
+any temperature. Curator uses 0.2 (slightly higher creativity for
+content opportunity identification); all others use 0.1.
 
 If tool lacks model selection, all agents run on default model. Empirical performance data by model class in `${REFERENCES_DIR}/model-guidance.md`.
 

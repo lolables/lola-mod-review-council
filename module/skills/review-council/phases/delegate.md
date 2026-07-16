@@ -1,12 +1,12 @@
 # Phase: Delegation — LLM Judgment Reference
 
-This file guides the orchestrator's prompt construction and dispatch mechanism for reviewer agents.
+Guides orchestrator prompt construction and dispatch for reviewer agents.
 
 ## Known Persona Roles (Reference Table)
 
-This table provides context when constructing delegation prompts. The **invocation list comes solely from discovery** — not from this table.
+Context for delegation prompts. **Invocation list comes solely from discovery** — not this table.
 
-Agent files use the naming convention `divisor-{name}-code.md` and `divisor-{name}-spec.md`.
+Agent files follow naming convention `divisor-{name}-code.md` and `divisor-{name}-spec.md`.
 
 | Base Name           | Persona       | Code Review Focus                               | Spec Review Focus                       |
 |---------------------|---------------|-------------------------------------------------|-----------------------------------------|
@@ -16,32 +16,32 @@ Agent files use the naming convention `divisor-{name}-code.md` and `divisor-{nam
 | `divisor-sre`       | The Operator  | Permissions, efficiency, pipeline [PACK]        | Deployment, operational requirements    |
 | `divisor-curator`   | The Curator   | Documentation gaps, issue filing                | Documentation completeness in specs     |
 
-For any discovered agent not in this table, use a generic review prompt appropriate to the current mode.
+For discovered agents not in this table, use generic review prompt matching current mode.
 
 ## Dispatch Mechanism
 
-When dispatching reviewer agents, use the discovered agent filename **minus the `.md` extension** as the subagent identifier (e.g., dispatch to `divisor-adversary-code`, not to a generic agent type). This ensures the host loads the agent's persona definition — including calibration rules, severity thresholds, and grounding requirements — as system context for the subagent.
+Use discovered agent filename **minus `.md` extension** as subagent identifier (e.g., dispatch to `divisor-adversary-code`, not generic agent type). Ensures host loads persona definition — calibration rules, severity thresholds, grounding requirements — as system context.
 
-**Do NOT dispatch reviewers as generic or general-purpose agents with an inline prompt.** The persona files contain critical calibration that cannot be reliably reproduced inline.
+**Do NOT dispatch reviewers as generic agents with inline prompt.** Persona files contain critical calibration not reliably reproduced inline.
 
-If the orchestrating tool does not support named subagent dispatch, read the agent's `.md` file from `${AGENTS_DIR}` (e.g., `${AGENTS_DIR}/divisor-adversary-code.md`) and include its full content at the top of the delegation prompt.
+If orchestrating tool lacks named subagent dispatch, read agent `.md` file from `${AGENTS_DIR}` (e.g., `${AGENTS_DIR}/divisor-adversary-code.md`) and include full content at top of delegation prompt.
 
 ## Prompt Discipline
 
-**Do NOT inject investigative questions, leading hints, or speculative prompts** into delegation prompts. The prompt template provides the changeset, diff, focus area, severity calibration, and grounding requirements. That is sufficient.
+**Do NOT inject investigative questions, leading hints, or speculative prompts** into delegation prompts. Template provides changeset, diff, focus area, severity calibration, grounding requirements. Sufficient.
 
-Adding questions like "What happens when X is nil?" or "Is Y missing?" biases the reviewer toward manufacturing findings for each question. Let the reviewer apply its persona expertise to the code without pre-determining what to find.
+Questions like "What happens when X is nil?" bias reviewer toward manufacturing findings. Let reviewer apply persona expertise without pre-determining what to find.
 
 ## Model Selection Guidance
 
-When the orchestrating tool supports model selection for subagents, use these tiers:
+When orchestrating tool supports model selection for subagents, use these tiers:
 
 | Tier         | Reasoning Demand                        | Personas                  |
 |--------------|-----------------------------------------|---------------------------|
 | **Capable**  | Deep judgment, security/intent analysis | Adversary, Guard          |
 | **Standard** | Checklist-driven with moderate judgment | Tester, Operator, Curator |
 
-If the tool does not support model selection, all agents run on the default model. For empirical performance data by model class, see `${REFERENCES_DIR}/model-guidance.md`.
+If tool lacks model selection, all agents run on default model. Empirical performance data by model class in `${REFERENCES_DIR}/model-guidance.md`.
 
 ---
 
@@ -49,11 +49,11 @@ If the tool does not support model selection, all agents run on the default mode
 
 ### Prompt Template
 
-**Every delegation prompt MUST include** the changeset AND the diff (when available).
+**Every delegation prompt MUST include** changeset AND diff (when available).
 
-**Data sources:** Read the file list from `${session_dir}/changeset.txt` and the diff from `${session_dir}/diff.patch`. Read the scope from `${session_dir}/tracking.md` (the `Scope:` and `Scope value:` fields). Also read the `Effort:` field from tracking.md to determine delegation mode.
+**Data sources:** Read file list from `${session_dir}/changeset.txt`, diff from `${session_dir}/diff.patch`. Read scope from `${session_dir}/tracking.md` (`Scope:` and `Scope value:` fields). Read `Effort:` field from tracking.md to determine delegation mode.
 
-**Scope framing:** Use the scope from tracking.md to frame the review accurately:
+**Scope framing:** Use scope from tracking.md to frame review accurately:
 - If scope is `changed`: "The following files changed on branch `{branch}` vs `{base}`:"
 - If scope is `range`: "The following files changed in `{scope_value}`:"
 - If scope is `all`: "The following project files are in scope for review:"
@@ -78,11 +78,11 @@ If the tool does not support model selection, all agents run on the default mode
 >
 > **Read every file in this changeset before producing any findings.** Do not report on files you have not read. See reviewer-protocol.md for evidence discipline rules.
 
-For each discovered agent, add the focus area from the Persona Roles table (Code Review Focus column).
+For each discovered agent, add focus area from Persona Roles table (Code Review Focus column).
 
-**Framework-aware detection hints**: read the detected language and framework from `${session_dir}/tracking.md` (recorded in section 4b of the Preparation phase). If a matching row exists in the table below, append the listed hints to the relevant persona's delegation prompt. These are detection focus areas, not leading questions — they tell the agent *what patterns to check for*, not *what to find*.
+**Framework-aware detection hints**: read detected language and framework from `${session_dir}/tracking.md` (recorded in section 4b of Preparation phase). If matching row exists below, append listed hints to relevant persona's delegation prompt. Detection focus areas, not leading questions — tell agent *what patterns to check for*, not *what to find*.
 
-If the language is `unknown` or no matching row exists, skip this section and rely on the generic Persona Roles focus areas.
+If language is `unknown` or no matching row exists, skip this section. Rely on generic Persona Roles focus areas.
 
 | Language/Framework   | Persona   | Detection Hints                                                                                                                                                                            |
 |----------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -101,29 +101,29 @@ If the language is `unknown` or no matching row exists, skip this section and re
 | **Java**             | Adversary | Check for SQL injection via string concatenation in JDBC; deserialization of untrusted data; hardcoded credentials                                                                         |
 | **Java**             | Guard     | Check for god classes (>500 lines); deep inheritance hierarchies (>3 levels); package-level circular dependencies                                                                          |
 
-Hints are additive — they supplement, not replace, the generic focus area. Do NOT frame them as questions (e.g., "What happens if..."). Frame them as check instructions (e.g., "Check for X pattern").
+Hints are additive — supplement, not replace, generic focus area. Do NOT frame as questions (e.g., "What happens if..."). Frame as check instructions (e.g., "Check for X pattern").
 
-**Convention pack loading**: include this instruction in every delegation prompt:
+**Convention pack loading**: include in every delegation prompt:
 
 > Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language pack (`lang-{language}.md`) or `base.md` if none exists, then the framework pack (`fw-{framework}.md`) if one exists.
 
-**When quality analysis data is available**: append a "Quality Context" section containing the Quality Report summary.
+**When quality analysis data available**: append "Quality Context" section with Quality Report summary.
 
-**When prior run context is available**: append a "Prior Run Context" section listing resolved findings from the prior run. Instruct agents not to re-flag these unless the fix introduced a new problem.
+**When prior run context available**: append "Prior Run Context" section listing resolved findings from prior run. Instruct agents not to re-flag unless fix introduced new problem.
 
-**When linked issues are available** (`${session_dir}/linked-issues.txt` exists): append a "Linked Issues" section to each delegation prompt containing the full content of `linked-issues.txt`, followed by:
+**When linked issues available** (`${session_dir}/linked-issues.txt` exists): append "Linked Issues" section to each delegation prompt with full content of `linked-issues.txt`, followed by:
 
 > When reviewing, consider whether the changes address the acceptance criteria listed above. Note any criteria that appear unaddressed by the changes.
 
-**When prior forge reviews are available** (`${session_dir}/prior-reviews.txt` exists): append a "Prior Reviews" section containing the full content of `prior-reviews.txt`, followed by:
+**When prior forge reviews available** (`${session_dir}/prior-reviews.txt` exists): append "Prior Reviews" section with full content of `prior-reviews.txt`, followed by:
 
 > These reviews were previously submitted on this PR. Do not re-flag issues that have already been raised unless the current changes make them worse or the prior feedback was not addressed.
 
-**When forge CI status is available** (`${session_dir}/ci-status.txt` exists): append a "CI Status" section containing the full content of `ci-status.txt`, followed by:
+**When forge CI status available** (`${session_dir}/ci-status.txt` exists): append "CI Status" section with full content of `ci-status.txt`, followed by:
 
 > These are the CI check results reported by the forge. Failing checks may or may not be caused by the changes under review — use your judgment when assessing relevance to your findings.
 
-For each agent, instruct it to return its verdict (**APPROVE** or **REQUEST CHANGES**) along with all findings. Remind agents that every finding must include an **Evidence** field quoting the actual code or content observed.
+For each agent, instruct to return verdict (**APPROVE** or **REQUEST CHANGES**) with all findings. Every finding must include **Evidence** field quoting actual code or content observed.
 
 **Grounding requirement**: append to every code review delegation prompt:
 
@@ -137,23 +137,23 @@ For each agent, instruct it to return its verdict (**APPROVE** or **REQUEST CHAN
 
 ### Batching
 
-Check the project's "Review Council Configuration" section for a "Batch size" entry. Default: **20** files.
+Check project's "Review Council Configuration" for "Batch size" entry. Default: **20** files.
 
-If the changeset exceeds the batch size:
+If changeset exceeds batch size:
 
 a. Group files by parent directory so related files stay together.
-b. Fill batches up to the configured size. If a single directory exceeds the batch size, split it alphabetically.
-c. Dispatch each batch as a separate delegation round — all agents review batch 1 in parallel, then batch 2, etc.
+b. Fill batches up to configured size. Single directory exceeds batch size, split alphabetically.
+c. Dispatch each batch as separate delegation round — all agents review batch 1 in parallel, then batch 2, etc.
 d. Merge findings from all batches before proceeding.
 e. Write `${session_dir}/batches.txt` listing which files went into which batch.
 
-If the orchestrating tool has native batching or context management, it may use its own mechanism instead.
+If orchestrating tool has native batching or context management, may use its own mechanism instead.
 
 ### Deep Mode — Per-Subsystem Delegation
 
 **When effort is `deep` and `${session_dir}/subsystems.json` exists:**
 
-Instead of delegating over the whole changeset, run one delegation
+Instead of delegating over whole changeset, run one delegation
 round per subsystem:
 
 1. Read `${session_dir}/subsystems.json`.
@@ -167,12 +167,12 @@ round per subsystem:
       Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
 3. After all subsystems complete, proceed to verification.
 
-**Batching within subsystems:** If a subsystem's file count exceeds the
-batch size, apply the same batching rules within that subsystem.
+**Batching within subsystems:** If subsystem's file count exceeds
+batch size, apply same batching rules within that subsystem.
 
-**Cross-cutting files** (files appearing in multiple subsystems) are
-included in each subsystem's delegation round. Each agent reviews the
-file in the context of that subsystem's concern.
+**Cross-cutting files** (files in multiple subsystems) included in
+each subsystem's delegation round. Each agent reviews file in
+context of that subsystem's concern.
 
 ---
 
@@ -180,7 +180,7 @@ file in the context of that subsystem's concern.
 
 ### Prompt Template
 
-**Every delegation prompt MUST list the spec artifacts** from `${session_dir}/changeset.txt`:
+**Every delegation prompt MUST list spec artifacts** from `${session_dir}/changeset.txt`:
 
 > ## Review Artifacts
 >
@@ -192,13 +192,13 @@ file in the context of that subsystem's concern.
 >
 > **Read every artifact before producing any findings.** Do not report on files you have not read. See reviewer-protocol.md for evidence discipline rules.
 
-For each discovered agent, add the focus area from the Persona Roles table (Spec Review Focus column).
+For each discovered agent, add focus area from Persona Roles table (Spec Review Focus column).
 
-**Convention pack loading**: include this instruction in every delegation prompt:
+**Convention pack loading**: include in every delegation prompt:
 
 > Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language pack (`lang-{language}.md`) or `base.md` if none exists, then the framework pack (`fw-{framework}.md`) if one exists.
 
-Instruct agents to review the listed spec artifacts (not code), plus the project context and governance documents. Include prior run context if available.
+Instruct agents to review listed spec artifacts (not code), plus project context and governance documents. Include prior run context if available.
 
 **Grounding requirement**: append to every spec review delegation prompt:
 
@@ -208,15 +208,15 @@ Instruct agents to review the listed spec artifacts (not code), plus the project
 
 > Before submitting your verdict, re-read the severity pack definitions. Verify each finding's severity meets the stated boundary for that level.
 
-**When linked issues are available** (`${session_dir}/linked-issues.txt` exists): append a "Linked Issues" section to each delegation prompt containing the full content of `linked-issues.txt`, followed by:
+**When linked issues available** (`${session_dir}/linked-issues.txt` exists): append "Linked Issues" section to each delegation prompt with full content of `linked-issues.txt`, followed by:
 
 > When reviewing, consider whether the changes address the acceptance criteria listed above. Note any criteria that appear unaddressed by the changes.
 
-**When prior forge reviews are available** (`${session_dir}/prior-reviews.txt` exists): append a "Prior Reviews" section containing the full content of `prior-reviews.txt`, followed by:
+**When prior forge reviews available** (`${session_dir}/prior-reviews.txt` exists): append "Prior Reviews" section with full content of `prior-reviews.txt`, followed by:
 
 > These reviews were previously submitted on this PR. Do not re-flag issues that have already been raised unless the current changes make them worse or the prior feedback was not addressed.
 
-**When forge CI status is available** (`${session_dir}/ci-status.txt` exists): append a "CI Status" section containing the full content of `ci-status.txt`, followed by:
+**When forge CI status available** (`${session_dir}/ci-status.txt` exists): append "CI Status" section with full content of `ci-status.txt`, followed by:
 
 > These are the CI check results reported by the forge. Failing checks may or may not be caused by the changes under review — use your judgment when assessing relevance to your findings.
 
@@ -226,25 +226,25 @@ Instruct agents to review the listed spec artifacts (not code), plus the project
 
 **CRITICAL: Write each agent's RAW output verbatim** to
 `${session_dir}/verdicts/{agent-name}.md`. Do NOT summarize,
-paraphrase, reformat, or editorialize the agent's response.
-The downstream verification script (`rc-verify-evidence.sh`)
-parses finding structure from these files — specifically the
+paraphrase, reformat, or editorialize agent's response.
+Downstream verification script (`rc-verify-evidence.sh`)
+parses finding structure from these files — specifically
 `### [SEVERITY] Title`, `**File**:`, and `**Evidence**:` fields.
-If you rewrite or summarize the output, the parser cannot extract
-findings, and the entire verification pipeline silently degrades
-to a rubber stamp with zero findings.
+Rewriting or summarizing output means parser cannot extract
+findings, verification pipeline silently degrades to rubber
+stamp with zero findings.
 
-Copy the agent's return value as-is. If it includes a
-`Files read:` attestation header, finding blocks, and a verdict
-line, all of those must appear in the verdict file unchanged.
+Copy agent's return value as-is. If it includes
+`Files read:` attestation header, finding blocks, and verdict
+line, all must appear in verdict file unchanged.
 
 **Deep mode paths:** When effort is `deep`, write verdicts to
 `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md` instead
-of `${session_dir}/verdicts/{agent-name}.md`. The subsystem name
-matches the `name` field from `subsystems.json`.
+of `${session_dir}/verdicts/{agent-name}.md`. Subsystem name
+matches `name` field from `subsystems.json`.
 
 **Handling agent failures**:
-- If an agent fails to return a valid verdict (neither APPROVE nor REQUEST CHANGES, or crashes/times out), treat as a **warning** and continue collecting from remaining agents.
-- If an agent returns REQUEST CHANGES with zero findings, flag as a malformed response.
-- If **all** agents fail, **stop immediately** and report:
+- Agent fails to return valid verdict (neither APPROVE nor REQUEST CHANGES, or crashes/times out): treat as **warning**, continue collecting from remaining agents.
+- Agent returns REQUEST CHANGES with zero findings: flag as malformed response.
+- **All** agents fail: **stop immediately** and report:
   > "All reviewer agents failed to return a verdict. This may indicate a configuration issue."

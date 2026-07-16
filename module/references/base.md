@@ -6,9 +6,9 @@ version: 2.0.0
 
 # Convention Pack: Base (Language-Agnostic)
 
-Language-agnostic fallback. Loaded ONLY when no language pack (`lang-*.md`) is available. Language packs are self-contained — when one is active, load only that pack.
+Language-agnostic fallback. Loaded ONLY when no language pack (`lang-*.md`) available. Language packs self-contained — when one active, load only that pack.
 
-This pack ships empty. It exists as the anchor for project-level custom rules added via `.review-council/packs/`.
+Ships empty. Exists as anchor for project-level custom rules added via `.review-council/packs/`.
 
 ## Custom Rules
 

@@ -5,11 +5,11 @@ last_updated: 2026-06-30
 
 # Model Guidance for Review Council
 
-Empirical data from the eval suite (6 cases: Go security, TypeScript/React architecture, Python multi-concern, false-positive resistance, per-persona coverage, convention pack detection).
+Empirical data from eval suite (6 cases: Go security, TypeScript/React architecture, Python multi-concern, false-positive resistance, per-persona coverage, convention pack detection).
 
 ## Summary
 
-Sonnet-class models deliver the best quality-to-cost ratio. They match or exceed opus-class on detection while costing 2-4x less. Haiku-class passes most cases but struggles with false-positive suppression and convention pack attribution.
+Sonnet-class best quality-to-cost ratio. Matches or exceeds opus-class on detection, costs 2-4x less. Haiku-class passes most cases but struggles with false-positive suppression and convention pack attribution.
 
 ## Scores by Model Class
 
@@ -27,7 +27,7 @@ Composites (0.0-1.0) across weighted rubric dimensions. Pass thresholds: 0.60-0.
 
 Scores averaged across CLI hosts (Claude Code, OpenCode).
 
-> Haiku scores 0.40 on clean codebases (Go clean code), indicating a 60% false positive rate — the primary reason it is not recommended for reviewer subagents.
+> Haiku scores 0.40 on clean codebases (Go clean code), indicating 60% false positive rate — primary reason not recommended for reviewer subagents.
 
 ## Cost Per Review
 
@@ -43,15 +43,15 @@ Cost varies with codebase size and finding count. Pricing as of 2026-06-30.
 
 **Coordinator**: Use user-configured model. Orchestration, not deep analysis.
 
-**Reviewer subagents**: Sonnet-class is the sweet spot. Per-subagent tiers (if host supports model selection):
+**Reviewer subagents**: Sonnet-class sweet spot. Per-subagent tiers (if host supports model selection):
 
 - **Capable tier** (Adversary, Guard): Sonnet or above. Requires judgment on intent, security, governance.
 - **Standard tier** (Tester, Operator, Curator): Sonnet. Checklist-driven but needs accurate code reading and false-positive control.
 
-Haiku is not recommended for reviewers. Budget option for Standard tier only — expect lower false-positive control and convention detection. Never use haiku for Capable tier.
+Haiku not recommended for reviewers. Budget option for Standard tier only — expect lower false-positive control and convention detection. Never use haiku for Capable tier.
 
 ## Limitations
 
 - Eval suite uses small, focused codebases (50-300 lines). Real-world patterns may differ.
 - Only Claude model variants tested.
-- Scores reflect the full pipeline including verification, not raw model capability.
+- Scores reflect full pipeline including verification, not raw model capability.

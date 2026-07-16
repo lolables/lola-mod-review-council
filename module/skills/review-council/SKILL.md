@@ -10,23 +10,23 @@ description: >
 # Review Council
 
 <HARD-GATE>
-Review Council is READ-ONLY by default. After producing a verdict, STOP
-and present findings to the user. Do NOT fix, edit, or modify any
-reviewed code or spec unless the user explicitly instructs you to do so
-in the current session. This applies to ALL iterations, ALL severity
-levels, and both code and spec review modes. The only write operations
-permitted without user consent are session bookkeeping (tracking files,
-verdict files, learnings) inside the session directory.
+Review Council is READ-ONLY by default. After producing verdict, STOP
+and present findings to user. Do NOT fix, edit, or modify any reviewed
+code or spec unless user explicitly instructs you in current session.
+Applies to ALL iterations, ALL severity levels, both code and spec
+review modes. Only write operations permitted without user consent:
+session bookkeeping (tracking files, verdict files, learnings) inside
+session directory.
 
 Do NOT run local builds, tests, linters, or CI commands. Review Council
-analyzes source code statically — it never executes project code. Reading
-upstream CI status from the forge (Step 2.2) is permitted; launching
-local processes is not.
+analyzes source code statically — never executes project code. Reading
+upstream CI status from forge (Step 2.5) permitted; launching local
+processes not.
 </HARD-GATE>
 
 ## Path Anchoring
 
-Set `SKILL_DIR` to the directory containing this file.
+Set `SKILL_DIR` to directory containing this file.
 Derive all other paths from `SKILL_DIR`:
 
 ```bash
@@ -39,15 +39,15 @@ REFERENCES_DIR="${MODULE_DIR}/references"
 ```
 
 All script and phase references below use these paths.
-Construct full paths — do not search by filename.
+Construct full paths — never search by filename.
 
-**When invoking scripts**, export these variables as environment variables:
+**When invoking scripts**, export as environment variables:
 
 ```bash
 export AGENTS_DIR SCRIPTS_DIR PHASES_DIR REFERENCES_DIR
 ```
 
-Scripts require `AGENTS_DIR` to discover reviewer agents. Pass it when
+Scripts need `AGENTS_DIR` to discover reviewer agents. Pass when
 calling `rc-prepare.sh`:
 
 ```bash
@@ -74,26 +74,26 @@ AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [user args]
 ### What It Does
 
 Review Council dynamically discovers reviewer agents matching
-`divisor-*-code.md` or `divisor-*-spec.md` (based on review mode)
-and delegates review to each persona in parallel. It verifies
-findings against actual file content, strips fabricated evidence,
-and produces a council verdict (APPROVE or REQUEST CHANGES).
+`divisor-*-code.md` or `divisor-*-spec.md` (based on review mode),
+delegates review to each persona in parallel, verifies findings
+against actual file content, strips fabricated evidence, produces
+council verdict (APPROVE or REQUEST CHANGES).
 
-Five reviewer personas run in parallel: Guard (intent drift,
-governance, structural coherence), Adversary (security, resilience),
-Tester (test quality, coverage), Operator (deployment, dependencies),
+Five personas run in parallel: Guard (intent drift, governance,
+structural coherence), Adversary (security, resilience), Tester
+(test quality, coverage), Operator (deployment, dependencies),
 Curator (documentation gaps).
 
 ## Execution Flow
 
-This skill is a re-entrant state machine. If invoked mid-run,
-it reads the tracking file and resumes from the last completed phase.
+Re-entrant state machine. If invoked mid-run, reads tracking file
+and resumes from last completed phase.
 
 ### Step 0: INTERPRET INPUT (LLM judgment)
 
-Before calling the script, interpret the user's input and resolve it
-to explicit CLI flags. The script accepts only structured flags — it
-does NOT parse raw user input.
+Before calling script, interpret user input and resolve to explicit
+CLI flags. Script accepts only structured flags — does NOT parse raw
+user input.
 
 **Decision table:**
 
@@ -120,28 +120,27 @@ does NOT parse raw user input.
 
 **Rules:**
 
-1. **Scope** (what to review) vs **instructions** (how to review): separate them. Anything that describes *what files/commits* is scope. Anything that describes *what to look for* is instructions.
-2. **Git refs** resolve to range: `REF` → `--scope range --scope-value "REF~1..REF"`. Ref ranges pass through: `X..Y` → `--scope range --scope-value "X..Y"`.
-3. **Directory paths** become a secondary filter: `--scope changed --scope paths --scope-value "dir/"`.
-4. **Defaults**: if scope is unclear, omit `--scope` (code defaults to `changed`, specs to `all`). If mode is unclear, omit `--mode` (auto-detect).
-5. **Fallback**: if the input doesn't clearly specify scope or mode, pass what you can and let defaults apply. Unrecognized text becomes `--review-instructions`.
-6. **Effort** words: `quick` → `--effort quick`, `deep` → `--effort deep`. If neither appears, omit `--effort` (defaults to `standard`). Effort words can appear in any position alongside scope and mode tokens.
-7. **No preemptive optimization**: The first rc-prepare.sh call MUST use exactly the flags from this table. Do not anticipate that a scope will be empty and skip ahead to a broader scope. The recovery table in Step 1 handles empty results — let it work.
+1. **Scope** (what to review) vs **instructions** (how to review): separate them. *What files/commits* is scope. *What to look for* is instructions.
+2. **Git refs** resolve to range: `REF` becomes `--scope range --scope-value "REF~1..REF"`. Ref ranges pass through: `X..Y` becomes `--scope range --scope-value "X..Y"`.
+3. **Directory paths** become secondary filter: `--scope changed --scope paths --scope-value "dir/"`.
+4. **Defaults**: scope unclear, omit `--scope` (code defaults to `changed`, specs to `all`). Mode unclear, omit `--mode` (auto-detect).
+5. **Fallback**: input unclear on scope or mode, pass what you can, let defaults apply. Unrecognized text becomes `--review-instructions`.
+6. **Effort** words: `quick` becomes `--effort quick`, `deep` becomes `--effort deep`. Neither present, omit `--effort` (defaults to `standard`). Effort words can appear anywhere alongside scope and mode tokens.
+7. **No preemptive optimization**: First rc-prepare.sh call MUST use exactly flags from this table. Do not anticipate empty scope and skip to broader scope. Recovery table in Step 1 handles empty results — let it work.
 
 ### Step 1: PREPARE (scripted)
 
-Run `${SCRIPTS_DIR}/rc-prepare.sh` with **exactly** the flags from Step 0's
-decision table. Do not add `--scope` if the table omits it — the script has
-its own defaults. Do not substitute a broader scope because you expect the
-default will be empty.
+Run `${SCRIPTS_DIR}/rc-prepare.sh` with **exactly** flags from Step 0's
+decision table. Do not add `--scope` if table omits it — script has own
+defaults. Do not substitute broader scope expecting default will be empty.
 
 ```bash
 AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [resolved flags from Step 0]
 ```
 
-The script creates a session directory, captures changeset and diff,
-discovers agents, detects forge/framework/language, fetches CI status,
-linked issues, and prior reviews (if PR), and initializes the tracking file.
+Script creates session directory, captures changeset and diff, discovers
+agents, detects forge/framework/language, fetches CI status, linked
+issues, prior reviews (if PR), initializes tracking file.
 
 **Returns JSON to stdout:**
 ```json
@@ -161,13 +160,12 @@ linked issues, and prior reviews (if PR), and initializes the tracking file.
 }
 ```
 
-**If status is `skip`:** Read the message field, report to the user,
-and stop. Do not proceed to delegation.
+**If status is `skip`:** Read message field, report to user, stop.
+Do not proceed to delegation.
 
-**If status is `empty`:** The scope resolved to zero files. Before
-giving up, try exactly ONE recovery attempt using the table below.
-If you already retried once, report the empty result to the user and
-ask what they would like to review instead.
+**If status is `empty`:** Scope resolved to zero files. Try exactly
+ONE recovery attempt using table below. If already retried once,
+report empty result to user and ask what they want reviewed instead.
 
 | Original scope                                      | Recovery action                                                                                                                                                                                       |
 |-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -188,44 +186,41 @@ When `--scope all` returns `empty`, output exactly this and stop:
 > - `/review-council specs module/docs/` to review a specific directory
 
 **Be explicit when changing scope.** Before re-running with recovery
-flags, tell the user what happened and what you are trying instead.
-Example: "The diff for HEAD~1..HEAD contained no files. Falling back
-to reviewing uncommitted and staged changes (--scope changed)."
+flags, tell user what happened and what you try instead.
+Example: "Diff for HEAD~1..HEAD contained no files. Falling back
+to uncommitted and staged changes (--scope changed)."
 
-Do NOT invent flags and do NOT fall back to a manual review. Run
-rc-prepare.sh exactly once more with the recovery flags. If the second
-attempt also returns `empty`, report both results to the user and ask
-what they would like to review.
+Do NOT invent flags. Do NOT fall back to manual review. Run
+rc-prepare.sh exactly once more with recovery flags. If second
+attempt also returns `empty`, report both results to user and ask
+what they want reviewed.
 
-**If status is `ok`:** Capture session_dir, mode, and effort, proceed to Step 2.
+**If status is `ok`:** Capture session_dir, mode, effort, proceed to Step 2.
 
 ### Step 2: READ TRACKING (re-entry support)
 
 Read `${session_dir}/tracking.md` (created by rc-prepare.sh).
 
-Determine the current state from the tracking file:
-- If all phases are complete and verdict is recorded, report
-  the existing verdict and stop.
-- If Delegation or Verification is in progress, resume from
-  the next incomplete phase.
-- If starting fresh, proceed to Step 3.
+Determine current state from tracking file:
+- All phases complete and verdict recorded: report existing verdict, stop.
+- Delegation or Verification in progress: resume from next incomplete phase.
+- Starting fresh: proceed to Step 3.
 
-This enables re-entry: if the skill is invoked mid-run,
-it resumes without repeating completed work.
+Enables re-entry: if skill invoked mid-run, resumes without
+repeating completed work.
 
 ### Step 2.1: DECOMPOSITION (deep mode only)
 
-**Skip this step unless effort is `deep`.**
+**Skip unless effort is `deep`.**
 
 Read `${PHASES_DIR}/decompose.md` for decomposition instructions.
 
-Analyze the changeset from `${session_dir}/changeset.txt` and the diff
-from `${session_dir}/diff.patch`. Produce a subsystem map and write it
-to `${session_dir}/subsystems.json`.
+Analyze changeset from `${session_dir}/changeset.txt` and diff from
+`${session_dir}/diff.patch`. Produce subsystem map, write to
+`${session_dir}/subsystems.json`.
 
-If decomposition produces a single subsystem (changeset is already
-cohesive), fall back to standard-mode delegation — do not create
-`subsystems.json`.
+If decomposition produces single subsystem (changeset already cohesive),
+fall back to standard-mode delegation — do not create `subsystems.json`.
 
 **Update tracking:** Record subsystem count and names.
 
@@ -237,11 +232,11 @@ If `${session_dir}/ci-status.txt` exists (created by rc-prepare.sh for
 PR-based code reviews with forge CI data):
 
 1. Read `${session_dir}/ci-status.txt`
-2. If there are failing CI checks:
-   - Present the failures to the user
+2. If failing CI checks:
+   - Present failures to user
    - Ask: "CI checks are failing. Proceed with review or abort?"
-   - If abort: stop and report "Review aborted due to failing CI"
-3. If all checks pass or user chooses to proceed: continue to Step 3
+   - If abort: stop, report "Review aborted due to failing CI"
+3. All checks pass or user proceeds: continue to Step 3
 
 If `${session_dir}/ci-status.txt` does not exist, skip this step.
 
@@ -252,33 +247,32 @@ If `${session_dir}/ci-status.txt` does not exist, skip this step.
 **Read `${PHASES_DIR}/delegate.md`** for prompt construction
 guidance and dispatch instructions.
 
-**Before constructing prompts**, read these session files:
-- `${session_dir}/changeset.txt` — the file list (scope-filtered)
-- `${session_dir}/diff.patch` — the diff (may be empty for `--scope all`)
+**Before constructing prompts**, read session files:
+- `${session_dir}/changeset.txt` — file list (scope-filtered)
+- `${session_dir}/diff.patch` — diff (may be empty for `--scope all`)
 - `${session_dir}/tracking.md` — scope, mode, language, framework metadata
 
-For each reviewer agent in the agents array from Step 1:
-- Construct a prompt using the changeset from `changeset.txt`,
-  the diff from `diff.patch`, convention packs from
-  `${REFERENCES_DIR}`, and project configuration
-- Dispatch the agent using `subagent_type = agent filename`
+For each reviewer agent in agents array from Step 1:
+- Construct prompt using changeset from `changeset.txt`, diff from
+  `diff.patch`, convention packs from `${REFERENCES_DIR}`, project
+  configuration
+- Dispatch agent using `subagent_type = agent filename`
   (e.g., "divisor-guard-code")
-- Collect the verdict and write to `${session_dir}/verdicts/{agent-name}.md`
+- Collect verdict, write to `${session_dir}/verdicts/{agent-name}.md`
 
 Dispatch all agents in parallel for speed.
 
 **Effort-conditional behavior:**
-- **quick / standard**: Delegate once over the whole changeset as
-  described above.
+- **quick / standard**: Delegate once over whole changeset as above.
 - **deep**: If `${session_dir}/subsystems.json` exists, run one
-  delegation round per subsystem. For each subsystem, scope the
-  changeset and diff to that subsystem's files. Write verdicts to
+  delegation round per subsystem. For each subsystem, scope changeset
+  and diff to that subsystem's files. Write verdicts to
   `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md`.
-  Dispatch all agents for a given subsystem in parallel, then proceed
-  to the next subsystem.
+  Dispatch all agents for given subsystem in parallel, then next
+  subsystem.
 
 **Update tracking:** Set Delegation (iteration N) status to `complete`,
-record agents dispatched, verdicts received, and any failures.
+record agents dispatched, verdicts received, any failures.
 
 Proceed to Step 4.
 
@@ -286,8 +280,8 @@ Proceed to Step 4.
 
 **First, run `${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`**
 
-The script checks file existence, quote matching, line accuracy ±5,
-absence claims via grep, and cross-agent deduplication.
+Script checks file existence, quote matching, line accuracy ±5,
+absence claims via grep, cross-agent deduplication.
 
 **Returns JSON to stdout:**
 ```json
@@ -302,70 +296,68 @@ absence claims via grep, and cross-agent deduplication.
 and validation gate procedures.
 
 - Apply severity calibration (LLM judgment on findings severity)
-- Run validation gate — dispatch a fresh-context validator agent
+- Run validation gate — dispatch fresh-context validator agent
   to check findings against actual code
 - Consolidate duplicates across agents
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
 **Effort-conditional behavior:**
-- **quick**: Skip the correction round, severity calibration, and
-  validation gate. Run only `rc-verify-evidence.sh` (mechanical
-  evidence check). Proceed directly to Step 5 with surviving findings.
-- **standard**: Full verification as described above.
+- **quick**: Skip correction round, severity calibration, validation
+  gate. Run only `rc-verify-evidence.sh` (mechanical evidence check).
+  Proceed directly to Step 5 with surviving findings.
+- **standard**: Full verification as above.
 - **deep**: Run Steps 1-3 of verify.md per-subsystem (iterate over
-  subdirectories in `${session_dir}/verdicts/`). Then run the
-  validation gate once over aggregated findings from all subsystems,
-  providing the subsystem map from `${session_dir}/subsystems.json`
-  as context.
+  subdirectories in `${session_dir}/verdicts/`). Then run validation
+  gate once over aggregated findings from all subsystems, providing
+  subsystem map from `${session_dir}/subsystems.json` as context.
 
 **Update tracking:** Set Verification (iteration N) status to `complete`,
 record findings total/verified/corrected/stripped, duplicates
-consolidated, and iteration verdict.
+consolidated, iteration verdict.
 
 Proceed to Step 5.
 
 ### Step 5: ITERATION CHECK
 
-- **If all agents APPROVE:** Proceed to Step 6 (Report).
-- **If any REQUEST CHANGES:**
-  - Present the verified findings to the user
+- **All agents APPROVE:** Proceed to Step 6 (Report).
+- **Any REQUEST CHANGES:**
+  - Present verified findings to user
   - Ask: "Would you like me to fix these issues and re-review?"
-  - **If user says yes:** Fix the findings, increment iteration counter,
+  - **User says yes:** Fix findings, increment iteration counter,
     return to Step 3 (Delegation)
-  - **If user says no (or stop):** Proceed to Step 6 with
+  - **User says no (or stop):** Proceed to Step 6 with
     REQUEST CHANGES verdict
   - **Iteration limits by effort level:**
     - **quick**: Max 1 iteration. After delegation and verification,
       proceed directly to Step 6 regardless of verdict.
     - **standard**: Max 3 iterations. If iteration >= 3 and user
-      says yes, warn that this is iteration N and ask the user to
-      confirm before continuing.
+      says yes, warn this is iteration N and ask user to confirm
+      before continuing.
     - **deep**: Max 5 iterations. If iteration >= 3, warn as above.
 
 ### Step 6: REPORT
 
 **First, run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}`**
 
-The script renders a structured report template from tracking
-and verification data.
+Script renders structured report template from tracking and
+verification data.
 
 **Then, read `${PHASES_DIR}/report.md`** for narrative synthesis
 and learnings extraction guidance.
 
 - Add narrative synthesis (executive summary, key themes)
-- Extract learnings from the review (patterns, anti-patterns, gaps)
-- Record learnings using the Knowledge tool (if configured) or
+- Extract learnings from review (patterns, anti-patterns, gaps)
+- Record learnings using Knowledge tool (if configured) or
   write to `${session_dir}/learnings.txt`
 - Output final report with council verdict
 
 **Effort-conditional behavior:**
-- **quick**: Produce a compact report: findings list (sorted by
-  severity) and verdict only. Skip learnings extraction and narrative
-  synthesis.
-- **standard**: Full report as described above.
-- **deep**: Full report plus a **Subsystem Analysis** section before
-  the findings list. Read `${session_dir}/subsystems.json` and render
-  a tree with finding counts per subsystem. Include learnings.
+- **quick**: Compact report: findings list (sorted by severity)
+  and verdict only. Skip learnings extraction and narrative synthesis.
+- **standard**: Full report as above.
+- **deep**: Full report plus **Subsystem Analysis** section before
+  findings list. Read `${session_dir}/subsystems.json`, render tree
+  with finding counts per subsystem. Include learnings.
 
 **Update tracking:** Set Report status to `complete`, record council
 verdict and learnings count.
@@ -374,10 +366,9 @@ verdict and learnings count.
 
 ## Tracking File Template
 
-Maintain `${session_dir}/tracking.md` throughout the run.
-Update it after each phase completes. The Preparation and
-Quality Gates phases are written by `rc-prepare.sh`. The
-orchestrator writes subsequent phases.
+Maintain `${session_dir}/tracking.md` throughout run. Update after
+each phase completes. Preparation and Quality Gates phases written
+by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 
 ```markdown
 # Review Council Session Tracking
@@ -443,7 +434,7 @@ orchestrator writes subsequent phases.
 
 ## Extension Points
 
-Configure optional integrations in your project's AGENTS.md or CLAUDE.md:
+Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 
 ```text
 ## Review Council Configuration
@@ -454,9 +445,9 @@ Configure optional integrations in your project's AGENTS.md or CLAUDE.md:
 - Quality tool: my_quality_reporter
 ```
 
-All extension points are optional and degrade gracefully when omitted.
-If no Constitution path is configured, constitution-specific checks are skipped.
+All extension points optional, degrade gracefully when omitted.
+No Constitution path configured: constitution-specific checks skipped.
 
 Convention packs define project-specific coding standards. Override or
-extend the shipped packs by placing files in `.review-council/packs/`
+extend shipped packs by placing files in `.review-council/packs/`
 or `$XDG_CONFIG_HOME/review-council/packs/`.

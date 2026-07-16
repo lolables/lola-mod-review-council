@@ -10,25 +10,25 @@ description: "Shared severity level definitions for all Divisor Council personas
 
 ### CRITICAL
 
-The change introduces a defect causing data loss, security breach, build failure, or constitutional violation. MUST NOT merge.
+Change introduces data loss, security breach, build failure, or constitutional violation. MUST NOT merge.
 
 **Boundary**: Immediate, concrete harm — not theoretical risk.
 
 ### HIGH
 
-Significant risk or technical debt that will cause problems if not addressed before merge. Blocks review.
+Significant risk or tech debt causing problems if not fixed before merge. Blocks review.
 
-**Boundary**: Likely to cause near-term problems. Style preferences, optional test expansion, and idiomatic patterns do NOT meet this bar — use MEDIUM or LOW.
+**Boundary**: Likely near-term problems. Style preferences, optional test expansion, idiomatic patterns do NOT meet this bar — use MEDIUM or LOW.
 
 ### MEDIUM
 
-Quality issue that should be addressed but does not block merge.
+Quality issue worth fixing but does not block merge.
 
 **Boundary**: Improvement opportunity — code/spec works but could be better.
 
 ### LOW
 
-Minor style or documentation improvement. Non-blocking.
+Minor style or docs improvement. Non-blocking.
 
 **Boundary**: Cosmetic or informational. No functional impact.
 
@@ -43,12 +43,11 @@ Minor style or documentation improvement. Non-blocking.
 
 ## Fix Policy
 
-All findings are reported to the user. No findings are fixed automatically,
-regardless of severity. The user decides which findings to address.
+All findings reported to user. Nothing fixed automatically, regardless of severity. User decides which findings to address.
 
-| Severity | Action      | Rationale                               |
-|----------|-------------|-----------------------------------------|
-| LOW      | Report only | User decides if cosmetic fix is wanted  |
-| MEDIUM   | Report only | User decides on quality improvements    |
-| HIGH     | Report only | Requires human judgment on intent/scope |
-| CRITICAL | Report only | May indicate design issue               |
+| Severity | Action      | Rationale                              |
+|----------|-------------|----------------------------------------|
+| LOW      | Report only | User decides if cosmetic fix wanted    |
+| MEDIUM   | Report only | User decides on quality improvements   |
+| HIGH     | Report only | Needs human judgment on intent/scope   |
+| CRITICAL | Report only | May indicate design issue              |

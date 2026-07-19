@@ -48,6 +48,28 @@ content opportunity identification); all others use 0.1.
 
 If tool lacks model selection, all agents run on default model. Empirical performance data by model class in `${REFERENCES_DIR}/model-guidance.md`.
 
+## Recording Dispatched Models
+
+As you dispatch each reviewer, append a line to
+`${session_dir}/models.txt` recording which model ran it, so the
+report's provenance header (see `phases/report.md` — "Provenance
+Disclosure") names it. Format: one `{agent-name}: {model}` per line.
+
+- Prefer concrete model ID the host exposes (e.g.,
+  `divisor-adversary-code: claude-sonnet-5`).
+- No concrete ID: record tier from table above instead (e.g.,
+  `divisor-adversary-code: Capable tier`). Guarantees at least tier
+  always disclosed.
+- Record each agent once. Deep mode dispatches same agent per
+  subsystem — do not append duplicate line each round (renderer
+  dedupes defensively, but keep file clean).
+- Do NOT invent model IDs. Nothing known about the model: omit the
+  agent's line.
+
+Coordinator and validation-gate models recorded separately (see
+`phases/report.md` — "Provenance Disclosure"); this step covers
+reviewer agents.
+
 ---
 
 ## Code Review Delegation
@@ -93,7 +115,7 @@ If language is `unknown` or no matching row exists, skip this section. Rely on g
 |----------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Go**               | Adversary | Check for `sql.Query`/`sql.Exec` with string interpolation (SQL injection); `exec.Command` with user-controlled arguments (command injection); hardcoded credentials in source             |
 | **Go**               | Guard     | Check for interface pollution (interfaces with >5 methods or single-implementation interfaces); package-level mutable globals; circular package dependencies                               |
-| **Go**               | Tester    | Check for missing error-path tests; table-driven tests that only check the happy path; test helpers that swallow errors                                                                    |
+| **Go**               | Tester    | Check for missing error-path tests; table-driven tests that only check the happy path; test helpers that swallow errors. Check for integration tests that assert only `require.NoError` + `require.NotNil` (or `assert.NoError` + `assert.NotNil`) without verifying response struct fields — compare assertion depth across tests in the same file to find inconsistencies |
 | **TypeScript/React** | Guard     | Check for prop drilling (props passed through 3+ component levels unchanged); god components (>200 lines or >5 state hooks with mixed concerns); circular module imports                   |
 | **TypeScript/React** | Adversary | Check for `dangerouslySetInnerHTML` with unsanitized input; missing error boundary components (crash propagation risk); inline event handlers with user data; missing CSRF tokens on forms |
 | **TypeScript/React** | Tester    | Check for tests that mock everything (no integration coverage); missing accessibility attribute tests                                                                                      |

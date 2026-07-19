@@ -72,6 +72,22 @@ Packs live at `module/references/`. Filenames encode type:
 `lang-{language}.md`, `fw-{framework}.md`, or bare names for
 cross-cutting concerns (`base.md`, `severity.md`, `reviewer-protocol.md`).
 
+## Prose style in module markdown
+
+Instruction markdown under `module/` (phase files, SKILL.md, agent
+definitions, convention packs) is written in compressed "caveman" style
+to cut input tokens — drop articles and filler, keep fragments, and
+preserve all technical terms, code, paths, and output-template strings
+verbatim. See `.lola-eval/analysis/caveman-compression-eval.md` for the
+rationale and measured impact.
+
+When adding or editing module markdown, match the surrounding compressed
+register. Do NOT compress:
+
+- Report content emitted by scripts (maintainer-facing output).
+- `CHANGELOG.md`, `README.md`, and this guide (human-facing docs).
+- Anything inside code fences or backticks.
+
 ## Testing
 
 ```bash

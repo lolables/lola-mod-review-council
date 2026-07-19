@@ -13,9 +13,30 @@ All notable changes to the Review Council module are documented here.
   packs load alongside the language pack when a framework is detected
 - Verdict coherence rule in verification phase — unanimous agent
   APPROVE with no HIGH/CRITICAL findings enforces APPROVE mechanically
+- Completeness check in decompose phase — every file in
+  `changeset.txt` must be assigned to a subsystem; unassigned files
+  fall into a catch-all `infrastructure`/`other` subsystem so no file
+  is silently dropped from deep-mode review
+- Merge-base advisory concept — verification Step 3b converts findings
+  stripped for base-branch divergence (not branch defects) into
+  advisories, surfaced in a separate report section without inflating
+  the finding count or affecting the council verdict
+- LLM provenance disclosure — every rendered report opens with a
+  mandatory banner stating it was LLM-generated, plus the models used
+  (read from `${session_dir}/models.txt`, with an honest fallback when
+  the host does not expose model identity). The delegation phase records
+  each reviewer's model (or tier) to `models.txt` at dispatch, and the
+  renderer dedupes repeated lines from deep-mode per-subsystem dispatch
+- Source/issue-tracker footer on every report, linking back to the
+  Review Council repository. Overridable via the `REVIEW_COUNCIL_REPO`
+  environment variable so forks point at their own tracker
 
 ### Changed
 
+- Extended Go/Tester detection hints with the shallow-assertion
+  pattern — integration tests asserting only `require.NoError` +
+  `require.NotNil` without verifying response fields, detected by
+  comparing assertion depth across tests in the same file
 - **BREAKING**: Renamed convention packs: `go.md` → `lang-go.md`,
   `typescript.md` → `lang-typescript.md`. Pack filenames now encode
   their type: `lang-*` for language packs, `fw-*` for framework packs

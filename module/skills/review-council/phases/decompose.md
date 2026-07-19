@@ -41,6 +41,30 @@ Analyze changeset, group files into logical subsystems:
 - **More than 6 subsystems** suggests very large changeset. Proceed but
   note in tracking that decomposition produced high subsystem count.
 
+## Completeness Check
+
+Verify every file in `changeset.txt` appears in at least
+one subsystem in `subsystems.json`. Mechanical check, not
+judgment call.
+
+If files remain unassigned after grouping:
+
+1. Group unassigned files into catch-all subsystem named
+   `infrastructure` (CI, build, config, devcontainer) or
+   `other` (anything else). Minimum-2-files rule does NOT
+   apply to catch-all — single unassigned file still gets
+   a subsystem.
+2. Log: "N files assigned to catch-all subsystem(s):
+   {list}"
+
+Catch-all holds >30% of changeset: log warning —
+decomposition maybe too narrow.
+
+**No file in changeset.txt silently omitted.** Files
+orchestrator deems low-value (CI config, lockfiles,
+boilerplate) still get review — agents decide relevance,
+not decomposition step.
+
 ## Output
 
 Write `${session_dir}/subsystems.json`:

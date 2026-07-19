@@ -23,6 +23,38 @@ Only proceed to generate report once verification.txt passes all five checks abo
 
 ---
 
+## Provenance Disclosure
+
+`rc-render-report.sh` opens every report with a banner stating it was
+LLM-generated. **Mandatory, all effort modes** — never remove,
+suppress, or soften. Review artifact a maintainer acts on must declare
+it was produced by an LLM, not a human reviewer.
+
+Before running `rc-render-report.sh`, record models used to
+`${session_dir}/models.txt` — one `role: model-id` per line — so the
+renderer names them in the provenance header. Record, to extent host
+exposes model identity:
+
+- Coordinator (this orchestrator) model.
+- Each dispatched reviewer agent and its model.
+- Validation-gate agent model, if validation gate ran.
+
+Example `models.txt`:
+
+```
+coordinator: claude-opus-4-8
+divisor-adversary-code: claude-sonnet-5
+divisor-guard-code: claude-sonnet-5
+validator: claude-opus-4-8
+```
+
+Host exposes no model IDs: record tier or human-readable names you
+know (e.g., `divisor-adversary-code: Capable tier`). Nothing known: do
+not create the file — renderer states models not recorded. Do NOT
+invent model IDs.
+
+---
+
 ## Narrative Synthesis
 
 **Effort gate — quick mode:** If effort is `quick`, skip narrative
@@ -94,6 +126,32 @@ Render subsystem tree before findings list:
 - Finding counts come from verified findings, not raw agent output.
 - Sort subsystems by highest severity first: subsystems with CRITICAL
   findings first, then HIGH, etc.
+
+---
+
+## Merge Advisories (if applicable)
+
+**Skip if no merge-base advisories produced during
+verification.**
+
+List merge-base advisories after Subsystem Analysis, before
+Verified Findings. Format:
+
+```
+## Merge Advisories
+
+These are not defects in the branch. They are
+operational risks from base-branch divergence that
+the maintainer should address before merging.
+
+**1. {Advisory title}**
+- **File**: `{path}`
+- **Risk**: {what will happen on merge}
+- **Mitigation**: {recommended action, e.g., rebase}
+```
+
+Separated from findings so they don't inflate finding count
+or affect council verdict, while still reaching maintainer.
 
 ---
 

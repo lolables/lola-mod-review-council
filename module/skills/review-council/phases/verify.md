@@ -123,6 +123,39 @@ After correction round, remove all findings remaining unverified:
 
 ---
 
+## Step 3b — Merge-Base Advisories
+
+When a finding is stripped because it describes divergence
+between branch and *current* base branch — not a defect the
+branch introduced — convert to **merge-base advisory**
+instead of discarding.
+
+Merge-base advisories:
+- Appear in report under separate "Merge Advisories" heading
+- Do NOT count toward finding total
+- Do NOT affect agent verdicts or council verdict
+- Informational guidance for maintainer
+
+**Detection**: qualifies when ALL true:
+
+1. Stripped because content was never on the branch (added
+   to base branch after merge-base)
+2. Merging branch into current base would remove or conflict
+   with that content
+3. Removal has operational consequences (lost changelog
+   entries, overwritten docs, reverted config)
+
+**Do not convert** when:
+- Stripped for fabricated evidence
+- Stripped because file doesn't exist
+- Divergence has no operational consequence
+
+Log each conversion:
+> "Finding `{title}` converted to merge-base advisory
+> — {reason}"
+
+---
+
 ## Step 4 — Validation Gate
 
 **Effort gate:** If effort is `quick`, skip this step entirely.

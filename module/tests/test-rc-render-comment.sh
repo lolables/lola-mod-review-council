@@ -81,9 +81,33 @@ if grep -qF "<details><summary>💬 Full reviewer analysis</summary>" <<<"$body"
 else
 	echo "  FAIL: nested summary missing"; FAIL=$((FAIL+1))
 fi
-for needle in "**Recommendation**: Use" "if exp <= now {"; do
-	if grep -qF "$needle" <<<"$body"; then echo "  PASS: analysis has '$needle'"; PASS=$((PASS+1)); else echo "  FAIL: analysis missing '$needle'"; FAIL=$((FAIL+1)); fi
-done
+# Recommendation is hoisted OUT of the analysis, always visible, lightbulb-tagged,
+# with the body on a bullet below the label.
+if grep -Pzoq '  💡 \*\*Recommendation:\*\*\n  - Use `<=`' "$sess/comment-body.md"; then
+	echo "  PASS: recommendation label + bulleted body"; PASS=$((PASS+1))
+else
+	echo "  FAIL: recommendation not label+bullet"; FAIL=$((FAIL+1))
+fi
+# the recommendation's trailing code snippet nests inside the bullet (4-space indent)
+if grep -qE '^    ```go' "$sess/comment-body.md" && grep -qE '^    if exp <= now \{' "$sess/comment-body.md"; then
+	echo "  PASS: recommendation code snippet nested in bullet"; PASS=$((PASS+1))
+else
+	echo "  FAIL: recommendation snippet not nested"; FAIL=$((FAIL+1))
+fi
+# the raw reviewer label is gone (hoisted + relabeled, never duplicated)
+if ! grep -qF "**Recommendation**:" <<<"$body"; then
+	echo "  PASS: raw **Recommendation**: label removed"; PASS=$((PASS+1))
+else
+	echo "  FAIL: raw **Recommendation**: label still present"; FAIL=$((FAIL+1))
+fi
+# Recommendation renders ABOVE its Full reviewer analysis block.
+rec_ln=$(grep -n '💡 \*\*Recommendation:\*\*' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+ana_ln=$(grep -n '💬 Full reviewer analysis' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+if [[ -n "$rec_ln" && -n "$ana_ln" && "$rec_ln" -lt "$ana_ln" ]]; then
+	echo "  PASS: recommendation above full analysis ($rec_ln < $ana_ln)"; PASS=$((PASS+1))
+else
+	echo "  FAIL: recommendation not above analysis (rec=$rec_ln ana=$ana_ln)"; FAIL=$((FAIL+1))
+fi
 # redundant **File**: preamble is stripped (it is already the finding's link)
 if ! grep -qF "**File**:" <<<"$body"; then
 	echo "  PASS: redundant File preamble stripped"; PASS=$((PASS+1))
@@ -106,17 +130,30 @@ fi
 sess2=$(mktemp -d); make_review_session "$sess2"
 jq '.verified[0].detail = "**Evidence**: `if exp < now`\n\n**Recommendation**: Use <=."' "$sess2/verdicts/evidence-check.json" >"$sess2/verdicts/ec.tmp" && mv "$sess2/verdicts/ec.tmp" "$sess2/verdicts/evidence-check.json"
 bash "$SCRIPT" "$sess2" >/dev/null 2>&1
-if ! grep -qF "**Evidence**: \`if exp < now\`" "$sess2/comment-body.md" && grep -qF "**Recommendation**: Use <=." "$sess2/comment-body.md"; then
-	echo "  PASS: inline evidence stripped, analysis kept"; PASS=$((PASS+1))
+# inline evidence stripped; recommendation still surfaces (hoisted, label+bullet)
+if ! grep -qF "**Evidence**: \`if exp < now\`" "$sess2/comment-body.md" && grep -Pzoq '💡 \*\*Recommendation:\*\*\n  - Use <=\.' "$sess2/comment-body.md"; then
+	echo "  PASS: inline evidence stripped, recommendation kept"; PASS=$((PASS+1))
 else
-	echo "  FAIL: inline evidence not stripped"; FAIL=$((FAIL+1))
+	echo "  FAIL: inline evidence not stripped or recommendation dropped"; FAIL=$((FAIL+1))
 fi
 rm -rf "$sess2"
-# detail lines are indented two spaces to stay inside the list item
-if grep -qE '^  \*\*Recommendation\*\*: Use' "$sess/comment-body.md"; then
-	echo "  PASS: analysis indented into list item"; PASS=$((PASS+1))
+# recommendation label is indented two spaces to stay inside the list item
+if grep -qE '^  💡 \*\*Recommendation:\*\*$' "$sess/comment-body.md"; then
+	echo "  PASS: recommendation indented into list item"; PASS=$((PASS+1))
 else
-	echo "  FAIL: analysis not indented"; FAIL=$((FAIL+1))
+	echo "  FAIL: recommendation not indented"; FAIL=$((FAIL+1))
+fi
+# Description body is moved onto a bullet below its label
+if grep -Pzoq '  \*\*Description:\*\*\n  - The expiry check' "$sess/comment-body.md"; then
+	echo "  PASS: description label + bulleted body"; PASS=$((PASS+1))
+else
+	echo "  FAIL: description not label+bullet"; FAIL=$((FAIL+1))
+fi
+# a <br> spacer renders one blank line of whitespace before the analysis block
+if grep -Pzoq '  <br>\n\n  <details><summary>💬 Full reviewer analysis' "$sess/comment-body.md"; then
+	echo "  PASS: <br> spacer before full analysis"; PASS=$((PASS+1))
+else
+	echo "  FAIL: no <br> spacer before full analysis"; FAIL=$((FAIL+1))
 fi
 # both details tags balance (2 open: severity + analysis; 2 close)
 opens=$(grep -cF "<details>" "$sess/comment-body.md"); closes=$(grep -cF "</details>" "$sess/comment-body.md")
@@ -138,6 +175,29 @@ else
 	echo "  FAIL: nested block emitted for empty detail"; FAIL=$((FAIL+1))
 fi
 grep -qF "auth/token.go:1" "$sess/comment-body.md" && { echo "  PASS: finding still present"; PASS=$((PASS+1)); } || { echo "  FAIL: finding dropped"; FAIL=$((FAIL+1)); }
+rm -rf "$sess"
+
+# Test 5: dense reviewer body gets blank-line separation between fields
+echo "Test 5: dense analysis fields separated for readability"
+sess=$(mktemp -d); make_review_session "$sess"
+# jam Constraint/Description onto adjacent lines (the real-world "wall of text");
+# Recommendation is hoisted, so the analysis holds Constraint + Description only.
+jq '.verified[0].detail = "**Constraint**: convention X\n**Description**: long explanation here\n**Recommendation**: do the fix"' \
+	"$sess/verdicts/evidence-check.json" >"$sess/verdicts/ec.tmp" && mv "$sess/verdicts/ec.tmp" "$sess/verdicts/evidence-check.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# jammed Constraint/Description each become a label heading + bulleted body,
+# separated by a blank line (distinct paragraphs, not one <br>-joined wall)
+if grep -Pzoq '  \*\*Constraint:\*\*\n  - convention X\n\n  \*\*Description:\*\*\n  - long explanation here' "$sess/comment-body.md"; then
+	echo "  PASS: jammed fields split into label + bullet"; PASS=$((PASS+1))
+else
+	echo "  FAIL: jammed fields not split into label + bullet"; FAIL=$((FAIL+1))
+fi
+# recommendation still hoisted out (label + bullet), and not left in the body
+if grep -Pzoq '💡 \*\*Recommendation:\*\*\n  - do the fix' "$sess/comment-body.md" && ! grep -qF "**Recommendation**: do the fix" "$sess/comment-body.md"; then
+	echo "  PASS: recommendation hoisted from dense body"; PASS=$((PASS+1))
+else
+	echo "  FAIL: recommendation not hoisted from dense body"; FAIL=$((FAIL+1))
+fi
 rm -rf "$sess"
 
 echo ""

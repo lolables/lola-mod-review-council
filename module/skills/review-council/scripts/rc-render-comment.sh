@@ -93,6 +93,54 @@ link_location() { # file line
 	fi
 }
 
+# Indent every line of stdin by two spaces so multi-line content stays inside
+# the enclosing markdown list item. Blank lines stay blank (no trailing spaces).
+indent2() {
+	local l
+	while IFS= read -r l || [[ -n "$l" ]]; do
+		[[ -n "$l" ]] && printf '  %s\n' "$l" || printf '\n'
+	done
+}
+
+# Insert blank-line separation into a dense reviewer body so it renders as
+# distinct paragraphs on the forge instead of one <br>-joined wall of text.
+# A blank line is inserted before each `**Field**:` label and before each
+# opening code fence, unless one already precedes it or we are inside a fence.
+reflow_fields() {
+	awk '
+	BEGIN { infence = 0; prev_blank = 1 }
+	{
+		is_fence = ($0 ~ /^```/)
+		is_label = (!infence && $0 ~ /^\*\*(Constraint|Description|Recommendation|Evidence|Impact|Suggestion|Explanation|Severity)\*\*:/)
+		if (!prev_blank && ((is_fence && !infence) || is_label)) print ""
+		print
+		if (is_fence) infence = !infence
+		prev_blank = ($0 ~ /^[[:space:]]*$/)
+	}'
+}
+
+# In the collapsed analysis, turn a run-on "**Constraint**: body" /
+# "**Description**: body" line into a label heading with the body on its own
+# bullet below it — easier to scan than a bold prefix buried in prose. Evidence
+# and code fences are left untouched (not in scope).
+bulletize_cd() {
+	awk '
+	/^```/ { infence = !infence; print; next }
+	!infence && /^\*\*Constraint\*\*:/ { b = $0; sub(/^\*\*Constraint\*\*:[ \t]*/, "", b); print "**Constraint:**"; print "- " b; next }
+	!infence && /^\*\*Description\*\*:/ { b = $0; sub(/^\*\*Description\*\*:[ \t]*/, "", b); print "**Description:**"; print "- " b; next }
+	{ print }'
+}
+
+# Render a label-stripped recommendation body as a bulleted block: the first
+# line becomes the bullet; any following lines (e.g. a code snippet) are
+# indented two spaces so they nest inside that bullet rather than escaping it.
+rec_bulletize() {
+	awk '
+	NR == 1 { print "- " $0; next }
+	/^[[:space:]]*$/ { print ""; next }
+	{ print "  " $0 }'
+}
+
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
 # RC_EVIDENCE (no `local`) so the sourcing per-forge script can build its own
 # forge-specific links (e.g. #issuecomment-<id>). ---
@@ -103,7 +151,7 @@ rc_render_comment_body() { # session_dir body_file
 	local stamp commit_url repo_url
 	local c_crit c_high c_med c_low
 	local agent_rows="" vf name av
-	local findings_block="" sev n se f l t ev agent detail detail_b64 dline
+	local findings_block="" sev n se f l t ev agent detail detail_b64 analysis rec rec_block
 	local marker_line
 
 	RC_EVIDENCE="$session_dir/verdicts/evidence-check.json"
@@ -199,15 +247,34 @@ rc_render_comment_body() { # session_dir body_file
 						}
 						print
 					}')
+				# Split the mandated **Recommendation** field out of the body: it
+				# is the actionable "how to fix", so it is always shown above the
+				# collapsed analysis (with a 💡), never buried inside it. The
+				# analysis keeps everything before it (Evidence, Constraint,
+				# Description). Recommendation is the last field per the reviewer
+				# protocol, so capturing it to EOF also carries its code snippet.
+				analysis=""; rec=""
 				if [[ -n "$detail" ]]; then
-					findings_block+="  <details><summary>💬 Full reviewer analysis</summary>"$'\n\n'
-					while IFS= read -r dline || [[ -n "$dline" ]]; do
-						if [[ -n "$dline" ]]; then
-							findings_block+="  ${dline}"$'\n'
-						else
-							findings_block+=$'\n'
-						fi
-					done <<<"$detail"
+					analysis=$(printf '%s\n' "$detail" | awk '/^\*\*Recommendation\*\*:/{exit} {print}')
+					rec=$(printf '%s\n' "$detail" | awk 'f{print} /^\*\*Recommendation\*\*:/{f=1; sub(/^\*\*Recommendation\*\*:[[:space:]]*/,""); print}' | awk 'NF||p{print; p=1}')
+				fi
+				# Recommendation: always visible, lightbulb-tagged, with the body
+				# on a bullet below the label so it reads at a glance.
+				if [[ -n "$rec" ]]; then
+					rec_block=$(printf '%s\n' "$rec" | rec_bulletize)
+					findings_block+=$(printf '💡 **Recommendation:**\n%s\n' "$rec_block" | indent2)
+					findings_block+=$'\n\n'
+				fi
+				# Full reviewer analysis: reflowed for readability (blank lines
+				# between dense fields), Constraint/Description bodies moved onto
+				# bullets, then tucked one disclosure deeper.
+				if [[ -n "$analysis" ]]; then
+					analysis=$(printf '%s\n' "$analysis" | reflow_fields | bulletize_cd)
+					# A <br> spacer: source blank lines collapse in rendered
+					# markdown, so this is what actually puts a line of whitespace
+					# between the recommendation and the analysis disclosure.
+					findings_block+="  <br>"$'\n\n'"  <details><summary>💬 Full reviewer analysis</summary>"$'\n\n'
+					findings_block+=$(printf '%s\n' "$analysis" | indent2)
 					findings_block+=$'\n'"  </details>"$'\n\n'
 				fi
 			done < <(jq -r --arg s "$sev" '.verified[]? | select(.severity==$s) | [.file, .line, .title, .evidence, .agent, ((.detail // "") | @base64)] | @tsv' "$RC_EVIDENCE" 2>/dev/null)

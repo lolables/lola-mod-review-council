@@ -3,6 +3,7 @@ set -uo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
+rc_trap_errors # report script:line on any unhandled failure (never silent)
 
 # Deliberate: -e is omitted. This script handles errors per-section so that
 # failures in optional enrichment (forge API, CI checks) do not abort session
@@ -390,12 +391,31 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 fi
 
 # ============================================================================
+# SECTION 6c: Fetch PR Diff (PR/url scope) — used by mode detection and Section 9
+# ============================================================================
+
+# Fetch the PR diff once, independent of mode. Section 7 auto-detect and
+# Section 9 changeset capture both reuse this cache. Fetching here (not inside
+# the auto-detect branch) keeps explicit --mode runs from yielding an empty
+# changeset on PR/url scope.
+pr_diff_cache=""
+if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
+	pr_diff_cache=$(mktemp "${session_dir}/pr-diff-cache.XXXXXX")
+	if [[ "$forge" == "github" ]]; then
+		repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
+		# shellcheck disable=SC2086
+		timeout 30 gh pr diff "$pr_number" $repo_flag 2>/dev/null >"$pr_diff_cache" || true
+	elif [[ "$forge" == "gitlab" ]]; then
+		timeout 30 glab mr diff "$pr_number" 2>/dev/null >"$pr_diff_cache" || true
+	fi
+fi
+
+# ============================================================================
 # SECTION 7: Determine Review Mode
 # ============================================================================
 
 mode="code"
 mode_reason="default"
-pr_diff_cache=""
 
 if [[ -n "$mode_override" ]] && [[ "$mode_override" != "auto" ]]; then
 	if [[ "$mode_override" == "specs" ]]; then
@@ -409,16 +429,8 @@ else
 	# Auto-detect mode
 	changeset_for_mode_detection=""
 
-	if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
-		# Fetch PR diff once and cache for reuse in Section 9
-		pr_diff_cache=$(mktemp "${session_dir}/pr-diff-cache.XXXXXX")
-		if [[ "$forge" == "github" ]]; then
-			repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
-			# shellcheck disable=SC2086
-			timeout 30 gh pr diff "$pr_number" $repo_flag 2>/dev/null >"$pr_diff_cache" || true
-		elif [[ "$forge" == "gitlab" ]]; then
-			timeout 30 glab mr diff "$pr_number" 2>/dev/null >"$pr_diff_cache" || true
-		fi
+	if [[ -n "${pr_diff_cache:-}" ]] && [[ -f "${pr_diff_cache:-}" ]]; then
+		# Reuse the PR diff fetched in Section 6c
 		changeset_for_mode_detection=$(grep '^diff --git' "$pr_diff_cache" |
 			sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
 	else
@@ -454,9 +466,9 @@ else
 
 			if [[ "$file" =~ ^(specs|docs/specs|docs/design|docs/superpowers|design)/ ]] ||
 				[[ "$file" =~ (spec|plan|tasks|design|research)\.md$ ]]; then
-				((spec_files++))
+				spec_files=$((spec_files + 1))
 			else
-				((code_files++))
+				code_files=$((code_files + 1))
 			fi
 		done <<<"$changeset_for_mode_detection"
 
@@ -916,12 +928,21 @@ fi
 current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 
+# For PR/URL reviews the meaningful refs are the PR's own head/base, not the
+# local workspace branch (which is unrelated when reviewing a remote PR).
+display_branch="$current_branch"
+display_base="$base_branch"
+if [[ "$input_type" == "pr_number" || "$input_type" == "url" ]]; then
+	[[ -n "${pr_head:-}" ]] && display_branch="$pr_head"
+	[[ -n "${pr_base:-}" ]] && display_base="$pr_base"
+fi
+
 {
 	echo "Review Council Session"
 	echo "======================"
 	echo "Project:      $PWD"
-	echo "Branch:       ${current_branch}"
-	echo "Base:         ${base_branch}"
+	echo "Branch:       ${display_branch}"
+	echo "Base:         ${display_base}"
 	echo "Mode:         ${mode} (${mode_reason})"
 	echo "Effort:       ${effort}"
 	echo "Started:      ${iso_timestamp}"
@@ -968,8 +989,8 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 	echo "- Constitution: ${constitution} ${constitution_source:+(${constitution_source})}"
 	echo "- Mode: ${mode} (${mode_reason})"
 	echo "- Effort: ${effort}"
-	echo "- Branch: ${current_branch}"
-	echo "- Base: ${base_branch}"
+	echo "- Branch: ${display_branch}"
+	echo "- Base: ${display_base}"
 	echo "- Language: ${language}"
 	echo "- Framework: ${framework}"
 	echo "- Review root: ${review_root}"

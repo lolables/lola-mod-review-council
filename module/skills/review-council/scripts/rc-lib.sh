@@ -54,3 +54,19 @@ rc_parse_kv() {
 		sed -E "s/^[-[:space:]]*${key}:[[:space:]]*//" |
 		sed -E 's/[[:space:]]+$//' || true
 }
+
+# Fail loudly. With pipefail set, a failing pipeline stage can otherwise abort
+# a script (under set -e) or be missed with no trace, producing non-reproducible
+# behavior. rc_trap_errors installs an ERR trap that reports the script and line
+# of any UNHANDLED command failure to stderr (stdout stays reserved for the
+# script's JSON/markdown payload). Errors you handle with `|| ...`, `if`, or
+# `&&`/`||` lists are exempt per bash ERR semantics, so only genuine surprises
+# print. Call rc_trap_errors once, immediately after sourcing this library.
+rc_on_err() {
+	local code="$1" line="$2" src="${3##*/}"
+	echo "rc-error: ${src}:${line}: command failed (exit ${code}) under 'set -o pipefail'" >&2
+}
+rc_trap_errors() {
+	set -o errtrace
+	trap 'rc_on_err "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
+}

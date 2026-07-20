@@ -24,3 +24,11 @@ tasks:
       - bash module/tests/test-rc-prepare.sh
       - bash module/tests/test-rc-verify-evidence.sh
       - bash module/tests/test-rc-render-report.sh
+      - bash module/tests/test-rc-lib.sh
+      - bash module/tests/test-rc-clone-target.sh
+      - bash module/tests/test-rc-render-comment.sh
+      - bash module/tests/test-rc-post-comment.sh
+      - bash module/tests/test-rc-post-comment-github.sh
+      - bash module/tests/test-rc-prepare-clone.sh
+      - bash module/tests/test-rc-prepare-owner.sh
+      - bash module/tests/test-rc-prepare-mode.sh

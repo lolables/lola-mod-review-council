@@ -3,6 +3,7 @@ set -euo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
+rc_trap_errors # report script:line on any unhandled failure (never silent)
 
 # ============================================================================
 # Parse Input Arguments
@@ -75,7 +76,7 @@ save_finding() {
 	finding_files+=("$file")
 	finding_lines+=("$line")
 	finding_evidences+=("$evidence")
-	((finding_count++)) || true
+	finding_count=$((finding_count + 1))
 }
 
 declare -a format_error_agents=()
@@ -412,7 +413,7 @@ if [[ ${#correctable_indices[@]} -gt 0 ]]; then
 	ci=0
 	for idx in "${correctable_indices[@]}"; do
 		correctable_json=$(append_finding "$correctable_json" "$idx" "${correctable_reasons[$ci]}")
-		((ci++)) || true
+		ci=$((ci + 1))
 	done
 fi
 
@@ -421,7 +422,7 @@ if [[ ${#stripped_indices[@]} -gt 0 ]]; then
 	si=0
 	for idx in "${stripped_indices[@]}"; do
 		stripped_json=$(append_finding "$stripped_json" "$idx" "${stripped_reasons[$si]}")
-		((si++)) || true
+		si=$((si + 1))
 	done
 fi
 

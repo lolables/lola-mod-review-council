@@ -14,6 +14,8 @@ make_mockbin() {
 #!/usr/bin/env bash
 # mode=$mode drives behavior; log invocations for assertions.
 echo "git \$*" >>"$dir/git.log"
+# Detect the checkout subcommand among args (real calls use \`git -C DEST checkout\`).
+if [[ "$mode" == "checkoutfail" ]] && printf '%s\n' "\$@" | grep -qx 'checkout'; then exit 1; fi
 case "\$1" in
 	remote) echo "https://github.com/acme/widgets.git" ;;
 	rev-parse)
@@ -109,6 +111,16 @@ if [[ -d "$clones/acme-widgets" ]]; then
 else
 	echo "  FAIL: fresh clone was pruned"; FAIL=$((FAIL+1))
 fi
+rm -rf "$bin" "$cache"
+
+# Test 6: checkout of the PR head fails -> skip (no false-clean empty tree)
+echo "Test 6: checkout failure falls back to skip"
+bin=$(mktemp -d); MOCK_BRANCH="main" make_mockbin "$bin" checkoutfail
+cache=$(mktemp -d)
+result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "skip" "status is skip on checkout failure"
+assert_json_field "$result" "review_root" "." "review_root falls back to ."
 rm -rf "$bin" "$cache"
 
 echo ""

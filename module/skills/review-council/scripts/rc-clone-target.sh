@@ -3,6 +3,7 @@ set -uo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
+rc_trap_errors # report script:line on any unhandled failure (never silent)
 
 # rc-clone-target.sh — materialize a target repo for PR review when we are
 # not already in it. Emits JSON with review_root for downstream reads.
@@ -70,8 +71,10 @@ else
 			clone_ok=true
 		fi
 	fi
-	# Plain blobless partial clone.
+	# Plain blobless partial clone. Clear any partial dest a failed gh clone
+	# may have left behind, or this clone aborts with "destination exists".
 	if [[ "$clone_ok" != true ]]; then
+		rm -rf "$dest" 2>/dev/null
 		if timeout 120 git clone --filter=blob:none --no-checkout "$clone_url" "$dest" >/dev/null 2>&1; then
 			clone_ok=true
 		fi
@@ -93,15 +96,23 @@ fi
 if ! timeout 120 git -C "$dest" fetch origin "pull/${pr}/head" >/dev/null 2>&1; then
 	review_root="."; emit "skip" "Fetch of pull/${pr}/head failed; reviewing from diff only."; exit 0
 fi
-git -C "$dest" checkout -q FETCH_HEAD >/dev/null 2>&1 || true
+# Checkout populates the working tree; a blobless --no-checkout clone has no
+# files until this runs. If it fails, the tree is empty and every finding
+# would be stripped FILE_NOT_FOUND (a false-clean review), so fall back to
+# diff-only review instead of emitting a misleading "ok".
+if ! git -C "$dest" checkout -q FETCH_HEAD >/dev/null 2>&1; then
+	review_root="."; emit "skip" "Checkout of pull/${pr}/head failed; reviewing from diff only."; exit 0
+fi
 
 # Mark as most-recently-used for LRU.
 touch "$dest" 2>/dev/null || true
 
 # --- LRU prune: keep newest N clone dirs (by mtime), remove the rest ---
+# Use `ls -dt` (POSIX) rather than `find -printf` (GNU-only) so the cap is
+# enforced on macOS too — rc-lib.sh explicitly accommodates non-GNU hosts.
 cap="${REVIEW_COUNCIL_CLONE_CACHE_MAX:-10}"
 [[ "$cap" =~ ^[0-9]+$ ]] || cap=10
-mapfile -t by_age < <(find "$cache_root" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -rn | awk '{print $2}')
+mapfile -t by_age < <(ls -dt "$cache_root"/*/ 2>/dev/null | sed 's:/*$::')
 if [[ ${#by_age[@]} -gt $cap ]]; then
 	for ((k = cap; k < ${#by_age[@]}; k++)); do
 		# Never prune the just-created destination.

@@ -14,15 +14,44 @@ Review Council is READ-ONLY by default. After producing verdict, STOP
 and present findings to user. Do NOT fix, edit, or modify any reviewed
 code or spec unless user explicitly instructs you in current session.
 Applies to ALL iterations, ALL severity levels, both code and spec
-review modes. Only write operations permitted without user consent:
-session bookkeeping (tracking files, verdict files, learnings) inside
-session directory.
+review modes. Write operations permitted without user consent: session bookkeeping
+(tracking files, verdict files, learnings) inside session directory.
+
+One external write is permitted, and ONLY under all of these conditions:
+posting the council verdict as a PR comment (Step 7) when (a) the user's
+request explicitly asked to post/comment, and (b) the exact rendered body was
+shown and the user confirmed — or the user gave standing authorization to post
+without asking. Cloning a target repo for review (Step 1) reads source only
+and never executes cloned code. No other external writes, code edits, or
+command execution are permitted.
 
 Do NOT run local builds, tests, linters, or CI commands. Review Council
 analyzes source code statically — never executes project code. Reading
 upstream CI status from forge (Step 2.5) permitted; launching local
 processes not.
 </HARD-GATE>
+
+<EXECUTION-CONTRACT>
+Prepare, verify, report, and post are SCRIPT-OWNED and DETERMINISTIC. You MUST
+run the named script for each step and use its output. You MUST NOT perform
+these steps by hand, even in non-interactive / headless runs:
+
+- Do NOT hand-create or hand-edit the session directory, `tracking.md`, or
+  `session.txt`. Only `rc-prepare.sh` creates them; use the `session_dir` it
+  returns in its JSON.
+- Do NOT clone the target repo yourself. `rc-prepare.sh` invokes
+  `rc-clone-target.sh` and returns `review_root`; read changeset files there.
+- Do NOT hand-write the report. Run `rc-render-report.sh`, then fill only the
+  `<!-- NARRATIVE -->` and `<!-- LEARNINGS -->` markers it leaves.
+- Do NOT hand-write the PR comment or invent a marker/verdict tag. The PR
+  comment is rendered and posted ONLY by `rc-post-comment.sh`. Never build a
+  comment body or a `gh api .../issues/comments` call yourself.
+
+The scripts exist to remove LLM variance; re-implementing their work by hand is
+a defect even when the output looks similar. Authored prose (TL;DR, narrative,
+finding titles) uses plain ASCII punctuation only: no em or en dashes, no
+arrows.
+</EXECUTION-CONTRACT>
 
 ## Path Anchoring
 
@@ -117,6 +146,9 @@ user input.
 | `quick code HEAD`                | `--effort quick --mode code --scope range --scope-value "HEAD~1..HEAD"`                            |
 | `deep main..feat`                | `--effort deep --scope range --scope-value "main..feat"`                                           |
 | `quick 42`                       | `--effort quick --scope pr --scope-value 42`                                                       |
+| `42 and post the result`         | `--scope pr --scope-value 42 --post-comment`                                                       |
+| `review PR 42, comment on it`    | `--scope pr --scope-value 42 --post-comment`                                                       |
+| `42 post without asking`         | `--scope pr --scope-value 42 --post-auto-send`                                                     |
 
 **Rules:**
 
@@ -127,6 +159,11 @@ user input.
 5. **Fallback**: input unclear on scope or mode, pass what you can, let defaults apply. Unrecognized text becomes `--review-instructions`.
 6. **Effort** words: `quick` becomes `--effort quick`, `deep` becomes `--effort deep`. Neither present, omit `--effort` (defaults to `standard`). Effort words can appear anywhere alongside scope and mode tokens.
 7. **No preemptive optimization**: First rc-prepare.sh call MUST use exactly flags from this table. Do not anticipate empty scope and skip to broader scope. Recovery table in Step 1 handles empty results — let it work.
+8. **Posting** is opt-in and PR-only. Phrases like "post the result",
+   "comment on the PR", "post the review" map to `--post-comment`. "Post
+   without asking" / "auto-send" map to `--post-auto-send`. If the user asks
+   to post but scope is not `pr`/`url`, do NOT add the flag — tell them there
+   is no PR to post to.
 
 ### Step 1: PREPARE (scripted)
 
@@ -141,6 +178,16 @@ AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [resolved flags f
 Script creates session directory, captures changeset and diff, discovers
 agents, detects forge/framework/language, fetches CI status, linked
 issues, prior reviews (if PR), initializes tracking file.
+
+**Review root / target materialization.** For `pr`/`url` scope on GitHub,
+rc-prepare.sh materializes the PR head (via `rc-clone-target.sh`) when the
+current working tree is not already that repo at that branch, and returns
+`review_root` (the checkout path, or `.`). Reviewers and evidence verification
+read files under `review_root` (see `delegate.md` "Review root" and pass
+`REVIEW_ROOT` to `rc-verify-evidence.sh` in Step 4). When materialization is
+skipped (non-GitHub forge, missing `gh` for a private repo, or clone failure),
+`review_root` stays `.` and review proceeds from the diff — note this to the
+user, since grounding is weaker.
 
 **Returns JSON to stdout:**
 ```json
@@ -279,7 +326,14 @@ Proceed to Step 4.
 
 ### Step 4: VERIFICATION (iteration N)
 
-**First, run `${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`**
+**First, run the evidence check.** Read `Review root:` from
+`${session_dir}/tracking.md`. If it is `.`, run:
+
+`bash ${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`
+
+If it is a path (materialized checkout), pass it so on-disk checks resolve:
+
+`REVIEW_ROOT="<review_root>" bash ${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`
 
 Script checks file existence, quote matching, line accuracy ±5,
 absence claims via grep, cross-agent deduplication.
@@ -363,6 +417,61 @@ and learnings extraction guidance.
 **Update tracking:** Set Report status to `complete`, record council
 verdict and learnings count.
 
+### Step 7: POST (opt-in, terminal)
+
+**Skip entirely unless post intent was recorded.** Read `Post intent:` from
+`${session_dir}/tracking.md` (set by rc-prepare.sh from `--post-comment` /
+`--post-auto-send`). If `no`, stop after Step 6.
+
+Posting requires a PR target. If there is no PR (`PR: none`), tell the user
+there is nothing to post to and stop.
+
+1. **Record the final verdict** for the renderer: write the council verdict
+   (`APPROVE`, `REQUEST CHANGES`, or `APPROVE WITH ADVISORIES`) as the first
+   line of `${session_dir}/verdict.txt`.
+
+2. **Write the human TL;DR**: ONE short plain-language sentence (aim for under
+   25 words) summarizing the outcome, written to
+   `${session_dir}/comment-summary.md`. Not a paragraph, not a wall of text.
+   Plain ASCII punctuation only (no em/en dashes). This is the only prose you
+   contribute to the comment; the script owns all structure.
+
+3. **Render (dry-run)**:
+
+   `bash ${SCRIPTS_DIR}/rc-post-comment.sh ${session_dir}`
+
+   Read the rendered `${session_dir}/comment-body.md` and show it to the user.
+
+4. **Confirm and send**:
+   - Read `Post auto-send:` from tracking.md.
+   - If `no`: ask the user — "Post this comment to PR #{N} on {forge}?" Only on
+     an affirmative answer, send.
+   - If `yes` (standing authorization): send without asking.
+   - Send by setting the authorization env var **only for this command**:
+
+     `REVIEW_COUNCIL_ALLOW_POST=1 bash ${SCRIPTS_DIR}/rc-post-comment.sh ${session_dir} --send`
+
+     `REVIEW_COUNCIL_ALLOW_POST=1` is a hard, machine-checkable gate: the script
+     refuses to post without it (returning `status: confirm_required`), so a
+     prose slip can never post silently. Set it ONLY after an affirmative
+     confirmation or standing auto-send — never pre-emptively, never exported
+     for the whole session.
+   - If the script returns `status: rendered` with a "post manually" message
+     (`gh` absent or unsupported forge), relay the body and instruction to the
+     user instead of claiming it was posted.
+   - If it returns `status: error` (the forge query, create, or update failed),
+     tell the user the post did NOT succeed and why — never report a comment as
+     created/updated when the script reported an error.
+   - The action may be `created`, `updated`, or `unchanged` (same commit,
+     nothing changed); a `created` on a new commit also supersedes and hides the
+     prior commit's comment. Relay the action and `superseded` count faithfully.
+
+5. **Report the outcome**: state whether the comment was created, updated, or
+   left for manual posting.
+
+**Update tracking:** Append a `## Phase: Post` section recording intent,
+whether sent, and the action (created/updated/manual).
+
 ---
 
 ## Tracking File Template
@@ -391,6 +500,9 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Base: {main | master}
 - Language: {language}
 - Framework: {framework | none}
+- Review root: {. | path}
+- Post intent: {yes | no}
+- Post auto-send: {yes | no}
 - Agents discovered: {count}
 - Agents absent: none
 - Changeset size: {count} files
@@ -429,6 +541,12 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Status: {pending | complete}
 - Council verdict: {APPROVE | REQUEST CHANGES | APPROVE WITH ADVISORIES}
 - Learnings recorded: {count}
+
+## Phase: Post
+
+- Intent: {yes | no}
+- Sent: {yes | no | manual}
+- Action: {created | updated | manual | none}
 ```
 
 ---

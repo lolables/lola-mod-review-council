@@ -63,12 +63,13 @@ declare -a finding_titles=()
 declare -a finding_files=()
 declare -a finding_lines=()
 declare -a finding_evidences=()
+declare -a finding_details=()
 finding_count=0
 
 # Append a parsed finding to the accumulator arrays.
 # Checks that required fields are non-empty before saving.
 save_finding() {
-	local agent="$1" sev="$2" title="$3" file="$4" line="$5" evidence="$6"
+	local agent="$1" sev="$2" title="$3" file="$4" line="$5" evidence="$6" detail="$7"
 	[[ -n "$title" && -n "$file" && -n "$evidence" ]] || return 0
 	finding_agents+=("$agent")
 	finding_severities+=("$sev")
@@ -76,6 +77,7 @@ save_finding() {
 	finding_files+=("$file")
 	finding_lines+=("$line")
 	finding_evidences+=("$evidence")
+	finding_details+=("$detail")
 	finding_count=$((finding_count + 1))
 }
 
@@ -101,14 +103,29 @@ for verdict_file in "${verdict_files[@]}"; do
 	current_file=""
 	current_line=""
 	current_evidence=""
+	current_detail=""
 	in_evidence=false
+	in_body=false
 
 	while IFS= read -r line; do
+		# Capture the full verbatim finding body into current_detail FIRST, before
+		# any field branch can `continue` past it — so fenced-evidence lines (incl.
+		# the opening fence) land in detail intact. The header line is excluded;
+		# capture stops at a boundary (horizontal rule, a `## ` section header, or
+		# a verdict declaration) so trailing verdict/notes never bleed in.
+		if [[ "$line" =~ ^###[[:space:]]\[[A-Z]+\] ]]; then
+			:
+		elif [[ "$line" =~ ^-{3,}[[:space:]]*$ || "$line" =~ ^##[[:space:]] || "$line" =~ ^[[:space:]]*\*{0,2}Verdict\*{0,2}: ]]; then
+			in_body=false
+		elif [[ "$in_body" == true ]]; then
+			current_detail+="$line"$'\n'
+		fi
+
 		# Detect finding header: ### [SEVERITY] Title
 		if [[ "$line" =~ ^###[[:space:]]\[([A-Z]+)\][[:space:]](.+)$ ]]; then
 			in_evidence=false
 			# Save previous finding if exists
-			save_finding "$agent_name" "$current_severity" "$current_title" "$current_file" "$current_line" "$current_evidence"
+			save_finding "$agent_name" "$current_severity" "$current_title" "$current_file" "$current_line" "$current_evidence" "$current_detail"
 
 			# Start new finding
 			current_severity="${BASH_REMATCH[1]}"
@@ -116,16 +133,32 @@ for verdict_file in "${verdict_files[@]}"; do
 			current_file=""
 			current_line=""
 			current_evidence=""
+			current_detail=""
+			in_body=true
+			continue
 
-		# Parse File field — handles :line, :line-line ranges, and bare paths
+		# Parse File field. Reviewers write this line many ways: backticked
+		# `path:line`, a bare path with trailing prose, several paths, or a
+		# path mixed with backticked function names. Extract the FIRST real
+		# file token — one bearing a filename extension — with an optional
+		# :line, ignoring backticks, prose, and non-path tokens. Fall back to
+		# the legacy backticked forms for extensionless files (Makefile, etc.).
 		elif [[ "$line" =~ ^\*\*File\*\*: ]]; then
 			in_evidence=false
-			if [[ "$line" =~ \`([^:\`]+):([0-9]+)(-[0-9]+)?\` ]]; then
-				# path:line or path:line-line — capture start number only
+			if [[ "$line" =~ ([A-Za-z0-9_./-]+\.[A-Za-z0-9]+):([0-9]+) ]]; then
+				# first path-with-extension bearing a :line
 				current_file="${BASH_REMATCH[1]}"
 				current_line="${BASH_REMATCH[2]}"
-			elif [[ "$line" =~ \`([^:\`]+)\` ]]; then
-				# path with no line number
+			elif [[ "$line" =~ ([A-Za-z0-9_./-]+\.[A-Za-z0-9]+) ]]; then
+				# first path-with-extension, no line
+				current_file="${BASH_REMATCH[1]}"
+				current_line=""
+			elif [[ "$line" =~ \`([^:\`]+):([0-9]+)(-[0-9]+)?\` ]]; then
+				# legacy: backticked extensionless path:line
+				current_file="${BASH_REMATCH[1]}"
+				current_line="${BASH_REMATCH[2]}"
+			elif [[ "$line" =~ \`([^\`]+)\` ]]; then
+				# legacy: backticked extensionless path, no line
 				current_file="${BASH_REMATCH[1]}"
 				current_line=""
 			fi
@@ -170,11 +203,20 @@ for verdict_file in "${verdict_files[@]}"; do
 
 	# Save last finding
 	in_evidence=false
-	save_finding "$agent_name" "$current_severity" "$current_title" "$current_file" "$current_line" "$current_evidence"
+	save_finding "$agent_name" "$current_severity" "$current_title" "$current_file" "$current_line" "$current_evidence" "$current_detail"
 
-	# Check for format problems when this agent produced zero parseable findings
+	# Check for format problems. A finding block that failed to parse is a
+	# SILENT DROP — the agent wrote a `### [SEVERITY]` header but its File/Evidence
+	# did not parse into a finding. Detect it by comparing headers to findings
+	# parsed from this agent; if any header did not become a finding, flag the
+	# agent for correction regardless of its APPROVE/REQUEST CHANGES verdict.
 	agent_findings=$((finding_count - count_before))
-	if [[ $agent_findings -eq 0 ]]; then
+	header_count=$(grep -cE '^###[[:space:]]\[[A-Z]+\][[:space:]]' "$verdict_file" 2>/dev/null || true)
+	if [[ "$header_count" -gt "$agent_findings" ]]; then
+		# Unparseable finding block(s): headers without a parseable finding.
+		format_error_agents+=("$agent_name")
+		format_error_files+=("$verdict_file")
+	elif [[ $agent_findings -eq 0 ]]; then
 		if grep -q 'REQUEST CHANGES' "$verdict_file"; then
 			format_error_agents+=("$agent_name")
 			format_error_files+=("$verdict_file")
@@ -213,17 +255,17 @@ Each finding must use this exact structure:
 
 ### [SEVERITY] Title
 
-**File**: `path:line`
+**File**: `path/to/file.ext:line`
 **Evidence**: `quoted code from the file`
 **Description**: What is wrong
 **Recommendation**: How to fix it
 
-Re-write the verdict file(s) with the agent's verbatim output. Do NOT summarize, paraphrase, or reformat the agent's response. The verification pipeline parses these fields to confirm findings against source files.
+The **File** line must be exactly ONE backticked repo-relative `path:line` (or `path`) and nothing else — no prose, no second path, no function names, no parentheticals. Put ranges and cross-references in Description. Re-emit the verdict verbatim with each finding in this structure. Do NOT summarize or reformat. The verification pipeline parses these fields to confirm findings against source files; a finding block it cannot parse is dropped.
 REMEDIATION
 
 	jq -n \
 		--arg status "format_error" \
-		--arg message "Agent(s) returned REQUEST CHANGES but verdict file(s) contain no parseable findings: ${agent_list}. The verdict was likely summarized or reformatted, destroying the structured format needed for verification." \
+		--arg message "Verdict file(s) contain finding blocks the pipeline could not parse (a header without a parseable File/Evidence is a silent drop), or returned REQUEST CHANGES with no parseable findings: ${agent_list}. The affected agent(s) must re-emit each finding in the exact structured format." \
 		--arg remediation "$remediation" \
 		--argjson format_errors "$error_json" \
 		'{status: $status, message: $message, remediation: $remediation, format_errors: $format_errors}'
@@ -386,8 +428,9 @@ append_finding() {
 			--arg file "${finding_files[$idx]}" \
 			--arg line "${finding_lines[$idx]}" \
 			--arg evidence "${finding_evidences[$idx]}" \
+			--arg detail "${finding_details[$idx]}" \
 			--arg reason "$reason" \
-			'. + [{agent: $agent, severity: $severity, title: $title, file: $file, line: $line, evidence: $evidence, reason: $reason}]'
+			'. + [{agent: $agent, severity: $severity, title: $title, file: $file, line: $line, evidence: $evidence, detail: $detail, reason: $reason}]'
 	else
 		echo "$arr" | jq \
 			--arg agent "${finding_agents[$idx]}" \
@@ -396,7 +439,8 @@ append_finding() {
 			--arg file "${finding_files[$idx]}" \
 			--arg line "${finding_lines[$idx]}" \
 			--arg evidence "${finding_evidences[$idx]}" \
-			'. + [{agent: $agent, severity: $severity, title: $title, file: $file, line: $line, evidence: $evidence}]'
+			--arg detail "${finding_details[$idx]}" \
+			'. + [{agent: $agent, severity: $severity, title: $title, file: $file, line: $line, evidence: $evidence, detail: $detail}]'
 	fi
 }
 

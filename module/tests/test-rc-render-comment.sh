@@ -71,6 +71,75 @@ else
 fi
 rm -rf "$sess"
 
+# Test 3: nested analysis <details> rendered when detail present
+echo "Test 3: nested reviewer-analysis details"
+sess=$(mktemp -d); make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+if grep -qF "<details><summary>💬 Full reviewer analysis</summary>" <<<"$body"; then
+	echo "  PASS: nested 💬 summary present"; PASS=$((PASS+1))
+else
+	echo "  FAIL: nested summary missing"; FAIL=$((FAIL+1))
+fi
+for needle in "**Recommendation**: Use" "if exp <= now {"; do
+	if grep -qF "$needle" <<<"$body"; then echo "  PASS: analysis has '$needle'"; PASS=$((PASS+1)); else echo "  FAIL: analysis missing '$needle'"; FAIL=$((FAIL+1)); fi
+done
+# redundant **File**: preamble is stripped (it is already the finding's link)
+if ! grep -qF "**File**:" <<<"$body"; then
+	echo "  PASS: redundant File preamble stripped"; PASS=$((PASS+1))
+else
+	echo "  FAIL: File preamble not stripped"; FAIL=$((FAIL+1))
+fi
+# FENCED evidence is kept (a multi-line block carries more than the teaser)
+if grep -qF "**Evidence**:" <<<"$body" && grep -qzF $'  \`\`\`go\n  if exp < now\n  \`\`\`' "$sess/comment-body.md"; then
+	echo "  PASS: fenced evidence retained in analysis"; PASS=$((PASS+1))
+else
+	echo "  FAIL: fenced evidence wrongly dropped"; FAIL=$((FAIL+1))
+fi
+# no stray leading blank line right after the analysis summary
+if grep -Pzoq '💬 Full reviewer analysis</summary>\n\n  \*\*Evidence\*\*:' "$sess/comment-body.md"; then
+	echo "  PASS: analysis starts cleanly (no stray blank)"; PASS=$((PASS+1))
+else
+	echo "  FAIL: stray blank line after summary"; FAIL=$((FAIL+1))
+fi
+# INLINE evidence (fully shown in the teaser) IS stripped as redundant
+sess2=$(mktemp -d); make_review_session "$sess2"
+jq '.verified[0].detail = "**Evidence**: `if exp < now`\n\n**Recommendation**: Use <=."' "$sess2/verdicts/evidence-check.json" >"$sess2/verdicts/ec.tmp" && mv "$sess2/verdicts/ec.tmp" "$sess2/verdicts/evidence-check.json"
+bash "$SCRIPT" "$sess2" >/dev/null 2>&1
+if ! grep -qF "**Evidence**: \`if exp < now\`" "$sess2/comment-body.md" && grep -qF "**Recommendation**: Use <=." "$sess2/comment-body.md"; then
+	echo "  PASS: inline evidence stripped, analysis kept"; PASS=$((PASS+1))
+else
+	echo "  FAIL: inline evidence not stripped"; FAIL=$((FAIL+1))
+fi
+rm -rf "$sess2"
+# detail lines are indented two spaces to stay inside the list item
+if grep -qE '^  \*\*Recommendation\*\*: Use' "$sess/comment-body.md"; then
+	echo "  PASS: analysis indented into list item"; PASS=$((PASS+1))
+else
+	echo "  FAIL: analysis not indented"; FAIL=$((FAIL+1))
+fi
+# both details tags balance (2 open: severity + analysis; 2 close)
+opens=$(grep -cF "<details>" "$sess/comment-body.md"); closes=$(grep -cF "</details>" "$sess/comment-body.md")
+if [[ "$opens" -eq "$closes" && "$opens" -ge 2 ]]; then
+	echo "  PASS: details tags balanced ($opens/$closes)"; PASS=$((PASS+1))
+else
+	echo "  FAIL: details tags unbalanced ($opens/$closes)"; FAIL=$((FAIL+1))
+fi
+rm -rf "$sess"
+
+# Test 4: no nested block when detail is empty (graceful fallback)
+echo "Test 4: no nested block when detail empty"
+sess=$(mktemp -d); make_review_session "$sess"
+jq '.verified[0].detail = ""' "$sess/verdicts/evidence-check.json" >"$sess/verdicts/ec.tmp" && mv "$sess/verdicts/ec.tmp" "$sess/verdicts/evidence-check.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if ! grep -qF "💬 Full reviewer analysis" "$sess/comment-body.md"; then
+	echo "  PASS: no nested block for empty detail"; PASS=$((PASS+1))
+else
+	echo "  FAIL: nested block emitted for empty detail"; FAIL=$((FAIL+1))
+fi
+grep -qF "auth/token.go:1" "$sess/comment-body.md" && { echo "  PASS: finding still present"; PASS=$((PASS+1)); } || { echo "  FAIL: finding dropped"; FAIL=$((FAIL+1)); }
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

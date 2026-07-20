@@ -96,14 +96,18 @@ Cross-checked by orchestrator. Omitting marks response as low-confidence.
 
 ### Finding Format
 
+Every finding MUST use this exact block. The verification pipeline parses these fields; a block it cannot parse is dropped from the review — a real issue you found would silently vanish.
+
 ```
 ### [SEVERITY] Finding Title
 
-**File**: `path/to/file:line`
+**File**: `path/to/file.ext:line`
 **Evidence**: <direct quote from the file you read>
 **Constraint**: Which convention is violated
 **Description**: What the issue is and why it matters
 **Recommendation**: How to fix it
 ```
 
-**Evidence** field mandatory — direct quote from file, or (for absence findings) what you searched for and where.
+- **File** MUST be exactly one backticked, repo-relative `` `path/to/file.ext:line` `` (or `` `path/to/file.ext` `` when no single line applies). Nothing else belongs on this line — no prose, no second path, no function names, no parentheticals. Put line ranges, cross-references, and rationale in **Description**.
+- **Evidence** field mandatory — direct quote from file, or (for absence findings) what you searched for and where.
+- Self-check each finding before finishing: does it carry `**File**:` and `**Evidence**:` in the exact shape above? If not, the pipeline cannot confirm it.

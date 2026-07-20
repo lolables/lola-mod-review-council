@@ -63,7 +63,7 @@ SES
 	cat >"$s/verdicts/evidence-check.json" <<'EJ'
 {
   "verified": [
-    {"agent":"divisor-adversary-code","severity":"HIGH","title":"expiry uses < not <=","file":"auth/token.go","line":"1","evidence":"if exp < now"}
+    {"agent":"divisor-adversary-code","severity":"HIGH","title":"expiry uses < not <=","file":"auth/token.go","line":"1","evidence":"if exp < now","detail":"**File**: `auth/token.go:1`\n**Evidence**:\n```go\nif exp < now\n```\n\n**Description**: The expiry check rejects tokens at the exact boundary.\n**Recommendation**: Use `<=` so a token expiring exactly now is still valid:\n```go\nif exp <= now {\n```"}
   ],
   "correctable": [], "stripped": [],
   "total_findings": 1, "duplicates_consolidated": 0

@@ -103,7 +103,7 @@ rc_render_comment_body() { # session_dir body_file
 	local stamp commit_url repo_url
 	local c_crit c_high c_med c_low
 	local agent_rows="" vf name av
-	local findings_block="" sev n se f l t ev agent
+	local findings_block="" sev n se f l t ev agent detail detail_b64 dline
 	local marker_line
 
 	RC_EVIDENCE="$session_dir/verdicts/evidence-check.json"
@@ -180,9 +180,37 @@ rc_render_comment_body() { # session_dir body_file
 			CRITICAL) se="🔴" ;; HIGH) se="🟠" ;; MEDIUM) se="🟡" ;; *) se="🔵" ;;
 			esac
 			findings_block+="<details><summary>${se} ${sev} (${n})</summary>"$'\n\n'
-			while IFS=$'\t' read -r f l t ev agent; do
+			while IFS=$'\t' read -r f l t ev agent detail_b64; do
 				findings_block+="- $(persona_emoji "$agent") **${t}** ($(link_location "$f" "$l"))"$'\n\n'"  > \`${ev}\`"$'\n\n'
-			done < <(jq -r --arg s "$sev" '.verified[]? | select(.severity==$s) | [.file, .line, .title, .evidence, .agent] | @tsv' "$RC_EVIDENCE" 2>/dev/null)
+				detail=""
+				[[ -n "$detail_b64" ]] && detail=$(printf '%s' "$detail_b64" | base64 -d 2>/dev/null)
+				# Drop the redundant leading preamble — blank lines and the
+				# **File**: line (already shown as the finding's deep-link) — so
+				# the analysis starts cleanly. Evidence is kept: a fenced
+				# evidence block carries more than the one-line teaser above.
+				[[ -n "$detail" ]] && detail=$(printf '%s' "$detail" | awk '
+					BEGIN { pre = 1 }
+					{
+						if (pre) {
+							if ($0 ~ /^[[:space:]]*$/) next
+							if ($0 ~ /^\*\*File\*\*:/) next
+							if ($0 ~ /^\*\*Evidence\*\*:[[:space:]]*[^[:space:]]/) next
+							pre = 0
+						}
+						print
+					}')
+				if [[ -n "$detail" ]]; then
+					findings_block+="  <details><summary>💬 Full reviewer analysis</summary>"$'\n\n'
+					while IFS= read -r dline || [[ -n "$dline" ]]; do
+						if [[ -n "$dline" ]]; then
+							findings_block+="  ${dline}"$'\n'
+						else
+							findings_block+=$'\n'
+						fi
+					done <<<"$detail"
+					findings_block+=$'\n'"  </details>"$'\n\n'
+				fi
+			done < <(jq -r --arg s "$sev" '.verified[]? | select(.severity==$s) | [.file, .line, .title, .evidence, .agent, ((.detail // "") | @base64)] | @tsv' "$RC_EVIDENCE" 2>/dev/null)
 			findings_block+="</details>"$'\n\n'
 		done
 	fi

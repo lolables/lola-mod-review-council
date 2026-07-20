@@ -524,6 +524,170 @@ result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok (legacy path)"
 rm -rf "$session" "$src"
 
+# Test 18: full finding body captured verbatim into `detail`
+echo "Test 18: detail captures full reviewer body verbatim"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+echo 'if IsPuppetOID(ext.Id) {' >"$src/signing.go"
+echo "signing.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-testing-code.md" <<'VERDICT'
+Files read:
+- signing.go
+
+### [HIGH] Carry-forward untested
+
+**File**: `signing.go:1`
+**Evidence**: `if IsPuppetOID(ext.Id) {`
+
+Context in AutoRenew:
+```go
+for _, ext := range presentedCert.Extensions {
+    if IsPuppetOID(ext.Id) {
+```
+**Search proving absence**: `grep IsAuthOID renew_test.go` returned nothing.
+**Description**: The loop is a deliberate security divergence.
+**Recommendation**: Add an `It` that seeds a presentedCert and asserts extensions.
+
+Verdict: REQUEST CHANGES
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+detail=$(jq -r '.verified[0].detail' "$session/verdicts/evidence-check.json")
+for needle in "Context in AutoRenew" "Search proving absence" "for _, ext := range" "**Recommendation**: Add an" "deliberate security divergence"; do
+	if grep -qF "$needle" <<<"$detail"; then echo "  PASS: detail has '$needle'"; PASS=$((PASS+1)); else echo "  FAIL: detail missing '$needle'"; FAIL=$((FAIL+1)); fi
+done
+# boundary: the trailing verdict declaration must NOT bleed into detail
+if grep -qF "REQUEST CHANGES" <<<"$detail"; then echo "  FAIL: detail absorbed the verdict line"; FAIL=$((FAIL+1)); else echo "  PASS: detail stops before verdict line"; PASS=$((PASS+1)); fi
+rm -rf "$session" "$src"
+
+# Test 19: last finding does not absorb a `## Verdict` / notes section
+echo "Test 19: detail stops at a section boundary"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+echo 'package main' >"$src/a.go"
+echo "a.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-guard-code.md" <<'VERDICT'
+### [LOW] Doc missing
+
+**File**: `a.go:1`
+**Evidence**: `package main`
+**Recommendation**: Add a package comment.
+
+---
+
+## Verdict
+
+**Verdict**: REQUEST CHANGES
+This section must never appear inside detail.
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+detail=$(jq -r '.verified[0].detail' "$session/verdicts/evidence-check.json")
+if grep -qF "Add a package comment" <<<"$detail" && ! grep -qF "must never appear" <<<"$detail" && ! grep -qF "## Verdict" <<<"$detail"; then
+	echo "  PASS: detail contains the finding body but not the trailing section"; PASS=$((PASS+1))
+else
+	echo "  FAIL: boundary wrong (detail='$detail')"; FAIL=$((FAIL+1))
+fi
+rm -rf "$session" "$src"
+
+# Test 20: existing finding fields are unchanged by detail capture (regression)
+echo "Test 20: core fields intact alongside detail"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+echo 'func main() { fmt.Println("hi") }' >"$src/main.go"
+echo "main.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
+### [HIGH] X
+
+**File**: `main.go:1`
+**Evidence**: `func main() { fmt.Println("hi") }`
+**Recommendation**: Do the thing.
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+title=$(jq -r '.verified[0].title' "$session/verdicts/evidence-check.json")
+ev=$(jq -r '.verified[0].evidence' "$session/verdicts/evidence-check.json")
+if [[ "$title" == "X" && "$ev" == 'func main() { fmt.Println("hi") }' ]]; then
+	echo "  PASS: title/evidence still parsed correctly"; PASS=$((PASS+1))
+else
+	echo "  FAIL: core fields wrong (title='$title' ev='$ev')"; FAIL=$((FAIL+1))
+fi
+rm -rf "$session" "$src"
+
+# Test 21: File with a bare path + trailing prose (no backticks) parses to the path
+echo "Test 21: bare path with prose in File"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+mkdir -p "$src/internal/api"
+echo 'http.Error(w, "x", http.StatusUnprocessableEntity)' >"$src/internal/api/handlers.go"
+echo "internal/api/handlers.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-testing-code.md" <<'VERDICT'
+### [MEDIUM] 422 mapping untested
+
+**File**: internal/api/handlers.go (lines 869-872 and 899-902); gap confirmed against internal/api/api_test.go
+**Evidence**: `http.Error(w, "x", http.StatusUnprocessableEntity)`
+**Recommendation**: Add a handler test.
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+f=$(jq -r '.verified[0].file' "$session/verdicts/evidence-check.json" 2>/dev/null)
+if [[ "$f" == "internal/api/handlers.go" ]]; then echo "  PASS: extracted bare path from prose"; PASS=$((PASS+1)); else echo "  FAIL: got file '$f'"; FAIL=$((FAIL+1)); fi
+rm -rf "$session" "$src"
+
+# Test 22: File with bare path:line then backticked function names picks the PATH
+echo "Test 22: path:line not confused by backticked function names"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+mkdir -p "$src/internal/ca"
+printf 'line1\nline2\nfunc issueLeafLocked() {}\n' >"$src/internal/ca/signing.go"
+echo "internal/ca/signing.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-sre-code.md" <<'VERDICT'
+### [LOW] inventory growth
+
+**File**: internal/ca/signing.go:3, 428 (via `issueLeafLocked`), driven by `AutoRenew`
+**Evidence**: `func issueLeafLocked() {}`
+**Recommendation**: Add compaction.
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+f=$(jq -r '.verified[0].file' "$session/verdicts/evidence-check.json" 2>/dev/null)
+ln=$(jq -r '.verified[0].line' "$session/verdicts/evidence-check.json" 2>/dev/null)
+if [[ "$f" == "internal/ca/signing.go" && "$ln" == "3" ]]; then echo "  PASS: picked path:line, not function name"; PASS=$((PASS+1)); else echo "  FAIL: got file='$f' line='$ln'"; FAIL=$((FAIL+1)); fi
+rm -rf "$session" "$src"
+
+# Test 23: a finding header that fails to parse triggers format_error even on APPROVE
+echo "Test 23: unparseable finding block flagged (silent-drop guard)"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+echo 'package main' >"$src/x.go"
+echo "x.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-testing-code.md" <<'VERDICT'
+### [MEDIUM] Something is missing
+
+**Evidence**: `package main`
+**Recommendation**: Add a test.
+
+Verdict: APPROVE
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+assert_json_field "$result" "status" "format_error" "unparseable finding -> format_error"
+agent=$(echo "$result" | jq -r '.format_errors[0].agent')
+[[ "$agent" == "divisor-testing-code" ]] && { echo "  PASS: names the agent"; PASS=$((PASS+1)); } || { echo "  FAIL: agent '$agent'"; FAIL=$((FAIL+1)); }
+rm -rf "$session" "$src"
+
+# Test 24: partial parse failure (one of two findings unparseable) -> format_error
+echo "Test 24: partial parse failure flagged"
+session=$(mktemp -d); mkdir -p "$session/verdicts"; src=$(mktemp -d)
+printf 'package main\nfunc F() {}\n' >"$src/y.go"
+echo "y.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-guard-code.md" <<'VERDICT'
+### [LOW] Good finding
+
+**File**: `y.go:1`
+**Evidence**: `package main`
+**Recommendation**: none
+
+### [MEDIUM] Broken finding (no File)
+
+**Evidence**: `func F() {}`
+**Recommendation**: fix
+
+Verdict: REQUEST CHANGES
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+assert_json_field "$result" "status" "format_error" "partial parse failure -> format_error"
+rm -rf "$session" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

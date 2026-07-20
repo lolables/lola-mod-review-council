@@ -347,6 +347,10 @@ absence claims via grep, cross-agent deduplication.
 }
 ```
 
+If it instead returns `"status": "format_error"`, an agent's finding block
+failed to parse (a silent drop). Handle it per `verify.md` **Step 0 — Format
+Gate** (re-dispatch the named agent, re-run this script) before proceeding.
+
 **Then, read `${PHASES_DIR}/verify.md`** for severity calibration
 and validation gate procedures.
 

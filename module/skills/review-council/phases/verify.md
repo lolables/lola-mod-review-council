@@ -61,6 +61,37 @@ Mechanical evidence checking performed by `rc-verify-evidence.sh`. Script produc
 
 ---
 
+## Step 0 — Format Gate (fail-loud parsing)
+
+Before the checks above run, `rc-verify-evidence.sh` may short-circuit with:
+
+```json
+{ "status": "format_error", "message": "...", "remediation": "...",
+  "format_errors": [ { "agent": "...", "file": "..." } ] }
+```
+
+This means one or more agents wrote a `### [SEVERITY]` finding block the pipeline
+**could not parse** (a malformed `**File**:`, a missing `**Evidence**:`), or
+returned REQUEST CHANGES with no parseable findings. An unparsed block is a
+**silent drop** — a real finding that would vanish from the review. Do NOT proceed
+to Step 1 on `format_error`.
+
+Handle it (one round only, mirroring the correction round):
+
+1. For each agent in `format_errors`, re-dispatch a focused correction prompt
+   containing the `remediation` text verbatim. Instruct the agent to re-emit its
+   findings in the exact structured format — **verbatim, not summarized** — with
+   `**File**:` as a single backticked `path:line`.
+2. Re-run `rc-verify-evidence.sh` (same invocation, same `REVIEW_ROOT`).
+3. If it still returns `format_error`, proceed with whatever now parses, but
+   **log each still-unparseable block loudly** in `verification.txt` and surface
+   it in the report — never let a dropped finding pass silently as a clean zero.
+
+Only once the script returns a normal result (`verified`/`correctable`/`stripped`
+arrays) do you continue to Step 1.
+
+---
+
 ## Step 1 — Correction Round
 
 **Effort gate:** If effort is `quick`, skip this step entirely.

@@ -30,6 +30,13 @@ All notable changes to the Review Council module are documented here.
 - Source/issue-tracker footer on every report, linking back to the
   Review Council repository. Overridable via the `REVIEW_COUNCIL_REPO`
   environment variable so forks point at their own tracker
+- PR comment posting: opt-in, PR-only, confirmed-before-send upsert comment
+  (GitHub via `gh`); renders human-first summary with severity/agent tables and
+  collapsible findings; degrades to render-only when `gh` is absent.
+- Target-repo materialization for not-checked-out GitHub PR/URL reviews:
+  blobless partial clone (shallow fallback) of the PR head into an LRU-capped
+  per-repo cache, threaded to reviewers and evidence verification via
+  `review_root` / `REVIEW_ROOT`. Working tree is never modified.
 
 ### Changed
 

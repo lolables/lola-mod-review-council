@@ -80,6 +80,19 @@ reviewer agents.
 
 **Data sources:** Read file list from `${session_dir}/changeset.txt`, diff from `${session_dir}/diff.patch`. Read scope from `${session_dir}/tracking.md` (`Scope:` and `Scope value:` fields). Read `Effort:` field from tracking.md to determine delegation mode.
 
+**Review root:** Read `Review root:` from `${session_dir}/tracking.md`. If it
+is `.`, reviewers read changeset files relative to the current directory (the
+default). If it is an absolute path (a materialized checkout for a
+not-checked-out PR), instruct each reviewer to read files as
+`<review-root>/<path>` and to **cite paths repo-relative** (without the review
+root prefix) in findings, so evidence verification and the report show clean
+paths. Include this line in every delegation prompt when review root is not
+`.`:
+
+> Files in this changeset live under `{review_root}`. Read each as
+> `{review_root}/<path>`. In findings, cite paths repo-relative (omit the
+> `{review_root}/` prefix).
+
 **Scope framing:** Use scope from tracking.md to frame review accurately:
 - If scope is `changed`: "The following files changed on branch `{branch}` vs `{base}`:"
 - If scope is `range`: "The following files changed in `{scope_value}`:"

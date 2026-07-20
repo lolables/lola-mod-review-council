@@ -19,6 +19,8 @@ scope_value=""
 scope_filters=() # Secondary --scope paths filters
 base_override=""
 effort="standard"
+post_comment="no"
+post_auto_send="no"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -89,6 +91,15 @@ while [[ $# -gt 0 ]]; do
 		esac
 		shift 2
 		;;
+	--post-comment)
+		post_comment="yes"
+		shift
+		;;
+	--post-auto-send)
+		post_comment="yes"
+		post_auto_send="yes"
+		shift
+		;;
 	--help)
 		cat <<-'HELP'
 			Usage: rc-prepare.sh [flags]
@@ -100,6 +111,8 @@ while [[ $# -gt 0 ]]; do
 			  --review-instructions <text>     Freeform review guidance for agents
 			  --base <branch>                  Override base branch (default: main or master)
 			  --effort <quick|standard|deep>   Review depth (default: standard)
+			  --post-comment                   Post the verdict as a PR comment (opt-in; confirmed at Step 7)
+			  --post-auto-send                 Post without a per-run confirmation prompt
 
 			Scope types:
 			  changed     base...HEAD + uncommitted changes (code default)
@@ -356,6 +369,23 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 				fi
 			} >"${session_dir}/pr-metadata.txt"
 		fi
+	fi
+fi
+
+# ============================================================================
+# SECTION 6b: Materialize Target Repo (PR/URL scope, github only)
+# ============================================================================
+
+review_root="."
+
+if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
+	if [[ "$forge" == "github" ]] && [[ -n "$pr_number" ]]; then
+		clone_head="${pr_head:-}"
+		clone_json=$(AGENTS_DIR="${AGENTS_DIR:-}" bash "$(dirname "$0")/rc-clone-target.sh" \
+			--forge "$forge" --owner "$forge_owner" --repo "$forge_repo" \
+			--pr "$pr_number" --head "$clone_head" 2>/dev/null || echo '{}')
+		rr=$(echo "$clone_json" | jq -r '.review_root // "."' 2>/dev/null || echo ".")
+		[[ -n "$rr" && "$rr" != "null" ]] && review_root="$rr"
 	fi
 fi
 
@@ -901,6 +931,8 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 	)"
 	echo "Input:        ${input_type}"
 	echo "Forge:        ${forge}"
+	echo "Owner:        ${forge_owner:-none}"
+	echo "Repo:         ${forge_repo:-none}"
 	if [[ -n "$pr_number" ]]; then
 		echo "PR:           #${pr_number} \"${pr_title}\" (${pr_url})"
 	else
@@ -912,6 +944,8 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 	echo "Constitution: ${constitution} ${constitution_source:+(${constitution_source})}"
 	echo "Language:     ${language}"
 	echo "Framework:    ${framework}"
+	echo "Review root:  ${review_root}"
+	echo "Post intent:  ${post_comment} (auto-send: ${post_auto_send})"
 } >"${session_dir}/session.txt"
 
 # ============================================================================
@@ -938,6 +972,9 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 	echo "- Base: ${base_branch}"
 	echo "- Language: ${language}"
 	echo "- Framework: ${framework}"
+	echo "- Review root: ${review_root}"
+	echo "- Post intent: ${post_comment}"
+	echo "- Post auto-send: ${post_auto_send}"
 	echo "- Agents discovered: ${#agents[@]}"
 	echo "- Agents absent: none"
 	changeset_line_count=$(wc -l <"${session_dir}/changeset.txt")
@@ -1039,6 +1076,9 @@ jq -n \
 	--arg scope_value "${input_value:-}" \
 	--arg scope_dir "${scope_dir:-}" \
 	--arg effort "$effort" \
+	--arg review_root "$review_root" \
+	--arg post_comment "$post_comment" \
+	--arg post_auto_send "$post_auto_send" \
 	--argjson agents "$agents_json" \
 	'{
     status: $status,
@@ -1052,5 +1092,8 @@ jq -n \
     scope_value: $scope_value,
     scope_dir: $scope_dir,
     effort: $effort,
+    review_root: $review_root,
+    post_comment: $post_comment,
+    post_auto_send: $post_auto_send,
     agents: $agents
   }'

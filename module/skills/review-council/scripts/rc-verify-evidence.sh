@@ -15,6 +15,11 @@ fi
 
 session_dir="$1"
 
+# Optional review root. When findings reference files that live under a
+# materialized checkout (foreign-PR review), reads/greps are prefixed with
+# this root. Default "." preserves legacy CWD-relative behavior.
+review_root="${2:-${REVIEW_ROOT:-.}}"
+
 # ============================================================================
 # Validate Session Directory
 # ============================================================================
@@ -263,15 +268,23 @@ for ((i = 0; i < finding_count; i++)); do
 	line="${finding_lines[$i]}"
 	evidence="${finding_evidences[$i]}"
 
+	# Resolve the on-disk path (prefix with review_root unless it is ".").
+	# The stored finding path ($file) stays repo-relative for reporting.
+	if [[ "$review_root" == "." ]]; then
+		fpath="$file"
+	else
+		fpath="${review_root%/}/$file"
+	fi
+
 	# Check if file exists
-	if [[ ! -f "$file" ]]; then
+	if [[ ! -f "$fpath" ]]; then
 		stripped_indices+=("$i")
 		stripped_reasons+=("FILE_NOT_FOUND")
 		continue
 	fi
 
 	# Check if evidence quote exists in file using grep -F (exact match)
-	if ! grep -qF "$evidence" "$file"; then
+	if ! grep -qF "$evidence" "$fpath"; then
 		# File exists but evidence not found -> correctable
 		correctable_indices+=("$i")
 		correctable_reasons+=("EVIDENCE_NOT_FOUND")
@@ -281,7 +294,7 @@ for ((i = 0; i < finding_count; i++)); do
 	# If line number specified, verify it's within +-5 lines
 	if [[ -n "$line" ]]; then
 		# Get the actual line number where evidence appears
-		actual_line=$(grep -nF "$evidence" "$file" | head -1 | cut -d: -f1)
+		actual_line=$(grep -nF "$evidence" "$fpath" | head -1 | cut -d: -f1)
 
 		if [[ -n "$actual_line" ]]; then
 			# Check if within +-5 lines

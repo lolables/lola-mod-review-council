@@ -25,3 +25,24 @@ Rules:
    depend on host capabilities (model selection, temperature control,
    named subagent dispatch) must degrade gracefully when the host lacks
    them, not fail.
+
+## Output Principle: Built for Humans, Actionable by LLMs
+
+Every artifact this module emits for a human audience — reports, PR
+comments — leads with a human summary and stays scannable, while the
+underlying data remains machine-parseable.
+
+Rules:
+
+1. **Human summary first.** Lead with a one-line verdict and a plain-language
+   TL;DR before any table or detail dump. A reader must grasp the outcome
+   without expanding anything.
+2. **Scannable structure over walls of text.** Use tables for counts and
+   verdicts; tuck long finding lists behind collapsible `<details>` blocks.
+3. **Machine-parseable substrate.** Keep structured data (`evidence-check.json`),
+   stable section anchors, and hidden marker tags intact so a later LLM pass
+   can parse the same artifact it presents to a human.
+4. **Deterministic rendering.** Forge-specific formatting is produced by
+   scripts from structured data — never hand-formatted by the model per forge.
+   The model contributes prose (a narrative, a one-line summary); scripts own
+   structure.

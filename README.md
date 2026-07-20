@@ -138,6 +138,28 @@ Without `gh`, the Curator reports gaps as review findings instead.
 See `AGENTS.md` for the full list of input forms including directory paths,
 URLs, aliases, and review instructions.
 
+### Posting the verdict to a PR
+
+For PR/URL reviews you can ask the council to post its verdict back to the PR
+("review PR 42 and post the result"). Posting is **opt-in and PR-only**. The
+council renders a human-first summary comment — verdict, TL;DR, severity and
+per-agent tables, findings in collapsible sections — and **shows it to you and
+asks before sending** (say "post without asking" to skip the prompt). Re-reviews
+edit the same comment (matched by a hidden marker) instead of posting new ones.
+
+GitHub is supported via `gh`. When `gh` is absent or the forge is not GitHub,
+the comment body is rendered to a file and you post it manually — nothing is
+sent silently.
+
+### Reviewing PRs you haven't checked out
+
+When you review a GitHub PR by number or URL and are not already on that
+branch, the council materializes the PR head (a blobless partial clone, shallow
+fallback) into a per-repo cache under `$XDG_CACHE_HOME/review-council/clones/`
+so reviewers read real files instead of only the diff. Your working tree is
+never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
+(default 10) repositories.
+
 ## How It Works
 
 The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates five phases

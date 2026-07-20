@@ -459,6 +459,71 @@ else
 fi
 rm -rf "$session" "$src"
 
+# Test 16: REVIEW_ROOT env prefixes finding files (checkout-root case)
+echo "Test 16: REVIEW_ROOT prefixing"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
+root=$(mktemp -d)
+mkdir -p "$root/pkg"
+echo 'func main() { fmt.Println("hello") }' >"$root/pkg/main.go"
+echo "pkg/main.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-adversary-code.md" <<'VERDICT'
+Files read:
+- pkg/main.go
+
+### [HIGH] Missing error handling
+
+**File**: `pkg/main.go:1`
+**Evidence**: `func main() { fmt.Println("hello") }`
+**Constraint**: Error handling required
+**Description**: No error handling in main
+**Recommendation**: Add error handling
+VERDICT
+# CWD deliberately NOT the checkout root; REVIEW_ROOT points at it.
+result=$(REVIEW_ROOT="$root" bash "$SCRIPT" "$session" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+verified_count=$(echo "$result" | jq '.verified')
+if [[ "$verified_count" -eq 1 ]]; then
+	echo "  PASS: finding verified via REVIEW_ROOT"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: REVIEW_ROOT finding not verified (got $verified_count)"
+	FAIL=$((FAIL + 1))
+fi
+# stored file path stays repo-relative (clean for report/comment)
+stored=$(jq -r '.verified[0].file' "$session/verdicts/evidence-check.json")
+if [[ "$stored" == "pkg/main.go" ]]; then
+	echo "  PASS: stored path is repo-relative"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 'pkg/main.go', got '$stored'"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session" "$root"
+
+# Test 17: REVIEW_ROOT unset preserves legacy CWD behavior
+echo "Test 17: REVIEW_ROOT unset = legacy behavior"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
+src=$(mktemp -d)
+echo 'package main' >"$src/real.go"
+echo "real.go" >"$session/changeset.txt"
+cat >"$session/verdicts/divisor-testing-code.md" <<'VERDICT'
+Files read:
+- real.go
+
+### [LOW] Package comment missing
+
+**File**: `real.go:1`
+**Evidence**: `package main`
+**Constraint**: Doc comment
+**Description**: No package doc
+**Recommendation**: Add one
+VERDICT
+result=$(cd "$src" && bash "$SCRIPT" "$session" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok (legacy path)"
+rm -rf "$session" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

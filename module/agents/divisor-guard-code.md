@@ -164,14 +164,17 @@ All mean: go back to Phase 1 and re-read files.
 | "Constitution principle is aspirational"                | Constitutional principles are constraints, not suggestions. Relaxing requires documented authorization, not silent erosion.                                                              |
 | "It's only small scope addition"                        | Small additions accumulate. Each sets precedent for next. Gold plating is scope creep in nicer jacket.                                                                                   |
 
-## Output Format
+## Output
 
-Use output format from reviewer-protocol.md. Additionally:
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
-For each finding, include extra fields:
-
-- **Spec Reference**: Which spec/acceptance criterion affected
-- **Constraint**: Which behavioral constraint violated (Intent Drift, Zero-Waste, Constitution Alignment, Cross-Component, Gatekeeping, Structural Coherence)
+For each finding, set `constraint` to the behavioral constraint violated (Intent
+Drift, Zero-Waste, Constitution Alignment, Cross-Component, Gatekeeping,
+Structural Coherence) and fold the affected spec/acceptance criterion into
+`description`.
 
 ## Decision Criteria
 

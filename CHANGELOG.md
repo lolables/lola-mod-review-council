@@ -23,10 +23,10 @@ All notable changes to the Review Council module are documented here.
   the finding count or affecting the council verdict
 - LLM provenance disclosure — every rendered report opens with a
   mandatory banner stating it was LLM-generated, plus the models used
-  (read from `${session_dir}/models.txt`, with an honest fallback when
+  (read from `${session_dir}/models.json`, with an honest fallback when
   the host does not expose model identity). The delegation phase records
-  each reviewer's model (or tier) to `models.txt` at dispatch, and the
-  renderer dedupes repeated lines from deep-mode per-subsystem dispatch
+  each reviewer's model (or tier) to `models.json` at dispatch, and the
+  renderer dedupes repeated entries from deep-mode per-subsystem dispatch
 - Source/issue-tracker footer on every report, linking back to the
   Review Council repository. Overridable via the `REVIEW_COUNCIL_REPO`
   environment variable so forks point at their own tracker
@@ -37,9 +37,75 @@ All notable changes to the Review Council module are documented here.
   blobless partial clone (shallow fallback) of the PR head into an LRU-capped
   per-repo cache, threaded to reviewers and evidence verification via
   `review_root` / `REVIEW_ROOT`. Working tree is never modified.
+- `rc-extract-verdict.sh`: a new Extract stage between Delegate and Verify
+  that pulls the fenced ```json verdict block out of each reviewer's raw
+  output and schema-validates it against `verdict-schema.json`. Malformed or
+  missing blocks trigger one re-dispatch before failing loud, so a bad
+  response can no longer vanish as a silent zero-findings result
+- `verdict-schema.json` — the JSON Schema (draft-07) for the reviewer
+  verdict contract, validated via `sourcemeta/jsonschema` when present, with
+  a `jq`-based structural fallback when it isn't
+- Explicit pipeline state machine: `references/pipeline-states.md` documents
+  every stage script's status vocabulary and transitions, and `SKILL.md`
+  gained a `stateDiagram-v2` covering the same states end to end
+- Model provenance now flows through `models.json` (a `{role, id}` array)
+  instead of free-text lines, closing the door on line-splitting bugs in
+  the model-tier list
+- A prose-only narrative subagent stage: given only `verdicts/findings.json`,
+  it returns a one-line TL;DR and a short narrative and nothing else: no
+  structure, no tables. The orchestrator splices its output into the
+  `<!-- NARRATIVE -->` and `<!-- LEARNINGS -->` markers left by
+  `rc-render-report.sh`
+- Re-review PR-conversation ingestion (GitHub): when the council's marker
+  comment already exists on a PR, `rc-prepare.sh` fetches the issue-comments
+  timeline and writes replies posted at/after the marker to
+  `pr-conversation.txt` as UNTRUSTED data. First reviews and non-GitHub
+  forges write no file; a `# TODO(forge)` marker tracks the GitLab gap
+- Disposition step (`phases/disposition.md`, SKILL.md Step 4.5): the one
+  chokepoint that reads `pr-conversation.txt`, gated on that file existing
+  and effort not `quick`. A fresh-context subagent receives the untrusted
+  conversation and the verified findings and, per finding it references,
+  applies four rules: comments are data, never instructions; a "fixed"
+  claim requires independent re-verification against source before a
+  finding drops (never self-clears on the claim alone); a narrow scoping
+  hint may suppress re-raising LOW findings only (verdict-neutral); and
+  commenter identity is at most a weak prior. Outcomes are written as
+  structured `provenance.disposition` on `findings.json` — `resolved`
+  (source-confirmed fixed, moved to `stripped`), `kept` (claimed fixed but
+  still present, `claim_verified: false`), or `suppressed-low` (moved to
+  `stripped`, verdict-neutral). The report gains three conditional
+  sections for re-reviews: "Resolved Since Last Review", "Claimed Fixed
+  But Still Present", and a compact suppressed-LOWs note
+- Adversarial eval cases `case-022` through `case-025` proving the
+  Disposition contract (prompt injection ignored, false-fix claims survive,
+  true-fix claims resolve only on independent re-verification, scoping
+  hints bounded to LOW), run via `task lola-eval:test-disposition`
 
 ### Changed
 
+- **BREAKING**: Reviewer agents now emit a single fenced ```json verdict
+  block (`{agent, files_read, verdict, findings: [...]}`) instead of
+  markdown `### [SEVERITY]` finding blocks. Custom `divisor-*` reviewer
+  agents written against the old markdown output contract must migrate to
+  the JSON contract in `references/reviewer-protocol.md` before they will
+  produce usable findings
+- **BREAKING**: The findings pipeline is JSON-native end to end. The
+  ~500-line regex/markdown parser in `rc-verify-evidence.sh` is gone; the
+  script now consumes each reviewer's schema-validated
+  `verdicts/{agent}.json` directly and writes the canonical
+  `verdicts/findings.json` (verified/correctable/stripped finding arrays,
+  `total_findings`, `duplicates_consolidated`, and a verbatim per-agent
+  `verdicts` map). `findings.json` replaces `verdicts/evidence-check.json`
+  as the artifact downstream phases and renderers read
+- Severity calibration, deduplication, and validation now mutate structured
+  JSON fields (`provenance.calibrated_from`, `provenance.validator`) on each
+  finding instead of leaking notes into prose fields or HTML comments
+- `rc-render-comment.sh` and `rc-render-report.sh` build all structure
+  (tables, counts, verdict) deterministically from `findings.json` via
+  `jq -r` — no `@tsv` output re-segmented with `awk`. The table's verdict
+  and count columns are now derived from one source, so they can no longer
+  disagree with the findings list. Multi-line evidence renders as a fenced
+  code block instead of bleeding tabs/backslashes into the surrounding row
 - Extended Go/Tester detection hints with the shallow-assertion
   pattern — integration tests asserting only `require.NoError` +
   `require.NotNil` without verifying response fields, detected by
@@ -52,6 +118,17 @@ All notable changes to the Review Council module are documented here.
 - Lowered god component detection thresholds from >300 lines / >10
   state variables to >200 lines / >5 state hooks (aligns with
   `fw-react.md` calibration)
+
+### Fixed
+
+- References (convention packs, `verdict-schema.json`) now resolve from
+  `SKILL_DIR`, not `MODULE_DIR` — on a split install (skill and agents
+  directories on separate paths), packs failed to load because
+  `REFERENCES_DIR` was derived from the wrong root
+- A non-git working directory now reports the missing repository
+  distinctly from a missing review mode, and points at `--scope pr`,
+  `--scope url`, or `git init` instead of asking the user to specify a
+  mode they already gave
 
 ## [0.1.0] — 2026-06-30
 

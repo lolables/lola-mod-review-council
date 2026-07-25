@@ -19,8 +19,18 @@ rc_trap_errors # report script:line on any unhandled failure (never silent)
 MARKER_KEY="review-council:marker"
 
 # --- Forge URL hooks the renderer calls (empty => renderer uses plain spans) ---
+#
+# The renderer parses forge_web from the origin remote and leaves it empty
+# when the host can't be determined (it holds zero forge knowledge - see
+# rc-render-comment.sh). This script IS GitHub, so on that empty-host edge
+# case it defaults forge_web to github.com/<owner>/<repo> here instead of
+# degrading to plain code spans. $owner/$repo are read from session.txt below
+# and are in scope by the time these hooks actually run (rc_render_comment_body
+# is called after that read); posting itself already requires both to be set,
+# so this default is only ever exercised alongside a real owner/repo.
 rc_url_file() { # forge_web sha file line
 	local web="$1" sha="$2" file="$3" line="$4" url
+	[[ -n "$web" ]] || web="https://github.com/${owner}/${repo}"
 	[[ -n "$web" && -n "$sha" ]] || { printf ''; return; }
 	url="${web}/blob/${sha}/${file}"
 	[[ -n "$line" && "$line" != "null" ]] && url="${url}#L${line}"
@@ -28,6 +38,7 @@ rc_url_file() { # forge_web sha file line
 }
 rc_url_commit() { # forge_web sha
 	local web="$1" sha="$2"
+	[[ -n "$web" ]] || web="https://github.com/${owner}/${repo}"
 	[[ -n "$web" && -n "$sha" ]] || { printf ''; return; }
 	printf '%s/commit/%s' "$web" "$sha"
 }
@@ -88,6 +99,10 @@ fi
 # --- Render (sets RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA) ---
 body_file="$session_dir/comment-body.md"
 rc_render_comment_body "$session_dir" "$body_file"
+
+# Same GitHub default as the rc_url_* hooks above, for the supersede-notice
+# URL built directly from RC_FORGE_WEB below (it doesn't go through a hook).
+[[ -z "$RC_FORGE_WEB" ]] && RC_FORGE_WEB="https://github.com/${owner}/${repo}"
 
 # --- Dry-run / degrade: render only ---
 if [[ "$send" != "yes" ]] || ! command -v gh >/dev/null 2>&1; then

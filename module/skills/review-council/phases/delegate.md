@@ -50,21 +50,22 @@ If tool lacks model selection, all agents run on default model. Empirical perfor
 
 ## Recording Dispatched Models
 
-As you dispatch each reviewer, append a line to
-`${session_dir}/models.txt` recording which model ran it, so the
+As you dispatch each reviewer, append an entry to
+`${session_dir}/models.json` recording which model ran it, so the
 report's provenance header (see `phases/report.md` — "Provenance
-Disclosure") names it. Format: one `{agent-name}: {model}` per line.
+Disclosure") names it. Format: a JSON array of
+`{"role": "{agent-name}", "id": "{model}"}` objects.
 
 - Prefer concrete model ID the host exposes (e.g.,
-  `divisor-adversary-code: claude-sonnet-5`).
+  `{"role": "divisor-adversary-code", "id": "claude-sonnet-5"}`).
 - No concrete ID: record tier from table above instead (e.g.,
-  `divisor-adversary-code: Capable tier`). Guarantees at least tier
-  always disclosed.
+  `{"role": "divisor-adversary-code", "id": "Capable tier"}`).
+  Guarantees at least tier always disclosed.
 - Record each agent once. Deep mode dispatches same agent per
-  subsystem — do not append duplicate line each round (renderer
-  dedupes defensively, but keep file clean).
+  subsystem — do not append a duplicate entry each round (renderers
+  dedupe defensively, but keep the file clean).
 - Do NOT invent model IDs. Nothing known about the model: omit the
-  agent's line.
+  agent's entry.
 
 Coordinator and validation-gate models recorded separately (see
 `phases/report.md` — "Provenance Disclosure"); this step covers
@@ -203,7 +204,7 @@ round per subsystem:
    c. Replace the scope framing sentence with:
       > "The following files belong to the **{subsystem name}** subsystem ({subsystem description}):"
    d. Dispatch all 5 personas for this subsystem in parallel.
-   e. Write verdicts to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md`.
+   e. Write each agent's raw output to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md`.
       Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
 3. After all subsystems complete, proceed to verification.
 
@@ -264,27 +265,41 @@ Instruct agents to review listed spec artifacts (not code), plus project context
 
 ## Verdict Collection
 
-**CRITICAL: Write each agent's RAW output verbatim** to
-`${session_dir}/verdicts/{agent-name}.md`. Do NOT summarize,
-paraphrase, reformat, or editorialize agent's response.
-Downstream verification script (`rc-verify-evidence.sh`)
-parses finding structure from these files — specifically
-`### [SEVERITY] Title`, `**File**:`, and `**Evidence**:` fields.
-Rewriting or summarizing output means parser cannot extract
-findings, verification pipeline silently degrades to rubber
-stamp with zero findings.
+Write each agent's RAW output verbatim to `${session_dir}/verdicts/{agent-name}.raw.md`
+(deep mode: `${session_dir}/verdicts/{subsystem}/{agent-name}.raw.md`). Do NOT
+summarize or reformat.
 
-Copy agent's return value as-is. If it includes
-`Files read:` attestation header, finding blocks, and verdict
-line, all must appear in verdict file unchanged.
+Then run `scripts/rc-extract-verdict.sh ${session_dir}` to extract and
+schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.json`.
+
+- On `status: "ok"`, proceed to Verification.
+- On `status: "extract_error"`, re-dispatch each `invalid[]` entry ONCE, keyed
+  on its **(agent, path) pair** — not on agent name alone. In deep mode the
+  same agent runs per subsystem, so the same agent name can appear multiple
+  times in `invalid[]` with different `path` values (e.g.
+  `verdicts/auth/divisor-adversary-code.raw.md` vs.
+  `verdicts/api/divisor-adversary-code.raw.md`); each is a distinct failure
+  in a distinct subsystem and must be re-dispatched separately, re-supplying
+  that subsystem's context. Use `path` to identify which `{agent}.raw.md` to
+  correct. For each entry, re-dispatch with the `remediation` text verbatim,
+  plus, when present, that entry's `invalid[].detail` (set for
+  `SCHEMA_INVALID` — the validator's precise error, so the agent can fix the
+  exact field). For `NO_JSON_BLOCK` entries (no `detail`), tell the agent it
+  emitted no fenced ```json block at all. Instruct it to re-emit only the JSON
+  block, then re-run the extractor. If an entry still fails, log it loudly in
+  `verification.txt` (including its `path`) and surface it in the report —
+  never a silent zero.
+- On `status: "nothing_to_do"`, the whole session produced zero verdict blocks
+  (no agent wrote a `.raw.md` at all) — this is the "all agents fail" case
+  below, not a per-agent signal: stop and report a configuration issue.
 
 **Deep mode paths:** When effort is `deep`, write verdicts to
-`${session_dir}/verdicts/{subsystem-name}/{agent-name}.md` instead
-of `${session_dir}/verdicts/{agent-name}.md`. Subsystem name
+`${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md` instead
+of `${session_dir}/verdicts/{agent-name}.raw.md`. Subsystem name
 matches `name` field from `subsystems.json`.
 
 **Handling agent failures**:
-- Agent fails to return valid verdict (neither APPROVE nor REQUEST CHANGES, or crashes/times out): treat as **warning**, continue collecting from remaining agents.
-- Agent returns REQUEST CHANGES with zero findings: flag as malformed response.
+- Agent crashes, times out, or never produces a `.raw.md` file: treat as **warning**, continue collecting from remaining agents.
+- Agent returns `verdict: "REQUEST CHANGES"` with an empty `findings` array: flag as malformed response.
 - **All** agents fail: **stop immediately** and report:
   > "All reviewer agents failed to return a verdict. This may indicate a configuration issue."

@@ -151,6 +151,12 @@ GitHub is supported via `gh`. When `gh` is absent or the forge is not GitHub,
 the comment body is rendered to a file and you post it manually — nothing is
 sent silently.
 
+On a re-review, that same marker also tells Prepare where the council's prior
+verdict landed: it fetches PR conversation replies posted since then so the
+Disposition step (below) can triage maintainer follow-up against the surviving
+findings. GitHub only today, behind the forge seam — see "Pipeline" for what
+Disposition does with that conversation.
+
 ### Reviewing PRs you haven't checked out
 
 When you review a GitHub PR by number or URL and are not already on that
@@ -162,19 +168,23 @@ never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
 
 ## How It Works
 
-The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates five phases
+The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates six phases
 using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work):
 
-| Phase             | Implementation                                    | Purpose                                   |
-|-------------------|---------------------------------------------------|-------------------------------------------|
-| **Prepare**       | `rc-prepare.sh`                                   | Mode detection, discovery, session setup  |
-| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh` | Forge CI status checks (Code Review only) |
-| **Delegate**      | `phases/delegate.md`                              | Prompt construction, dispatch             |
-| **Verify**        | `rc-verify-evidence.sh` + `phases/verify.md`      | Attestation, evidence, correction, dedup  |
-| **Report**        | `rc-render-report.sh` + `phases/report.md`        | Final report, learnings feedback          |
+| Phase             | Implementation                                    | Purpose                                      |
+|-------------------|----------------------------------------------------|-----------------------------------------------|
+| **Prepare**       | `rc-prepare.sh`                                   | Mode detection, discovery, session setup     |
+| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh` | Forge CI status checks (Code Review only)    |
+| **Delegate**      | `phases/delegate.md`                              | Prompt construction, dispatch                |
+| **Extract**       | `rc-extract-verdict.sh`                           | Schema-validate each reviewer's JSON verdict |
+| **Verify**        | `rc-verify-evidence.sh` + `phases/verify.md`      | Evidence, correction, calibration, dedup     |
+| **Disposition**   | `phases/disposition.md` (re-review only)          | Triage untrusted PR-conversation replies against findings |
+| **Report**        | `rc-render-report.sh` + `phases/report.md`        | Final report, learnings feedback             |
 
 Scripts live in `skills/review-council/scripts/`. Phase files live in `skills/review-council/phases/`. Each phase
-loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context.
+loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context. The full
+state-by-state status vocabulary (including the extraction re-dispatch and the verify sub-states) is documented in
+`references/pipeline-states.md`, alongside a `stateDiagram-v2` in `SKILL.md`.
 
 ### Pipeline
 
@@ -201,6 +211,8 @@ flowchart TD
   qgrun["Quality Gates: run CI checks"]
   del["Delegate: construct prompts, dispatch agents in parallel"]
   ver["Verify: attestation, evidence, correction, dedup"]
+  dispgate{"Re-review conversation to triage? (not quick effort)"}
+  disp["Disposition: triage untrusted PR conversation (GitHub only)"]
   iter{"Verified findings remain? Iterations < 3?"}
   report["Report: produce verdict, record learnings"]
 
@@ -209,7 +221,10 @@ flowchart TD
   qgrun --> del
   qg -->|no| del
   del --> ver
-  ver --> iter
+  ver --> dispgate
+  dispgate -->|yes| disp
+  dispgate -->|no| iter
+  disp --> iter
   iter -->|yes| del
   iter -->|done| report
 
@@ -220,20 +235,31 @@ flowchart TD
   classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
   class qgrun sysB
-  class ver sysC
+  class ver,disp sysC
   class report sysD
-  class qg,iter sysF
+  class qg,iter,dispgate sysF
 ```
 
 1. **Prepare** — detect mode, discover agents, set up session cache at `$XDG_CACHE_HOME/review-council/`, capture
    changeset and diff
 2. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
 3. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
-   tier guidance (capable tier for Adversary/Guard, standard for others)
-4. **Verify** — check self-attestation against changeset, verify evidence quotes exist in cited files, give agents one
-   correction round for fixable errors, strip fabricated findings, deduplicate
-5. **Iterate** — fix verified findings, re-run delegation+verification (up to 3 iterations)
-6. **Report** — produce final verdict, record learnings for future runs
+   tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
+   fenced ` ```json ` verdict block — no markdown prose.
+4. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
+   `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
+   extraction failure rather than a silently dropped finding.
+5. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
+   apply severity calibration, strip fabricated findings, deduplicate. Writes the canonical
+   `verdicts/findings.json`.
+6. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
+   effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
+   findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
+   claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
+   never the verdict itself). Comments are treated as data, never instructions. See `phases/disposition.md` for the
+   full contract.
+7. **Iterate** — fix verified findings, re-run delegation+verification (up to 3 iterations)
+8. **Report** — produce final verdict, record learnings for future runs
 
 ### Session Cache
 
@@ -243,11 +269,15 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `tracking.md` — structured phase-by-phase state
 - `changeset.txt` — reviewed file list
 - `diff.patch` — full patch (code review)
-- `verdicts/` — per-agent output and verification log
+- `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
+  canonical `findings.json` (verified/correctable/stripped findings plus the per-agent verdict map), the
+  verification log (`verification.txt`), and, on a re-review, `disposition.txt` (the untrusted-conversation
+  triage audit trail)
 - `learnings.txt` — false positives and validated patterns
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
-`ci-status.txt`, and `verdicts/evidence-check.json`.
+and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
+is added too — untrusted replies posted since that marker, GitHub only for now.
 
 ## Convention Packs
 

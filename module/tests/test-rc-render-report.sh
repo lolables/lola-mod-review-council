@@ -44,17 +44,18 @@ cat >"$session/tracking.md" <<'TRACKING'
 - Changeset size: 5 files
 TRACKING
 
-cat >"$session/verdicts/evidence-check.json" <<'EVIDENCE'
+cat >"$session/verdicts/findings.json" <<'EVIDENCE'
 {
   "verified": [
-    {"agent": "divisor-adversary-code", "severity": "HIGH", "title": "Missing input validation", "file": "auth.go", "line": "42", "evidence": "user_input := r.URL.Query()"}
+    {"agent": "divisor-adversary-code", "severity": "HIGH", "title": "Missing input validation", "file": "auth.go", "line": "42", "evidence": "user_input := r.URL.Query()", "description": "Query params are used unvalidated.", "recommendation": "Validate before use."}
   ],
   "correctable": [],
   "stripped": [
     {"agent": "divisor-testing-code", "severity": "CRITICAL", "title": "Fabricated finding", "file": "fake.go", "line": "", "evidence": "nonexistent", "reason": "FILE_NOT_FOUND"}
   ],
   "total_findings": 3,
-  "duplicates_consolidated": 1
+  "duplicates_consolidated": 1,
+  "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
 }
 EVIDENCE
 
@@ -116,15 +117,25 @@ else
 	FAIL=$((FAIL + 1))
 fi
 if echo "$result" | grep -q "Not recorded by the host"; then
-	echo "  PASS: models fallback shown when models.txt absent"
+	echo "  PASS: models fallback shown when models.json absent"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: models fallback missing when models.txt absent"
+	echo "  FAIL: models fallback missing when models.json absent"
+	FAIL=$((FAIL + 1))
+fi
+# RC_BUGS #2 guard: per-agent table verdict comes from findings.json .verdicts
+# (verbatim) and count from verified findings — table cannot disagree with
+# the findings listed above it.
+if echo "$result" | grep -qF "| divisor-adversary-code | REQUEST CHANGES | 1 |"; then
+	echo "  PASS: per-agent table row reflects verdicts map + finding count"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: per-agent table row missing or wrong"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session"
 
-# Test 3: models.txt is surfaced in the provenance header when present
+# Test 3: models.json is surfaced in the provenance header when present
 echo "Test 3: Recorded models surfaced in report"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
@@ -140,9 +151,11 @@ cat >"$session/tracking.md" <<'TRACKING'
 - Agents absent: none
 - Changeset size: 5 files
 TRACKING
-cat >"$session/models.txt" <<'MODELS'
-coordinator: claude-opus-4-8
-divisor-adversary-code: claude-sonnet-5
+cat >"$session/models.json" <<'MODELS'
+[
+  {"role": "coordinator", "id": "claude-opus-4-8"},
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"}
+]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
@@ -169,8 +182,8 @@ else
 fi
 rm -rf "$session"
 
-# Test 4: duplicate model lines are deduped in the report
-echo "Test 4: Duplicate model lines deduped"
+# Test 4: duplicate role/id pairs are deduped in the report
+echo "Test 4: Duplicate model entries deduped"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
 cat >"$session/tracking.md" <<'TRACKING'
@@ -185,10 +198,12 @@ cat >"$session/tracking.md" <<'TRACKING'
 - Agents absent: none
 - Changeset size: 5 files
 TRACKING
-cat >"$session/models.txt" <<'MODELS'
-divisor-adversary-code: claude-sonnet-5
-divisor-adversary-code: claude-sonnet-5
-divisor-guard-code: claude-sonnet-5
+cat >"$session/models.json" <<'MODELS'
+[
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"},
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"},
+  {"role": "divisor-guard-code", "id": "claude-sonnet-5"}
+]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
@@ -213,6 +228,111 @@ else
 fi
 rm -rf "$session"
 
+# Test 6: malformed models.json must degrade gracefully, not abort the report.
+# Every other jq call in this script has a `2>/dev/null || fallback`; the
+# models.json read is a 3-stage pipe (jq | awk | sed) where, under pipefail, a
+# jq parse failure propagates as the pipeline's exit code even though awk and
+# sed both exit 0 - without a fallback that aborts the whole render with zero
+# output. The docs now ask the LLM to hand-maintain this file, so malformed
+# input is a realistic failure mode, not a hypothetical.
+echo "Test 6: malformed models.json degrades instead of aborting the report"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
+cat >"$session/tracking.md" <<'TRACKING'
+# Review Council Session Tracking
+
+## Phase: Preparation
+
+- Mode: code (code files changed)
+- Branch: feature/auth
+- Base: main
+- Agents discovered: 6
+- Agents absent: none
+- Changeset size: 5 files
+TRACKING
+cat >"$session/verdicts/findings.json" <<'FJ'
+{
+  "verified": [
+    {"agent": "divisor-adversary-code", "severity": "HIGH", "title": "Missing input validation", "file": "auth.go", "line": "42", "evidence": "user_input := r.URL.Query()", "description": "Query params are used unvalidated.", "recommendation": "Validate before use."}
+  ],
+  "correctable": [], "stripped": [],
+  "total_findings": 1, "duplicates_consolidated": 0,
+  "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
+}
+FJ
+printf '{ not json' >"$session/models.json"
+
+set +e
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+exit_code=$?
+set -e
+if [[ "$exit_code" -eq 0 ]]; then
+	echo "  PASS: script exits 0 despite malformed models.json"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: script aborted (exit $exit_code) on malformed models.json"
+	FAIL=$((FAIL + 1))
+fi
+if echo "$result" | grep -qF "| divisor-adversary-code | REQUEST CHANGES | 1 |"; then
+	echo "  PASS: report still renders findings and verdict table"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: report body missing despite malformed models.json"
+	FAIL=$((FAIL + 1))
+fi
+if echo "$result" | grep -q "Not recorded by the host"; then
+	echo "  PASS: models section degrades to not-recorded fallback"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: models section did not degrade gracefully"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo ""
+
+# Test 7: consolidated_from provenance renders folded reviewer angles beneath
+# the surviving primary finding, so cross-agent consolidation doesn't erase a
+# secondary reviewer's perspective from the report.
+echo "Test 7: Consolidated finding angles rendered beneath primary finding"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
+cat >"$session/tracking.md" <<'TRACKING'
+# Review Council Session Tracking
+
+## Phase: Preparation
+
+- Mode: code (code files changed)
+- Branch: feature/auth
+- Base: main
+- Agents discovered: 6
+- Agents absent: none
+- Changeset size: 5 files
+TRACKING
+
+cat >"$session/verdicts/findings.json" <<'EVIDENCE'
+{
+  "verified": [
+    {"agent": "divisor-adversary-code", "severity": "HIGH", "title": "Missing input validation", "file": "auth.go", "line": "42", "evidence": "user_input := r.URL.Query()", "description": "Query params are used unvalidated.", "recommendation": "Validate before use.",
+      "provenance": {"consolidated_from": [{"agent": "divisor-testing-code", "severity": "HIGH", "angle": "untested failure path", "recommendation": "add a test"}]}}
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 2,
+  "duplicates_consolidated": 1,
+  "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
+}
+EVIDENCE
+
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if echo "$result" | grep -q "untested failure path"; then
+	echo "  PASS: folded angle from consolidated_from rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: folded angle from consolidated_from missing"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -138,9 +138,12 @@ All mean: go back to Phase 1 and re-read specs.
 | "Spec says 'handle securely' -- that covers it"           | 'Securely' has no implementation definition. Testable spec says 'encrypt at rest with AES-256' or 'reject input exceeding 1MB.' LLM reading 'handle securely' will implement no-op. |
 | "Trust boundaries are obvious from component diagram"     | LLMs cannot infer trust boundaries from diagrams. Every boundary must be stated in prose with explicit rules about what data crosses it and how it is validated.     |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

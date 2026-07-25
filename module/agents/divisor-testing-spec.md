@@ -144,9 +144,12 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 | "Coverage targets aren't needed at the spec stage"           | Without coverage expectations, "write tests" becomes "write some tests." LLM agents satisfy vague instructions with minimum effort. Measurable targets fix this.                   |
 | "An experienced developer would know what this means"        | Consumer is LLM, not experienced developer. Implicit domain knowledge must be made explicit or it will be hallucinated.                                                            |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

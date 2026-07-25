@@ -140,9 +140,12 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 | "Content opportunities can be identified after implementation" | By then context is cold. Team that wrote feature is best team to identify what is blog-worthy or tutorial-worthy, and that identification belongs in spec.                                                       |
 | "Documentation conventions don't apply to specs"               | Specs that plan documentation deliverables should follow same conventions those deliverables will use. Spec planning README section that contradicts existing README structure will produce contradictory README. |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

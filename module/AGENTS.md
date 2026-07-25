@@ -39,7 +39,7 @@ Rules:
    without expanding anything.
 2. **Scannable structure over walls of text.** Use tables for counts and
    verdicts; tuck long finding lists behind collapsible `<details>` blocks.
-3. **Machine-parseable substrate.** Keep structured data (`evidence-check.json`),
+3. **Machine-parseable substrate.** Keep structured data (`verdicts/findings.json`),
    stable section anchors, and hidden marker tags intact so a later LLM pass
    can parse the same artifact it presents to a human.
 4. **Deterministic rendering.** Forge-specific formatting is produced by

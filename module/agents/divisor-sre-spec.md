@@ -168,9 +168,12 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 | "Migration paths are only needed for major versions"                 | Users experience breaking changes regardless of version numbering. If config format changes, existing users need documented path forward.                                                     |
 | "The dependency is well-maintained, we don't need fallback behavior" | Well-maintained dependencies still have outages, breaking releases, and deprecation cycles. Failure mode documentation is about resilience, not distrust.                                     |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

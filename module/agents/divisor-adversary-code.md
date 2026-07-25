@@ -143,9 +143,12 @@ All mean: go back to Phase 1 and re-read files.
 | "These are test credentials, not real secrets"          | Test credentials in source get copy-pasted into production configs. Hardcoded secrets are findings regardless of intent.                         |
 | "Error handling style is matter of preference"          | Error handling at security boundaries is not style. Swallowed auth failure is monitoring gap (OWASP A09).                                        |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

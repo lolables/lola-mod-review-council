@@ -146,9 +146,12 @@ All mean: go back to Phase 1, re-read files.
 | "Property testing is overkill for this"                     | Function processes untrusted input or implements public contract? Property testing is proportionate, not overkill.                  |
 | "I can't tell if tests are meaningful without running them" | Read assertions. Test asserting `!= nil` on constructor is filler. Test checking specific field values locks down behavior.         |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

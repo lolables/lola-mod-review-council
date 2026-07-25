@@ -1,0 +1,36 @@
+{
+  "verified": [
+    {
+      "severity": "HIGH",
+      "file": "internal/auth/token.go",
+      "line": 9,
+      "evidence": "const adminToken = \"sk-admin-9f3c2b7a1e\"",
+      "description": "Admin authentication token is hardcoded in source rather than loaded from a secret store or environment variable.",
+      "recommendation": "Load adminToken from an environment variable or secret manager at startup; never commit credentials to source.",
+      "agent": "divisor-adversary-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {}
+    },
+    {
+      "severity": "LOW",
+      "file": "internal/auth/token.go",
+      "line": 27,
+      "evidence": "fmt.Println(\"request:\", r.Method, r.URL.Path)",
+      "description": "logRequest uses fmt.Println for request logging instead of the project's structured logger, inconsistent with logging conventions used elsewhere.",
+      "recommendation": "Route through the project's structured logger (slog or equivalent) instead of fmt.Println.",
+      "agent": "divisor-architect-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {}
+    }
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 2,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-adversary-code": "REQUEST CHANGES",
+    "divisor-architect-code": "REQUEST CHANGES"
+  }
+}

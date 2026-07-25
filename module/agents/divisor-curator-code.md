@@ -263,9 +263,12 @@ All of these mean: go back to Phase 1 and re-read files.
 | "We'll document it later"                               | Undocumented changes accumulate. Users discover missing docs through failed workflows and support requests. Documentation alongside change costs less than retrofit.     |
 | "README convention doesn't matter for this section"     | Established conventions exist because users develop navigation expectations. Breaking section order or format makes existing users stumble.                              |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

@@ -31,27 +31,30 @@ suppress, or soften. Review artifact a maintainer acts on must declare
 it was produced by an LLM, not a human reviewer.
 
 Before running `rc-render-report.sh`, record models used to
-`${session_dir}/models.txt` — one `role: model-id` per line — so the
-renderer names them in the provenance header. Record, to extent host
-exposes model identity:
+`${session_dir}/models.json` — a JSON array of `{"role":"...","id":"..."}`
+objects — so the renderer names them in the provenance header. Record, to
+extent host exposes model identity:
 
 - Coordinator (this orchestrator) model.
 - Each dispatched reviewer agent and its model.
 - Validation-gate agent model, if validation gate ran.
 
-Example `models.txt`:
+Example `models.json`:
 
-```
-coordinator: claude-opus-4-8
-divisor-adversary-code: claude-sonnet-5
-divisor-guard-code: claude-sonnet-5
-validator: claude-opus-4-8
+```json
+[
+  {"role": "coordinator", "id": "claude-opus-4-8"},
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"},
+  {"role": "divisor-guard-code", "id": "claude-sonnet-5"},
+  {"role": "validator", "id": "claude-opus-4-8"}
+]
 ```
 
 Host exposes no model IDs: record tier or human-readable names you
-know (e.g., `divisor-adversary-code: Capable tier`). Nothing known: do
-not create the file — renderer states models not recorded. Do NOT
-invent model IDs.
+know (e.g., `{"role": "divisor-adversary-code", "id": "Capable tier"}`).
+Nothing known: do not create the file — renderer states models not
+recorded. Do NOT invent model IDs. Renderers dedupe entries
+defensively, so repeated entries across dispatch rounds are safe.
 
 ---
 
@@ -64,16 +67,40 @@ synthesis entirely. Compact report consists of:
 
 Skip to Final Verdict Determination section.
 
-Template rendering is performed by `rc-render-report.sh`, which produces report file with `<!-- NARRATIVE -->` marker. Your job: fill this marker with narrative summary of review story.
+Template rendering is performed by `rc-render-report.sh`, which owns all
+structure (tables, counts, findings list, verdict) and leaves a
+`<!-- NARRATIVE -->` marker line for this step to fill. The model's role here
+is prose only — it never touches structure.
 
-Narrative should cover:
-- What review discovered (high-level patterns, themes)
-- What was verified vs. what was stripped
-- Key findings that remain (by severity and persona)
-- Deduplication and validation outcomes
-- Overall quality assessment
+1. **Capture the rendered template.** Run `rc-render-report.sh` and save its
+   stdout to `${session_dir}/report.md`.
 
-Keep narrative concise (2-4 paragraphs). Do not repeat detailed findings table — already in rendered template.
+2. **Dispatch a prose subagent** with **only** `${session_dir}/verdicts/findings.json`
+   as input — no report template, no other session files. It returns two
+   plain-text blobs and nothing else:
+
+   - A one-line TL;DR (plain-language, under 25 words) — write to
+     `${session_dir}/comment-summary.md`.
+   - A 2-4 paragraph narrative — write to `${session_dir}/narrative.md`.
+
+   The narrative should cover:
+   - What the review discovered (high-level patterns, themes)
+   - What was verified vs. what was stripped
+   - Key findings that remain (by severity and persona)
+   - Deduplication and validation outcomes
+   - Overall quality assessment
+
+   The subagent MUST NOT emit tables, headings, finding lists, or any other
+   markdown structure — structure is owned by the render scripts, and the
+   subagent has no access to the report template. If it returns anything
+   beyond the two blobs, discard the extra and keep only the prose.
+
+3. **Splice deterministically.** `rc-render-report.sh` streams to stdout and
+   performs no stateful file edits, so filling the marker is not the model
+   free-forming the report — it is a plain string substitution the
+   orchestrator performs after capturing the script's output. Replace the
+   single `<!-- NARRATIVE -->` line in `${session_dir}/report.md` with the
+   verbatim contents of `${session_dir}/narrative.md`.
 
 ---
 
@@ -93,6 +120,20 @@ c. **Evidence quality patterns** — record correction round outcomes (findings 
 Store all learnings via configured knowledge tool so future Prior Learnings queries surface them.
 
 If no knowledge layer is configured, write learnings to `${session_dir}/learnings.txt` as human-readable record. Available to future runs via Prior Run Awareness.
+
+### Splicing the LEARNINGS Marker
+
+Mirror the NARRATIVE splice (see "Narrative Synthesis" above): replace the
+single `<!-- LEARNINGS -->` line in `${session_dir}/report.md` with the
+same learnings summary just recorded — the verbatim contents of
+`${session_dir}/learnings.txt`, or a short summary of what was stored when
+a knowledge tool is configured instead. A plain string substitution
+performed by the orchestrator, not the model free-forming the report.
+
+**Effort gate — quick mode:** Learnings extraction is skipped, so there is
+nothing to summarize. Replace the marker with the literal line
+`None recorded.` instead. The rendered report must never contain a raw
+`<!-- LEARNINGS -->` HTML comment.
 
 ---
 
@@ -187,6 +228,85 @@ For each linked issue with acceptance criteria, produce coverage assessment:
 3. Issues with no acceptance criteria listed with "(No acceptance criteria found in issue)" — do not omit them, listing confirms they were checked.
 
 If report includes linked issues with acceptance criteria, add coverage checklist after acceptance criteria section. If no criteria exist, note that none were found.
+
+---
+
+## Disposition Outcomes (Re-Review Only)
+
+**When to include:** Only when the Disposition phase ran — check
+`${session_dir}/verdicts/disposition.txt` exists and its `Result:` line
+reads `ran`, not `skipped`. A first-time review never reaches Disposition
+(no `pr-conversation.txt` to act on — see `disposition.md` Step 1), so this
+whole section is absent from a first-time report.
+
+All three subsections below read `findings.json`'s `provenance.disposition`
+field, written by `disposition.md` Step 3. Query the array the action
+actually lands in — `disposition.md` Step 4 moves both `resolved` and
+`suppressed-low` findings out of `verified` into `stripped` (distinct
+top-level `reason`s: `DISPOSITION_RESOLVED` vs.
+`DISPOSITION_SUPPRESSED_LOW`); only `kept` findings stay in `verified`.
+These are orchestrator-rendered from that structured field, the same way
+Merge Advisories and Acceptance Criteria Coverage are — no
+`rc-render-report.sh` change required.
+
+Render all three after `## Findings by Severity` / `## Per-Agent Verdicts`,
+before `## Council Synthesis` — the findings-context slot, same idea as
+Merge Advisories ahead of the findings list.
+
+### Resolved Since Last Review
+
+**Skip if empty (no empty heading).** Query:
+`findings.json.stripped[] | select(.provenance.disposition.action == "resolved")`
+— `disposition.md` Step 4 moves these out of `verified` with
+`status: "stripped"`, `reason: "DISPOSITION_RESOLVED"`, so they no longer
+appear in Findings by Severity above; this section is the only place they
+still surface. Frame it as independently confirmed, not taken on faith —
+the maintainer claimed the fix, and the council checked the source itself:
+
+```
+## Resolved Since Last Review
+
+**1. {.title // .description[0:60]}** (`{file}:{line}`, {agent})
+- **Maintainer said**: "{provenance.disposition.claim}"
+- **Council confirmed**: {provenance.disposition.evidence}
+```
+
+### Claimed Fixed But Still Present
+
+**Skip if empty (no empty heading).** Query:
+`findings.json.verified[] | select(.provenance.disposition.action == "kept" and .provenance.disposition.claim_verified == false)`
+— this is the safety-relevant output of Disposition: the maintainer said a
+finding was fixed, and the council's own re-check of the source shows it
+isn't. These entries are still in `verified` at their original severity —
+per `disposition.md` Step 4, "a `kept` finding is, by definition, still
+present and still verified" — so they still count toward the council
+verdict exactly as shown in Findings by Severity above. This section adds
+the disposition context on top of that entry; it never softens it:
+
+```
+## Claimed Fixed But Still Present
+
+**1. {.title // .description[0:60]}** (`{file}:{line}`, {agent}) — still counts, still blocks
+- **Maintainer said**: "{provenance.disposition.claim}"
+- **Still present**: {provenance.disposition.note}
+```
+
+### Suppressed LOWs
+
+**Skip if empty.** Query:
+`findings.json.stripped[] | select(.provenance.disposition.action == "suppressed-low")`
+— `disposition.md` Step 4 moves these out of `verified` the same way
+`resolved` findings are, with `status: "stripped"` and
+`reason: "DISPOSITION_SUPPRESSED_LOW"`, so a suppressed LOW no longer
+appears in Findings by Severity above and no longer counts toward any
+agent's finding total (that's what makes rule 3's "not re-raising" actually
+happen instead of just being noted). This note is the only place they
+surface — one compact line so the suppression is visible rather than
+silent:
+
+```
+{N} LOW-severity finding(s) not re-raised this round per scoping hint: "{reason}"
+```
 
 ---
 

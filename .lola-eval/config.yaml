@@ -33,11 +33,18 @@ targets:
       # - claude-opus-4-6            # Opus results not better than Sonnet to warrant ~4x cost
       - claude-sonnet-4-6
 
-calculate_baseline: true                # run bare-model "none" pass alongside "project" for lift comparison
+calculate_baseline: false               # OFF by default: the bare-model "none"
+                                        # pass doubles run cost and its lift signal
+                                        # is buried in run-to-run variance. Flip to
+                                        # true only for a deliberate lift study.
 
 threshold:
   mode: absolute
-  tolerance: 0.05
+  # Empirical noise floor. Single-run composites swing far more than the old
+  # 0.05 (case-004 alone ranged 0.36-1.0 across runs), so a tighter tolerance
+  # just flags noise as regressions. Below this delta, judge changes by
+  # mechanism, not score; use a multi-run median for real regression calls.
+  tolerance: 0.15
   timeout_is_failure: true
 
 concurrency: 4
@@ -50,7 +57,9 @@ judges:
   - {cli: claude-code, model: claude-sonnet-4-6}  # single judge keeps drift comparable
 
 aggregation: mean
-disagreement_threshold: 0.15
+# disagreement_threshold only applies with 2+ judges — vestigial under the
+# single judge above (disagreement is always 0). Re-enable if a judge is added.
+# disagreement_threshold: 0.15
 
 ci:
   junit_xml: true

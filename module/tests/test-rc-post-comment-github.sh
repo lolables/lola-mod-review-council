@@ -223,6 +223,28 @@ else
 fi
 rm -rf "$sess" "$bin"
 
+# Test 11: missing origin - the forge-neutral renderer leaves RC_FORGE_WEB
+# empty (see test-rc-render-comment.sh Test 8), but this poster is
+# definitionally GitHub, so it still deep-links via its own github.com
+# default. Confirms the relocation actually preserves GitHub UX on the edge
+# case, not just the parseable-origin normal case already covered above.
+echo "Test 11: missing origin still deep-links via GitHub poster default"
+sess=$(mktemp -d); make_review_session "$sess" github 42 ""
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "status is rendered (dry-run, missing origin)"
+body=$(cat "$sess/comment-body.md")
+if grep -qF "https://github.com/acme/widgets/blob/" <<<"$body" && grep -qF "#L1" <<<"$body"; then
+	echo "  PASS: GitHub poster defaults host to github.com for missing origin"; PASS=$((PASS+1))
+else
+	echo "  FAIL: GitHub poster did not default host for missing origin"; FAIL=$((FAIL+1))
+fi
+if grep -qF "https://github.com/acme/widgets/commit/" <<<"$body"; then
+	echo "  PASS: commit stamp also defaults to github.com"; PASS=$((PASS+1))
+else
+	echo "  FAIL: commit stamp did not default to github.com"; FAIL=$((FAIL+1))
+fi
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

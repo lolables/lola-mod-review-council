@@ -10,85 +10,132 @@ Guides orchestrator interpretation of evidence-check results, correction rounds,
 
 ## Interpreting Evidence Check Results
 
-Mechanical evidence checking performed by `rc-verify-evidence.sh`. Script produces `${session_dir}/evidence-check.json` containing:
+Mechanical evidence checking performed by `rc-verify-evidence.sh`. Script
+reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
+— see "Step 0 — Format Gate" below) and writes the canonical
+`${session_dir}/verdicts/findings.json` containing:
 
 ```json
 {
   "verified": [
     {
+      "severity": "HIGH",
+      "file": "auth/token.go",
+      "line": 42,
+      "evidence": "if exp < now",
+      "description": "...",
+      "recommendation": "...",
       "agent": "divisor-adversary-code",
-      "title": "...",
-      "file": "...",
-      "evidence": "...",
-      "result": "verified"
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {}
     }
   ],
   "correctable": [
     {
+      "severity": "MEDIUM",
+      "file": "internal/config.go",
+      "line": 10,
+      "evidence": "os.Getenv(\"SECRET\")",
+      "description": "...",
+      "recommendation": "...",
       "agent": "divisor-guard-code",
-      "title": "...",
-      "file": "...",
-      "evidence": "...",
-      "result": "EVIDENCE_NOT_FOUND",
-      "reason": "Evidence quote not found in file"
+      "verdict": "REQUEST CHANGES",
+      "status": "correctable",
+      "reason": "EVIDENCE_NOT_FOUND",
+      "provenance": {}
     }
   ],
   "stripped": [
     {
-      "agent": "divisor-testing-code",
-      "title": "...",
-      "file": "...",
+      "severity": "LOW",
+      "file": "does/not/exist.go",
+      "line": null,
       "evidence": "...",
-      "result": "file_not_found",
-      "reason": "File does not exist"
+      "description": "...",
+      "recommendation": "...",
+      "agent": "divisor-testing-code",
+      "verdict": "APPROVE",
+      "status": "stripped",
+      "reason": "FILE_NOT_FOUND",
+      "provenance": {}
     }
   ],
-  "duplicates_consolidated": [
-    {
-      "kept_finding": "...",
-      "kept_agent": "...",
-      "merged_from": ["divisor-adversary-code", "divisor-sre-code"]
-    }
-  ]
+  "total_findings": 3,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-adversary-code": "REQUEST CHANGES",
+    "divisor-guard-code": "REQUEST CHANGES",
+    "divisor-testing-code": "APPROVE"
+  }
 }
 ```
 
 **Fields**:
-- `verified`: passed all mechanical checks (file exists, evidence found in file, line number accurate within ±5)
-- `correctable`: file exists but evidence quote not found — candidate for correction round
-- `stripped`: file does not exist or absence claims disproven by grep — permanently removed
-- `duplicates_consolidated`: merged from multiple agents (same file ±5 lines, same issue)
+- `verified`: passed all mechanical checks (file exists, evidence found in
+  file, line number accurate within ±5)
+- `correctable`: file exists but evidence quote not found, or line number
+  outside ±5 — candidate for correction round. `reason` is
+  `EVIDENCE_NOT_FOUND` or `LINE_MISMATCH`.
+- `stripped`: file does not exist — permanently removed. `reason` is
+  `FILE_NOT_FOUND`.
+- Every finding carries `severity`/`file`/`line`/`evidence`/`description`/
+  `recommendation` from the reviewer's original JSON, plus `agent` and
+  `verdict` (that agent's overall verdict, copied verbatim) added during
+  merge, and a `provenance` object — empty at this stage, filled in by
+  correction/calibration/deduplication/validation (Steps 1-4 below).
+- `total_findings`: count before mechanical verification (verified +
+  correctable + stripped).
+- `duplicates_consolidated`: count of duplicate findings merged away —
+  exact duplicates removed by `rc-verify-evidence.sh` (same file, evidence,
+  and line within ±5) plus semantic cross-agent duplicates merged by Step 3c.
+- `consolidation_records`: one record per semantic cluster
+  (`{primary, merged}`), added by Step 3c for the report renderer. Absent
+  when no semantic consolidation occurred.
+- `verdicts`: the per-agent verdict map, copied verbatim from each agent's
+  JSON — never re-derived from finding counts. Source of truth for the
+  report's per-agent verdict table (see Step 6 — Verdict Upgrade Logic).
 
 ---
 
 ## Step 0 — Format Gate (fail-loud parsing)
 
-Before the checks above run, `rc-verify-evidence.sh` may short-circuit with:
+Before evidence verification runs, `scripts/rc-extract-verdict.sh` extracts and
+schema-validates each agent's fenced ```json block into `verdicts/{agent}.json`.
+It short-circuits with:
 
 ```json
-{ "status": "format_error", "message": "...", "remediation": "...",
-  "format_errors": [ { "agent": "...", "file": "..." } ] }
+{ "status": "extract_error", "valid": 3,
+  "invalid": [ { "agent": "...", "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID",
+  "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
-This means one or more agents wrote a `### [SEVERITY]` finding block the pipeline
-**could not parse** (a malformed `**File**:`, a missing `**Evidence**:`), or
-returned REQUEST CHANGES with no parseable findings. An unparsed block is a
-**silent drop** — a real finding that would vanish from the review. Do NOT proceed
-to Step 1 on `format_error`.
+`path` is the raw file's location relative to the session directory. In deep
+mode it disambiguates which subsystem's instance of an agent failed, since
+the same `agent` name can appear more than once in `invalid[]`.
 
-Handle it (one round only, mirroring the correction round):
+An entry in `invalid` is a **silent drop** — a real finding that would vanish
+from the review. Do NOT proceed to Step 1 while any agent's `verdicts/{agent}.json`
+is missing because of an unresolved `extract_error`.
 
-1. For each agent in `format_errors`, re-dispatch a focused correction prompt
-   containing the `remediation` text verbatim. Instruct the agent to re-emit its
-   findings in the exact structured format — **verbatim, not summarized** — with
-   `**File**:` as a single backticked `path:line`.
-2. Re-run `rc-verify-evidence.sh` (same invocation, same `REVIEW_ROOT`).
-3. If it still returns `format_error`, proceed with whatever now parses, but
-   **log each still-unparseable block loudly** in `verification.txt` and surface
-   it in the report — never let a dropped finding pass silently as a clean zero.
+The one-round re-dispatch (remediation text plus, when present, that agent's
+`invalid[].detail` — set for `SCHEMA_INVALID`, absent for `NO_JSON_BLOCK` —
+then re-run the extractor) happens in the Delegation phase — see
+`phases/delegate.md` — "Verdict Collection". By the time this phase starts,
+that round has already run. Your job here is to interpret its outcome:
 
-Only once the script returns a normal result (`verified`/`correctable`/`stripped`
-arrays) do you continue to Step 1.
+- Every agent now shows `status: "ok"` (a clean reviewer with no findings is
+  still `ok` with an empty `findings` array): proceed to Step 1 using the
+  validated `verdicts/{agent}.json` files.
+- An agent still fails after the one re-dispatch attempt: proceed with whatever
+  now validates, but **log each still-invalid agent loudly** in `verification.txt`
+  and surface it in the report — never let a dropped finding pass silently as a
+  clean zero.
+- `status: "nothing_to_do"` means the whole session produced zero verdict
+  blocks (e.g., no `.raw.md` files exist at all) — a delegation failure, NOT
+  a per-agent "no findings" signal. Treat it as the "all agents fail" case in
+  `phases/delegate.md` — "Verdict Collection": stop and report a
+  configuration issue.
 
 ---
 
@@ -135,10 +182,15 @@ b. Apply calibration rules:
 - **CRITICAL/HIGH assigned to standard language semantics** (e.g., Go nil-pointer panics, Python AttributeError on None, JS TypeError on undefined): downgrade to MEDIUM or strip. Expected runtime behaviors, not defects.
 - **HIGH assigned to test coverage preferences** (table-driven tests, additional edge cases, assertion depth) when comprehensive test suite already exists: downgrade to MEDIUM or LOW.
 
-c. Log each downgrade:
+c. Apply each downgrade by editing `findings.json`: set the finding's `severity` to
+   the new level and append `{from, to, reason}` to its `provenance.calibrated_from`.
+   Never write calibration notes into a finding's prose fields or as HTML comments —
+   provenance is structured data only.
+
+d. Log each downgrade in `verification.txt` (Step 5 — SEVERITY CALIBRATION):
    > "Finding `{title}` severity downgraded {from} → {to} — {reason}"
 
-d. Downgrades do NOT strip findings. Finding remains verified at lower severity. Downgrade may change agent verdict if remaining findings no longer meet REQUEST CHANGES threshold.
+e. Downgrades do NOT strip findings. Finding remains verified at lower severity. Downgrade may change agent verdict if remaining findings no longer meet REQUEST CHANGES threshold.
 
 ---
 
@@ -184,6 +236,51 @@ Merge-base advisories:
 Log each conversion:
 > "Finding `{title}` converted to merge-base advisory
 > — {reason}"
+
+---
+
+## Step 3c — Cross-Agent Consolidation
+
+Different personas often flag the **same underlying defect** from different
+angles (e.g. a bare `except` as a security swallow, an untested failure path,
+and an observability gap). Exact dedup in `rc-verify-evidence.sh` does not
+catch these — the descriptions differ. Consolidate them so one defect counts
+once while every angle is preserved.
+
+**Token guard — skip this step entirely (no model reasoning, do not write a
+manifest) when EITHER holds:**
+- fewer than 2 findings in `verified`, or
+- no two `verified` findings share the same `file`.
+
+Otherwise:
+
+1. Read `verdicts/findings.json`. Consider only pairs of `verified` findings
+   that share a `file` and whose `line` values are within ±10 of each other.
+2. Among those candidates, judge which describe the **same root defect**. Two
+   findings that touch the same line but describe genuinely different problems
+   (e.g. a nil-deref and a naming issue) are NOT the same defect — do not
+   cluster them.
+3. Write `verdicts/clusters.json` — a members-only manifest conforming to
+   `references/consolidation-schema.json`. Each cluster lists 2+ members by
+   `{file, line, agent}`:
+
+   ```json
+   {"clusters":[{"members":[
+     {"file":"svc/load.py","line":42,"agent":"divisor-adversary-code"},
+     {"file":"svc/load.py","line":42,"agent":"divisor-testing-code"}
+   ]}]}
+   ```
+
+   Do NOT designate a primary — the script picks it deterministically
+   (highest severity; the strongest verdict in the cluster is preserved).
+4. Run `scripts/rc-consolidate.sh ${session_dir}`. It rewrites
+   `findings.json`: the primary survives with each secondary's angle and
+   recommendation folded into `provenance.consolidated_from`, secondaries are
+   removed, and `duplicates_consolidated` / `consolidation_records` are
+   updated. It is a safe no-op if `clusters.json` is absent or empty.
+
+Log the outcome in `verification.txt`:
+> "Cross-agent consolidation: {N} duplicate finding(s) merged into {M} cluster(s)."
 
 ---
 
@@ -252,6 +349,10 @@ Validator performs checks mechanical verification cannot: identifier grounding, 
 > - **RETRACTED** — finding is not supported by the source code. Quote what you read or show the grep output that contradicts the finding.
 
 ### Processing Validator Output
+
+Validator outcomes are recorded in each finding's `provenance.validator` object
+(`{result, reason}`) and any corrected fields are updated in place in
+`findings.json`. Do not inject validator commentary into prose fields.
 
 - **CONFIRMED**: finding passes to report unchanged.
 - **CORRECTED**: apply validator corrections to finding. Log what changed:
@@ -326,6 +427,12 @@ Update `${session_dir}/tracking.md` Phase: Verification with fields: findings to
 ---
 
 ## Step 6 — Verdict Upgrade Logic
+
+Per-agent verdicts come from `findings.json` `.verdicts` (verbatim from each
+agent's JSON — never re-derive them from finding counts). If stripping or
+validator retraction leaves an agent with zero verified findings and that
+agent's entry in `.verdicts` was `REQUEST CHANGES`, set that entry to
+`APPROVE` and log the change.
 
 If stripping leaves agent with zero findings, upgrade to APPROVE.
 

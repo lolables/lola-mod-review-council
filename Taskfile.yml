@@ -23,6 +23,8 @@ tasks:
     cmds:
       - bash module/tests/test-rc-prepare.sh
       - bash module/tests/test-rc-verify-evidence.sh
+      - bash module/tests/test-consolidation-schema.sh
+      - bash module/tests/test-rc-consolidate.sh
       - bash module/tests/test-rc-render-report.sh
       - bash module/tests/test-rc-lib.sh
       - bash module/tests/test-rc-clone-target.sh
@@ -32,3 +34,11 @@ tasks:
       - bash module/tests/test-rc-prepare-clone.sh
       - bash module/tests/test-rc-prepare-owner.sh
       - bash module/tests/test-rc-prepare-mode.sh
+      - bash module/tests/test-rc-prepare-conversation.sh
+      - bash module/tests/test-rc-prepare-session.sh
+      - bash module/tests/test-rc-prepare-framework.sh
+      - bash module/tests/test-verdict-schema.sh
+      - bash module/tests/test-rc-extract-verdict.sh
+      - bash module/tests/test-rc-deep-mode.sh
+      - bash module/tests/test-rc-path-anchoring.sh
+      - bash module/tests/test-rc-state-vocab.sh

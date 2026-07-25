@@ -26,9 +26,11 @@ assert_json_field() {
 # (origin set to an enterprise host to exercise host derivation), tracking.md
 # (Forge/PR), session.txt (Owner/Repo/Effort/Review root), one verified finding,
 # a REQUEST CHANGES verdict, and a one-line TL;DR.
-# Usage: make_review_session <dir> [forge=github] [pr=42]
+# Usage: make_review_session <dir> [forge=github] [pr=42] [origin=https://github.example.com/acme/widgets.git]
+# Pass origin="" to build a checkout with NO origin remote (exercises the
+# missing/unparseable-host degrade path).
 make_review_session() {
-	local s="$1" forge="${2:-github}" pr="${3:-42}"
+	local s="$1" forge="${2:-github}" pr="${3:-42}" origin="${4-https://github.example.com/acme/widgets.git}"
 	mkdir -p "$s/verdicts"
 	local repo="$s/checkout"
 	mkdir -p "$repo"
@@ -37,7 +39,7 @@ make_review_session() {
 		git init -q
 		git config user.email t@t.local
 		git config user.name t
-		git remote add origin https://github.example.com/acme/widgets.git
+		[[ -n "$origin" ]] && git remote add origin "$origin"
 		mkdir -p auth
 		echo 'if exp < now' >auth/token.go
 		git add auth/token.go
@@ -60,21 +62,20 @@ Repo:         widgets
 Effort:       high
 Review root:  ${repo}
 SES
-	cat >"$s/verdicts/evidence-check.json" <<'EJ'
+	cat >"$s/verdicts/findings.json" <<'FJ'
 {
   "verified": [
-    {"agent":"divisor-adversary-code","severity":"HIGH","title":"expiry uses < not <=","file":"auth/token.go","line":"1","evidence":"if exp < now","detail":"**File**: `auth/token.go:1`\n**Evidence**:\n```go\nif exp < now\n```\n\n**Description**: The expiry check rejects tokens at the exact boundary.\n**Recommendation**: Use `<=` so a token expiring exactly now is still valid:\n```go\nif exp <= now {\n```"}
+    {"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":1,
+     "evidence":"if exp < now",
+     "description":"The expiry check rejects tokens at the exact boundary.",
+     "recommendation":"Use `<=` so a token expiring exactly now is still valid.",
+     "status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
   ],
   "correctable": [], "stripped": [],
-  "total_findings": 1, "duplicates_consolidated": 0
+  "total_findings": 1, "duplicates_consolidated": 0,
+  "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
 }
-EJ
-	cat >"$s/verdicts/divisor-adversary-code.md" <<'V'
-### [HIGH] expiry uses < not <=
-**File**: `auth/token.go:1`
-**Evidence**: `if exp < now`
-**Verdict**: REQUEST CHANGES
-V
+FJ
 	echo "REQUEST CHANGES" >"$s/verdict.txt"
 	echo "One high-severity boundary bug in token expiry." >"$s/comment-summary.md"
 }

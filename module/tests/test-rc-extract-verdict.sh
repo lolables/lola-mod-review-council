@@ -63,5 +63,18 @@ result=$(bash "$SCRIPT" "$s")
 assert_json_field "$result" "status" "extract_error" "missing desc/rec invalid"
 rm -rf "$s"
 
+echo "Test 6: council-only 'APPROVE WITH ADVISORIES' rejected as a reviewer verdict"
+s=$(mk)
+cat >"$s/verdicts/divisor-guard-code.raw.md" <<'RAW'
+```json
+{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE WITH ADVISORIES","findings":[]}
+```
+RAW
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "extract_error" "AWA reviewer verdict rejected"
+r=$(echo "$result" | jq -r '.invalid[0].reason')
+[[ "$r" == "SCHEMA_INVALID" ]] && { echo "  PASS: reason SCHEMA_INVALID"; PASS=$((PASS+1)); } || { echo "  FAIL: reason '$r'"; FAIL=$((FAIL+1)); }
+rm -rf "$s"
+
 echo ""; echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

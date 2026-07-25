@@ -9,7 +9,7 @@
     "files_read": { "type": "array", "items": { "type": "string" } },
     "verdict": {
       "type": "string",
-      "enum": ["APPROVE", "REQUEST CHANGES", "APPROVE WITH ADVISORIES"]
+      "enum": ["APPROVE", "REQUEST CHANGES"]
     },
     "findings": {
       "type": "array",

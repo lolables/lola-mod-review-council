@@ -334,5 +334,38 @@ else
 fi
 rm -rf "$session"
 
+# RC-004 residual: a null/absent per-agent verdict must render UNKNOWN, never
+# default to APPROVE (unsafe direction for a security-review tool).
+echo "Test: null per-agent verdict renders UNKNOWN, not APPROVE"
+session=$(mktemp -d); mkdir -p "$session/verdicts"
+cat >"$session/tracking.md" <<'TRACKING'
+# Review Council Session Tracking
+
+## Phase: Preparation
+
+- Mode: code (code files changed)
+- Agents discovered: 1
+TRACKING
+cat >"$session/verdicts/findings.json" <<'EVIDENCE'
+{
+  "verified": [],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 0,
+  "duplicates_consolidated": 0,
+  "verdicts": {"divisor-guard-code": null}
+}
+EVIDENCE
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+row=$(echo "$result" | grep 'divisor-guard-code' || true)
+if echo "$row" | grep -q 'UNKNOWN'; then
+	echo "  PASS: null verdict renders UNKNOWN"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: null verdict row was '$row'"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

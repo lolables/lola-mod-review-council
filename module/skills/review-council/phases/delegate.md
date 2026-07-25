@@ -20,6 +20,14 @@ For discovered agents not in this table, use generic review prompt matching curr
 
 ## Dispatch Mechanism
 
+The allowed identifiers are **exactly** the entries of the discovered `agents`
+array from `rc-prepare.sh` — nothing else. A similarly named agent that is
+visible or dispatchable in the host but absent from that array MUST NOT be
+dispatched. In particular, an un-suffixed legacy `divisor-*` file
+(`divisor-guard`, not `divisor-guard-code`) left in a host agents directory by
+an older install is stale: discovery skips it by design, and dispatching it
+runs an unknown-version persona. When the array is empty, dispatch nothing.
+
 Use discovered agent filename **minus `.md` extension** as subagent identifier (e.g., dispatch to `divisor-adversary-code`, not generic agent type). Ensures host loads persona definition — calibration rules, severity thresholds, grounding requirements — as system context.
 
 **Do NOT dispatch reviewers as generic agents with inline prompt.** Persona files contain critical calibration not reliably reproduced inline.

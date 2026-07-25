@@ -113,6 +113,15 @@ Intent preservation at codebase level — established patterns represent accumul
 
 **Scope boundary**: Check existing patterns preserved, new patterns justified. Do NOT enforce coding style (naming, formatting, import order) — belongs to linters and convention packs.
 
+### 7. External Standard Verification
+
+When a spec, design doc, or PR description cites an external standard (OSPS Baseline, NIST, CIS, OpenSSF, RFC, etc.) as justification for a decision, treat the citation as a claim to verify, not a settled fact.
+
+- **Do not trust the paraphrase**: The author's reading of a standard may be reasonable but incomplete. Check the design against the requirement's actual language, not the spec's restatement of it.
+- **Verify against an available copy**: Network access is not permitted, so verify against a vendored, cached, or in-repo copy of the standard, or the standard text carried in the changeset, when one exists. When no source is available to check against, do NOT rubber-stamp — flag the compliance claim as unverified so a human can confirm it.
+- **Letter vs. spirit**: Flag designs that satisfy only the minimum threshold of a MUST/SHOULD requirement while omitting the content it recommends.
+- **Linked/upstream resources in scope**: Broken links, placeholder content (e.g. `example.com` contacts), and stale references in the reviewed files are findings.
+
 ## Severity Calibration
 
 | Condition                                                        | Severity |

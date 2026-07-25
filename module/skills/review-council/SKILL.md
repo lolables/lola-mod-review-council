@@ -336,6 +336,20 @@ guidance and dispatch instructions.
 - `${session_dir}/diff.patch` — diff (may be empty for `--scope all`)
 - `${session_dir}/tracking.md` — scope, mode, language, framework metadata
 
+<DISPATCH-ALLOWLIST>
+Dispatch only the agent identifiers in the `agents` array `rc-prepare.sh`
+returned in Step 1. That array is the sole source of truth for who reviews.
+Do NOT dispatch a reviewer that is absent from it, even when a similarly
+named agent is registered and dispatchable in the host — for example an
+un-suffixed legacy `divisor-*` file (`divisor-guard`, not
+`divisor-guard-code`) left in a host agents directory by an older install.
+Those files are not discovered by `rc-prepare.sh` (it globs only
+`divisor-*-code.md` / `divisor-*-spec.md`) and are stale; using them runs
+unknown-version personas and yields a verdict you cannot trust. If Step 1
+returned `skip` (or an empty `agents` array), dispatch NO reviewers: report
+the skip message and stop, never a hand-picked substitute from the host.
+</DISPATCH-ALLOWLIST>
+
 For each reviewer agent in agents array from Step 1:
 - Construct prompt using changeset from `changeset.txt`, diff from
   `diff.patch`, convention packs from `${REFERENCES_DIR}`, project

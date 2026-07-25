@@ -54,12 +54,22 @@ for ((i=0; i<n; i++)); do
 		stripped=$(echo "$stripped" | jq --argjson o "$obj" '. + [$o + {status:"stripped", reason:"FILE_NOT_FOUND"}]')
 		continue
 	fi
-	if ! grep -qF "$ev" "$fpath"; then
+	# `--` ends option parsing: evidence quoted from a Markdown bullet, a diff
+	# line, or a CLI flag begins with `-` and would otherwise be read as a grep
+	# option. Capture the status so a grep tooling error (exit 2) is surfaced
+	# loudly rather than silently folded into EVIDENCE_NOT_FOUND (exit 1).
+	gstatus=0
+	grep -qF -- "$ev" "$fpath" || gstatus=$?
+	if [[ $gstatus -eq 2 ]]; then
+		echo "rc-verify-evidence: grep failed (exit 2) on $fpath for finding $i" >&2
+		correctable=$(echo "$correctable" | jq --argjson o "$obj" '. + [$o + {status:"correctable", reason:"GREP_ERROR"}]')
+		continue
+	elif [[ $gstatus -ne 0 ]]; then
 		correctable=$(echo "$correctable" | jq --argjson o "$obj" '. + [$o + {status:"correctable", reason:"EVIDENCE_NOT_FOUND"}]')
 		continue
 	fi
 	if [[ -n "$line" && "$line" != "null" ]]; then
-		actual=$(grep -nF "$ev" "$fpath" | head -1 | cut -d: -f1)
+		actual=$(grep -nF -- "$ev" "$fpath" | head -1 | cut -d: -f1)
 		if [[ -n "$actual" ]]; then
 			lo=$((line-5)); hi=$((line+5)); [[ $lo -lt 1 ]] && lo=1
 			if [[ $actual -lt $lo || $actual -gt $hi ]]; then
@@ -72,14 +82,22 @@ for ((i=0; i<n; i++)); do
 done
 
 # Dedup verified: same file, line within +-5 (or both null), same evidence.
+# On merge, keep the MOST SEVERE of the duplicates so a HIGH citing the same
+# line as a LOW is never silently downgraded (the survivor's other fields stay
+# from the first occurrence). Making the kept severity the max also makes the
+# result independent of agent/finding ordering.
 before=$(echo "$verified" | jq 'length')
 verified=$(echo "$verified" | jq '
+	def sevrank(s): {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}[s] // 0;
 	reduce .[] as $x ([];
-		if any(.[]; .file == $x.file and .evidence == $x.evidence and
-			((.line == null and $x.line == null) or
-			 (.line != null and $x.line != null and
-			  ((.line - $x.line | if . < 0 then -. else . end) <= 5))))
-		then . else . + [$x] end)
+		( [ range(0; length) as $j | select(.[$j].file == $x.file and .[$j].evidence == $x.evidence and
+			((.[$j].line == null and $x.line == null) or
+			 (.[$j].line != null and $x.line != null and
+			  ((.[$j].line - $x.line | if . < 0 then -. else . end) <= 5)))) | $j ] | first) as $idx
+		| if $idx == null then . + [$x]
+		  elif sevrank($x.severity) > sevrank(.[$idx].severity)
+		  then .[$idx].severity = $x.severity
+		  else . end)
 ')
 after=$(echo "$verified" | jq 'length')
 dedup=$((before - after))

@@ -129,6 +129,35 @@ All notable changes to the Review Council module are documented here.
   distinctly from a missing review mode, and points at `--scope pr`,
   `--scope url`, or `git init` instead of asking the user to specify a
   mode they already gave
+- Per-agent verdict table renders `UNKNOWN` instead of defaulting to `APPROVE`
+  when an agent's verdict is missing or null — an unknown verdict no longer
+  reads as approval in the rendered report
+- Reviewer verdict contract tightened to `APPROVE` / `REQUEST CHANGES` in both
+  `verdict-schema.json` and the extractor's fallback check; `APPROVE WITH
+  ADVISORIES` is a council-only aggregate and is now rejected as a reviewer
+  verdict, matching `reviewer-protocol.md`
+- Evidence check no longer misreads a quote that begins with `-` as a `grep`
+  option: `rc-verify-evidence.sh` passes `grep -F --` and distinguishes a grep
+  tooling error (exit 2) from a genuine no-match, so Markdown-bullet / diff-line
+  / CLI-flag evidence is verified instead of silently marked ungrounded
+- Duplicate-finding merge keeps the most severe of the merged findings, so a
+  HIGH citing the same line as a LOW is never silently downgraded; the dedup is
+  now independent of agent/finding ordering
+- Correction-round skip no longer strips an agent's entire review when all of
+  its findings are correctable — that pattern is usually a citation-style or
+  evidence-matcher artifact, not fabrication; the single batched correction
+  round now runs instead of a wholesale strip
+- Reviewer agents (Guard, Adversary) now verify cited external standards and
+  compliance claims against source rather than trusting a spec's paraphrase,
+  degrading to flagging the claim as unverified when the standard is not
+  reachable (agents are network-denied)
+- Fail-closed dispatch gate: the delegation step now dispatches only the
+  reviewer identifiers in `rc-prepare.sh`'s discovered `agents` array.
+  Un-suffixed legacy `divisor-*` agents left in a host agents directory by
+  an older install (which discovery skips by design) are explicitly
+  forbidden as dispatch targets, and an empty/`skip` result dispatches no
+  reviewers — closing a path where stale personas ran and produced an
+  untrustworthy verdict
 
 ## [0.1.0] — 2026-06-30
 

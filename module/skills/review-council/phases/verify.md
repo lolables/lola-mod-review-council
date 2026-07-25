@@ -162,7 +162,14 @@ Send agent focused correction prompt:
 
 **Efficiency**: batch all correctable findings for same agent into single correction prompt. Do not dispatch separate rounds per finding.
 
-**When to skip**: zero correctable findings, or ALL of agent's findings correctable (systemic failure — strip all, do not waste correction round).
+**When to skip**: skip only when there are zero correctable findings. Do NOT
+skip — and do NOT strip — merely because ALL of an agent's findings are
+correctable. That pattern usually reflects one consistent citation *style* or
+an evidence-matcher artifact (e.g. a quote the matcher could not locate for a
+mechanical reason), not fabrication, and stripping wholesale silently deletes
+an entire agent's review. Corrections are already batched into a single prompt
+per agent (above), so the all-correctable case costs one message: run it and
+let the correction-round rules decide each finding's fate.
 
 ---
 

@@ -177,7 +177,7 @@ echo "|-------|---------|----------|"
 verdict_map="$session_dir/verdicts/findings.json"
 if [[ -f "$verdict_map" ]]; then
 	while IFS= read -r agent_name; do
-		verdict=$(jq -r --arg a "$agent_name" '.verdicts[$a] // "APPROVE"' "$verdict_map")
+		verdict=$(jq -r --arg a "$agent_name" '.verdicts[$a] // "UNKNOWN"' "$verdict_map")
 		finding_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent==$a)] | length' "$verdict_map")
 		echo "| $agent_name | $verdict | $finding_count |"
 	done < <(jq -r '.verdicts | keys[]' "$verdict_map" 2>/dev/null)

@@ -15,5 +15,9 @@ echo "Test 3: finding required keys pinned"
 freq=$(jq -rc '.properties.findings.items.required' "$SCHEMA")
 [[ "$freq" == '["severity","file","evidence","description","recommendation"]' ]] && { echo "  PASS: finding required"; PASS=$((PASS+1)); } || { echo "  FAIL: got $freq"; FAIL=$((FAIL+1)); }
 
+echo "Test 4: reviewer verdict enum is binary (APPROVE WITH ADVISORIES is council-only)"
+venum=$(jq -rc '.properties.verdict.enum' "$SCHEMA")
+[[ "$venum" == '["APPROVE","REQUEST CHANGES"]' ]] && { echo "  PASS: binary reviewer enum"; PASS=$((PASS+1)); } || { echo "  FAIL: got $venum"; FAIL=$((FAIL+1)); }
+
 echo ""; echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

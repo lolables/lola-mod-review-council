@@ -41,4 +41,6 @@ tasks:
       - bash module/tests/test-rc-extract-verdict.sh
       - bash module/tests/test-rc-deep-mode.sh
       - bash module/tests/test-rc-path-anchoring.sh
+      - bash module/tests/test-rc-dispatch-gate.sh
+      - bash module/tests/test-rc-doc-guards.sh
       - bash module/tests/test-rc-state-vocab.sh

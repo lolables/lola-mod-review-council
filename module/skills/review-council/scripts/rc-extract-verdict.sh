@@ -68,7 +68,7 @@ validate() { # json_string
 	printf '%s' "$json" | jq -e '
 		(.agent | type) == "string" and
 		(.files_read | type) == "array" and
-		([.verdict] | inside(["APPROVE","REQUEST CHANGES","APPROVE WITH ADVISORIES"])) and
+		([.verdict] | inside(["APPROVE","REQUEST CHANGES"])) and
 		(.findings | type) == "array" and
 		(all(.findings[];
 			([.severity] | inside(["CRITICAL","HIGH","MEDIUM","LOW"])) and

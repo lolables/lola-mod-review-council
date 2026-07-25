@@ -85,5 +85,26 @@ result=$(cd "$src" && bash "$SCRIPT" "$s")
 vc=$(echo "$result" | jq '.verified'); [[ "$vc" -eq 1 ]] && { echo "  PASS: null/null line dedup to 1"; PASS=$((PASS+1)); } || { echo "  FAIL: verified $vc"; FAIL=$((FAIL+1)); }
 rm -rf "$s" "$src"
 
+echo "Test 10: evidence beginning with '-' verifies (RC-002: grep must not parse it as an option)"
+s=$(mktemp -d); mkdir -p "$s/verdicts"; src=$(mktemp -d)
+printf -- '- **Managed** block\n' >"$src/README.md"
+agent_json "$s" "divisor-curator-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"README.md","line":1,"evidence":"- **Managed** block","description":"d","recommendation":"r"}]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+vc=$(echo "$result" | jq '.verified'); [[ "$vc" -eq 1 ]] && { echo "  PASS: dash-leading evidence verified"; PASS=$((PASS+1)); } || { echo "  FAIL: verified $vc (expected 1)"; FAIL=$((FAIL+1)); }
+rm -rf "$s" "$src"
+
+echo "Test 11: dedup keeps MAX severity, HIGH not absorbed into LOW (RC-003)"
+s=$(mktemp -d); mkdir -p "$s/verdicts"; src=$(mktemp -d)
+echo 'x := install()' >"$src/a.go"
+# One agent, LOW first then HIGH, same file+evidence+line -> deterministic merge order.
+agent_json "$s" "divisor-guard-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"a.go","line":1,"evidence":"x := install()","description":"low","recommendation":"r"},{"severity":"HIGH","file":"a.go","line":1,"evidence":"x := install()","description":"high","recommendation":"r"}]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+vc=$(echo "$result" | jq '.verified')
+sev=$(jq -r '.verified[0].severity' "$s/verdicts/findings.json")
+[[ "$vc" -eq 1 && "$sev" == "HIGH" ]] && { echo "  PASS: merged to 1, severity HIGH"; PASS=$((PASS+1)); } || { echo "  FAIL: verified=$vc severity='$sev' (expected 1/HIGH)"; FAIL=$((FAIL+1)); }
+rm -rf "$s" "$src"
+
 echo ""; echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

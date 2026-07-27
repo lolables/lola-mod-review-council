@@ -137,12 +137,12 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 
 ## Rationalization Table
 
-| Excuse                                                       | Reality                                                                                                                                                                            |
-|--------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "The spec says 'handle errors gracefully' — that's testable" | "Gracefully" has no measurable definition. Testable spec says "return HTTP 400 with error code INVALID_INPUT." LLM reading "gracefully" will invent behavior.                      |
-| "Test strategy is implied by the architecture"               | Implied strategies produce gaps. LLMs don't carry institutional knowledge — if spec doesn't say unit vs integration vs e2e for each component, LLM will guess, often wrong.        |
-| "Coverage targets aren't needed at the spec stage"           | Without coverage expectations, "write tests" becomes "write some tests." LLM agents satisfy vague instructions with minimum effort. Measurable targets fix this.                   |
-| "An experienced developer would know what this means"        | Consumer is LLM, not experienced developer. Implicit domain knowledge must be made explicit or it will be hallucinated.                                                            |
+| Excuse                                                       | Reality                                                                                                                                                                     |
+|--------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "The spec says 'handle errors gracefully' — that's testable" | "Gracefully" has no measurable definition. Testable spec says "return HTTP 400 with error code INVALID_INPUT." LLM reading "gracefully" will invent behavior.               |
+| "Test strategy is implied by the architecture"               | Implied strategies produce gaps. LLMs don't carry institutional knowledge — if spec doesn't say unit vs integration vs e2e for each component, LLM will guess, often wrong. |
+| "Coverage targets aren't needed at the spec stage"           | Without coverage expectations, "write tests" becomes "write some tests." LLM agents satisfy vague instructions with minimum effort. Measurable targets fix this.            |
+| "An experienced developer would know what this means"        | Consumer is LLM, not experienced developer. Implicit domain knowledge must be made explicit or it will be hallucinated.                                                     |
 
 ## Output
 

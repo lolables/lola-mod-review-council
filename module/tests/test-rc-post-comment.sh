@@ -26,35 +26,65 @@ rm -rf "$empty"
 
 # Test 3: no PR -> skip (before any dispatch)
 echo "Test 3: no PR skips"
-sess=$(mktemp -d); make_review_session "$sess" github none
+sess=$(mktemp -d)
+make_review_session "$sess" github none
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip (no PR)"
 rm -rf "$sess"
 
 # Test 4: Forge=github -> dispatches to the GitHub script (dry-run render)
 echo "Test 4: dispatch to per-forge script"
-sess=$(mktemp -d); make_review_session "$sess" github 42
+sess=$(mktemp -d)
+make_review_session "$sess" github 42
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered"
-echo "$result" | jq -r '.message' | grep -qF "dry-run" && { echo "  PASS: routed to github script"; PASS=$((PASS+1)); } || { echo "  FAIL: not routed to github script"; FAIL=$((FAIL+1)); }
-grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md" && { echo "  PASS: body rendered by github path"; PASS=$((PASS+1)); } || { echo "  FAIL: no body"; FAIL=$((FAIL+1)); }
+if echo "$result" | jq -r '.message' | grep -qF "dry-run"; then
+	echo "  PASS: routed to github script"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: not routed to github script"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md"; then
+	echo "  PASS: body rendered by github path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no body"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess"
 
 # Test 5: --send is passed through to the per-forge script (auth gate reached)
 echo "Test 5: --send passthrough reaches auth gate"
-sess=$(mktemp -d); make_review_session "$sess" github 42
-ghstub=$(mktemp -d); printf '#!/usr/bin/env bash\nexit 0\n' >"$ghstub/gh"; chmod +x "$ghstub/gh"
+sess=$(mktemp -d)
+make_review_session "$sess" github 42
+ghstub=$(mktemp -d)
+printf '#!/usr/bin/env bash\nexit 0\n' >"$ghstub/gh"
+chmod +x "$ghstub/gh"
 result=$(PATH="$ghstub:$PATH" bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "confirm_required" "status is confirm_required (--send reached gate, no ALLOW_POST)"
 rm -rf "$sess" "$ghstub"
 
 # Test 6: unsupported forge -> render-only fallback (renderer standalone)
 echo "Test 6: unsupported forge render-only fallback"
-sess=$(mktemp -d); make_review_session "$sess" gitlab 42
+sess=$(mktemp -d)
+make_review_session "$sess" gitlab 42
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered (fallback)"
-echo "$result" | jq -r '.message' | grep -qF "manually" && { echo "  PASS: render-only fallback message"; PASS=$((PASS+1)); } || { echo "  FAIL: not the fallback path"; FAIL=$((FAIL+1)); }
-grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md" && { echo "  PASS: body rendered by fallback"; PASS=$((PASS+1)); } || { echo "  FAIL: no body"; FAIL=$((FAIL+1)); }
+if echo "$result" | jq -r '.message' | grep -qF "manually"; then
+	echo "  PASS: render-only fallback message"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: not the fallback path"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md"; then
+	echo "  PASS: body rendered by fallback"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no body"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess"
 
 echo ""

@@ -93,7 +93,7 @@ make_source_repo "$source_repo"
 make_fake_gh "$bindir" "$source_repo"
 
 result=$(cd "$launch_dir" && PATH="$bindir:$PATH" XDG_CACHE_HOME="$cache" AGENTS_DIR="$SCRIPT_DIR/../agents" \
-	timeout 40 bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
+	"$RC_TIMEOUT_BIN" 40 bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
 
 assert_json_field "$result" "status" "ok" "prepare reaches status ok"
 

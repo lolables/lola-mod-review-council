@@ -1,0 +1,16 @@
+# TruffleHog path exclusions (repo-owned; overrides the shared template)
+# Referenced by REPOSITORY_TRUFFLEHOG_ARGUMENTS in the shared MegaLinter
+# config, which passes `--exclude-paths .trufflehog-exclude-paths.txt`.
+# Regex patterns, one per line. Lines starting with # are comments.
+# Docs: https://github.com/trufflesecurity/trufflehog#excluding-paths
+#
+# This file exists in the repo, so the runner does not overlay the shared
+# template over it. Changes to the template will not reach this repo.
+
+^\.cache/
+
+# TruffleHog's Gitlab detector matches any 20-22 character token-shaped
+# string. `rc-post-comment-github` is a script name asserted on in the
+# comment-rendering tests, not a credential. The hits are in committed
+# history, so editing the working tree cannot clear them.
+^module/tests/test-rc-render-comment\.sh$

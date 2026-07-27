@@ -168,13 +168,13 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 
 ## Rationalization Table
 
-| Excuse                                                       | Reality                                                                                                                                                                                                                      |
-|--------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "The spec is vague, so any implementation satisfies it"      | Vague specs still have implicit constraints from project patterns, constitution, stated problem. LLM implementing vague spec will produce plausible but drifted code.                                                        |
-| "This scope addition is small, it won't matter"              | Small additions accumulate. Each sets precedent for next. Gold plating in specs becomes scope creep in implementation.                                                                                                       |
-| "The contradiction between specs is minor"                   | LLMs follow specs literally. Minor contradiction in spec text produces real divergence in implementation. If Spec A says field is optional and Spec B says required, LLM will implement whichever it reads last.             |
-| "The constitution principle is aspirational"                 | Constitutional principles are constraints, not suggestions. If principle needs relaxing, requires documented authorization, not silent erosion.                                                                               |
-| "The existing spec pattern is just a convention, not a rule" | Established patterns in codebase represent accumulated design decisions. Departing without justification creates inconsistency that compounds across specs.                                                                   |
+| Excuse                                                       | Reality                                                                                                                                                                                                          |
+|--------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "The spec is vague, so any implementation satisfies it"      | Vague specs still have implicit constraints from project patterns, constitution, stated problem. LLM implementing vague spec will produce plausible but drifted code.                                            |
+| "This scope addition is small, it won't matter"              | Small additions accumulate. Each sets precedent for next. Gold plating in specs becomes scope creep in implementation.                                                                                           |
+| "The contradiction between specs is minor"                   | LLMs follow specs literally. Minor contradiction in spec text produces real divergence in implementation. If Spec A says field is optional and Spec B says required, LLM will implement whichever it reads last. |
+| "The constitution principle is aspirational"                 | Constitutional principles are constraints, not suggestions. If principle needs relaxing, requires documented authorization, not silent erosion.                                                                  |
+| "The existing spec pattern is just a convention, not a rule" | Established patterns in codebase represent accumulated design decisions. Departing without justification creates inconsistency that compounds across specs.                                                      |
 
 ## Output
 

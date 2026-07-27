@@ -13,16 +13,24 @@ rc_trap_errors
 # No-op when the manifest is absent or has no clusters.
 
 session_dir="${1:-}"
-[[ -n "$session_dir" && -d "$session_dir" ]] || { json_output "nothing_to_do" "Session directory does not exist."; exit 0; }
+[[ -n "$session_dir" && -d "$session_dir" ]] || {
+	json_output "nothing_to_do" "Session directory does not exist."
+	exit 0
+}
 vdir="$session_dir/verdicts"
 findings="$vdir/findings.json"
 manifest="$vdir/clusters.json"
-[[ -f "$findings" ]] || { json_output "nothing_to_do" "No findings.json found."; exit 0; }
+[[ -f "$findings" ]] || {
+	json_output "nothing_to_do" "No findings.json found."
+	exit 0
+}
 
 clusters='[]'
 [[ -f "$manifest" ]] && clusters=$(jq -c '.clusters // []' "$manifest" 2>/dev/null || echo '[]')
-if [[ "$(echo "$clusters" | jq 'length')" -eq 0 ]]; then
-	json_output "ok" "No clusters to consolidate." "$(jq -n '{consolidated:0}')"
+cluster_count=$(echo "$clusters" | jq 'length')
+if [[ "$cluster_count" -eq 0 ]]; then
+	payload=$(jq -n '{consolidated:0}')
+	json_output "ok" "No clusters to consolidate." "$payload"
 	exit 0
 fi
 
@@ -58,7 +66,8 @@ result=$(jq --argjson clusters "$clusters" '
 		+ {consolidation_records: (($root.consolidation_records // []) + $acc.records)}
 ' "$findings")
 
-echo "$result" > "$findings"
+echo "$result" >"$findings"
 sem=$(echo "$result" | jq '[.consolidation_records[].merged | length] | add // 0')
-json_output "ok" "Consolidated $sem duplicate finding(s)." "$(jq -n --argjson s "$sem" '{consolidated:$s}')"
+payload=$(jq -n --argjson s "$sem" '{consolidated:$s}')
+json_output "ok" "Consolidated $sem duplicate finding(s)." "$payload"
 exit 0

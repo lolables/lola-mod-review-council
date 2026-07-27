@@ -32,14 +32,20 @@ MARKER_KEY="review-council:marker"
 
 # Verified-finding count for a severity. Reads $RC_EVIDENCE.
 sev_count() { # SEVERITY
-	[[ -f "$RC_EVIDENCE" ]] || { echo 0; return; }
+	[[ -f "$RC_EVIDENCE" ]] || {
+		echo 0
+		return
+	}
 	jq -r --arg s "$1" '[.verified[]? | select(.severity==$s)] | length' "$RC_EVIDENCE" 2>/dev/null || echo 0
 }
 
 # Per-agent verified-finding summary ("2 MEDIUM, 1 LOW" | "none"). Reads $RC_EVIDENCE.
 agent_findings() { # agent-name
 	local a="$1" out="" n sev
-	[[ -f "$RC_EVIDENCE" ]] || { echo "none"; return; }
+	[[ -f "$RC_EVIDENCE" ]] || {
+		echo "none"
+		return
+	}
 	for sev in CRITICAL HIGH MEDIUM LOW; do
 		n=$(jq -r --arg a "$a" --arg s "$sev" '[.verified[]? | select(.agent==$a and .severity==$s)] | length' "$RC_EVIDENCE" 2>/dev/null || echo 0)
 		[[ "$n" -gt 0 ]] && out="${out:+$out, }${n} ${sev}"
@@ -86,6 +92,8 @@ link_location() { # file line
 	local f="$1" l="$2" loc="$1" url=""
 	[[ -n "$l" && "$l" != "null" ]] && loc="$f:$l"
 	declare -F rc_url_file >/dev/null 2>&1 && url=$(rc_url_file "$RC_FORGE_WEB" "$RC_HEAD_SHA" "$f" "$l")
+	# shellcheck disable=SC2016 # the backticks are literal markdown code-span
+	# delimiters, not command substitution.
 	if [[ -n "$url" ]]; then
 		printf '[`%s`](%s)' "$loc" "$url"
 	else
@@ -111,6 +119,8 @@ indent2() {
 # which renders every line verbatim regardless of its leading characters.
 evidence_block() { # evidence-text
 	local ev="$1"
+	# shellcheck disable=SC2016 # the backticks are literal markdown fence and
+	# code-span delimiters, not command substitution.
 	if [[ "$ev" == *$'\n'* ]]; then
 		printf '```\n%s\n```\n' "$ev" | indent2
 	else
@@ -153,9 +163,11 @@ rc_render_comment_body() { # session_dir body_file
 
 	# LLM provenance: unique model IDs the host recorded, as bullets.
 	if [[ -f "$session_dir/models.json" ]]; then
+		local model_ids
+		model_ids=$(jq -r '[.[].id] | unique[]' "$session_dir/models.json" 2>/dev/null || true)
 		while IFS= read -r id; do
 			[[ -n "$id" ]] && models_bullets+="> - ${id}"$'\n'
-		done < <(jq -r '[.[].id] | unique[]' "$session_dir/models.json" 2>/dev/null)
+		done <<<"$model_ids"
 	fi
 
 	# Neutral facts: head SHA (materialized checkout or working tree) and forge
@@ -185,19 +197,25 @@ rc_render_comment_body() { # session_dir body_file
 	marker_line="<!-- ${MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} -->"
 
 	# Severity counts from verified findings.
-	c_crit=$(sev_count CRITICAL); c_high=$(sev_count HIGH)
-	c_med=$(sev_count MEDIUM); c_low=$(sev_count LOW)
+	c_crit=$(sev_count CRITICAL)
+	c_high=$(sev_count HIGH)
+	c_med=$(sev_count MEDIUM)
+	c_low=$(sev_count LOW)
 
 	# Per-agent table: verdict from findings.json .verdicts (verbatim), counts
 	# from verified findings. Single source — table cannot disagree with body.
 	if [[ -f "$RC_EVIDENCE" ]]; then
+		local verdict_agents
+		verdict_agents=$(jq -r '.verdicts | keys[]' "$RC_EVIDENCE" 2>/dev/null || true)
 		while IFS= read -r name; do
 			[[ "$name" == divisor-* ]] || continue
-			local raw_v
+			local raw_v label agent_count
 			raw_v=$(jq -r --arg a "$name" '.verdicts[$a] // "APPROVE"' "$RC_EVIDENCE")
 			case "$raw_v" in *"REQUEST CHANGES"*) av="❌ Changes" ;; *) av="✅ Approve" ;; esac
-			agent_rows+="| $(persona_label "$name") | ${av} | $(agent_findings "$name") |"$'\n'
-		done < <(jq -r '.verdicts | keys[]' "$RC_EVIDENCE" 2>/dev/null)
+			label=$(persona_label "$name")
+			agent_count=$(agent_findings "$name")
+			agent_rows+="| ${label} | ${av} | ${agent_count} |"$'\n'
+		done <<<"$verdict_agents"
 	fi
 
 	# Findings grouped by severity inside <details>. Fields come straight
@@ -216,12 +234,17 @@ rc_render_comment_body() { # session_dir body_file
 			for ((idx = 0; idx < count; idx++)); do
 				local base
 				base=$(jq -c --arg s "$sev" "[.verified[] | select(.severity==\$s)][$idx]" "$RC_EVIDENCE")
-				f=$(jq -r '.file' <<<"$base"); l=$(jq -r '.line // ""' <<<"$base")
-				t=$(jq -r '.title // (.description[0:60])' <<<"$base"); ev=$(jq -r '.evidence' <<<"$base")
+				f=$(jq -r '.file' <<<"$base")
+				l=$(jq -r '.line // ""' <<<"$base")
+				t=$(jq -r '.title // (.description[0:60])' <<<"$base")
+				ev=$(jq -r '.evidence' <<<"$base")
 				agent=$(jq -r '.agent' <<<"$base")
-				desc=$(jq -r '.description' <<<"$base"); rec=$(jq -r '.recommendation' <<<"$base")
+				desc=$(jq -r '.description' <<<"$base")
+				rec=$(jq -r '.recommendation' <<<"$base")
 				constraint=$(jq -r '.constraint // ""' <<<"$base")
-				findings_block+="- $(persona_emoji "$agent") **${t}** ($(link_location "$f" "$l"))"$'\n\n'
+				emoji=$(persona_emoji "$agent")
+				loc_link=$(link_location "$f" "$l")
+				findings_block+="- ${emoji} **${t}** (${loc_link})"$'\n\n'
 				findings_block+="$(evidence_block "$ev")"$'\n\n'
 				findings_block+=$(printf '💡 **Recommendation:** %s\n' "$rec" | indent2)
 				if [[ -n "$constraint" ]]; then
@@ -236,6 +259,13 @@ rc_render_comment_body() { # session_dir body_file
 	fi
 
 	# Assemble. Override REVIEW_COUNCIL_REPO to point a fork's footer at its repo.
+	# House style: no em/en dashes in posted output (covers static text plus
+	# LLM-authored TL;DR and agent-authored finding titles/evidence). Filtering on
+	# write rather than with a second in-place pass keeps this portable — BSD sed
+	# takes `-i EXTENSION` as a separate argument, so `sed -i 's/…/'` reads the
+	# script as a backup suffix and the file as the script, and silently strips
+	# nothing. Nothing downstream reads variables assigned inside the group, so
+	# running it as a pipeline subshell is safe.
 	repo_url="${REVIEW_COUNCIL_REPO:-https://github.com/lolables/lola-mod-review-council}"
 	{
 		echo "## ${emoji} Review Council: ${verdict}"
@@ -276,11 +306,7 @@ rc_render_comment_body() { # session_dir body_file
 		echo "_Produced by [Review Council](${repo_url}), an open-source multi-persona code reviewer. Spot a wrong call or want the source? [File feedback](${repo_url}/issues) or browse the [repository](${repo_url})._"
 		echo ""
 		echo "$marker_line"
-	} >"$body_file"
-
-	# House style: no em/en dashes in posted output (covers static text plus
-	# LLM-authored TL;DR and agent-authored finding titles/evidence).
-	sed -i 's/—/-/g; s/–/-/g' "$body_file"
+	} | sed 's/—/-/g; s/–/-/g' >"$body_file"
 }
 
 # --- Standalone entry: render-only fallback (no forge hooks -> plain spans). ---
@@ -293,7 +319,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 	fi
 	body_file="$session_dir/comment-body.md"
 	rc_render_comment_body "$session_dir" "$body_file"
+	body_payload=$(jq -n --arg b "$body_file" '{body_file:$b}')
 	json_output "rendered" "Rendered comment body; no posting integration for this forge - post it manually." \
-		"$(jq -n --arg b "$body_file" '{body_file:$b}')"
+		"$body_payload"
 	exit 0
 fi

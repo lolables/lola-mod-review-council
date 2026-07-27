@@ -6,6 +6,11 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- `test-rc-portability.sh` — guards the scripts and the suite against
+  GNU-only shell constructs (`timeout`, `grep -P`, `sed -i`, and GNU regex
+  escapes). The regex rules matter most: unlike the others they fail
+  silently on macOS rather than erroring, so CI cannot be relied on to
+  notice them
 - React framework convention pack (`fw-react.md`) with severity
   calibration for error boundaries (HIGH), god components (HIGH),
   prop drilling (MEDIUM), and direct DOM manipulation (MEDIUM)
@@ -121,6 +126,24 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- macOS compatibility across the shipped scripts and the test suite, which
+  had regressed on the BSD userland while Linux CI stayed green:
+  - Forge and clone calls invoked GNU `timeout`, which macOS does not ship.
+    They now go through `rc_timeout()`, which resolves `timeout` or Homebrew
+    coreutils' `gtimeout`; `rc-lib.sh` reports the missing prerequisite the
+    same way it already reports a missing `jq` or Bash 3
+  - `rc-render-comment.sh` stripped em/en dashes with `sed -i 's/…/'`. BSD
+    `sed` reads `-i`'s argument as a backup suffix, so on macOS the pass
+    aborted and dashes reached posted comments. The filter now runs on write
+  - Python framework detection (`pyproject.toml\|setup.py`) and issue
+    acceptance-criteria extraction (`^\s*-\s+`) relied on GNU regex
+    extensions that BSD regex reads as literal characters, so both silently
+    matched nothing on macOS. Both now use `grep -E` with POSIX classes
+- Test assertions no longer depend on `grep -P`, which BSD grep does not
+  support. Three of the four reported the resulting option error as a normal
+  test failure, but the em/en dash assertion negated it (`! grep -qP`), so
+  "PCRE unsupported" read as "no dashes found" and the test passed on macOS
+  exactly while the renderer above was leaving dashes in posted comments
 - References (convention packs, `verdict-schema.json`) now resolve from
   `SKILL_DIR`, not `MODULE_DIR` — on a split install (skill and agents
   directories on separate paths), packs failed to load because

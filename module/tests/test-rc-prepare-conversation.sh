@@ -49,24 +49,6 @@ GH
 	chmod +x "$bindir/gh"
 }
 
-setup_repo() {
-	local work="$1"
-	(
-		cd "$work"
-		git init -q
-		git config user.email t@t.local
-		git config user.name t
-		git remote add origin https://github.com/acme/widgets.git
-		git checkout -q -b main
-		echo "package main" >a.go
-		git add a.go
-		git commit -qm init
-		git checkout -q -b feature-head
-		echo "// change" >>a.go
-		git commit -qam change
-	)
-}
-
 url="https://github.com/acme/widgets/pull/7"
 
 echo "Test 1: re-review (marker present) writes only replies at/after the marker"

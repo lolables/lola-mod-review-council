@@ -85,6 +85,23 @@ The eval harness lives in `.lola-eval/` and uses `lola-eval` with custom provide
 
 ## Install
 
+### Prerequisites
+
+The scripts need Bash 4+, [`jq`](https://jqlang.github.io/jq/), and GNU
+`timeout` (from coreutils), which bounds every forge call so a hung `gh` or
+`git` cannot stall a review. If any is missing the scripts report it and skip
+rather than misbehave.
+
+macOS ships none of the three: its Bash is 3.2, and there is no `timeout` at
+all. Homebrew installs GNU tools under a `g` prefix, so `coreutils` provides
+`gtimeout` — the scripts accept either name, and no `PATH` changes are needed.
+
+```bash
+brew install bash jq coreutils     # macOS
+sudo apt-get install jq coreutils  # Debian/Ubuntu
+sudo dnf install jq coreutils      # Fedora/RHEL
+```
+
 ### Via Lola (recommended)
 
 ```bash
@@ -171,15 +188,15 @@ never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
 The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates six phases
 using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work):
 
-| Phase             | Implementation                                    | Purpose                                      |
-|-------------------|----------------------------------------------------|-----------------------------------------------|
-| **Prepare**       | `rc-prepare.sh`                                   | Mode detection, discovery, session setup     |
-| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh` | Forge CI status checks (Code Review only)    |
-| **Delegate**      | `phases/delegate.md`                              | Prompt construction, dispatch                |
-| **Extract**       | `rc-extract-verdict.sh`                           | Schema-validate each reviewer's JSON verdict |
-| **Verify**        | `rc-verify-evidence.sh` + `phases/verify.md`      | Evidence, correction, calibration, dedup     |
+| Phase             | Implementation                                    | Purpose                                                   |
+|-------------------|---------------------------------------------------|-----------------------------------------------------------|
+| **Prepare**       | `rc-prepare.sh`                                   | Mode detection, discovery, session setup                  |
+| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh` | Forge CI status checks (Code Review only)                 |
+| **Delegate**      | `phases/delegate.md`                              | Prompt construction, dispatch                             |
+| **Extract**       | `rc-extract-verdict.sh`                           | Schema-validate each reviewer's JSON verdict              |
+| **Verify**        | `rc-verify-evidence.sh` + `phases/verify.md`      | Evidence, correction, calibration, dedup                  |
 | **Disposition**   | `phases/disposition.md` (re-review only)          | Triage untrusted PR-conversation replies against findings |
-| **Report**        | `rc-render-report.sh` + `phases/report.md`        | Final report, learnings feedback             |
+| **Report**        | `rc-render-report.sh` + `phases/report.md`        | Final report, learnings feedback                          |
 
 Scripts live in `skills/review-council/scripts/`. Phase files live in `skills/review-council/phases/`. Each phase
 loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context. The full

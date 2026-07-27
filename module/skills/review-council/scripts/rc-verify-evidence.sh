@@ -11,15 +11,24 @@ rc_trap_errors
 
 session_dir="${1:-}"
 review_root="${2:-${REVIEW_ROOT:-.}}"
-[[ -n "$session_dir" && -d "$session_dir" ]] || { json_output "nothing_to_do" "Session directory does not exist."; exit 0; }
+[[ -n "$session_dir" && -d "$session_dir" ]] || {
+	json_output "nothing_to_do" "Session directory does not exist."
+	exit 0
+}
 vdir="$session_dir/verdicts"
-[[ -d "$vdir" ]] || { json_output "nothing_to_do" "No verdicts directory found."; exit 0; }
+[[ -d "$vdir" ]] || {
+	json_output "nothing_to_do" "No verdicts directory found."
+	exit 0
+}
 
 # Gather agent JSON files.
 agent_files=()
 while IFS= read -r -d '' f; do agent_files+=("$f"); done \
 	< <(find "$vdir" -name '*.json' ! -name 'findings.json' ! -name 'evidence-check.json' ! -name 'verdicts-map.json' -type f -print0 2>/dev/null || true)
-[[ ${#agent_files[@]} -gt 0 ]] || { json_output "nothing_to_do" "No agent verdict JSON found."; exit 0; }
+[[ ${#agent_files[@]} -gt 0 ]] || {
+	json_output "nothing_to_do" "No agent verdict JSON found."
+	exit 0
+}
 
 # Merge all findings into one array, tagging each with its agent and verdict.
 all=$(jq -s '
@@ -37,14 +46,16 @@ jq -s '
 	group_by(.agent) | map({key: .[0].agent,
 		value: (if any(.[]; .verdict | test("REQUEST CHANGES")) then "REQUEST CHANGES" else .[0].verdict end)})
 	| from_entries
-' "${agent_files[@]}" > "$vdir/verdicts-map.json"
+' "${agent_files[@]}" >"$vdir/verdicts-map.json"
 
 # Verify each finding. Emit status + reason, keeping all fields.
 resolve() { [[ "$review_root" == "." ]] && echo "$1" || echo "${review_root%/}/$1"; }
 
 n=$(echo "$all" | jq 'length')
-verified='[]'; correctable='[]'; stripped='[]'
-for ((i=0; i<n; i++)); do
+verified='[]'
+correctable='[]'
+stripped='[]'
+for ((i = 0; i < n; i++)); do
 	f=$(echo "$all" | jq -r ".[$i].file")
 	line=$(echo "$all" | jq -r ".[$i].line // \"\"")
 	ev=$(echo "$all" | jq -r ".[$i].evidence")
@@ -71,7 +82,9 @@ for ((i=0; i<n; i++)); do
 	if [[ -n "$line" && "$line" != "null" ]]; then
 		actual=$(grep -nF -- "$ev" "$fpath" | head -1 | cut -d: -f1)
 		if [[ -n "$actual" ]]; then
-			lo=$((line-5)); hi=$((line+5)); [[ $lo -lt 1 ]] && lo=1
+			lo=$((line - 5))
+			hi=$((line + 5))
+			[[ $lo -lt 1 ]] && lo=1
 			if [[ $actual -lt $lo || $actual -gt $hi ]]; then
 				correctable=$(echo "$correctable" | jq --argjson o "$obj" '. + [$o + {status:"correctable", reason:"LINE_MISMATCH"}]')
 				continue
@@ -117,9 +130,12 @@ jq -n \
 	--slurpfile vmap "$vdir/verdicts-map.json" \
 	'{verified:$verified, correctable:$correctable, stripped:$stripped,
 	  total_findings:$total, duplicates_consolidated:$dedup, verdicts:$vmap[0]}' \
-	> "$vdir/findings.json"
+	>"$vdir/findings.json"
 
-vc=$(echo "$verified" | jq 'length'); cc=$(echo "$correctable" | jq 'length'); sc=$(echo "$stripped" | jq 'length')
+vc=$(echo "$verified" | jq 'length')
+cc=$(echo "$correctable" | jq 'length')
+sc=$(echo "$stripped" | jq 'length')
+payload=$(jq -n --argjson v "$vc" --argjson c "$cc" --argjson s "$sc" '{verified:$v, correctable:$c, stripped:$s}')
 json_output "ok" "Evidence verification complete. $vc verified, $cc correctable, $sc stripped." \
-	"$(jq -n --argjson v "$vc" --argjson c "$cc" --argjson s "$sc" '{verified:$v, correctable:$c, stripped:$s}')"
+	"$payload"
 exit 0

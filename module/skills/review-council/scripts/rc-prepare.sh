@@ -332,7 +332,7 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 			repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
 
 			# shellcheck disable=SC2086
-			pr_json=$(timeout 30 gh pr view "$pr_number" $repo_flag \
+			pr_json=$(rc_timeout 30 gh pr view "$pr_number" $repo_flag \
 				--json number,title,body,baseRefName,headRefName,url,state,statusCheckRollup 2>/dev/null || echo "")
 
 			if [[ -n "$pr_json" ]]; then
@@ -351,7 +351,7 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
         ')
 			fi
 		elif [[ "$forge" == "gitlab" ]]; then
-			pr_json=$(timeout 30 glab mr view "$pr_number" --output json 2>/dev/null || echo "")
+			pr_json=$(rc_timeout 30 glab mr view "$pr_number" --output json 2>/dev/null || echo "")
 
 			if [[ -n "$pr_json" ]]; then
 				pr_title=$(echo "$pr_json" | jq -r '.title // ""')
@@ -419,9 +419,9 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 	if [[ "$forge" == "github" ]]; then
 		repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
 		# shellcheck disable=SC2086
-		timeout 30 gh pr diff "$pr_number" $repo_flag 2>/dev/null >"$pr_diff_cache" || true
+		rc_timeout 30 gh pr diff "$pr_number" $repo_flag 2>/dev/null >"$pr_diff_cache" || true
 	elif [[ "$forge" == "gitlab" ]]; then
-		timeout 30 glab mr diff "$pr_number" 2>/dev/null >"$pr_diff_cache" || true
+		rc_timeout 30 glab mr diff "$pr_number" 2>/dev/null >"$pr_diff_cache" || true
 	fi
 fi
 
@@ -793,7 +793,7 @@ elif echo "$changeset_files" | grep -q "go.mod"; then
 	[[ -f "${review_root}/go.mod" ]] && grep -q "github.com/labstack/echo" "${review_root}/go.mod" 2>/dev/null && framework="echo"
 elif echo "$changeset_files" | grep -q "Cargo.toml"; then
 	framework="rust-cargo"
-elif echo "$changeset_files" | grep -q "pyproject.toml\|setup.py"; then
+elif echo "$changeset_files" | grep -qE "pyproject\.toml|setup\.py"; then
 	framework="python"
 	if echo "$changeset_files" | grep -q "requirements.txt"; then
 		if [[ -f "${review_root}/requirements.txt" ]]; then
@@ -864,7 +864,7 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 				if [[ "$forge" == "github" ]]; then
 					repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
 					# shellcheck disable=SC2086
-					issue_json=$(timeout 30 gh issue view "$issue_num" $repo_flag --json title,body,state 2>/dev/null || echo "")
+					issue_json=$(rc_timeout 30 gh issue view "$issue_num" $repo_flag --json title,body,state 2>/dev/null || echo "")
 
 					if [[ -n "$issue_json" ]]; then
 						issue_title=$(echo "$issue_json" | jq -r '.title // ""')
@@ -880,7 +880,7 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 						echo "### Acceptance Criteria"
 
 						# Extract acceptance criteria
-						criteria=$(echo "$issue_body" | grep -E '^\s*-\s+\[[ x]\]' || echo "")
+						criteria=$(echo "$issue_body" | grep -E '^[[:space:]]*-[[:space:]]+\[[ x]\]' || echo "")
 						if [[ -z "$criteria" ]]; then
 							criteria=$(echo "$issue_body" | sed -n '/[Aa]cceptance [Cc]riteria/,/^##/p' | grep -v '^##' || echo "")
 						fi
@@ -910,8 +910,8 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 	if [[ "$forge" == "github" ]]; then
 		repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
 
-		reviews_json=$(timeout 30 gh api "repos/${forge_owner}/${forge_repo}/pulls/${pr_number}/reviews" 2>/dev/null || echo "[]")
-		comments_json=$(timeout 30 gh api "repos/${forge_owner}/${forge_repo}/pulls/${pr_number}/comments" 2>/dev/null || echo "[]")
+		reviews_json=$(rc_timeout 30 gh api "repos/${forge_owner}/${forge_repo}/pulls/${pr_number}/reviews" 2>/dev/null || echo "[]")
+		comments_json=$(rc_timeout 30 gh api "repos/${forge_owner}/${forge_repo}/pulls/${pr_number}/comments" 2>/dev/null || echo "[]")
 
 		{
 			echo "## Reviews"
@@ -948,7 +948,7 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 		# marker comment and write them as UNTRUSTED data for the (separate)
 		# Disposition step to consume later. This block only fetches and
 		# writes the file — it never reads or acts on the conversation.
-		conversation_json=$(timeout 30 gh api "repos/${forge_owner}/${forge_repo}/issues/${pr_number}/comments" 2>/dev/null || echo "[]")
+		conversation_json=$(rc_timeout 30 gh api "repos/${forge_owner}/${forge_repo}/issues/${pr_number}/comments" 2>/dev/null || echo "[]")
 
 		# Timestamp (created_at) of the LAST comment carrying the council's
 		# marker. GitHub's issue-comments API returns comments in ascending
@@ -980,8 +980,10 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 			fi
 		fi
 	elif [[ "$forge" == "gitlab" ]]; then
-		# TODO(forge): GitLab conversation via glab api not yet implemented.
-		: # documented gap; diff-only review proceeds without a conversation file
+		# GitLab conversation capture is unsupported. Diff-only review proceeds
+		# without a conversation file: a documented gap by design, not a silent
+		# failure.
+		:
 	fi
 fi
 

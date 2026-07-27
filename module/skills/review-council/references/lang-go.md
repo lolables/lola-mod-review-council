@@ -20,11 +20,11 @@ Self-contained Go pack. Do not load base.md alongside.
 ## Calibration Notes
 
 > **Nil pointers**: Calling method on nil pointer receiver panics. Standard Go — NOT bug, vulnerability, or resilience defect. Do NOT flag nil receiver panics, nil map access, or nil slice ops. Only flag nil handling when: (1) function accepts external/user input that could be nil AND (2) function is at system boundary (public API, CLI handler, HTTP handler) AND (3) no caller-side validation. Internal library methods with pointer receivers are NOT system boundaries.
-
+>
 > **Type assertions**: Unchecked type assertions (`v := x.(Type)`) only findings when operating on external input or untrusted data at system boundary. Internal type assertions in switch statements or type-safe code paths are idiomatic Go.
-
+>
 > **Panic**: Explicit `panic()` calls only findings when used for expected error conditions that should return `error`. Panics in `init()`, unreachable code assertions, and test helpers are idiomatic.
-
+>
 > **Sealed interfaces**: When `gochecksumtype` present (check `.golangci.yml`), adding `default` case to type switch over `//sumtype:decl` interface defeats exhaustiveness checking and is always a finding. When `exhaustruct` enabled, uninitialized or unkeyed struct literals are findings — scope to project packages, not third-party types.
 
 ## testing_conventions

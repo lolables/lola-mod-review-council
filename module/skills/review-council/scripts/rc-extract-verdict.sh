@@ -10,9 +10,15 @@ rc_trap_errors
 # Emits a JSON summary. Invalid/missing blocks are reported for one re-dispatch.
 
 session_dir="${1:-}"
-[[ -n "$session_dir" && -d "$session_dir" ]] || { json_output "skip" "Session directory not found."; exit 0; }
+[[ -n "$session_dir" && -d "$session_dir" ]] || {
+	json_output "skip" "Session directory not found."
+	exit 0
+}
 vdir="$session_dir/verdicts"
-[[ -d "$vdir" ]] || { json_output "nothing_to_do" "No verdicts directory."; exit 0; }
+[[ -d "$vdir" ]] || {
+	json_output "nothing_to_do" "No verdicts directory."
+	exit 0
+}
 
 # Extract the first fenced ```json ... ``` block from a file to stdout.
 extract_block() { # file
@@ -33,7 +39,10 @@ _warned_no_validator=0
 # content. Self-test the exact invocation once against a known-valid instance
 # and only trust the binary if it round-trips as expected.
 _has_validator() {
-	[[ -n "${_HAS_VALIDATOR:-}" ]] && { [[ "$_HAS_VALIDATOR" == "1" ]]; return; }
+	[[ -n "${_HAS_VALIDATOR:-}" ]] && {
+		[[ "$_HAS_VALIDATOR" == "1" ]]
+		return
+	}
 	_HAS_VALIDATOR=0
 	if command -v jsonschema >/dev/null 2>&1; then
 		local probe
@@ -53,13 +62,15 @@ _has_validator() {
 # context so set -e is suspended inside.
 validate() { # json_string
 	local json="$1" tmp
+	# shellcheck disable=SC2310 # _has_validator is a predicate; suspending set -e
+	# inside it is the intended contract (see its self-test comment above).
 	if _has_validator; then
 		tmp=$(mktemp)
-		printf '%s' "$json" > "$tmp"
+		printf '%s' "$json" >"$tmp"
 		jsonschema validate "$SCHEMA" "$tmp" >/dev/null 2>&1
 		local rc=$?
 		rm -f "$tmp"
-		return $rc
+		return "$rc"
 	fi
 	if [[ "$_warned_no_validator" -eq 0 ]]; then
 		echo "rc-warning: 'jsonschema' validator not found or incompatible; using minimal jq check. Install sourcemeta/jsonschema for full schema validation." >&2
@@ -85,10 +96,13 @@ validate() { # json_string
 # validator's --json output when available; terse note under the jq path.
 validate_error() { # json_string
 	local json="$1" tmp msg
+	# shellcheck disable=SC2310 # _has_validator is a predicate; see validate() above.
 	if _has_validator; then
-		tmp=$(mktemp); printf '%s' "$json" > "$tmp"
+		tmp=$(mktemp)
+		printf '%s' "$json" >"$tmp"
 		msg=$(jsonschema validate "$SCHEMA" "$tmp" --json 2>&1 || true)
-		rm -f "$tmp"; printf '%s' "$msg"
+		rm -f "$tmp"
+		printf '%s' "$msg"
 		return
 	fi
 	printf 'Failed minimal structural check (missing required key, bad enum, or non-array findings).'
@@ -107,6 +121,8 @@ for raw in "${raw_files[@]}"; do
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
 		continue
 	fi
+	# shellcheck disable=SC2310 # validate() is documented as requiring an
+	# `if ! validate ...` caller so set -e stays suspended inside it.
 	if ! validate "$block"; then
 		detail=$(validate_error "$block")
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "SCHEMA_INVALID" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
@@ -116,7 +132,8 @@ for raw in "${raw_files[@]}"; do
 	valid_count=$((valid_count + 1))
 done
 
-if [[ "$(echo "$invalid_json" | jq 'length')" -gt 0 ]]; then
+invalid_count=$(echo "$invalid_json" | jq 'length')
+if [[ "$invalid_count" -gt 0 ]]; then
 	read -r -d '' remediation <<'REM' || true
 Your response must be exactly one fenced ```json block matching verdict-schema.json:
 { "agent": "...", "files_read": [...], "verdict": "APPROVE|REQUEST CHANGES",
@@ -129,6 +146,10 @@ REM
 	exit 0
 fi
 
-[[ "$valid_count" -eq 0 ]] && { json_output "nothing_to_do" "No verdict blocks found."; exit 0; }
-json_output "ok" "Extracted $valid_count verdict block(s)." "$(jq -n --argjson v "$valid_count" '{valid:$v}')"
+[[ "$valid_count" -eq 0 ]] && {
+	json_output "nothing_to_do" "No verdict blocks found."
+	exit 0
+}
+payload=$(jq -n --argjson v "$valid_count" '{valid:$v}')
+json_output "ok" "Extracted $valid_count verdict block(s)." "$payload"
 exit 0

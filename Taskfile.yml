@@ -44,3 +44,4 @@ tasks:
       - bash module/tests/test-rc-dispatch-gate.sh
       - bash module/tests/test-rc-doc-guards.sh
       - bash module/tests/test-rc-state-vocab.sh
+      - bash module/tests/test-rc-portability.sh

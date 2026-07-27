@@ -145,12 +145,12 @@ All mean: go back to Phase 1 and re-read files.
 
 ## Rationalization Table
 
-| Excuse                                                  | Reality                                                                                                                                          |
-|---------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Input comes from internal service, not user"           | Internal services get compromised. Input crossing network boundary is untrusted. Validate at deserialization points regardless of source.        |
-| "Framework handles injection prevention"                | Frameworks have bypass patterns (raw queries, template literals, shell exec). Verify specific call site uses safe API, not raw alternative.      |
-| "These are test credentials, not real secrets"          | Test credentials in source get copy-pasted into production configs. Hardcoded secrets are findings regardless of intent.                         |
-| "Error handling style is matter of preference"          | Error handling at security boundaries is not style. Swallowed auth failure is monitoring gap (OWASP A09).                                        |
+| Excuse                                         | Reality                                                                                                                                     |
+|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| "Input comes from internal service, not user"  | Internal services get compromised. Input crossing network boundary is untrusted. Validate at deserialization points regardless of source.   |
+| "Framework handles injection prevention"       | Frameworks have bypass patterns (raw queries, template literals, shell exec). Verify specific call site uses safe API, not raw alternative. |
+| "These are test credentials, not real secrets" | Test credentials in source get copy-pasted into production configs. Hardcoded secrets are findings regardless of intent.                    |
+| "Error handling style is matter of preference" | Error handling at security boundaries is not style. Swallowed auth failure is monitoring gap (OWASP A09).                                   |
 
 ## Output
 

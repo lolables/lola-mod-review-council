@@ -9,7 +9,7 @@ FAIL=0
 # Test 1: Missing session directory
 echo "Test 1: Missing session directory"
 result=$(bash "$SCRIPT" "/nonexistent/path" 2>/dev/null)
-if echo "$result" | grep -qi "not available\|not found\|no session"; then
+if echo "$result" | grep -qiE "not available|not found|no session"; then
 	echo "  PASS: graceful message for missing session"
 	PASS=$((PASS + 1))
 else
@@ -337,7 +337,8 @@ rm -rf "$session"
 # RC-004 residual: a null/absent per-agent verdict must render UNKNOWN, never
 # default to APPROVE (unsafe direction for a security-review tool).
 echo "Test: null per-agent verdict renders UNKNOWN, not APPROVE"
-session=$(mktemp -d); mkdir -p "$session/verdicts"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 

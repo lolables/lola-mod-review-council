@@ -102,68 +102,119 @@ GH
 
 # Test 1: dry-run (no --send) renders body, does not post
 echo "Test 1: dry-run render"
-sess=$(mktemp -d); make_review_session "$sess"
+sess=$(mktemp -d)
+make_review_session "$sess"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered (dry-run)"
-grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md" && { echo "  PASS: body rendered"; PASS=$((PASS+1)); } || { echo "  FAIL: no body"; FAIL=$((FAIL+1)); }
+if grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md"; then
+	echo "  PASS: body rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no body"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess"
 
 # Test 2: --send, no existing comment -> create, superseded 0
 echo "Test 2: send creates a new comment"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh "$bin"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="" MOCK_NEWID="777" MOCK_LIST="" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "posted" "status is posted"
 assert_json_field "$result" "action" "created" "action is created"
-sup=$(echo "$result" | jq '.superseded'); [[ "$sup" -eq 0 ]] && { echo "  PASS: superseded=0"; PASS=$((PASS+1)); } || { echo "  FAIL: superseded=$sup"; FAIL=$((FAIL+1)); }
-grep -q 'issues/42/comments' "$bin/log" && grep -q -- '-f body=' "$bin/log" && { echo "  PASS: create POST issued"; PASS=$((PASS+1)); } || { echo "  FAIL: create not issued"; FAIL=$((FAIL+1)); }
+sup=$(echo "$result" | jq '.superseded')
+if [[ "$sup" -eq 0 ]]; then
+	echo "  PASS: superseded=0"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: superseded=$sup"
+	FAIL=$((FAIL + 1))
+fi
+if grep -q 'issues/42/comments' "$bin/log" && grep -q -- '-f body=' "$bin/log"; then
+	echo "  PASS: create POST issued"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: create not issued"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess" "$bin"
 
 # Test 3: --send, existing comment for this SHA, identical body -> unchanged
 echo "Test 3: send no-op when body unchanged"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh "$bin"
-bash "$SCRIPT" "$sess" >/dev/null 2>&1   # pre-render deterministic body
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1 # pre-render deterministic body
 cp "$sess/comment-body.md" "$bin/prior.md"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="900" MOCK_GETBODY="$bin/prior.md" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "unchanged" "action is unchanged"
-if ! grep -q -- '-X PATCH' "$bin/log"; then echo "  PASS: no PATCH for identical body"; PASS=$((PASS+1)); else echo "  FAIL: PATCH issued"; FAIL=$((FAIL+1)); fi
+if ! grep -q -- '-X PATCH' "$bin/log"; then
+	echo "  PASS: no PATCH for identical body"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: PATCH issued"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess" "$bin"
 
 # Test 4: --send, existing comment for this SHA, different body -> update
 echo "Test 4: send updates in place when body differs"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh "$bin"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
 echo "stale prior body" >"$bin/stale.md"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="901" MOCK_GETBODY="$bin/stale.md" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "updated" "action is updated"
-grep -q 'issues/comments/901' "$bin/log" && grep -q -- '-X PATCH' "$bin/log" && { echo "  PASS: PATCH 901"; PASS=$((PASS+1)); } || { echo "  FAIL: no PATCH 901"; FAIL=$((FAIL+1)); }
+if grep -q 'issues/comments/901' "$bin/log" && grep -q -- '-X PATCH' "$bin/log"; then
+	echo "  PASS: PATCH 901"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no PATCH 901"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess" "$bin"
 
 # Test 5: new commit + a prior comment on another SHA -> create + supersede
 echo "Test 5: new commit supersedes prior comment"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh "$bin"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
 echo "an older council comment" >"$bin/old.md"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="" MOCK_NEWID="778" \
 	MOCK_LIST="808\tNODE808\tdeadbeefdeadbeef\n" MOCK_GETBODY="$bin/old.md" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "created" "action is created"
-sup=$(echo "$result" | jq '.superseded'); [[ "$sup" -eq 1 ]] && { echo "  PASS: superseded=1"; PASS=$((PASS+1)); } || { echo "  FAIL: superseded=$sup"; FAIL=$((FAIL+1)); }
-if grep -q 'issues/comments/808' "$bin/log" && grep -q -- '-X PATCH' "$bin/log" && grep -q 'NODE808' "$bin/log"; then
-	echo "  PASS: prior comment updated + minimized"; PASS=$((PASS+1))
+sup=$(echo "$result" | jq '.superseded')
+if [[ "$sup" -eq 1 ]]; then
+	echo "  PASS: superseded=1"
+	PASS=$((PASS + 1))
 else
-	echo "  FAIL: supersede did not update+minimize"; FAIL=$((FAIL+1))
+	echo "  FAIL: superseded=$sup"
+	FAIL=$((FAIL + 1))
+fi
+if grep -q 'issues/comments/808' "$bin/log" && grep -q -- '-X PATCH' "$bin/log" && grep -q 'NODE808' "$bin/log"; then
+	echo "  PASS: prior comment updated + minimized"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: supersede did not update+minimize"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess" "$bin"
 
 # Test 6: find-by-sha lookup FAILS -> status error, nothing posted
 echo "Test 6: lookup failure reports error"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh "$bin"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND_RC=1 \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "error" "status is error on lookup failure"
@@ -171,30 +222,54 @@ rm -rf "$sess" "$bin"
 
 # Test 7: gh absent -> render-only degrade even with --send
 echo "Test 7: gh absent degrades to render-only"
-sess=$(mktemp -d); make_review_session "$sess"
+sess=$(mktemp -d)
+make_review_session "$sess"
 gbin=$(mktemp -d)
-for f in /usr/bin/*; do n=$(basename "$f"); [[ "$n" == "gh" ]] && continue; ln -s "$f" "$gbin/$n" 2>/dev/null || true; done
-result=$(PATH="$gbin" bash "$SCRIPT" "$sess" --send 2>/dev/null)
+nogh=$(path_without_command gh "$gbin")
+# The degrade is only under test if gh really is unreachable while the
+# interpreter still is. Exit 1 is the wanted "no such command"; 0 means the
+# mask missed gh and 127 means it took bash with it, which is the failure the
+# system-bindir mirror this replaced produced on macOS.
+rc=0
+PATH="$nogh" bash -c 'command -v gh' >/dev/null 2>&1 || rc=$?
+if [[ $rc -eq 1 ]]; then
+	echo "  PASS: gh masked from PATH, interpreter intact"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: masked PATH unusable (rc=$rc; 0=gh still found, 127=no bash)"
+	FAIL=$((FAIL + 1))
+fi
+result=$(PATH="$nogh" bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "degrades to rendered when gh missing"
 rm -rf "$sess" "$gbin"
 
 # Test 8: --send WITHOUT REVIEW_COUNCIL_ALLOW_POST refuses to post (hard gate)
 echo "Test 8: refuses to post without REVIEW_COUNCIL_ALLOW_POST"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh "$bin"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="" \
 	bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "confirm_required" "status is confirm_required without allow-post"
-if [[ ! -s "$bin/log" ]]; then echo "  PASS: gh never invoked"; PASS=$((PASS+1)); else echo "  FAIL: gh invoked despite gate"; FAIL=$((FAIL+1)); fi
+if [[ ! -s "$bin/log" ]]; then
+	echo "  PASS: gh never invoked"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: gh invoked despite gate"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess" "$bin"
 
 # Test 9: REAL find-by-sha filter selects the comment whose marker carries this
 # commit's SHA (body identical) -> unchanged. Exercises the actual
 # contains(marker) and contains(sha=...) selection + get-body over real jq.
 echo "Test 9: real find-by-sha filter matches this SHA (unchanged)"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh_realjq "$bin"
-bash "$SCRIPT" "$sess" >/dev/null 2>&1   # render the deterministic body (marker carries head sha)
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the deterministic body (marker carries head sha)
 rbody=$(cat "$sess/comment-body.md")
 jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", body:$b}]' >"$bin/comments.json"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
@@ -206,8 +281,10 @@ rm -rf "$sess" "$bin"
 # SHAs, excluding a non-council comment. Exercises the capture("sha=...") regex
 # and the marker filter, plus find-by-sha returning empty for an absent SHA.
 echo "Test 10: real list-council filter supersedes council only, excludes non-council"
-sess=$(mktemp -d); make_review_session "$sess"
-bin=$(mktemp -d); make_gh_realjq "$bin"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
 jq -n '[
   {id:808, node_id:"NODE808", body:"old council <!-- review-council:marker sha=deadbeefdeadbeef -->"},
   {id:700, node_id:"NODE700", body:"unrelated human comment"}
@@ -215,11 +292,20 @@ jq -n '[
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "created" "no sha match -> created"
-sup=$(echo "$result" | jq '.superseded'); [[ "$sup" -eq 1 ]] && { echo "  PASS: superseded=1 (council only)"; PASS=$((PASS+1)); } || { echo "  FAIL: superseded=$sup"; FAIL=$((FAIL+1)); }
-if grep -q 'issues/comments/808' "$bin/log" && grep -q 'NODE808' "$bin/log" && ! grep -q '700' "$bin/log"; then
-	echo "  PASS: council 808 superseded, non-council 700 untouched"; PASS=$((PASS+1))
+sup=$(echo "$result" | jq '.superseded')
+if [[ "$sup" -eq 1 ]]; then
+	echo "  PASS: superseded=1 (council only)"
+	PASS=$((PASS + 1))
 else
-	echo "  FAIL: supersede touched the wrong comments"; FAIL=$((FAIL+1))
+	echo "  FAIL: superseded=$sup"
+	FAIL=$((FAIL + 1))
+fi
+if grep -q 'issues/comments/808' "$bin/log" && grep -q 'NODE808' "$bin/log" && ! grep -q '700' "$bin/log"; then
+	echo "  PASS: council 808 superseded, non-council 700 untouched"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: supersede touched the wrong comments"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess" "$bin"
 
@@ -229,19 +315,24 @@ rm -rf "$sess" "$bin"
 # default. Confirms the relocation actually preserves GitHub UX on the edge
 # case, not just the parseable-origin normal case already covered above.
 echo "Test 11: missing origin still deep-links via GitHub poster default"
-sess=$(mktemp -d); make_review_session "$sess" github 42 ""
+sess=$(mktemp -d)
+make_review_session "$sess" github 42 ""
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered (dry-run, missing origin)"
 body=$(cat "$sess/comment-body.md")
 if grep -qF "https://github.com/acme/widgets/blob/" <<<"$body" && grep -qF "#L1" <<<"$body"; then
-	echo "  PASS: GitHub poster defaults host to github.com for missing origin"; PASS=$((PASS+1))
+	echo "  PASS: GitHub poster defaults host to github.com for missing origin"
+	PASS=$((PASS + 1))
 else
-	echo "  FAIL: GitHub poster did not default host for missing origin"; FAIL=$((FAIL+1))
+	echo "  FAIL: GitHub poster did not default host for missing origin"
+	FAIL=$((FAIL + 1))
 fi
 if grep -qF "https://github.com/acme/widgets/commit/" <<<"$body"; then
-	echo "  PASS: commit stamp also defaults to github.com"; PASS=$((PASS+1))
+	echo "  PASS: commit stamp also defaults to github.com"
+	PASS=$((PASS + 1))
 else
-	echo "  FAIL: commit stamp did not default to github.com"; FAIL=$((FAIL+1))
+	echo "  FAIL: commit stamp did not default to github.com"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
 

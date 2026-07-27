@@ -42,24 +42,6 @@ GH
 	chmod +x "$bindir/gh"
 }
 
-setup_repo() {
-	local work="$1"
-	(
-		cd "$work"
-		git init -q
-		git config user.email t@t.local
-		git config user.name t
-		git remote add origin https://github.com/acme/widgets.git
-		git checkout -q -b main
-		echo "package main" >a.go
-		git add a.go
-		git commit -qm init
-		git checkout -q -b feature-head
-		echo "// change" >>a.go
-		git commit -qam change
-	)
-}
-
 url="https://github.com/acme/widgets/pull/7"
 
 echo "Test 1: explicit --mode code on url scope captures a non-empty changeset"
@@ -114,7 +96,7 @@ make_fake_gh "$bindir"
 # checkout, so the follow-up `git fetch` fails fast and falls back to
 # diff-only review instead of hanging on a real clone.
 result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" \
-	timeout 40 bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
+	"$RC_TIMEOUT_BIN" 40 bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
 message=$(echo "$result" | jq -r '.message // empty')
 assert_json_field "$result" "status" "ok" "url scope from a non-git dir reaches status ok"
 if [[ "$message" =~ [Nn]ot\ a\ git\ repository ]]; then

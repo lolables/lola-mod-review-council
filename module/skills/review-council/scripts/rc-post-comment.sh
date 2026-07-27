@@ -26,7 +26,10 @@ if [[ -z "$session_dir" || ! -d "$session_dir" ]]; then
 fi
 
 tracking="$session_dir/tracking.md"
-[[ -f "$tracking" ]] || { json_output "skip" "tracking.md not found."; exit 0; }
+[[ -f "$tracking" ]] || {
+	json_output "skip" "tracking.md not found."
+	exit 0
+}
 
 pr=$(rc_parse_kv "$tracking" "PR")
 if [[ -z "$pr" || "$pr" == "none" ]]; then

@@ -134,10 +134,10 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 
 ## Rationalization Table
 
-| Excuse                                                         | Reality                                                                                                                                                                                                          |
-|----------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Documentation impact is obvious from spec"                    | Obvious to human reviewer, invisible to LLM implementer. If spec does not say "update README section X," LLM will not update it.                                                                                |
-| "Content opportunities can be identified after implementation" | By then context is cold. Team that wrote feature is best team to identify what is blog-worthy or tutorial-worthy, and that identification belongs in spec.                                                       |
+| Excuse                                                         | Reality                                                                                                                                                                                                           |
+|----------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "Documentation impact is obvious from spec"                    | Obvious to human reviewer, invisible to LLM implementer. If spec does not say "update README section X," LLM will not update it.                                                                                  |
+| "Content opportunities can be identified after implementation" | By then context is cold. Team that wrote feature is best team to identify what is blog-worthy or tutorial-worthy, and that identification belongs in spec.                                                        |
 | "Documentation conventions don't apply to specs"               | Specs that plan documentation deliverables should follow same conventions those deliverables will use. Spec planning README section that contradicts existing README structure will produce contradictory README. |
 
 ## Output

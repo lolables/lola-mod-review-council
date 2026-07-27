@@ -3,9 +3,10 @@
 # Source this file; do not execute it directly.
 #
 # Provides:
-#   - Bash 4+ and jq prerequisite checks (exits gracefully if missing)
+#   - Bash 4+, jq, and GNU timeout prerequisite checks (exits gracefully if missing)
 #   - json_output()  — structured JSON output helper
 #   - build_repo_flag() — constructs --repo flag for gh/glab CLI
+#   - rc_timeout() — runs a command under the resolved GNU timeout binary
 
 # Guard: skip if already loaded
 [[ -n "${_RC_LIB_LOADED:-}" ]] && return 0
@@ -18,6 +19,17 @@ fi
 
 if ! command -v jq >/dev/null 2>&1; then
 	echo '{"status":"skip","message":"jq is required but not installed. Install it: apt-get install jq | brew install jq | dnf install jq"}'
+	exit 0
+fi
+
+# GNU timeout bounds every forge call, so a hung `gh`/`git` cannot stall a
+# review indefinitely. macOS ships no `timeout` at all, and Homebrew's coreutils
+# formula installs the GNU tools under a `g` prefix — the unprefixed names live
+# in an un-PATHed libexec/gnubin. Accept either name so `brew install coreutils`
+# is sufficient without PATH surgery.
+_RC_TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+if [[ -z "$_RC_TIMEOUT_BIN" ]]; then
+	echo '{"status":"skip","message":"GNU timeout is required but not installed. Install it: brew install coreutils | apt-get install coreutils | dnf install coreutils"}'
 	exit 0
 fi
 
@@ -42,6 +54,15 @@ build_repo_flag() {
 	if [[ -n "$owner" ]] && [[ -n "$repo" ]]; then
 		echo "--repo ${owner}/${repo}"
 	fi
+}
+
+# Run a command under the resolved GNU timeout binary. Exit status is the
+# command's own, or 124 when the deadline is hit.
+# Usage: rc_timeout <seconds> <command> [args...]
+rc_timeout() {
+	local secs="$1"
+	shift
+	"$_RC_TIMEOUT_BIN" "$secs" "$@"
 }
 
 # Read the value of a "- Key: value" or "Key: value" line from a file.

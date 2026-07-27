@@ -37,10 +37,10 @@ API mechanics — while everything else is shared.
 The renderer delegates every forge-specific URL to two functions the per-forge
 script defines before calling in:
 
-| Hook | Inputs | Returns | GitHub |
-|------|--------|---------|--------|
-| `rc_url_file` | `forge_web sha file line` | file deep-link URL, or empty | `${web}/blob/${sha}/${file}#L${line}` |
-| `rc_url_commit` | `forge_web sha` | commit URL, or empty | `${web}/commit/${sha}` |
+| Hook            | Inputs                    | Returns                      | GitHub                                |
+|-----------------|---------------------------|------------------------------|---------------------------------------|
+| `rc_url_file`   | `forge_web sha file line` | file deep-link URL, or empty | `${web}/blob/${sha}/${file}#L${line}` |
+| `rc_url_commit` | `forge_web sha`           | commit URL, or empty         | `${web}/commit/${sha}`                |
 
 When a hook is undefined (standalone fallback) or returns empty (e.g. no head
 SHA), the renderer emits a plain `` `code span` `` / plain short-sha. A future

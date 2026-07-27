@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Fail loudly: report the line of any unhandled command failure to stderr so a
 # pipefail exit is never silent (stdout is reserved for the rendered report).
+# shellcheck disable=SC2329 # invoked indirectly by the ERR trap below.
 rc_on_err() { echo "rc-error: ${3##*/}:${2}: command failed (exit ${1}) under 'set -o pipefail'" >&2; }
 set -o errtrace
 trap 'rc_on_err "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
@@ -176,11 +177,13 @@ echo "|-------|---------|----------|"
 # listed above.
 verdict_map="$session_dir/verdicts/findings.json"
 if [[ -f "$verdict_map" ]]; then
+	agent_names=$(jq -r '.verdicts | keys[]' "$verdict_map" 2>/dev/null || true)
 	while IFS= read -r agent_name; do
+		[[ -n "$agent_name" ]] || continue
 		verdict=$(jq -r --arg a "$agent_name" '.verdicts[$a] // "UNKNOWN"' "$verdict_map")
 		finding_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent==$a)] | length' "$verdict_map")
 		echo "| $agent_name | $verdict | $finding_count |"
-	done < <(jq -r '.verdicts | keys[]' "$verdict_map" 2>/dev/null)
+	done <<<"$agent_names"
 fi
 
 echo ""

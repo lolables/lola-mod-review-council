@@ -124,20 +124,20 @@ When a spec, design doc, or PR description cites an external standard (OSPS Base
 
 ## Severity Calibration
 
-| Condition                                                        | Severity |
-|------------------------------------------------------------------|----------|
-| Implementation contradicts spec acceptance criteria              | CRITICAL |
-| Constitution principle violated without justification            | CRITICAL |
-| Unauthorized weakening of gatekeeping value                      | HIGH     |
+| Condition                                                         | Severity |
+|-------------------------------------------------------------------|----------|
+| Implementation contradicts spec acceptance criteria               | CRITICAL |
+| Constitution principle violated without justification             | CRITICAL |
+| Unauthorized weakening of gatekeeping value                       | HIGH     |
 | Scope creep adding unrequested functionality with complexity cost | HIGH     |
-| Acceptance criterion from spec with no implementation            | HIGH     |
-| Cross-component contract break without consumer updates          | HIGH     |
-| Established structural pattern broken without documented reason  | HIGH     |
-| Duplicated business logic across modules (maintenance waste)     | MEDIUM   |
-| Minor scope addition (gold plating) with low complexity cost     | MEDIUM   |
-| Stale cross-reference or metadata inconsistency                  | MEDIUM   |
-| Trivial code duplication within single module                    | LOW      |
-| Minor wording improvement or optional cross-reference            | LOW      |
+| Acceptance criterion from spec with no implementation             | HIGH     |
+| Cross-component contract break without consumer updates           | HIGH     |
+| Established structural pattern broken without documented reason   | HIGH     |
+| Duplicated business logic across modules (maintenance waste)      | MEDIUM   |
+| Minor scope addition (gold plating) with low complexity cost      | MEDIUM   |
+| Stale cross-reference or metadata inconsistency                   | MEDIUM   |
+| Trivial code duplication within single module                     | LOW      |
+| Minor wording improvement or optional cross-reference             | LOW      |
 
 ## Out of Scope
 
@@ -165,13 +165,13 @@ All mean: go back to Phase 1 and re-read files.
 
 ## Rationalization Table
 
-| Excuse                                                  | Reality                                                                                                                                                                                  |
-|---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Spec is vague, so any implementation satisfies it"     | Vague specs still have implicit constraints from project patterns, constitution, stated problem. Implementation drifting from problem being solved fails regardless of spec precision.   |
-| "This is different way to do same thing"                | If codebase uses pattern X consistently and change introduces pattern Y without justification, that is structural drift. Consistency has value.                                         |
-| "We'll clean up waste later"                            | Orphaned code and unused dependencies compound. 'Later' is when someone copies orphaned pattern into new code.                                                                          |
-| "Constitution principle is aspirational"                | Constitutional principles are constraints, not suggestions. Relaxing requires documented authorization, not silent erosion.                                                              |
-| "It's only small scope addition"                        | Small additions accumulate. Each sets precedent for next. Gold plating is scope creep in nicer jacket.                                                                                   |
+| Excuse                                              | Reality                                                                                                                                                                                |
+|-----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "Spec is vague, so any implementation satisfies it" | Vague specs still have implicit constraints from project patterns, constitution, stated problem. Implementation drifting from problem being solved fails regardless of spec precision. |
+| "This is different way to do same thing"            | If codebase uses pattern X consistently and change introduces pattern Y without justification, that is structural drift. Consistency has value.                                        |
+| "We'll clean up waste later"                        | Orphaned code and unused dependencies compound. 'Later' is when someone copies orphaned pattern into new code.                                                                         |
+| "Constitution principle is aspirational"            | Constitutional principles are constraints, not suggestions. Relaxing requires documented authorization, not silent erosion.                                                            |
+| "It's only small scope addition"                    | Small additions accumulate. Each sets precedent for next. Gold plating is scope creep in nicer jacket.                                                                                 |
 
 ## Output
 

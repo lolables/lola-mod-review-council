@@ -3,13 +3,13 @@
 Each stage is a script emitting a JSON `status`. The orchestrator dispatches on
 these tokens. This is the machine-readable spine of the state diagram in SKILL.md.
 
-| State | Script | Emits (`status`) | On status -> next |
-|-------|--------|------------------|-------------------|
-| Prepare | `rc-prepare.sh` | `ok` \| `skip` \| `empty` | `ok`->Delegate; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
-| Extract | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure) |
-| Verify | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do` | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty) |
-| Render (comment) | `rc-render-comment.sh` | `rendered` \| `skip` | ->post/Report |
-| Render (report) | `rc-render-report.sh` | (markdown to stdout) | ->Report |
+| State            | Script                  | Emits (`status`)                                     | On status -> next                                                                                                                                           |
+|------------------|-------------------------|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Prepare          | `rc-prepare.sh`         | `ok` \| `skip` \| `empty`                            | `ok`->Delegate; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
+| Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure)                                                       |
+| Verify           | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do`                              | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty)                                                          |
+| Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip`                                 | ->post/Report                                                                                                                                               |
+| Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report                                                                                                                                                    |
 
 Effort gates (quick skips Correction/Calibrate/Validate/Narrative) and the
 orchestrator-run states (Correction, Calibrate, Validate, Report) are LLM

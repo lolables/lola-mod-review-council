@@ -232,13 +232,13 @@ Curator identifies **what** needs documenting and files tracking issues. Curator
 
 ## Graceful Degradation
 
-| Condition                                              | Behavior                                                                                                               |
-|--------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|
-| `gh` not available                                     | Skip duplicate checking. Include full `gh issue create` command in finding's recommendation as usual.                  |
-| Docs repo inaccessible                                 | Skip duplicate checking. Include full `gh issue create` command in finding's recommendation for manual filing.         |
-| `Docs repo` value is invalid (not `owner/repo` format) | Report documentation gaps as findings. Do not invoke bash. Note misconfiguration.                                      |
-| Knowledge layer not available                          | Skip Prior Learnings (see reviewer-protocol.md), proceed with standard review.                                         |
-| No content pack loaded                                 | Skip content quality checks on issue descriptions. Recommend issues with best-effort descriptions.                     |
+| Condition                                              | Behavior                                                                                                       |
+|--------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| `gh` not available                                     | Skip duplicate checking. Include full `gh issue create` command in finding's recommendation as usual.          |
+| Docs repo inaccessible                                 | Skip duplicate checking. Include full `gh issue create` command in finding's recommendation for manual filing. |
+| `Docs repo` value is invalid (not `owner/repo` format) | Report documentation gaps as findings. Do not invoke bash. Note misconfiguration.                              |
+| Knowledge layer not available                          | Skip Prior Learnings (see reviewer-protocol.md), proceed with standard review.                                 |
+| No content pack loaded                                 | Skip content quality checks on issue descriptions. Recommend issues with best-effort descriptions.             |
 
 ## Red Flags — STOP
 
@@ -256,12 +256,12 @@ All of these mean: go back to Phase 1 and re-read files.
 
 ## Rationalization Table
 
-| Excuse                                                  | Reality                                                                                                                                                                  |
-|---------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Code is self-documenting"                              | Code documents what it does, not how to use it. Users need installation steps, CLI examples, and workflow guidance code alone does not provide.                          |
-| "Change is too small to need documentation"             | If change modifies user-facing behavior (flag name, default value, error message), users need to know. Size is not threshold — user impact is.                           |
-| "We'll document it later"                               | Undocumented changes accumulate. Users discover missing docs through failed workflows and support requests. Documentation alongside change costs less than retrofit.     |
-| "README convention doesn't matter for this section"     | Established conventions exist because users develop navigation expectations. Breaking section order or format makes existing users stumble.                              |
+| Excuse                                              | Reality                                                                                                                                                              |
+|-----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "Code is self-documenting"                          | Code documents what it does, not how to use it. Users need installation steps, CLI examples, and workflow guidance code alone does not provide.                      |
+| "Change is too small to need documentation"         | If change modifies user-facing behavior (flag name, default value, error message), users need to know. Size is not threshold — user impact is.                       |
+| "We'll document it later"                           | Undocumented changes accumulate. Users discover missing docs through failed workflows and support requests. Documentation alongside change costs less than retrofit. |
+| "README convention doesn't matter for this section" | Established conventions exist because users develop navigation expectations. Breaking section order or format makes existing users stumble.                          |
 
 ## Output
 

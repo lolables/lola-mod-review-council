@@ -50,7 +50,7 @@ project_id_of() {
 # Hash a directory's resolved $PWD through the same pipeline rc-prepare.sh
 # uses for its pwd-based project_id, to prove url-scope no longer produces it.
 pwd_project_id() {
-	(cd "$1" && pwd) | (sha256sum 2>/dev/null || shasum -a 256 2>/dev/null || md5sum 2>/dev/null) | head -c 12
+	(cd "$1" && pwd) | (sha256sum 2>/dev/null || shasum -a 256 2>/dev/null || md5sum 2>/dev/null) | head -c 12 # DevSkim: ignore DS126858
 }
 
 url="https://github.com/acme/widgets/pull/7"
@@ -58,7 +58,7 @@ url="https://github.com/acme/widgets/pull/7"
 run_url_scope() {
 	local launch_dir="$1" bindir="$2"
 	(cd "$launch_dir" && PATH="$bindir:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" \
-		timeout 40 bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
+		"$RC_TIMEOUT_BIN" 40 bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
 }
 
 echo "Test 1: two url-scope runs of the same PR from different non-git dirs"
@@ -92,7 +92,7 @@ else
 
 	echo ""
 	echo "Test 2: url-scope project_id is derived from forge owner/repo, not \$PWD"
-	expected_pid=$(echo "acme/widgets" | (sha256sum 2>/dev/null || shasum -a 256 2>/dev/null || md5sum 2>/dev/null) | head -c 12)
+	expected_pid=$(echo "acme/widgets" | (sha256sum 2>/dev/null || shasum -a 256 2>/dev/null || md5sum 2>/dev/null) | head -c 12) # DevSkim: ignore DS126858
 	pwd_pid_a=$(pwd_project_id "$launch_a")
 	pwd_pid_b=$(pwd_project_id "$launch_b")
 

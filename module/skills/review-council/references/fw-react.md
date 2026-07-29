@@ -19,21 +19,21 @@ Additive framework pack for React. Load alongside `lang-typescript.md`.
 
 ## Severity Calibration
 
-| Pattern                                                          | Severity | Rationale                                                |
-|------------------------------------------------------------------|----------|----------------------------------------------------------|
-| Missing error boundary (none in component tree)                  | HIGH     | Crash propagation; one child error unmounts entire app   |
-| God component (>200 lines or >5 state hooks, mixed concerns)     | HIGH     | Architectural debt compounds as features added           |
-| Prop drilling (3+ levels, unused by intermediaries)              | MEDIUM   | Maintainability; refactor with Context when stable       |
-| Direct DOM manipulation for styling via useRef                   | MEDIUM   | Correctness risk for SSR/hydration; bypasses reconciler  |
-| Missing memoization on expensive render path                     | LOW      | Performance suggestion, not defect                       |
-| Inline function props without performance impact                 | LOW      | Style preference unless proven re-render bottleneck      |
+| Pattern                                                      | Severity | Rationale                                               |
+|--------------------------------------------------------------|----------|---------------------------------------------------------|
+| Missing error boundary (none in component tree)              | HIGH     | Crash propagation; one child error unmounts entire app  |
+| God component (>200 lines or >5 state hooks, mixed concerns) | HIGH     | Architectural debt compounds as features added          |
+| Prop drilling (3+ levels, unused by intermediaries)          | MEDIUM   | Maintainability; refactor with Context when stable      |
+| Direct DOM manipulation for styling via useRef               | MEDIUM   | Correctness risk for SSR/hydration; bypasses reconciler |
+| Missing memoization on expensive render path                 | LOW      | Performance suggestion, not defect                      |
+| Inline function props without performance impact             | LOW      | Style preference unless proven re-render bottleneck     |
 
 ## Calibration Notes
 
 > **God component detection**: Thresholds (200 lines, 5 state hooks) trigger inspection, not automatic findings. 250-line component doing one thing well (e.g., complex form with validation) may be fine. 150-line component mixing auth state, data fetching, routing, and presentation is god component regardless of size. Look for mixed concerns, not just counts.
-
+>
 > **Prop drilling vs. composition**: Not all multi-level prop passing is drilling. If each intermediate component uses prop (e.g., `theme` prop for styling at every level), that is composition. Drilling is when intermediaries pass props through without using them.
-
+>
 > **Error boundaries and third-party components**: Error boundaries only catch errors in React render cycle (render, lifecycle methods, constructors). They miss event handlers, async code, SSR. Do not flag missing error boundaries for event handler failures; use standard try/catch there.
 
 ## Custom Rules

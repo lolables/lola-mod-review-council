@@ -161,16 +161,19 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 
 ## Rationalization Table
 
-| Excuse                                                               | Reality                                                                                                                                                                                       |
-|----------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Operational concerns are implementation details"                    | LLM implementing from this spec will build happy path and ignore deployment, configuration, and failure handling entirely. Operational requirements must be in spec or they will not exist.    |
-| "Performance requirements will be determined during implementation"  | Vague performance requirements ("must be fast") let LLMs declare victory with any implementation. Measurable targets are only kind that produce measurable results.                           |
-| "Migration paths are only needed for major versions"                 | Users experience breaking changes regardless of version numbering. If config format changes, existing users need documented path forward.                                                     |
-| "The dependency is well-maintained, we don't need fallback behavior" | Well-maintained dependencies still have outages, breaking releases, and deprecation cycles. Failure mode documentation is about resilience, not distrust.                                     |
+| Excuse                                                               | Reality                                                                                                                                                                                     |
+|----------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "Operational concerns are implementation details"                    | LLM implementing from this spec will build happy path and ignore deployment, configuration, and failure handling entirely. Operational requirements must be in spec or they will not exist. |
+| "Performance requirements will be determined during implementation"  | Vague performance requirements ("must be fast") let LLMs declare victory with any implementation. Measurable targets are only kind that produce measurable results.                         |
+| "Migration paths are only needed for major versions"                 | Users experience breaking changes regardless of version numbering. If config format changes, existing users need documented path forward.                                                   |
+| "The dependency is well-maintained, we don't need fallback behavior" | Well-maintained dependencies still have outages, breaking releases, and deprecation cycles. Failure mode documentation is about resilience, not distrust.                                   |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

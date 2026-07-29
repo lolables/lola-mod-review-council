@@ -1,0 +1,23 @@
+{
+  "verified": [
+    {
+      "severity": "HIGH",
+      "file": "internal/auth/token.go",
+      "line": 7,
+      "evidence": "const adminToken = \"sk-admin-9f3c2b7a1e\"",
+      "description": "Admin authentication token is hardcoded in source rather than loaded from a secret store or environment variable.",
+      "recommendation": "Load adminToken from an environment variable or secret manager at startup; never commit credentials to source.",
+      "agent": "divisor-adversary-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {}
+    }
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 1,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-adversary-code": "REQUEST CHANGES"
+  }
+}

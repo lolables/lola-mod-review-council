@@ -20,6 +20,14 @@ For discovered agents not in this table, use generic review prompt matching curr
 
 ## Dispatch Mechanism
 
+The allowed identifiers are **exactly** the entries of the discovered `agents`
+array from `rc-prepare.sh` — nothing else. A similarly named agent that is
+visible or dispatchable in the host but absent from that array MUST NOT be
+dispatched. In particular, an un-suffixed legacy `divisor-*` file
+(`divisor-guard`, not `divisor-guard-code`) left in a host agents directory by
+an older install is stale: discovery skips it by design, and dispatching it
+runs an unknown-version persona. When the array is empty, dispatch nothing.
+
 Use discovered agent filename **minus `.md` extension** as subagent identifier (e.g., dispatch to `divisor-adversary-code`, not generic agent type). Ensures host loads persona definition — calibration rules, severity thresholds, grounding requirements — as system context.
 
 **Do NOT dispatch reviewers as generic agents with inline prompt.** Persona files contain critical calibration not reliably reproduced inline.
@@ -39,7 +47,7 @@ When orchestrating tool supports model selection for subagents, use these tiers:
 | Tier         | Reasoning Demand                        | Personas                  | Temperature |
 |--------------|-----------------------------------------|---------------------------|-------------|
 | **Capable**  | Deep judgment, security/intent analysis | Adversary, Guard          | 0.1         |
-| **Standard** | Checklist-driven with moderate judgment | Tester, Operator, Curator | 0.1 – 0.2  |
+| **Standard** | Checklist-driven with moderate judgment | Tester, Operator, Curator | 0.1 – 0.2   |
 
 Temperature controls output determinism (lower = more focused). Set if
 hosting tool supports it; omit if not — agents produce usable output at
@@ -50,21 +58,22 @@ If tool lacks model selection, all agents run on default model. Empirical perfor
 
 ## Recording Dispatched Models
 
-As you dispatch each reviewer, append a line to
-`${session_dir}/models.txt` recording which model ran it, so the
+As you dispatch each reviewer, append an entry to
+`${session_dir}/models.json` recording which model ran it, so the
 report's provenance header (see `phases/report.md` — "Provenance
-Disclosure") names it. Format: one `{agent-name}: {model}` per line.
+Disclosure") names it. Format: a JSON array of
+`{"role": "{agent-name}", "id": "{model}"}` objects.
 
 - Prefer concrete model ID the host exposes (e.g.,
-  `divisor-adversary-code: claude-sonnet-5`).
+  `{"role": "divisor-adversary-code", "id": "claude-sonnet-5"}`).
 - No concrete ID: record tier from table above instead (e.g.,
-  `divisor-adversary-code: Capable tier`). Guarantees at least tier
-  always disclosed.
+  `{"role": "divisor-adversary-code", "id": "Capable tier"}`).
+  Guarantees at least tier always disclosed.
 - Record each agent once. Deep mode dispatches same agent per
-  subsystem — do not append duplicate line each round (renderer
-  dedupes defensively, but keep file clean).
+  subsystem — do not append a duplicate entry each round (renderers
+  dedupe defensively, but keep the file clean).
 - Do NOT invent model IDs. Nothing known about the model: omit the
-  agent's line.
+  agent's entry.
 
 Coordinator and validation-gate models recorded separately (see
 `phases/report.md` — "Provenance Disclosure"); this step covers
@@ -124,22 +133,22 @@ For each discovered agent, add focus area from Persona Roles table (Code Review 
 
 If language is `unknown` or no matching row exists, skip this section. Rely on generic Persona Roles focus areas.
 
-| Language/Framework   | Persona   | Detection Hints                                                                                                                                                                            |
-|----------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Go**               | Adversary | Check for `sql.Query`/`sql.Exec` with string interpolation (SQL injection); `exec.Command` with user-controlled arguments (command injection); hardcoded credentials in source             |
-| **Go**               | Guard     | Check for interface pollution (interfaces with >5 methods or single-implementation interfaces); package-level mutable globals; circular package dependencies                               |
+| Language/Framework   | Persona   | Detection Hints                                                                                                                                                                                                                                                                                                                                                             |
+|----------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Go**               | Adversary | Check for `sql.Query`/`sql.Exec` with string interpolation (SQL injection); `exec.Command` with user-controlled arguments (command injection); hardcoded credentials in source                                                                                                                                                                                              |
+| **Go**               | Guard     | Check for interface pollution (interfaces with >5 methods or single-implementation interfaces); package-level mutable globals; circular package dependencies                                                                                                                                                                                                                |
 | **Go**               | Tester    | Check for missing error-path tests; table-driven tests that only check the happy path; test helpers that swallow errors. Check for integration tests that assert only `require.NoError` + `require.NotNil` (or `assert.NoError` + `assert.NotNil`) without verifying response struct fields — compare assertion depth across tests in the same file to find inconsistencies |
-| **TypeScript/React** | Guard     | Check for prop drilling (props passed through 3+ component levels unchanged); god components (>200 lines or >5 state hooks with mixed concerns); circular module imports                   |
-| **TypeScript/React** | Adversary | Check for `dangerouslySetInnerHTML` with unsanitized input; missing error boundary components (crash propagation risk); inline event handlers with user data; missing CSRF tokens on forms |
-| **TypeScript/React** | Tester    | Check for tests that mock everything (no integration coverage); missing accessibility attribute tests                                                                                      |
-| **TypeScript**       | Guard     | Check for `any` type usage; missing strict mode; barrel export cycles                                                                                                                      |
-| **Python**           | Adversary | Check for `eval()`/`exec()` with user input; `pickle.loads()` on untrusted data; `subprocess.call(shell=True)` with string formatting; hardcoded secrets                                   |
-| **Python**           | Guard     | Check for circular imports; mutable default arguments; missing `__init__.py` exports; god modules (>500 lines)                                                                             |
-| **Python**           | Tester    | Check for `assert True` tautologies; broad `except: pass` in test setup; missing edge-case tests for off-by-one errors                                                                     |
-| **Rust**             | Adversary | Check for `unsafe` blocks without safety comments; unchecked `.unwrap()` on user input; raw pointer arithmetic                                                                             |
-| **Rust**             | Guard     | Check for unnecessary `clone()` calls; overly broad trait bounds; modules with >500 lines                                                                                                  |
-| **Java**             | Adversary | Check for SQL injection via string concatenation in JDBC; deserialization of untrusted data; hardcoded credentials                                                                         |
-| **Java**             | Guard     | Check for god classes (>500 lines); deep inheritance hierarchies (>3 levels); package-level circular dependencies                                                                          |
+| **TypeScript/React** | Guard     | Check for prop drilling (props passed through 3+ component levels unchanged); god components (>200 lines or >5 state hooks with mixed concerns); circular module imports                                                                                                                                                                                                    |
+| **TypeScript/React** | Adversary | Check for `dangerouslySetInnerHTML` with unsanitized input; missing error boundary components (crash propagation risk); inline event handlers with user data; missing CSRF tokens on forms                                                                                                                                                                                  |
+| **TypeScript/React** | Tester    | Check for tests that mock everything (no integration coverage); missing accessibility attribute tests                                                                                                                                                                                                                                                                       |
+| **TypeScript**       | Guard     | Check for `any` type usage; missing strict mode; barrel export cycles                                                                                                                                                                                                                                                                                                       |
+| **Python**           | Adversary | Check for `eval()`/`exec()` with user input; `pickle.loads()` on untrusted data; `subprocess.call(shell=True)` with string formatting; hardcoded secrets                                                                                                                                                                                                                    |
+| **Python**           | Guard     | Check for circular imports; mutable default arguments; missing `__init__.py` exports; god modules (>500 lines)                                                                                                                                                                                                                                                              |
+| **Python**           | Tester    | Check for `assert True` tautologies; broad `except: pass` in test setup; missing edge-case tests for off-by-one errors                                                                                                                                                                                                                                                      |
+| **Rust**             | Adversary | Check for `unsafe` blocks without safety comments; unchecked `.unwrap()` on user input; raw pointer arithmetic                                                                                                                                                                                                                                                              |
+| **Rust**             | Guard     | Check for unnecessary `clone()` calls; overly broad trait bounds; modules with >500 lines                                                                                                                                                                                                                                                                                   |
+| **Java**             | Adversary | Check for SQL injection via string concatenation in JDBC; deserialization of untrusted data; hardcoded credentials                                                                                                                                                                                                                                                          |
+| **Java**             | Guard     | Check for god classes (>500 lines); deep inheritance hierarchies (>3 levels); package-level circular dependencies                                                                                                                                                                                                                                                           |
 
 Hints are additive — supplement, not replace, generic focus area. Do NOT frame as questions (e.g., "What happens if..."). Frame as check instructions (e.g., "Check for X pattern").
 
@@ -203,7 +212,7 @@ round per subsystem:
    c. Replace the scope framing sentence with:
       > "The following files belong to the **{subsystem name}** subsystem ({subsystem description}):"
    d. Dispatch all 5 personas for this subsystem in parallel.
-   e. Write verdicts to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md`.
+   e. Write each agent's raw output to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md`.
       Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
 3. After all subsystems complete, proceed to verification.
 
@@ -264,27 +273,41 @@ Instruct agents to review listed spec artifacts (not code), plus project context
 
 ## Verdict Collection
 
-**CRITICAL: Write each agent's RAW output verbatim** to
-`${session_dir}/verdicts/{agent-name}.md`. Do NOT summarize,
-paraphrase, reformat, or editorialize agent's response.
-Downstream verification script (`rc-verify-evidence.sh`)
-parses finding structure from these files — specifically
-`### [SEVERITY] Title`, `**File**:`, and `**Evidence**:` fields.
-Rewriting or summarizing output means parser cannot extract
-findings, verification pipeline silently degrades to rubber
-stamp with zero findings.
+Write each agent's RAW output verbatim to `${session_dir}/verdicts/{agent-name}.raw.md`
+(deep mode: `${session_dir}/verdicts/{subsystem}/{agent-name}.raw.md`). Do NOT
+summarize or reformat.
 
-Copy agent's return value as-is. If it includes
-`Files read:` attestation header, finding blocks, and verdict
-line, all must appear in verdict file unchanged.
+Then run `scripts/rc-extract-verdict.sh ${session_dir}` to extract and
+schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.json`.
+
+- On `status: "ok"`, proceed to Verification.
+- On `status: "extract_error"`, re-dispatch each `invalid[]` entry ONCE, keyed
+  on its **(agent, path) pair** — not on agent name alone. In deep mode the
+  same agent runs per subsystem, so the same agent name can appear multiple
+  times in `invalid[]` with different `path` values (e.g.
+  `verdicts/auth/divisor-adversary-code.raw.md` vs.
+  `verdicts/api/divisor-adversary-code.raw.md`); each is a distinct failure
+  in a distinct subsystem and must be re-dispatched separately, re-supplying
+  that subsystem's context. Use `path` to identify which `{agent}.raw.md` to
+  correct. For each entry, re-dispatch with the `remediation` text verbatim,
+  plus, when present, that entry's `invalid[].detail` (set for
+  `SCHEMA_INVALID` — the validator's precise error, so the agent can fix the
+  exact field). For `NO_JSON_BLOCK` entries (no `detail`), tell the agent it
+  emitted no fenced ```json block at all. Instruct it to re-emit only the JSON
+  block, then re-run the extractor. If an entry still fails, log it loudly in
+  `verification.txt` (including its `path`) and surface it in the report —
+  never a silent zero.
+- On `status: "nothing_to_do"`, the whole session produced zero verdict blocks
+  (no agent wrote a `.raw.md` at all) — this is the "all agents fail" case
+  below, not a per-agent signal: stop and report a configuration issue.
 
 **Deep mode paths:** When effort is `deep`, write verdicts to
-`${session_dir}/verdicts/{subsystem-name}/{agent-name}.md` instead
-of `${session_dir}/verdicts/{agent-name}.md`. Subsystem name
+`${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md` instead
+of `${session_dir}/verdicts/{agent-name}.raw.md`. Subsystem name
 matches `name` field from `subsystems.json`.
 
 **Handling agent failures**:
-- Agent fails to return valid verdict (neither APPROVE nor REQUEST CHANGES, or crashes/times out): treat as **warning**, continue collecting from remaining agents.
-- Agent returns REQUEST CHANGES with zero findings: flag as malformed response.
+- Agent crashes, times out, or never produces a `.raw.md` file: treat as **warning**, continue collecting from remaining agents.
+- Agent returns `verdict: "REQUEST CHANGES"` with an empty `findings` array: flag as malformed response.
 - **All** agents fail: **stop immediately** and report:
   > "All reviewer agents failed to return a verdict. This may indicate a configuration issue."

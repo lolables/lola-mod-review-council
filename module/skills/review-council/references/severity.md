@@ -45,9 +45,9 @@ Minor style or docs improvement. Non-blocking.
 
 All findings reported to user. Nothing fixed automatically, regardless of severity. User decides which findings to address.
 
-| Severity | Action      | Rationale                              |
-|----------|-------------|----------------------------------------|
-| LOW      | Report only | User decides if cosmetic fix wanted    |
-| MEDIUM   | Report only | User decides on quality improvements   |
-| HIGH     | Report only | Needs human judgment on intent/scope   |
-| CRITICAL | Report only | May indicate design issue              |
+| Severity | Action      | Rationale                            |
+|----------|-------------|--------------------------------------|
+| LOW      | Report only | User decides if cosmetic fix wanted  |
+| MEDIUM   | Report only | User decides on quality improvements |
+| HIGH     | Report only | Needs human judgment on intent/scope |
+| CRITICAL | Report only | May indicate design issue            |

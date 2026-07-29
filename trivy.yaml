@@ -5,5 +5,11 @@ scan:
   # .lola-eval/ contains eval test fixtures with deliberately planted security
   # and misconfiguration flaws (missing USER/HEALTHCHECK in Dockerfiles, etc.).
   # These are scored by the eval harness — fixing them breaks the tests.
+  # .lola/ is the lola package manager's install tree: third-party modules
+  # (and a stale copy of this one) fetched by `lola mod update`. It is
+  # gitignored and not this repository's source — any edit here is destroyed on
+  # the next update, so scanning it only produces findings we cannot action.
+  # Vulnerabilities it reports must be fixed in the upstream module instead.
   skip-dirs:
     - ".lola-eval"
+    - ".lola"

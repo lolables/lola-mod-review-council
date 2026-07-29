@@ -38,3 +38,23 @@ ADDITIONAL_EXCLUDED_DIRECTORIES:
 COPYPASTE_JSCPD_ARGUMENTS:
   - "--ignore"
   - "**/.git/**,**/.lola-eval/**,**/module/agents/**,**/module/skills/**,**/module/references/**"
+
+# ---------------------------------------------------------------------------
+# devskim (security pattern detection)
+# ---------------------------------------------------------------------------
+# devskim runs in project CLI lint mode (`devskim analyze --source-code .`),
+# so ADDITIONAL_EXCLUDED_DIRECTORIES above does not reach it — the same reason
+# trivy needs its own exclusion in trivy.yaml.
+#
+# The eval fixtures carry deliberately planted defects that the harness scores
+# reviewers on finding; DS176209 fires on the `// TODO: validate token` stub in
+# case-018's auth middleware, which is the planted bug itself. Removing the
+# comment would break the test case.
+#
+# -g replaces devskim's built-in default (**/.git/** **/bin/**) rather than
+# appending, so both defaults are repeated here. The exclusion is passed as an
+# argument rather than added to .devskim.json because that file is overlaid
+# into the workspace by the runner and is not tracked in this repo.
+REPOSITORY_DEVSKIM_ARGUMENTS:
+  - "-g"
+  - "**/.git/**,**/bin/**,**/.lola-eval/**"

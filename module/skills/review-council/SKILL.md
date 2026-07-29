@@ -55,16 +55,26 @@ arrows.
 
 ## Path Anchoring
 
-Set `SKILL_DIR` to directory containing this file.
-Derive all other paths from `SKILL_DIR`:
+Set `SKILL_DIR` to directory containing this file. Derive
+`SCRIPTS_DIR`, `PHASES_DIR`, and `REFERENCES_DIR` from `SKILL_DIR` —
+they ship inside the skill directory on every install layout:
 
 ```bash
 SKILL_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 SCRIPTS_DIR="${SKILL_DIR}/scripts"
 PHASES_DIR="${SKILL_DIR}/phases"
+REFERENCES_DIR="${SKILL_DIR}/references"
+```
+
+`AGENTS_DIR` is NOT assumed to be a sibling of `SKILL_DIR` — it
+lives under the module root, not the skill directory. This holds on
+both a co-located install (`.../module/skills/review-council` →
+`.../module/agents`) and a split install (`~/.claude/skills/review-council/`
+→ `~/.claude/agents`):
+
+```bash
 MODULE_DIR=$(dirname "$(dirname "${SKILL_DIR}")")
 AGENTS_DIR="${MODULE_DIR}/agents"
-REFERENCES_DIR="${MODULE_DIR}/references"
 ```
 
 All script and phase references below use these paths.
@@ -112,6 +122,33 @@ Five personas run in parallel: Guard (intent drift, governance,
 structural coherence), Adversary (security, resilience), Tester
 (test quality, coverage), Operator (deployment, dependencies),
 Curator (documentation gaps).
+
+## Pipeline (state machine)
+
+The orchestrator is a status-dispatcher over stage scripts. Full status
+vocabulary and transitions: `references/pipeline-states.md`.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Prepare
+    Prepare --> Delegate: ok
+    Prepare --> [*]: skip (no repo / no changeset)
+    Delegate --> Extract: raw verdicts written
+    Extract --> Delegate: extract_error (re-dispatch <=1)
+    Extract --> Verify: ok
+    Verify --> Render: effort=quick
+    Verify --> Correction: correctable>0
+    Verify --> Calibrate: correctable=0
+    Correction --> Calibrate
+    Calibrate --> Validate: verified>0 & not all LOW
+    Calibrate --> Render: nothing to validate & no conversation
+    Calibrate --> Disposition: nothing to validate & conversation
+    Validate --> Render: no conversation
+    Validate --> Disposition: conversation
+    Disposition --> Render
+    Render --> Report
+    Report --> [*]
+```
 
 ## Execution Flow
 
@@ -299,6 +336,20 @@ guidance and dispatch instructions.
 - `${session_dir}/diff.patch` — diff (may be empty for `--scope all`)
 - `${session_dir}/tracking.md` — scope, mode, language, framework metadata
 
+<DISPATCH-ALLOWLIST>
+Dispatch only the agent identifiers in the `agents` array `rc-prepare.sh`
+returned in Step 1. That array is the sole source of truth for who reviews.
+Do NOT dispatch a reviewer that is absent from it, even when a similarly
+named agent is registered and dispatchable in the host — for example an
+un-suffixed legacy `divisor-*` file (`divisor-guard`, not
+`divisor-guard-code`) left in a host agents directory by an older install.
+Those files are not discovered by `rc-prepare.sh` (it globs only
+`divisor-*-code.md` / `divisor-*-spec.md`) and are stale; using them runs
+unknown-version personas and yields a verdict you cannot trust. If Step 1
+returned `skip` (or an empty `agents` array), dispatch NO reviewers: report
+the skip message and stop, never a hand-picked substitute from the host.
+</DISPATCH-ALLOWLIST>
+
 For each reviewer agent in agents array from Step 1:
 - Construct prompt using changeset from `changeset.txt`, diff from
   `diff.patch`, convention packs from `${REFERENCES_DIR}`, project
@@ -306,18 +357,38 @@ For each reviewer agent in agents array from Step 1:
 - Dispatch agent using agent filename as identifier
   (e.g., "divisor-guard-code") — mechanism varies by host;
   see `${PHASES_DIR}/delegate.md` Dispatch Mechanism section
-- Collect verdict, write to `${session_dir}/verdicts/{agent-name}.md`
+- Collect the agent's raw output verbatim, write to
+  `${session_dir}/verdicts/{agent-name}.raw.md`
 
 Dispatch all agents in parallel for speed.
+
+**Extract and validate verdicts.** Once all raw output is collected, run:
+
+`bash ${SCRIPTS_DIR}/rc-extract-verdict.sh ${session_dir}`
+
+This extracts each agent's fenced ```json block from its `.raw.md` file,
+schema-validates it against `${REFERENCES_DIR}/verdict-schema.json`, and
+writes `${session_dir}/verdicts/{agent-name}.json` on success.
+
+- `status: "ok"` — proceed to Step 4.
+- `status: "extract_error"` — one or more agents emitted no parseable JSON
+  block (a silent drop otherwise). Re-dispatch each listed agent ONCE per
+  `${PHASES_DIR}/delegate.md` **Verdict Collection**, then re-run the
+  script. If an agent still fails after that one attempt, log it loudly
+  and surface it in the report — never a silent zero.
+- `status: "nothing_to_do"` — zero verdict blocks were produced
+  session-wide (a delegation failure, not a per-agent "no findings"
+  signal). Stop and report a configuration issue.
 
 **Effort-conditional behavior:**
 - **quick / standard**: Delegate once over whole changeset as above.
 - **deep**: If `${session_dir}/subsystems.json` exists, run one
   delegation round per subsystem. For each subsystem, scope changeset
-  and diff to that subsystem's files. Write verdicts to
-  `${session_dir}/verdicts/{subsystem-name}/{agent-name}.md`.
+  and diff to that subsystem's files. Write raw output to
+  `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md`.
   Dispatch all agents for given subsystem in parallel, then next
-  subsystem.
+  subsystem. Run `rc-extract-verdict.sh` once after all subsystems
+  complete.
 
 **Update tracking:** Set Delegation (iteration N) status to `complete`,
 record agents dispatched, verdicts received, any failures.
@@ -335,35 +406,50 @@ If it is a path (materialized checkout), pass it so on-disk checks resolve:
 
 `REVIEW_ROOT="<review_root>" bash ${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`
 
-Script checks file existence, quote matching, line accuracy ±5,
-absence claims via grep, cross-agent deduplication.
+Script consumes `verdicts/{agent-name}.json` (written in Step 3 by
+`rc-extract-verdict.sh`), checks file existence, quote matching, line
+accuracy ±5, absence claims via grep, and cross-agent deduplication. It
+writes the canonical `${session_dir}/verdicts/findings.json` (the full
+verified/correctable/stripped finding objects, plus the per-agent verdict
+map) and prints a summary to stdout.
 
 **Returns JSON to stdout:**
 ```json
 {
-  "verified": [...],
-  "stripped": [...],
-  "duplicates": [...]
+  "status": "ok | nothing_to_do",
+  "message": "Evidence verification complete. 3 verified, 1 correctable, 0 stripped.",
+  "verified": 3,
+  "correctable": 1,
+  "stripped": 0
 }
 ```
 
-If it instead returns `"status": "format_error"`, an agent's finding block
-failed to parse (a silent drop). Handle it per `verify.md` **Step 0 — Format
-Gate** (re-dispatch the named agent, re-run this script) before proceeding.
+Read `${session_dir}/verdicts/findings.json` for the full finding objects
+behind these counts — the stdout summary above carries counts only.
 
-**Then, read `${PHASES_DIR}/verify.md`** for severity calibration
-and validation gate procedures.
+**Then, read `${PHASES_DIR}/verify.md`** for severity calibration,
+cross-agent consolidation, and validation gate procedures. Run these in
+this order:
 
 - Apply severity calibration (LLM judgment on findings severity)
+- **Consolidate cross-agent duplicates (verify.md Step 3c) — SCRIPT-OWNED,
+  you MUST run it.** When 2+ verified findings share a file, judge which
+  describe the same underlying defect, write
+  `${session_dir}/verdicts/clusters.json` (a members-only manifest per
+  `${REFERENCES_DIR}/consolidation-schema.json`), then run:
+  `bash ${SCRIPTS_DIR}/rc-consolidate.sh ${session_dir}`
+  It folds each cluster into one primary finding and is a safe no-op when
+  nothing qualifies. Run it **before** the validation gate so the validator
+  sees the consolidated set.
 - Run validation gate — dispatch fresh-context validator agent
   to check findings against actual code
-- Consolidate duplicates across agents
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
 **Effort-conditional behavior:**
 - **quick**: Skip correction round, severity calibration, validation
   gate. Run only `rc-verify-evidence.sh` (mechanical evidence check).
-  Proceed directly to Step 5 with surviving findings.
+  Proceed directly to Step 5, skipping Step 4.5 (Disposition) — its own
+  gate also excludes `quick`, so this is a shortcut, not a divergence.
 - **standard**: Full verification as above.
 - **deep**: Run Steps 1-3 of verify.md per-subsystem (iterate over
   subdirectories in `${session_dir}/verdicts/`). Then run validation
@@ -373,6 +459,49 @@ and validation gate procedures.
 **Update tracking:** Set Verification (iteration N) status to `complete`,
 record findings total/verified/corrected/stripped, duplicates
 consolidated, iteration verdict.
+
+Proceed to Step 4.5 (Disposition).
+
+### Step 4.5: DISPOSITION (re-review only)
+
+**Skip entirely unless `${session_dir}/pr-conversation.txt` exists AND
+effort is not `quick`.** This is the phase that reads the PR conversation
+thread — attacker-controlled input by construction — and lets verified
+claims about it change finding disposition. It exists
+only for re-reviews; a first-time review has no prior verdict to have drawn
+replies.
+
+**Read `${PHASES_DIR}/disposition.md`** for the full procedure. Dispatch a
+single fresh-context subagent (has not seen prior review phases) using **the
+verbatim prompt from `disposition.md`'s "Step 3 — Subagent Prompt" section —
+copy it exactly, do not paraphrase or summarize it.** The subagent's own file
+access is the target repo, never this skill's `phases/` directory, so it can
+only ever see the untrusted-data handling, the four rules, the
+inconclusive-evidence fallback ("never mark a finding `resolved` on
+inconclusive evidence"), and the output shape if they are inside that literal
+prompt text — restating them here, paraphrased, would not reach the
+subagent and would silently weaken the security posture this phase exists
+for.
+
+Append the untrusted contents of `${session_dir}/pr-conversation.txt` after
+the prompt, then the findings to disposition, per `disposition.md` Step 2
+("Inputs the subagent receives"). Agent profile (read-only over the review
+root, plus narrowly-scoped structured edits to `findings.json`'s provenance
+fields only, minimum temperature if supported) is also specified there —
+Step 2 is orchestrator-facing setup, not part of the prompt text itself.
+
+After the subagent returns:
+
+- Resolved findings move from `verified` to `stripped` in `findings.json`
+  (reason `DISPOSITION_RESOLVED`); agents left with zero remaining verified
+  findings are upgraded to `APPROVE` per `verify.md` Step 6's logic. Only
+  `resolved` removals count toward that check — `suppressed-low` removals are
+  verdict-neutral and do NOT (`disposition.md` Step 4).
+- Write `${session_dir}/verdicts/disposition.txt` as the audit trail
+  (`disposition.md` Step 5).
+
+**Update tracking:** Append `## Phase: Disposition` with gate result,
+comments processed, resolved/kept/suppressed counts, verdicts upgraded.
 
 Proceed to Step 5.
 
@@ -396,23 +525,42 @@ Proceed to Step 5.
 
 ### Step 6: REPORT
 
-**First, run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}`**
-
-Script renders structured report template from tracking and
-verification data.
+**First, run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}` and
+save its stdout to `${session_dir}/report.md`.** The script renders
+structured report template (tables, counts, findings list, verdict)
+from tracking and verification data, and leaves a `<!-- NARRATIVE -->`
+marker for the next step to fill.
 
 **Then, read `${PHASES_DIR}/report.md`** for narrative synthesis
 and learnings extraction guidance.
 
-- Add narrative synthesis (executive summary, key themes)
+- Dispatch a prose subagent with **only**
+  `${session_dir}/verdicts/findings.json` as input. It returns a
+  one-line TL;DR and a 2-4 paragraph narrative — nothing else, no
+  structure. Write the TL;DR to `${session_dir}/comment-summary.md`
+  and the narrative to `${session_dir}/narrative.md`.
+- Splice deterministically: replace the single `<!-- NARRATIVE -->`
+  line in `${session_dir}/report.md` with the verbatim contents of
+  `${session_dir}/narrative.md`. This is a plain string substitution
+  performed by the orchestrator, not the model free-forming the
+  report.
 - Extract learnings from review (patterns, anti-patterns, gaps)
 - Record learnings using Knowledge tool (if configured) or
   write to `${session_dir}/learnings.txt`
+- Splice the `<!-- LEARNINGS -->` marker: same mechanism as the NARRATIVE
+  splice above — replace the single `<!-- LEARNINGS -->` line in
+  `${session_dir}/report.md` with the learnings summary just recorded
+  (the verbatim contents of `${session_dir}/learnings.txt`, or a short
+  summary of what was stored when a Knowledge tool is configured instead)
 - Output final report with council verdict
 
 **Effort-conditional behavior:**
 - **quick**: Compact report: findings list (sorted by severity)
-  and verdict only. Skip learnings extraction and narrative synthesis.
+  and verdict only. Skip learnings extraction and narrative synthesis
+  (no subagent dispatch, no narrative splice). Still splice the
+  `<!-- LEARNINGS -->` marker — replace it with the literal line
+  `None recorded.` so no raw HTML-comment marker survives into the
+  rendered report.
 - **standard**: Full report as above.
 - **deep**: Full report plus **Subsystem Analysis** section before
   findings list. Read `${session_dir}/subsystems.json`, render tree
@@ -434,11 +582,12 @@ there is nothing to post to and stop.
    (`APPROVE`, `REQUEST CHANGES`, or `APPROVE WITH ADVISORIES`) as the first
    line of `${session_dir}/verdict.txt`.
 
-2. **Write the human TL;DR**: ONE short plain-language sentence (aim for under
-   25 words) summarizing the outcome, written to
-   `${session_dir}/comment-summary.md`. Not a paragraph, not a wall of text.
-   Plain ASCII punctuation only (no em/en dashes). This is the only prose you
-   contribute to the comment; the script owns all structure.
+2. **Reuse the existing TL;DR.** Step 6's prose subagent is the sole owner of
+   `${session_dir}/comment-summary.md` — do NOT write or regenerate it here.
+   `rc-post-comment.sh` reads it via `rc-render-comment.sh` (`head -n1
+   comment-summary.md`). If effort was `quick` (Step 6's narrative synthesis
+   skipped, so the file may not exist), do nothing: the renderer falls back to
+   a generic TL;DR ("Automated review complete.") when the file is absent.
 
 3. **Render (dry-run)**:
 
@@ -539,6 +688,15 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Findings stripped: {count}
 - Duplicates consolidated: {count}
 - Verdict: {APPROVE | REQUEST CHANGES}
+
+## Phase: Disposition (re-review only)
+
+- Gate: {skipped (no conversation) | skipped (quick effort) | ran}
+- Comments processed: {count}
+- Findings resolved: {count}
+- Findings kept: {count}
+- Findings suppressed (LOW): {count}
+- Verdicts upgraded: {count}
 
 ## Phase: Report
 

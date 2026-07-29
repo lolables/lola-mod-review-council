@@ -82,32 +82,51 @@ End with clear verdict and one-paragraph summary. Each persona applies domain-sp
 
 ## Output Format
 
-### Self-Attestation Header
+Your entire response MUST be a single fenced ```json code block and nothing
+else — no prose before or after it. The orchestrator extracts this block and
+validates it against `${REFERENCES_DIR}/verdict-schema.json`. A response the
+validator rejects is re-dispatched once; do not add commentary outside the block.
 
-Output MUST begin with `Files read:` block listing every file opened during review:
-
-```
-Files read:
-- path/to/first-file.go
-- path/to/second-file.go
-```
-
-Cross-checked by orchestrator. Omitting marks response as low-confidence.
-
-### Finding Format
-
-Every finding MUST use this exact block. The verification pipeline parses these fields; a block it cannot parse is dropped from the review — a real issue you found would silently vanish.
-
-```
-### [SEVERITY] Finding Title
-
-**File**: `path/to/file.ext:line`
-**Evidence**: <direct quote from the file you read>
-**Constraint**: Which convention is violated
-**Description**: What the issue is and why it matters
-**Recommendation**: How to fix it
+```json
+{
+  "agent": "divisor-adversary-code",
+  "files_read": ["path/to/first.go", "path/to/second.go"],
+  "verdict": "REQUEST CHANGES",
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "file": "path/to/file.go",
+      "line": 42,
+      "evidence": "<direct quote from the file you read>",
+      "constraint": "Which convention is violated",
+      "description": "What the issue is and why it matters",
+      "recommendation": "How to fix it"
+    }
+  ]
+}
 ```
 
-- **File** MUST be exactly one backticked, repo-relative `` `path/to/file.ext:line` `` (or `` `path/to/file.ext` `` when no single line applies). Nothing else belongs on this line — no prose, no second path, no function names, no parentheticals. Put line ranges, cross-references, and rationale in **Description**.
-- **Evidence** field mandatory — direct quote from file, or (for absence findings) what you searched for and where.
-- Self-check each finding before finishing: does it carry `**File**:` and `**Evidence**:` in the exact shape above? If not, the pipeline cannot confirm it.
+- `files_read` MUST list every file you opened (replaces the prose attestation).
+- `verdict` MUST be `APPROVE` or `REQUEST CHANGES` — see "## Verdict" above.
+  `APPROVE WITH ADVISORIES` is a council-level aggregate the orchestrator
+  derives from multiple reviewer verdicts (see `report.md`); no individual
+  reviewer emits it.
+- `findings` MAY be empty for a clean APPROVE. Do not manufacture findings.
+- Each finding's `file` is a repo-relative path; `line` is the confirmed line
+  (integer) or `null` when no single line applies. Put ranges and
+  cross-references in `description`, never in `file`.
+- `evidence` is a direct quote from the file, or (for absence findings) what you
+  searched for and where. Quote code verbatim and use normal JSON string
+  escaping for control characters (a literal tab is `\t`); do not double-escape
+  them as `\\t`.
+
+A clean review returns an empty `findings` array — do not manufacture findings:
+
+```json
+{
+  "agent": "divisor-guard-code",
+  "files_read": ["stringset.go", "stringset_test.go"],
+  "verdict": "APPROVE",
+  "findings": []
+}
+```

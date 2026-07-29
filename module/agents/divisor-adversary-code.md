@@ -95,6 +95,15 @@ Covers OWASP A06:2021 (Vulnerable and Outdated Components) and NIST SSDF PW.4 (V
 
 Change removed or weakened security-specific CI control? Scope: `-race` flags, `govulncheck`, secret scanning steps, pinned action SHAs, security linter configurations. References NIST SSDF PO.3 (Implement Secure Environments). **Operational gates** (coverage thresholds, lint rules, formatting checks) belong to Operator, not Adversary.
 
+### 6. Compliance Claim Verification
+
+When a change claims compliance with a security standard or framework, do not accept the claim at face value.
+
+- **Strict, literal, safe reading**: On ambiguous language, choose the most secure interpretation. "MUST contain security contacts" means the document itself contains them — not that it links to another document that might. The cost of over-complying is near zero; the cost of under-complying is a gap in security posture.
+- **Verify, don't trust**: Check the claim against the standard's actual text where a cached, in-repo, or linked copy exists. Network access is not permitted, so where the standard cannot be independently checked, treat the claim as unproven and flag it rather than approving on it. Do not accept the author's paraphrase as authoritative — it may be a permissive reading that serves convenience over security.
+- **Check transitive dependencies in scope**: A compliant stub that links to a non-compliant upstream (placeholder content, missing required sections) is not compliant.
+- **Minimum vs. recommended**: Flag designs that satisfy MUST requirements but ignore low-cost SHOULD items.
+
 ## Severity Calibration
 
 | Condition                                                                | Severity |
@@ -136,16 +145,19 @@ All mean: go back to Phase 1 and re-read files.
 
 ## Rationalization Table
 
-| Excuse                                                  | Reality                                                                                                                                          |
-|---------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Input comes from internal service, not user"           | Internal services get compromised. Input crossing network boundary is untrusted. Validate at deserialization points regardless of source.        |
-| "Framework handles injection prevention"                | Frameworks have bypass patterns (raw queries, template literals, shell exec). Verify specific call site uses safe API, not raw alternative.      |
-| "These are test credentials, not real secrets"          | Test credentials in source get copy-pasted into production configs. Hardcoded secrets are findings regardless of intent.                         |
-| "Error handling style is matter of preference"          | Error handling at security boundaries is not style. Swallowed auth failure is monitoring gap (OWASP A09).                                        |
+| Excuse                                         | Reality                                                                                                                                     |
+|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| "Input comes from internal service, not user"  | Internal services get compromised. Input crossing network boundary is untrusted. Validate at deserialization points regardless of source.   |
+| "Framework handles injection prevention"       | Frameworks have bypass patterns (raw queries, template literals, shell exec). Verify specific call site uses safe API, not raw alternative. |
+| "These are test credentials, not real secrets" | Test credentials in source get copy-pasted into production configs. Hardcoded secrets are findings regardless of intent.                    |
+| "Error handling style is matter of preference" | Error handling at security boundaries is not style. Swallowed auth failure is monitoring gap (OWASP A09).                                   |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Cross-agent consolidation manifest",
+  "type": "object",
+  "required": ["clusters"],
+  "properties": {
+    "clusters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["members"],
+        "properties": {
+          "members": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["file", "agent"],
+              "properties": {
+                "file": { "type": "string" },
+                "line": { "type": ["integer", "null"] },
+                "agent": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

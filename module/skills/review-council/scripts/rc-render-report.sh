@@ -3,6 +3,7 @@ set -euo pipefail
 
 # Fail loudly: report the line of any unhandled command failure to stderr so a
 # pipefail exit is never silent (stdout is reserved for the rendered report).
+# shellcheck disable=SC2329 # invoked indirectly by the ERR trap below.
 rc_on_err() { echo "rc-error: ${3##*/}:${2}: command failed (exit ${1}) under 'set -o pipefail'" >&2; }
 set -o errtrace
 trap 'rc_on_err "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
@@ -44,7 +45,7 @@ if [[ ! -f "$tracking_file" ]]; then
 	exit 0
 fi
 
-evidence_file="$session_dir/verdicts/evidence-check.json"
+evidence_file="$session_dir/verdicts/findings.json"
 
 # Parse tracking.md
 mode=$(grep "^- Mode:" "$tracking_file" | cut -d: -f2- | xargs || echo "Unknown")
@@ -55,7 +56,7 @@ agents_discovered=$(grep "^- Agents discovered:" "$tracking_file" | cut -d: -f2-
 agents_absent=$(grep "^- Agents absent:" "$tracking_file" | cut -d: -f2- | xargs || echo "none")
 changeset=$(grep "^- Changeset size:" "$tracking_file" | cut -d: -f2- | xargs || echo "unknown")
 
-# Parse evidence-check.json if exists
+# Parse findings.json if exists
 total_findings=0
 verified_count=0
 correctable_count=0
@@ -70,15 +71,21 @@ if [[ -f "$evidence_file" ]]; then
 fi
 
 # LLM provenance — models used, to the extent the host recorded them.
-# Orchestrator writes one "role: model-id" per line to models.txt before
+# Orchestrator writes [{"role":"...","id":"..."}, ...] to models.json before
 # rendering (see phases/report.md). Absent file means the host did not
 # expose model identity — state that rather than inventing names.
-models_file="$session_dir/models.txt"
-if [[ -f "$models_file" && -s "$models_file" ]]; then
+models_file="$session_dir/models.json"
+models_block=""
+if [[ -f "$models_file" ]]; then
 	# Dedup, preserving order: deep mode dispatches the same agent per
-	# subsystem, so models.txt may carry repeated lines.
-	models_block=$(awk 'NF && !seen[$0]++' "$models_file" | sed 's/^/- /')
-else
+	# subsystem, so models.json may carry repeated role/id pairs. Under
+	# pipefail a jq parse failure on malformed input would otherwise abort
+	# the whole report (jq's exit code is the "last non-zero" in the pipe
+	# even though awk/sed still exit 0) — `|| true` degrades to the
+	# "not recorded" fallback below instead of aborting the render.
+	models_block=$(jq -r '.[]? | "\(.role): \(.id)"' "$models_file" 2>/dev/null | awk 'NF && !seen[$0]++' | sed 's/^/- /' || true)
+fi
+if [[ -z "$models_block" ]]; then
 	models_block="_Not recorded by the host — reviewer, validator, and coordinator model IDs were not exposed to the report renderer._"
 fi
 
@@ -138,7 +145,22 @@ if [[ -f "$evidence_file" ]] && [[ $verified_count -gt 0 ]]; then
 		if [[ $count -gt 0 ]]; then
 			echo "### $severity ($count)"
 			echo ""
-			jq -r --arg sev "$severity" '.verified[] | select(.severity == $sev) | "- **\(.title)** (\(.file), \(.agent))"' "$evidence_file" 2>/dev/null || true
+			# Cross-agent consolidation folds secondary findings into a surviving
+			# primary and records each fold in provenance.consolidated_from. Emit
+			# those folded angles as a sub-list under the primary so no reviewer's
+			# perspective is silently dropped from the report.
+			jq -r --arg sev "$severity" '
+				.verified[] | select(.severity == $sev) |
+				"- **\(.title // .description[0:60])** (\(.file), \(.agent))"
+				+ (
+					if ((.provenance.consolidated_from // []) | length) > 0 then
+						"\n  Also flagged by:\n" +
+						((.provenance.consolidated_from // []) | map("  - \(.agent) (\(.severity)): \(.angle) — \(.recommendation)") | join("\n"))
+					else
+						""
+					end
+				)
+			' "$evidence_file" 2>/dev/null || true
 			echo ""
 		fi
 	done
@@ -150,28 +172,18 @@ echo ""
 echo "| Agent | Verdict | Findings |"
 echo "|-------|---------|----------|"
 
-# Read verdict files if they exist
-verdict_dir="$session_dir/verdicts"
-if [[ -d "$verdict_dir" ]]; then
-	for verdict_file in "$verdict_dir"/*.md; do
-		[[ -f "$verdict_file" ]] || continue
-		agent_name=$(basename "$verdict_file" .md)
-
-		# Parse verdict from file (look for REQUEST CHANGES or APPROVE)
-		verdict="APPROVE"
-		# Match structured verdict: **Verdict**: REQUEST CHANGES or a standalone verdict line
-		if grep -qE '^\*\*Verdict\*\*:.*REQUEST CHANGES|^(REQUEST CHANGES)$' "$verdict_file" 2>/dev/null; then
-			verdict="REQUEST CHANGES"
-		fi
-
-		# Count findings in this agent's verdict
-		finding_count=0
-		if [[ -f "$evidence_file" ]]; then
-			finding_count=$(jq -r --arg agent "$agent_name" '[.verified[] | select(.agent == $agent)] | length' "$evidence_file" 2>/dev/null || echo 0)
-		fi
-
+# Read the verdict map from findings.json: verdict verbatim, count from
+# verified findings. Single source — table cannot disagree with the findings
+# listed above.
+verdict_map="$session_dir/verdicts/findings.json"
+if [[ -f "$verdict_map" ]]; then
+	agent_names=$(jq -r '.verdicts | keys[]' "$verdict_map" 2>/dev/null || true)
+	while IFS= read -r agent_name; do
+		[[ -n "$agent_name" ]] || continue
+		verdict=$(jq -r --arg a "$agent_name" '.verdicts[$a] // "UNKNOWN"' "$verdict_map")
+		finding_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent==$a)] | length' "$verdict_map")
 		echo "| $agent_name | $verdict | $finding_count |"
-	done
+	done <<<"$agent_names"
 fi
 
 echo ""

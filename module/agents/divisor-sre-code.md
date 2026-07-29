@@ -183,17 +183,20 @@ All mean: go back to Phase 1 and re-read files.
 
 ## Rationalization Table
 
-| Excuse                                         | Reality                                                                                                                                                                        |
-|------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Performance doesn't matter for this use case" | Code processing user-supplied input of unbounded size: performance matters. O(n^2) on 10 items is fine; O(n^2) on user-controlled input is latent production issue.            |
-| "The CI will catch build problems"             | CI not updated to match local automation creates false safety net. Makefile target CI does not run means CI not catching what you think it catches.                             |
-| "Generated files don't need to be checked in"  | Project checks them in means they are part of build contract. Stale generated files cause build failures, test flakes, runtime bugs hard to diagnose.                          |
-| "Error messages are an implementation detail"  | Error messages are primary debugging interface for users and operators. Non-actionable errors ("error: operation failed") waste support time.                                   |
-| "We'll add migration support later"            | Users on old format discover breaking change when workflow breaks. Migration paths cost less to build alongside change than to retrofit.                                        |
+| Excuse                                         | Reality                                                                                                                                                             |
+|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "Performance doesn't matter for this use case" | Code processing user-supplied input of unbounded size: performance matters. O(n^2) on 10 items is fine; O(n^2) on user-controlled input is latent production issue. |
+| "The CI will catch build problems"             | CI not updated to match local automation creates false safety net. Makefile target CI does not run means CI not catching what you think it catches.                 |
+| "Generated files don't need to be checked in"  | Project checks them in means they are part of build contract. Stale generated files cause build failures, test flakes, runtime bugs hard to diagnose.               |
+| "Error messages are an implementation detail"  | Error messages are primary debugging interface for users and operators. Non-actionable errors ("error: operation failed") waste support time.                       |
+| "We'll add migration support later"            | Users on old format discover breaking change when workflow breaks. Migration paths cost less to build alongside change than to retrofit.                            |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

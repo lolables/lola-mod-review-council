@@ -3,6 +3,11 @@ set -euo pipefail
 
 cd "$1"
 
+# Rename the starter's default branch to main so `main..feat` and the
+# trailing `git checkout main` resolve. reset.sh runs `git init` under
+# isolated config (no init.defaultBranch), which defaults to master.
+git -c user.name="scaffold" -c user.email="scaffold@test" branch -m main
+
 # Create a feat branch with multiple files across directories
 # to exercise deep mode decomposition
 git checkout -b feat -q

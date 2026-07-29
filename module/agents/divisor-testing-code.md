@@ -138,17 +138,20 @@ All mean: go back to Phase 1, re-read files.
 
 ## Rationalization Table
 
-| Excuse                                                      | Reality                                                                                                                            |
-|-------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| "Tests exist for happy path, that's sufficient"             | Happy-path-only coverage hides bugs in error handling and edge cases. Code has error paths? They need tests.                       |
-| "This code is too simple to need edge case tests"           | Simple code with boundary conditions (string parsing, numeric ranges, collection operations) is where off-by-one bugs live.        |
-| "Test file exists, so coverage is adequate"                 | Test file with shallow assertions (checking only `err == nil`) provides false confidence. Assertion depth matters.                  |
-| "Property testing is overkill for this"                     | Function processes untrusted input or implements public contract? Property testing is proportionate, not overkill.                  |
-| "I can't tell if tests are meaningful without running them" | Read assertions. Test asserting `!= nil` on constructor is filler. Test checking specific field values locks down behavior.         |
+| Excuse                                                      | Reality                                                                                                                     |
+|-------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| "Tests exist for happy path, that's sufficient"             | Happy-path-only coverage hides bugs in error handling and edge cases. Code has error paths? They need tests.                |
+| "This code is too simple to need edge case tests"           | Simple code with boundary conditions (string parsing, numeric ranges, collection operations) is where off-by-one bugs live. |
+| "Test file exists, so coverage is adequate"                 | Test file with shallow assertions (checking only `err == nil`) provides false confidence. Assertion depth matters.          |
+| "Property testing is overkill for this"                     | Function processes untrusted input or implements public contract? Property testing is proportionate, not overkill.          |
+| "I can't tell if tests are meaningful without running them" | Read assertions. Test asserting `!= nil` on constructor is filler. Test checking specific field values locks down behavior. |
 
-## Output Format
+## Output
 
-Use output format defined in reviewer-protocol.md.
+Emit your review as a single fenced ```json verdict block per the "Output Format"
+section of `reviewer-protocol.md`. Your `agent` field is this file's name
+(without `.md`). Do not emit markdown findings or a prose verdict line — only the
+JSON block.
 
 ## Decision Criteria
 

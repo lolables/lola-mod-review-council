@@ -21,7 +21,7 @@ Self-contained pack. Do not load base.md alongside.
 ## Calibration Notes
 
 > **Strict mode**: `tsconfig.json` with `strict: false` or missing `strict` — flag it. When `strict: true` set, do not separately flag individual strict-family options (`strictNullChecks`, `noImplicitAny`, etc.) — implied.
-
+>
 > **Naming**: `I` prefix on interfaces (`IUser`, `IService`) is C#/Java convention TypeScript discourages. Flag as naming violation, not style preference. PascalCase functions (`CreateUser` instead of `createUser`) are Go/C# convention — flag in TypeScript codebases.
 
 ## testing_conventions

@@ -19,16 +19,33 @@ rc_trap_errors # report script:line on any unhandled failure (never silent)
 MARKER_KEY="review-council:marker"
 
 # --- Forge URL hooks the renderer calls (empty => renderer uses plain spans) ---
+#
+# The renderer parses forge_web from the origin remote and leaves it empty
+# when the host can't be determined (it holds zero forge knowledge - see
+# rc-render-comment.sh). This script IS GitHub, so on that empty-host edge
+# case it defaults forge_web to github.com/<owner>/<repo> here instead of
+# degrading to plain code spans. $owner/$repo are read from session.txt below
+# and are in scope by the time these hooks actually run (rc_render_comment_body
+# is called after that read); posting itself already requires both to be set,
+# so this default is only ever exercised alongside a real owner/repo.
 rc_url_file() { # forge_web sha file line
 	local web="$1" sha="$2" file="$3" line="$4" url
-	[[ -n "$web" && -n "$sha" ]] || { printf ''; return; }
+	[[ -n "$web" ]] || web="https://github.com/${owner}/${repo}"
+	[[ -n "$web" && -n "$sha" ]] || {
+		printf ''
+		return
+	}
 	url="${web}/blob/${sha}/${file}"
 	[[ -n "$line" && "$line" != "null" ]] && url="${url}#L${line}"
 	printf '%s' "$url"
 }
 rc_url_commit() { # forge_web sha
 	local web="$1" sha="$2"
-	[[ -n "$web" && -n "$sha" ]] || { printf ''; return; }
+	[[ -n "$web" ]] || web="https://github.com/${owner}/${repo}"
+	[[ -n "$web" && -n "$sha" ]] || {
+		printf ''
+		return
+	}
 	printf '%s/commit/%s' "$web" "$sha"
 }
 
@@ -37,24 +54,30 @@ source "$(dirname "$0")/rc-render-comment.sh"
 
 # --- GitHub mechanics (each prints to stdout, non-zero on API error) ---
 gh_find_by_sha() { # owner repo pr sha
-	timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
+	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
 		--jq "[.[] | select((.body | contains(\"${MARKER_KEY}\")) and (.body | contains(\"sha=$4\"))) | .id] | first // empty"
 }
 gh_list_council() { # owner repo pr
-	timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
+	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
 		--jq ".[] | select(.body | contains(\"${MARKER_KEY}\")) | [(.id | tostring), .node_id, ((.body | capture(\"sha=(?<s>[0-9a-fA-F]+)\").s) // \"\")] | @tsv"
 }
 gh_get_body() { # owner repo id
-	timeout 30 gh api "repos/$1/$2/issues/comments/$3" --jq '.body'
+	rc_timeout 30 gh api "repos/$1/$2/issues/comments/$3" --jq '.body'
 }
 gh_create() { # owner repo pr body_file
-	timeout 30 gh api "repos/$1/$2/issues/$3/comments" -f body="$(cat "$4")" --jq '.id'
+	local body
+	body=$(cat "$4")
+	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments" -f body="$body" --jq '.id'
 }
 gh_update() { # owner repo id body_file
-	timeout 30 gh api "repos/$1/$2/issues/comments/$3" -X PATCH -f body="$(cat "$4")" >/dev/null
+	local body
+	body=$(cat "$4")
+	rc_timeout 30 gh api "repos/$1/$2/issues/comments/$3" -X PATCH -f body="$body" >/dev/null
 }
 gh_minimize() { # node_id
-	timeout 30 gh api graphql \
+	# shellcheck disable=SC2016 # $id is a GraphQL variable bound by the -f id
+	# argument below; the shell must not expand it.
+	rc_timeout 30 gh api graphql \
 		-f query='mutation($id:ID!){minimizeComment(input:{subjectId:$id,classifier:OUTDATED}){minimizedComment{isMinimized}}}' \
 		-f id="$1" >/dev/null
 }
@@ -65,8 +88,14 @@ send="no"
 shift || true
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-	--send) send="yes"; shift ;;
-	*) json_output "skip" "Unknown flag: $1"; exit 0 ;;
+	--send)
+		send="yes"
+		shift
+		;;
+	*)
+		json_output "skip" "Unknown flag: $1"
+		exit 0
+		;;
 	esac
 done
 
@@ -75,7 +104,10 @@ if [[ -z "$session_dir" || ! -d "$session_dir" ]]; then
 	exit 0
 fi
 tracking="$session_dir/tracking.md"
-[[ -f "$tracking" ]] || { json_output "skip" "tracking.md not found."; exit 0; }
+[[ -f "$tracking" ]] || {
+	json_output "skip" "tracking.md not found."
+	exit 0
+}
 
 pr=$(rc_parse_kv "$tracking" "PR")
 owner=$(rc_parse_kv "$session_dir/session.txt" "Owner")
@@ -87,20 +119,26 @@ fi
 
 # --- Render (sets RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA) ---
 body_file="$session_dir/comment-body.md"
+# Rendered once here: every status envelope below reports the same body path.
+body_payload=$(jq -n --arg b "$body_file" '{body_file:$b}')
 rc_render_comment_body "$session_dir" "$body_file"
+
+# Same GitHub default as the rc_url_* hooks above, for the supersede-notice
+# URL built directly from RC_FORGE_WEB below (it doesn't go through a hook).
+[[ -z "$RC_FORGE_WEB" ]] && RC_FORGE_WEB="https://github.com/${owner}/${repo}"
 
 # --- Dry-run / degrade: render only ---
 if [[ "$send" != "yes" ]] || ! command -v gh >/dev/null 2>&1; then
 	msg="Rendered comment body (dry-run)."
 	[[ "$send" == "yes" ]] && ! command -v gh >/dev/null 2>&1 && msg="gh not available; rendered body only; post manually."
-	json_output "rendered" "$msg" "$(jq -n --arg b "$body_file" '{body_file:$b}')"
+	json_output "rendered" "$msg" "$body_payload"
 	exit 0
 fi
 
 # --- Authorization gate: never write upstream without explicit opt-in. ---
 if [[ "${REVIEW_COUNCIL_ALLOW_POST:-}" != "1" ]]; then
 	json_output "confirm_required" "Not posting: REVIEW_COUNCIL_ALLOW_POST is not set. Show the rendered body to the user, obtain explicit confirmation (or honor standing auto-send), then re-run with REVIEW_COUNCIL_ALLOW_POST=1." \
-		"$(jq -n --arg b "$body_file" '{body_file:$b}')"
+		"$body_payload"
 	exit 0
 fi
 
@@ -111,7 +149,7 @@ sha_key="${RC_HEAD_SHA:-unknown}"
 # "none" (that would post a duplicate) - abort instead.
 if ! cur=$(gh_find_by_sha "$owner" "$repo" "$pr" "$sha_key"); then
 	json_output "error" "Failed to query existing comments on PR #${pr}; not posting." \
-		"$(jq -n --arg b "$body_file" '{body_file:$b}')"
+		"$body_payload"
 	exit 0
 fi
 
@@ -119,12 +157,13 @@ superseded=0
 if [[ -n "$cur" ]]; then
 	# Same commit already reviewed: no-op when identical, else update in place.
 	existing=$(gh_get_body "$owner" "$repo" "$cur" 2>/dev/null || echo "")
-	if [[ "$existing" == "$(cat "$body_file")" ]]; then
+	rendered=$(cat "$body_file")
+	if [[ "$existing" == "$rendered" ]]; then
 		action="unchanged"
 	else
 		if ! gh_update "$owner" "$repo" "$cur" "$body_file"; then
 			json_output "error" "Failed to update comment on PR #${pr}." \
-				"$(jq -n --arg b "$body_file" '{body_file:$b}')"
+				"$body_payload"
 			exit 0
 		fi
 		action="updated"
@@ -134,7 +173,7 @@ else
 	# comments (mark obsolete and hide as outdated).
 	if ! new_id=$(gh_create "$owner" "$repo" "$pr" "$body_file"); then
 		json_output "error" "Failed to create comment on PR #${pr}." \
-			"$(jq -n --arg b "$body_file" '{body_file:$b}')"
+			"$body_payload"
 		exit 0
 	fi
 	action="created"
@@ -156,6 +195,7 @@ else
 	done < <(gh_list_council "$owner" "$repo" "$pr" 2>/dev/null || true)
 fi
 
+posted_payload=$(jq -n --arg a "$action" --argjson s "$superseded" '{action:$a, superseded:$s}')
 json_output "posted" "Comment ${action} on PR #${pr} (superseded ${superseded} prior)." \
-	"$(jq -n --arg a "$action" --argjson s "$superseded" '{action:$a, superseded:$s}')"
+	"$posted_payload"
 exit 0

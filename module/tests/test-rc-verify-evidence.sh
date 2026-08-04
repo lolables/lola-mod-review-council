@@ -530,11 +530,22 @@ echo "Test 22: a verdict too large for one argv entry still assembles (RC-11)"
 # of the far larger ARG_MAX total. Handing the verified array to `jq -n` as one
 # `--argjson` string crossed that limit at 84 findings on a real review and
 # killed the phase with "Argument list too long", leaving no findings.json.
+#
+# The padding is sized for the WEAKER of the two limits this suite runs under.
+# macOS has no per-entry cap at all: it enforces ARG_MAX (1048576 bytes) over
+# argv and the environment together, so a fixture built to breach Linux's
+# 131071 — this one was 246 KB — fits on a Mac with room to spare. The
+# mutation harness caught the reintroduced defect on the Ubuntu leg and
+# reported it MISSED on the macOS one, which is the guard failing on precisely
+# the platform whose limit is hardest to reach. 20 lines of 60000 bytes puts
+# the array past 1.2 MB, over ARG_MAX before the environment is even counted —
+# and fewer, fatter findings rather than more of them because the verification
+# loop rescans the file once per finding, so the count is what costs time.
 s=$(new_session)
 root=$(mktemp -d)
-printf -v pad '%4000s' ''
+printf -v pad '%60000s' ''
 pad=${pad// /x}
-for i in $(seq 1 60); do printf 'line%02d %s\n' "$i" "$pad"; done >"$root/big.txt"
+for i in $(seq 1 20); do printf 'line%02d %s\n' "$i" "$pad"; done >"$root/big.txt"
 # Evidence is the cited line verbatim and the citation is exact, so every
 # finding belongs in `verified`. A near-miss would file them under
 # `correctable` instead and the size assertion would prove nothing.
@@ -551,7 +562,7 @@ if [[ $rc -ne 0 ]]; then
 	FAIL=$((FAIL + 1))
 else
 	assert_json_field "$result" "status" "ok" "oversized verdict assembled"
-	assert_jq "$s/verdicts/findings.json" '.verified | length' "60" "all 60 findings verified"
+	assert_jq "$s/verdicts/findings.json" '.verified | length' "20" "all 20 findings verified"
 fi
 rm -rf "$s" "$root"
 

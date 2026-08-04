@@ -6,6 +6,24 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Per-forge preparation adapters at `scripts/lib/forge/<forge>.sh`, sourced once
+  on the detected forge, mirroring the seam `rc-post-comment-<forge>.sh` already
+  used for posting. Every difference between forges — CLI name, flags, API
+  shapes, JSON field names — now lives behind one contract, and the preparation
+  stages test capabilities with `declare -F` rather than branching on a forge
+  name; a test fails the build if any `gh`/`glab` call reappears in a stage.
+  Adapters return normalized field names, so the code that renders prior
+  reviews and PR conversation never learns that GitHub spells an author
+  `.user.login`. GitLab keeps exactly its previous behaviour, now as a file to
+  extend rather than an `elif` to find, with the required contract and the
+  optional capabilities documented in `references/forge-adapters.md`
+- `REVIEW_COUNCIL_SPEC_DIRS` and `REVIEW_COUNCIL_SPEC_EXTS` override which
+  directories spec mode scans and which extensions count as a spec, because no
+  fixed list can describe someone else's layout. Bare `docs/` stays off the
+  default list deliberately: projects keep tutorials and release notes there
+  too, and sweeping all of it turns a spec review into a review of the whole
+  site
+
 - Verdict coherence gate in `rc-extract-verdict.sh`: an APPROVE filed by an
   agent over its own CRITICAL or HIGH finding is refused as
   `VERDICT_INCOHERENT`, not `SCHEMA_INVALID` — the block is schema-valid, and
@@ -245,6 +263,69 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Every GitHub Actions check was dropped from Quality Gates.
+  `statusCheckRollup` is a union of two GraphQL node types that share no field:
+  `StatusContext` carries `.context`/`.state`, `CheckRun` carries
+  `.name`/`.conclusion`. The extractor filtered on `select(.context != null)`,
+  which keeps only the legacy type — on any Actions-based repository, zero
+  checks of N. No `--- STATUS CHECKS ---` section was written, `ci-status.txt`
+  never appeared, and the Quality Gates phase was silently inert. The legacy
+  nodes that did survive were read for a `.conclusion` they do not have, so
+  they graded `pending` whatever they actually reported. Measured on
+  cli/cli#14054: 7 checks, all `CheckRun`, 0 extracted; after, all 7 correctly
+  graded. Every prepare fixture stubbed `"statusCheckRollup": []`, so nothing
+  exercised the extractor at all — `test-rc-forge-adapters.sh` now covers both
+  node types, a mixed rollup, and an in-flight check. Grading covers the full
+  vocabulary both node types report, taken from the live GraphQL enums:
+  `ACTION_REQUIRED`, `TIMED_OUT`, `STARTUP_FAILURE` and `ERROR` are failures
+  rather than absent signal, while `CANCELLED` and `STALE` carry no verdict and
+  stay `unknown`
+- Failing CI aborted the review that would have explained it. Quality Gates
+  (Step 2.5) presented the failing checks and asked whether to carry on, so a
+  run with nobody to answer ended there having produced nothing — the same
+  defect as Step 5's iteration prompt, one phase earlier. The gate was
+  unreachable while the `statusCheckRollup` filter dropped every check run,
+  because Quality Gates never had a failure to stop on; fixing that extraction
+  activated it, and the first headless review to reach a PR with red checks
+  (vitejs/vite#23130, two failing matrix legs) died here with a full session and
+  no report. Red CI is also the wrong thing to abort on: a failing pipeline is
+  when a review is most useful, and a test the changeset broke is a finding
+  rather than a reason to stop looking. The failing checks now travel into
+  delegation as reviewer context and fill the report's `<!-- CI-COMMENTARY -->`
+  marker
+- A headless review that reached REQUEST CHANGES produced no report at all.
+  SKILL.md Step 5 presented findings and asked "Would you like me to fix these
+  issues and re-review?" before Step 6, so a run with nobody to answer — CI, a
+  piped prompt, any host without an interactive user — ended at the question,
+  leaving a session with verified findings and a verdict in `tracking.md` but no
+  `report.md`, `verdict.txt` or `comment-summary.md`. It was intermittent rather
+  than reproducible: other runs on the same skill and model rendered first and
+  asked afterwards. Step 6 now runs to completion first and the offer follows
+  it, gated on an interactive session and an unexhausted iteration limit;
+  accepting still returns to Step 3, and the next pass overwrites the artifacts
+- The Verification pre-condition was prose-only. `verify.md` described it as a
+  check the renderer makes — "it refuses unconditionally [...] because such an
+  exemption would rest on the orchestrator's own account of a status only it
+  observed" — but `rc-render-report.sh` had no reference to verification, so an
+  orchestrator that skipped the phase got a full report. Observed on a real
+  zero-finding run: `verdicts/_meta/` empty, no verification log ever written,
+  and a complete report rendered anyway. Three of the five documented checks are
+  mechanical and now live in the script — the log must exist, be non-empty,
+  carry a `=== SUMMARY ===` section, and hold no `{N}`-shaped template
+  placeholders — and the refusal renders no verdict. The remaining two stay
+  prose because they are judgements a grep cannot make
+- Spec mode could not see most real documentation repositories. Discovery
+  recognised `.md`/`.txt` under five hardcoded directories, so the MCP
+  specification repo — 142 spec files under `docs/specification/`, every one
+  `.mdx` — missed on both axes and reported "No spec artifacts found to
+  review."; `.mdx` is what Mintlify, Docusaurus and Nextra publish. The recovery
+  the skill suggests for that case failed too, because the `--scope paths`
+  branch carried its own copy of the same extension filter. The filter was
+  written out four times and is now defined once for all four branches.
+  Extensions gain `.mdx`, `.markdown`, `.rst` and `.adoc`; directories gain
+  `docs/specification`, `docs/rfcs`, `docs/adr`, `rfcs` and `adr`. The empty
+  message now names what it searched instead of leaving a user unable to tell an
+  empty repository from a layout the scanner never looks at
 - `--mode` accepted any value and fell through to a `code` default, so a typo
   silently ran a code review: the code personas, the code scope default, and a
   report naming a mode the caller never asked for. `--mode spec` is the typo

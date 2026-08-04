@@ -50,6 +50,14 @@ steps:
       mkdir -p "$W/session/verdicts/_meta"
       cp "$W/clusters.json" "$W/session/verdicts/_meta/clusters.json"
       bash "$SC/rc-consolidate.sh" "$W/session" >/dev/null 2>&1
+
+      # The verification log is written by the orchestrator, not by any script
+      # in this chain — phases/verify.md owns it as the record of what was
+      # checked. Stand in for that step here, where the orchestrator would,
+      # because rc-render-report.sh refuses to render without it.
+      printf '=== EVIDENCE VERIFICATION ===\n(e2e fixture)\n=== SUMMARY ===\nTotal findings: 0\n' \
+        > "$W/session/verdicts/_meta/verification.txt"
+
       echo "REQUEST CHANGES" > "$W/session/verdict.txt"
       bash "$SC/rc-render-report.sh" "$W/session" > "{{.input.out_report}}" 2>/dev/null
 

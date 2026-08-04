@@ -58,7 +58,14 @@ bug — fix `rc-render-report.sh` and its tests, do not hand-append the section.
 
 ## Pre-condition Gate
 
-**Before generating any report content**, verify Verification phase actually executed:
+**Before generating any report content**, verify Verification phase actually executed.
+
+Checks 2, 3 and 4 are also enforced mechanically: `rc-render-report.sh` reads
+the same file and refuses to render — emitting only a "Not rendered" notice with
+no verdict — when it is missing, empty, has no `=== SUMMARY ===` section, or
+still holds `{N}`-shaped template placeholders. Check them here anyway; reaching
+the renderer and being turned away wastes a phase, and check 5 has no mechanical
+equivalent.
 
 1. Read `${session_dir}/verdicts/_meta/verification.txt`.
 

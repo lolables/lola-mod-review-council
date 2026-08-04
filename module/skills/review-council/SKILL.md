@@ -288,7 +288,7 @@ When `--scope all` returns `empty`, output exactly this and stop:
 
 > **Review Council: no files in scope.**
 > Mode: {code or specs}
-> Searched: {list directories the mode scans — code: all tracked files; specs: specs/, docs/specs/, docs/design/, design/}
+> Searched: {code: all tracked files. specs: quote the directory list out of rc-prepare.sh's own `empty` message verbatim — do not restate it from memory or from this file, because it is configurable per project via REVIEW_COUNCIL_SPEC_DIRS and a hand-copied list here has already gone stale once}
 > Result: no matching files found.
 >
 > To continue, tell me which path or scope you'd like reviewed — for example:
@@ -341,12 +341,28 @@ Proceed to Step 2.5 (Quality Gates).
 If `${session_dir}/ci-status.txt` exists (created by rc-prepare.sh for
 PR-based code reviews with forge CI data):
 
+**This step never blocks the review.** It used to present failing checks and
+ask the user whether to carry on or give up, which is the same defect Step 5
+carried one phase later: a run with nobody to answer — CI, a piped prompt, any
+host without an interactive user — ends at the question having produced
+nothing. The gate was
+unreachable while the CI extractor was dropping every check run, and the first
+headless review that reached a PR with red checks after that was fixed died
+here.
+
+Red CI is also the wrong thing to abort on. A failing pipeline is when a review
+is most useful, and the reviewers are better for knowing which checks fail —
+a test the changeset broke is a finding, not a reason to stop looking.
+
 1. Read `${session_dir}/ci-status.txt`
-2. If failing CI checks:
-   - Present failures to user
-   - Ask: "CI checks are failing. Proceed with review or abort?"
-   - If abort: stop, report "Review aborted due to failing CI"
-3. All checks pass or user proceeds: continue to Step 3
+2. If any check is graded `fail`, carry the check names and their conclusions
+   into Step 3 as reviewer context, so a reviewer can connect a red check to
+   the change that caused it. They also fill the report's `<!-- CI-COMMENTARY -->`
+   marker.
+3. Continue to Step 3 either way.
+
+Abort only if the user has already asked you to stop on red CI, or says so
+unprompted. Never solicit that answer here.
 
 If `${session_dir}/ci-status.txt` does not exist, skip this step.
 
@@ -573,31 +589,47 @@ Proceed to Step 5.
 
 ### Step 5: ITERATION CHECK
 
-- **All agents APPROVE:** Proceed to Step 6 (Report).
-- **Any REQUEST CHANGES:**
-  - Present verified findings to user
-  - Ask: "Would you like me to fix these issues and re-review?"
-  - **User says yes:** Fix findings, increment iteration counter,
-    return to Step 3 (Delegation)
-  - **User says no (or stop):** Proceed to Step 6 with
-    REQUEST CHANGES verdict
-  - **Iteration limits by effort level:**
-    - **quick**: Max 1 iteration. After delegation and verification,
-      proceed directly to Step 6 regardless of verdict.
-    - **standard**: Max 3 iterations. If iteration >= 3 and user
-      says yes, warn this is iteration N and ask user to confirm
-      before continuing.
-    - **deep**: Max 5 iterations. If iteration >= 3, warn as above.
+**This step never blocks the report.** Proceed to Step 6 now, whatever the
+verdict, and run it to completion. The offer to fix and re-review comes
+afterwards.
+
+This ordering is the fix for a real loss. The offer used to sit here, between
+verification and the report, and a run with nobody to answer it — CI, a piped
+prompt, any host without an interactive user — simply ended at the question.
+That leaves a session holding verified findings and a verdict recorded in
+`tracking.md`, and no `report.md`, `verdict.txt` or `comment-summary.md` at all:
+the entire point of the run, discarded at the last step. It was also
+intermittent, because a run that happened to render before asking kept
+everything, which is worse than a reliable failure.
+
+- **Iteration limits by effort level** — these bound the offer below, and a
+  limit already reached means no offer is made:
+  - **quick**: Max 1 iteration. Never offer; the run ends after Step 6.
+  - **standard**: Max 3 iterations. At iteration >= 3, warn this is iteration N
+    and ask the user to confirm before continuing.
+  - **deep**: Max 5 iterations. At iteration >= 3, warn as above.
+
+**After Step 6 has written every artifact**, and only when all of the following
+hold — at least one agent returned REQUEST CHANGES, the iteration limit is not
+reached, and the session is interactive — present the verified findings and ask:
+"Would you like me to fix these issues and re-review?"
+
+- **User says yes:** Fix findings, increment the iteration counter, and return
+  to Step 3 (Delegation). The next pass re-runs Step 6 and overwrites the
+  artifacts, so the report always describes the latest iteration.
+- **User says no, or the session is non-interactive, or no answer comes:** the
+  run is already complete. The Step 6 artifacts stand as the outcome.
 
 ### Step 6: REPORT
 
 **First, determine the council verdict** (`APPROVE`, `REQUEST CHANGES`, or
 `APPROVE WITH ADVISORIES`) per the "Final Verdict Determination" rules in
 `${PHASES_DIR}/report.md`, and write it as the first line of
-`${session_dir}/verdict.txt`. This is the earliest point at which the finding
-set is final — Step 5's iteration and disposition can still change it — and
-both the report renderer and the PR-comment renderer read this one file, so
-the report and the posted comment can never disagree about the outcome.
+`${session_dir}/verdict.txt`. The finding set is final for this iteration by the
+time you get here — an accepted offer at the end of Step 5 returns to Step 3 and
+runs this step again, overwriting it. Both the report renderer and the
+PR-comment renderer read this one file, so the report and the posted comment can
+never disagree about the outcome.
 
 **Then run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}` and
 save its stdout to `${session_dir}/report.md`.** The script renders

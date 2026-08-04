@@ -133,9 +133,10 @@ does not resolve. All four sites return before `findings.json` is written, so
 there is no findings file — and Steps 1-4 and Step 6 below do not run, because
 there is nothing to correct, calibrate, consolidate, validate, or upgrade.
 
-**Step 5 still runs, abbreviated.** `phases/report.md`'s Pre-condition Gate
-refuses to render without `${session_dir}/verdicts/_meta/verification.txt`, and it
-refuses unconditionally — there is no exemption for this status, because such
+**Step 5 still runs, abbreviated.** `rc-render-report.sh` refuses to render
+without `${session_dir}/verdicts/_meta/verification.txt` — the check is in the
+script, not only in `phases/report.md`'s Pre-condition Gate, so it holds whether
+or not the orchestrator consults that gate. It refuses unconditionally — there is no exemption for this status, because such
 an exemption would rest on the orchestrator's own account of a status only it
 observed. Write the file. It is also the only record of *why* the review
 reported zero findings, and a zero-findings report is a claim a maintainer

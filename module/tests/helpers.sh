@@ -138,6 +138,23 @@ new_session() {
 	printf '%s' "$s"
 }
 
+# Write the minimal verification log rc-render-report.sh requires before it will
+# render anything.
+#
+# Every real session has one: phases/verify.md writes an abbreviated log even
+# when there was nothing to verify, precisely so the renderer's pre-condition
+# can be unconditional. A fixture standing in for a completed session therefore
+# needs one too — without it the fixture models a run that skipped Verification,
+# which is exactly what the renderer now refuses. Suites exercising the gate
+# itself write their own log (or none) instead of calling this.
+# Usage: write_verification_log "$session"
+write_verification_log() {
+	local session="$1"
+	mkdir -p "$session/verdicts/_meta"
+	printf '=== EVIDENCE VERIFICATION ===\n(fixture: no findings to check)\n=== SUMMARY ===\nTotal findings: 0\n' \
+		>"$session/verdicts/_meta/verification.txt"
+}
+
 assert_json_field() {
 	local json="$1" field="$2" expected="$3" test_name="$4"
 	local actual

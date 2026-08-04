@@ -24,6 +24,7 @@ fi
 echo "Test 2: Valid session"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
@@ -142,6 +143,7 @@ rm -rf "$session"
 echo "Test 3: Recorded models surfaced in report"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -189,6 +191,7 @@ rm -rf "$session"
 echo "Test 4: Duplicate model entries deduped"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -241,6 +244,7 @@ rm -rf "$session"
 echo "Test 6: malformed models.json degrades instead of aborting the report"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -300,6 +304,7 @@ echo ""
 echo "Test 7: Consolidated finding angles rendered beneath primary finding"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -342,6 +347,7 @@ rm -rf "$session"
 echo "Test: null per-agent verdict renders UNKNOWN, not APPROVE"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -380,6 +386,7 @@ mk_verdict_session() { # verdict_txt_contents|"" -> prints session dir
 	local s
 	s=$(mktemp -d)
 	mkdir -p "$s/verdicts"
+	write_verification_log "$s"
 	cat >"$s/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -627,6 +634,7 @@ echo "Test 16: section markers sit at the anchors report.md documents"
 # a report whose sections read out of order.
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -731,6 +739,7 @@ echo "Test 18: the verdict and the TL;DR lead the report"
 # can never read it, so it anchors a splice point instead.
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -820,6 +829,7 @@ rm -rf "$session"
 echo "Test: tracking values containing shell quotes survive the parse"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 cat >"$session/tracking.md" <<'TRACKING'
 # Review Council Session Tracking
 
@@ -864,6 +874,7 @@ rm -rf "$session"
 echo "Test: missing tracking keys fall back"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 if grep -qF -- "**Branch**: unknown" <<<"$result"; then
@@ -893,6 +904,7 @@ echo "Test: the report renders without GNU timeout on PATH"
 session=$(mktemp -d)
 maskdir=$(mktemp -d)
 mkdir -p "$session/verdicts"
+write_verification_log "$session"
 printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
 masked=$(path_without_command timeout "$maskdir")
 masked=$(PATH="$masked" path_without_command gtimeout "$maskdir")
@@ -907,6 +919,108 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session" "$maskdir"
+
+# The Verification pre-condition, enforced here rather than only in phase prose.
+#
+# phases/verify.md states this renderer "refuses to render without
+# ${session_dir}/verdicts/_meta/verification.txt, and it refuses unconditionally
+# — there is no exemption [...] because such an exemption would rest on the
+# orchestrator's own account of a status only it observed." That was true of
+# phases/report.md's instructions and of nothing else: this script had no such
+# check, so an orchestrator that skipped Verification got a full report anyway.
+# Observed in the wild on a zero-finding run — empty _meta/, complete report.md,
+# verdict.txt and comment-summary.md. A control the constrained party can skip
+# is not a control.
+echo "Test: rendering is refused when the verification log is absent"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts/_meta"
+printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "verification.txt" <<<"$result" &&
+	grep -qiE "verification (phase )?(was )?not (executed|run)|refus" <<<"$result"; then
+	echo "  PASS: refusal names the missing verification log"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no refusal for a session with no verification log"
+	FAIL=$((FAIL + 1))
+fi
+# The refusal must not carry a verdict: a report body that renders far enough to
+# state one is exactly what the gate exists to withhold.
+if grep -qE '^(🟢|🔴|🟡) \*\*(APPROVE|REQUEST CHANGES)' <<<"$result"; then
+	echo "  FAIL: refusal still announced a council verdict"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: refusal announces no verdict"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$session"
+
+echo "Test: an empty verification log is refused like a missing one"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts/_meta"
+printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
+: >"$session/verdicts/_meta/verification.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "verification.txt" <<<"$result" && ! grep -qF -- "**Branch**: main" <<<"$result"; then
+	echo "  PASS: empty verification log refused"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: empty verification log accepted"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: a verification log with no SUMMARY section is refused"
+# Verification that stopped partway leaves a log without its closing summary.
+# Rendering from it reports counts nobody computed.
+session=$(mktemp -d)
+mkdir -p "$session/verdicts/_meta"
+printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
+printf '=== EVIDENCE VERIFICATION ===\nchecked auth.go:42\n' \
+	>"$session/verdicts/_meta/verification.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "SUMMARY" <<<"$result" && ! grep -qF -- "**Branch**: main" <<<"$result"; then
+	echo "  PASS: incomplete verification log refused"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: incomplete verification log accepted"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: a templated verification log is refused"
+# A summary still carrying {N} placeholders was written from the template and
+# never filled in — verification was described, not performed.
+session=$(mktemp -d)
+mkdir -p "$session/verdicts/_meta"
+printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
+printf '=== SUMMARY ===\nTotal findings: {N}\nVerified: {N}\n' \
+	>"$session/verdicts/_meta/verification.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if ! grep -qF -- "**Branch**: main" <<<"$result"; then
+	echo "  PASS: templated verification log refused"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: templated verification log accepted"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: rendering proceeds once the verification log exists"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts/_meta"
+printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
+printf '=== EVIDENCE VERIFICATION ===\nchecked auth.go:42 — quote matches\n=== SUMMARY ===\nTotal findings: 0\n' \
+	>"$session/verdicts/_meta/verification.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "**Branch**: main" <<<"$result"; then
+	echo "  PASS: report renders with the verification log present"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: report withheld despite a verification log"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
 
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

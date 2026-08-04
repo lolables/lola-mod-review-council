@@ -57,6 +57,47 @@ if [[ ! -f "$tracking_file" ]]; then
 	exit 0
 fi
 
+# ---------------------------------------------------------------------------
+# Verification pre-condition
+#
+# phases/report.md has always carried this gate, and phases/verify.md has always
+# described it as one this renderer enforces — "it refuses unconditionally [...]
+# because such an exemption would rest on the orchestrator's own account of a
+# status only it observed". That was true of the instructions and of nothing
+# else: no check existed here, so an orchestrator that skipped Verification got
+# a full report. Observed on a real zero-finding run — empty _meta/, complete
+# report.md, verdict.txt and comment-summary.md, no verification log ever
+# written. A control the constrained party can skip is not a control, so the
+# three mechanical checks now live in the script.
+#
+# The two remaining checks in report.md stay prose because they are judgements a
+# grep cannot make: whether the recorded evidence checks reflect real tool calls
+# rather than recollection.
+#
+# There is no exemption for a review that found nothing. verify.md's
+# `nothing_to_do` path writes an abbreviated log precisely so it can pass here.
+verification_file="$session_dir/verdicts/_meta/verification.txt"
+verification_refusal=""
+if [[ ! -s "$verification_file" ]]; then
+	verification_refusal="verification.txt is missing or empty — the Verification phase was not executed."
+elif ! grep -qF "=== SUMMARY ===" "$verification_file"; then
+	verification_refusal="verification.txt has no \`=== SUMMARY ===\` section — the Verification phase did not run to completion."
+elif grep -qE '\{[A-Za-z_][A-Za-z0-9_]*\}' "$verification_file"; then
+	# A summary still holding {N}-shaped placeholders was copied from the
+	# template and never filled in: verification was described, not performed.
+	verification_refusal="verification.txt still contains template placeholders — the Verification phase was templated, not executed."
+fi
+
+if [[ -n "$verification_refusal" ]]; then
+	echo "# Review Council Report"
+	echo ""
+	echo "**Not rendered.** $verification_refusal"
+	echo ""
+	echo "Return to the Verification phase and execute it, then render again."
+	echo "Expected at: \`${verification_file}\`"
+	exit 0
+fi
+
 evidence_file="$session_dir/verdicts/findings.json"
 
 # Parse tracking.md through the shared reader, which trims with sed. These were

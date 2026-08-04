@@ -90,6 +90,11 @@ assert_equals "$rc" "0" "re-running verification with clusters.json present exit
 echo "Stage 4: render the report"
 # Restore the consolidated state the re-entrancy check above overwrote.
 bash "$S/rc-consolidate.sh" "$session" >/dev/null
+# The verification log is the orchestrator's artifact, not any script's —
+# phases/verify.md writes it as the record of what was checked and why. Stand in
+# for that here, at the point in the pipeline the orchestrator would, because
+# rc-render-report.sh now refuses to render without it.
+write_verification_log "$session"
 echo "REQUEST CHANGES" >"$session/verdict.txt"
 report=$(bash "$S/rc-render-report.sh" "$session")
 

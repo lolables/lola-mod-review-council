@@ -1051,6 +1051,74 @@ for sfx in code spec; do
 	assert_equals "$roster" "$on_disk" "RC_PERSONAS matches the shipped -${sfx} agent files"
 done
 
+# Step 5 must not block Step 6. The iteration offer used to sit between the
+# verdict and the report, so a non-interactive run — CI, a piped prompt, any
+# host with nobody to answer — ended at the question with verified findings and
+# a recorded verdict but no report.md, verdict.txt or comment-summary.md.
+# Observed exactly that way on a headless PR review that reached REQUEST
+# CHANGES. Two runs on the same skill and model wrote the report first anyway,
+# which made the loss intermittent rather than reliably reproducible.
+echo "Test: SKILL.md Step 5 does not gate the report behind a user answer"
+if grep -qiE 'never block|does not block|without (waiting for|blocking on) (a|the) (user|answer|reply)' <<<"$skill_flat"; then
+	echo "  PASS: Step 5 states it never blocks the report"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: Step 5 has no non-blocking guarantee"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: SKILL.md orders the iteration offer after the report artifacts"
+# The offer must be reachable only once Step 6 has written its artifacts. Pin
+# the ordering by position: the sentence deferring the offer has to appear
+# before the question itself.
+offer_q=$(awk 'BEGIN{IGNORECASE=1} /Would you like me to fix these issues/{print NR; exit}' "$SKILL_MD")
+after_report=$(awk 'BEGIN{IGNORECASE=1} /after Step 6/{print NR; exit}' "$SKILL_MD")
+if [[ -n "$offer_q" && -n "$after_report" && "$after_report" -lt "$offer_q" ]]; then
+	echo "  PASS: the offer is deferred until after Step 6"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the iteration offer is not ordered after Step 6 (offer=$offer_q, defer=$after_report)"
+	FAIL=$((FAIL + 1))
+fi
+
+# Step 2.5 must not block either. It used to present failing CI and ask
+# "Proceed with review or abort?", which is the same defect as Step 5's
+# iteration prompt one phase earlier — and it was unreachable until the
+# statusCheckRollup fix gave Quality Gates any failures to stop on. The first
+# headless run after that fix reached a vite PR with two failing checks, asked
+# the question, and ended having produced nothing. Failing CI is input to a
+# review, not grounds to abandon it: a red pipeline is when review is most
+# useful.
+echo "Test: SKILL.md Step 2.5 does not abort a review over failing CI"
+if grep -qF 'Proceed with review or abort?' <<<"$skill_flat"; then
+	echo "  FAIL: Quality Gates still asks whether to abort on failing CI"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: Quality Gates no longer offers to abort"
+	PASS=$((PASS + 1))
+fi
+
+echo "Test: SKILL.md Step 2.5 states it never blocks"
+qg=$(sed -n '/^### Step 2.5/,/^### Step 3/p' "$SKILL_MD" | tr '\n' ' ' | tr -s ' ')
+if grep -qiE 'never block|does not block' <<<"$qg"; then
+	echo "  PASS: Quality Gates states it never blocks"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: Quality Gates has no non-blocking guarantee"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: failing CI is carried into the review rather than discarded"
+# Dropping the gate must not drop the signal: reviewers are more useful knowing
+# which checks are red, so the failures have to reach delegation.
+if grep -qiE 'carry|pass .* to (the )?reviewers|into (the )?delegation|reviewer prompt' <<<"$qg"; then
+	echo "  PASS: failing checks are carried into delegation"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: failing checks are not routed anywhere"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

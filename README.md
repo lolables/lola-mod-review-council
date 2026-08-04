@@ -284,14 +284,40 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `changeset.txt` — reviewed file list
 - `diff.patch` — full patch (code review)
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
-  canonical `findings.json` (verified/correctable/stripped findings plus the per-agent verdict map), the
-  verification log (`verification.txt`), and, on a re-review, `disposition.txt` (the untrusted-conversation
-  triage audit trail)
+  canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
+- `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
+  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), and, on a re-review,
+  `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render
+  without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
 and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
 is added too — untrusted replies posted since that marker, GitHub only for now.
+
+### What spec mode reviews
+
+`/review-council specs` scans a fixed set of directories for spec files rather than sweeping the whole tree:
+
+```
+specs/  docs/specs/  docs/specification/  docs/design/  docs/superpowers/
+docs/rfcs/  docs/adr/  rfcs/  adr/  design/
+```
+
+Files count as specs when they end in `.md`, `.mdx`, `.markdown`, `.txt`, `.rst` or `.adoc`.
+
+Bare `docs/` is deliberately not on the list — most projects keep tutorials, blog posts and release notes there
+alongside anything spec-shaped, and scanning all of it turns a spec review into a review of the whole site.
+
+Two escape hatches when your layout differs:
+
+```bash
+/review-council specs docs/architecture/     # one run, explicit path
+REVIEW_COUNCIL_SPEC_DIRS="architecture rfc"  # every run, space or comma separated
+REVIEW_COUNCIL_SPEC_EXTS="md typ"            # every run, extensions without the dot
+```
+
+When nothing matches, the council tells you which directories it searched rather than only that it found nothing.
 
 ## Convention Packs
 

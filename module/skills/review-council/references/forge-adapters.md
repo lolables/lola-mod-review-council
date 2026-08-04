@@ -5,6 +5,73 @@ comment) are selected on the `forge` value detected by `rc-prepare.sh`
 (Section 2: `github`, `gitlab`, or `local`). This file documents the posting
 architecture so new forges can be added without touching orchestration.
 
+## Preparation: one adapter per forge
+
+Everything preparation needs from a forge goes through `lib/forge/<forge>.sh`,
+sourced once by `rc-prepare.sh` on the `forge` value `prepare-repo.sh` detected,
+before the stages that call it. `forge=local`, and any forge with no adapter
+file, has none sourced — the stages test for each function with `declare -F` and
+skip forge enrichment rather than branching on a forge name. Adding a forge is
+adding a file.
+
+### Required contract
+
+Both must exist or the adapter is not usable:
+
+| Function                                        | Sets / does                                                                  |
+|-------------------------------------------------|------------------------------------------------------------------------------|
+| `rc_forge_fetch_pr <pr> <owner> <repo>`         | `pr_title`, `pr_body`, `pr_base`, `pr_head`, `pr_url`, `pr_state`, `pr_status_checks` |
+| `rc_forge_fetch_diff <pr> <owner> <repo> <out>` | Writes the PR diff to `<out>`                                                |
+
+`pr_status_checks` is one `<name>: <grade>` line per check. Grades use the
+vocabulary `prepare-emit.sh` Section 16 grades — GitHub's two enums are covered
+there; a forge whose CI vocabulary differs maps to those tokens in its adapter,
+not by adding arms to Section 16. Leaving it empty writes no `--- STATUS
+CHECKS ---` section, and Quality Gates degrades to "no CI data" exactly as a
+repository with no CI does.
+
+### Optional capabilities
+
+Omit any of these and the corresponding artifact is not written; the review
+proceeds with less context. That is how a forge ships partial support without a
+stub that pretends to work.
+
+| Function                                             | Returns (normalized JSON)                | Artifact                |
+|------------------------------------------------------|------------------------------------------|-------------------------|
+| `rc_forge_fetch_issue <n> <owner> <repo>`            | `{title, body, state}`                   | `linked-issues.txt`     |
+| `rc_forge_fetch_reviews <pr> <owner> <repo>`         | `[{author, state, submitted_at, body}]`  | `prior-reviews.txt`     |
+| `rc_forge_fetch_review_comments <pr> <owner> <repo>` | `[{file, line, author, body}]`           | `prior-reviews.txt`     |
+| `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, created_at, body}]`           | `pr-conversation.txt`   |
+
+`prior-reviews.txt` needs both review functions and is skipped unless both
+exist, so a half-implemented adapter cannot report "no inline comments" for a
+call it never makes.
+
+`rc_forge_fetch_conversation` **must** return the timeline oldest first. The
+re-review path takes `last` of the comments carrying the council's marker to
+locate the most recent posted verdict, then selects replies at or after that
+timestamp. Newest-first would pick the oldest verdict ever posted and sweep in
+every reply since.
+
+### Why normalized shapes
+
+Adapters return the module's field names, never the forge's. The stages that
+render these files must not learn that GitHub spells an author `.user.login` and
+a comment's file `.path` — otherwise the next forge has to impersonate GitHub's
+REST vocabulary to reuse the renderer, which is the coupling this seam exists to
+prevent.
+
+### Degradation
+
+Every function returns empty output, or an empty array, on failure — never a
+non-zero exit. A forge that is down, rate-limiting or refusing auth costs the
+review its context, not its life.
+
+### GitLab status
+
+`lib/forge/gitlab.sh` implements the required contract only, and reports no
+pipeline status. Closing either gap is editing that one file.
+
 ## Architecture: shared renderer + per-forge post script
 
 Posting is split along the seam where forges actually differ — URL schemes and

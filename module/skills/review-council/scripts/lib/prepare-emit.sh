@@ -142,16 +142,35 @@ if [[ "$mode" == "code" ]] && [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 				conclusion="${conclusion# }"
 				[[ -z "$check_name" ]] && continue
 
+				# The arms cover both vocabularies the forge reports a check in,
+				# because the rollup mixes both node types (see
+				# lib/forge/github.sh). GitHub's CheckConclusionState is
+				# ACTION_REQUIRED, TIMED_OUT, CANCELLED, FAILURE, SUCCESS,
+				# NEUTRAL, SKIPPED, STARTUP_FAILURE, STALE; its StatusState is
+				# EXPECTED, ERROR, FAILURE, PENDING, SUCCESS. Grading only the
+				# five values the old GitHub-legacy-only path could produce left
+				# every Actions-specific conclusion falling through to `unknown`,
+				# which reads as "no signal" for outcomes that are squarely
+				# failures.
 				status="unknown"
 				case "$conclusion" in
-				SUCCESS) status="pass" ;;
-				FAILURE)
+				SUCCESS | NEUTRAL) status="pass" ;;
+				# ACTION_REQUIRED blocks the merge and needs a human; a timed-out
+				# or startup-failed run never produced a result it could pass on;
+				# ERROR is the legacy vocabulary's infrastructure failure. All
+				# four are failures for review purposes, not absent signal.
+				FAILURE | ERROR | TIMED_OUT | STARTUP_FAILURE | ACTION_REQUIRED)
 					status="fail"
 					failing_checks+=("$check_name|$conclusion")
 					;;
-				NEUTRAL) status="pass" ;;
 				SKIPPED) status="skipped" ;;
-				PENDING | null | "") status="pending" ;;
+				# EXPECTED is a status the forge has been told to wait for and
+				# has not received — pending, not missing.
+				PENDING | EXPECTED | null | "") status="pending" ;;
+				# A cancelled or stale run carries no verdict about the code. It
+				# is neither a pass to rely on nor a failure to block on, and
+				# `unknown` is the honest grade.
+				CANCELLED | STALE) status="unknown" ;;
 				*) status="unknown" ;;
 				esac
 

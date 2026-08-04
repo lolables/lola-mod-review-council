@@ -42,44 +42,13 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 	pr_number="$input_value"
 
 	if [[ "$forge_tool" != "none" ]]; then
-		if [[ "$forge" == "github" ]]; then
-			repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
-
-			# shellcheck disable=SC2086
-			pr_json=$(rc_timeout 30 gh pr view "$pr_number" $repo_flag \
-				--json number,title,body,baseRefName,headRefName,url,state,statusCheckRollup 2>/dev/null || echo "")
-
-			if [[ -n "$pr_json" ]]; then
-				pr_title=$(echo "$pr_json" | jq -r '.title // ""')
-				pr_body=$(echo "$pr_json" | jq -r '.body // ""')
-				pr_base=$(echo "$pr_json" | jq -r '.baseRefName // ""')
-				pr_head=$(echo "$pr_json" | jq -r '.headRefName // ""')
-				pr_url=$(echo "$pr_json" | jq -r '.url // ""')
-				pr_state=$(echo "$pr_json" | jq -r '.state // ""')
-
-				# Extract status checks. A check that is still running has a null
-				# conclusion; filtering those out removed them from the table
-				# entirely rather than rendering them as pending, so a PR whose
-				# critical check was mid-flight read as fully green. A null
-				# conclusion interpolates as the literal string `null`, which the
-				# CI table's case statement already grades as pending (Section 16).
-				pr_status_checks=$(echo "$pr_json" | jq -r '
-          .statusCheckRollup[]? |
-          select(.context != null) |
-          "\(.context): \(.conclusion)"
-        ')
-			fi
-		elif [[ "$forge" == "gitlab" ]]; then
-			pr_json=$(rc_timeout 30 glab mr view "$pr_number" --output json 2>/dev/null || echo "")
-
-			if [[ -n "$pr_json" ]]; then
-				pr_title=$(echo "$pr_json" | jq -r '.title // ""')
-				pr_body=$(echo "$pr_json" | jq -r '.description // ""')
-				pr_base=$(echo "$pr_json" | jq -r '.target_branch // ""')
-				pr_head=$(echo "$pr_json" | jq -r '.source_branch // ""')
-				pr_url=$(echo "$pr_json" | jq -r '.web_url // ""')
-				pr_state=$(echo "$pr_json" | jq -r '.state // ""')
-			fi
+		# The adapter for the detected forge, if any, was sourced by
+		# rc-prepare.sh. Testing for the function rather than for the forge name
+		# is what keeps this stage forge-agnostic: a forge whose adapter is not
+		# installed falls through to the no-metadata path instead of needing a
+		# branch here.
+		if declare -F rc_forge_fetch_pr >/dev/null; then
+			rc_forge_fetch_pr "$pr_number" "$forge_owner" "$forge_repo"
 		fi
 
 		# Write pr-metadata.txt
@@ -135,12 +104,8 @@ fi
 pr_diff_cache=""
 if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
 	pr_diff_cache=$(mktemp "${session_dir}/pr-diff-cache.XXXXXX")
-	if [[ "$forge" == "github" ]]; then
-		repo_flag=$(build_repo_flag "$forge_owner" "$forge_repo")
-		# shellcheck disable=SC2086
-		rc_timeout 30 gh pr diff "$pr_number" $repo_flag 2>/dev/null >"$pr_diff_cache" || true
-	elif [[ "$forge" == "gitlab" ]]; then
-		rc_timeout 30 glab mr diff "$pr_number" 2>/dev/null >"$pr_diff_cache" || true
+	if declare -F rc_forge_fetch_diff >/dev/null; then
+		rc_forge_fetch_diff "$pr_number" "$forge_owner" "$forge_repo" "$pr_diff_cache"
 	fi
 fi
 

@@ -175,6 +175,60 @@ if [[ "$mode" == "code" ]]; then
 	fi
 else
 	# Spec mode
+	#
+	# What counts as a spec is defined once, here, and read by all four
+	# discovery branches below. It used to be written out four times, and the
+	# copies had already diverged in effect: the branch handling `--scope paths`
+	# carried the same `.md`/`.txt` filter as the default sweep, so the recovery
+	# the skill suggests when the sweep comes up empty ("re-run pointing at your
+	# spec directory") found nothing either. Pointing discovery straight at 142
+	# `.mdx` files still reported no spec artifacts.
+	#
+	# Extensions. `.mdx` is what Mintlify, Docusaurus and Nextra publish, and
+	# what the MCP specification itself is written in; `.rst` is Sphinx and
+	# `.adoc` is AsciiDoc. Excluding them made spec mode unusable on most modern
+	# documentation sites for no reason a user could discover.
+	#
+	# Directories. This list can only ever be a guess at someone else's layout,
+	# so both it and the extension list are overridable. Bare `docs/` is
+	# deliberately absent: it is where projects keep tutorials, blog posts and
+	# release notes as well as specs, and sweeping all of it turns a spec review
+	# into a review of the whole site. A project that does want that says so
+	# with REVIEW_COUNCIL_SPEC_DIRS.
+	IFS=', ' read -ra spec_exts <<<"${REVIEW_COUNCIL_SPEC_EXTS:-md mdx markdown txt rst adoc}"
+	IFS=', ' read -ra spec_default_dirs <<<"${REVIEW_COUNCIL_SPEC_DIRS:-specs docs/specs docs/specification docs/design docs/superpowers docs/rfcs docs/adr rfcs adr design}"
+
+	# find(1) predicate for the extension set: `\( -name "*.md" -o … \)`.
+	spec_find_args=()
+	for ext in "${spec_exts[@]}"; do
+		[[ -z "$ext" ]] && continue
+		[[ ${#spec_find_args[@]} -gt 0 ]] && spec_find_args+=(-o)
+		spec_find_args+=(-name "*.${ext}")
+	done
+
+	# The same set as an anchored ERE, for the two branches that filter a list
+	# of changed paths rather than walking the tree. Built from the same array
+	# so the two forms cannot drift.
+	spec_ext_re=$(
+		IFS='|'
+		printf '%s' "${spec_exts[*]}"
+	)
+	spec_dir_re=$(
+		IFS='|'
+		printf '%s' "${spec_default_dirs[*]}"
+	)
+
+	# Collect every spec file under a directory into changeset_files.
+	collect_specs_in() {
+		local dir="${1%/}" file
+		[[ -d "$dir" ]] || return 0
+		[[ ${#spec_find_args[@]} -gt 0 ]] || return 0
+		while IFS= read -r file; do
+			[[ -f "$file" ]] && changeset_files+="${file}"$'\n'
+		done < <(find "$dir" -type f \( "${spec_find_args[@]}" \) 2>/dev/null || true)
+		return 0
+	}
+
 	# The path filter is tested first because it binds tighter than the base
 	# scope: `--scope all --scope paths --scope-value X` means "every spec, but
 	# only under X". Testing the default sweep first would answer the base scope
@@ -183,21 +237,12 @@ else
 		# Scan specified directories for spec files
 		IFS=',' read -ra spec_dirs <<<"${scope_dir:-$input_value}"
 		for dir in "${spec_dirs[@]}"; do
-			dir="${dir%/}"
-			if [[ -d "$dir" ]]; then
-				while IFS= read -r file; do
-					[[ -f "$file" ]] && changeset_files+="${file}"$'\n'
-				done < <(find "$dir" -type f \( -name "*.md" -o -name "*.txt" \) 2>/dev/null || true)
-			fi
+			collect_specs_in "$dir"
 		done
 	elif [[ "$input_type" == "all" ]] || [[ -z "$scope_type" ]] || [[ "$scope_type" == "all" ]]; then
 		# Scan common spec locations
-		for dir in specs docs/specs docs/design docs/superpowers design; do
-			if [[ -d "$dir" ]]; then
-				while IFS= read -r file; do
-					[[ -f "$file" ]] && changeset_files+="${file}"$'\n'
-				done < <(find "$dir" -type f \( -name "*.md" -o -name "*.txt" \) 2>/dev/null || true)
-			fi
+		for dir in "${spec_default_dirs[@]}"; do
+			collect_specs_in "$dir"
 		done
 	elif [[ "$input_type" == "ref_range" ]] || [[ "$input_type" == "auto" ]]; then
 		# Changed spec files only
@@ -206,7 +251,7 @@ else
 		changed=$(git diff --name-only "$local_range" -- 2>/dev/null || echo "")
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue
-			if [[ "$file" =~ \.(md|txt)$ ]] && [[ "$file" =~ ^(specs|docs/specs|docs/design|docs/superpowers|design)/ ]]; then
+			if [[ "$file" =~ \.(${spec_ext_re})$ ]] && [[ "$file" =~ ^(${spec_dir_re})/ ]]; then
 				changeset_files+="${file}"$'\n'
 			fi
 		done <<<"$changed"
@@ -218,7 +263,7 @@ else
 			pr_files=$(grep '^diff --git' "$pr_diff_cache" | sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
 			while IFS= read -r file; do
 				[[ -z "$file" ]] && continue
-				if [[ "$file" =~ \.(md|txt)$ ]] && [[ "$file" =~ ^(specs|docs/specs|docs/design|docs/superpowers|design)/ ]]; then
+				if [[ "$file" =~ \.(${spec_ext_re})$ ]] && [[ "$file" =~ ^(${spec_dir_re})/ ]]; then
 					changeset_files+="${file}"$'\n'
 				fi
 			done <<<"$pr_files"
@@ -230,7 +275,11 @@ else
 	changeset_files=$(echo "$changeset_files" | grep -v '^$' | sort -u || echo "")
 
 	if [[ -z "$changeset_files" ]]; then
-		json_output "empty" "No spec artifacts found to review."
+		# Name what was searched. "No spec artifacts found to review." on its own
+		# leaves a user with no way to tell an empty repository from a layout
+		# this never looks at, short of reading the source — which is exactly
+		# the position a `docs/specification/` project was in.
+		json_output "empty" "No spec artifacts found to review. Searched ${spec_default_dirs[*]} for *.${spec_exts[*]// /, *.} files. Point the review at your layout with --scope paths <dir>, or set REVIEW_COUNCIL_SPEC_DIRS / REVIEW_COUNCIL_SPEC_EXTS."
 		exit 0
 	fi
 

@@ -38,6 +38,19 @@ RC_LIB_DIR="$(dirname "$0")/lib"
 source "$RC_LIB_DIR/prepare-args.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-repo.sh
 source "$RC_LIB_DIR/prepare-repo.sh"
+
+# The forge adapter is chosen on the forge prepare-repo.sh has just detected,
+# and sourced before the stages that call it. Every difference between forges —
+# CLI name, flags, API shapes, JSON field names — lives behind the contract in
+# lib/forge/github.sh; the stages below hold no forge-specific code, which is
+# what lets a new forge be a new file rather than a branch in five places.
+# `forge=local`, and any forge without an adapter, simply has none sourced: the
+# stages test for the contract before calling it and skip forge enrichment.
+if [[ -f "$RC_LIB_DIR/forge/${forge}.sh" ]]; then
+	# shellcheck source=module/skills/review-council/scripts/lib/forge/github.sh
+	source "$RC_LIB_DIR/forge/${forge}.sh"
+fi
+
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-target.sh
 source "$RC_LIB_DIR/prepare-target.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-changes.sh

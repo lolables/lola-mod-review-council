@@ -14,6 +14,11 @@
 # replacing `calculate_baseline:` with a `packs:` list. See the
 # walkthrough for the Mode 2 schema and a worked example.
 
+# Cases live in `.lola-eval/tests/`, not the harness default `test_sets/`.
+# Without this key `lola-eval` resolves the wrong path and every command
+# fails with "test_sets/ not found".
+tests_dir: tests
+
 # Models are pinned to concrete ids so composite scores are reproducible.
 # Replace `sonnet`/`haiku` aliases here only if you want drift across model
 # versions to feed into the metric — `lola-eval test` will warn loudly when

@@ -19,8 +19,23 @@ CONFIG_PROPERTIES_TO_APPEND:
 # would break the test cases. Excluding the directory silences file-level
 # linters (ruff, devskim, gitleaks, secretlint). Repository-level scanners
 # (Trivy) need their own exclusion — see trivy.yaml in the repo root.
+#
+# module/tests/fixtures/session-golden/repo/ is a synthetic checkout of the
+# repository under review, not source this project ships: three Go files
+# carrying the defects the golden session's findings cite, and a README the
+# reviewer personas read. Linting it asks us to fix the very bugs the fixture
+# exists to model.
+#
+# Leaving it visible is what breaks the GO linter. This project is not a Go
+# module and has no go.mod, but golangci-lint activates on any .go file in the
+# codebase and then runs in project mode against the workspace root, where it
+# finds no package to load. It exits non-zero with nothing on stdout, which
+# MegaLinter reports as "Found 1 error(s)" over an empty "--Error detail:"
+# block. The eval fixtures were already excluded here, which is the only reason
+# the other 20 .go files in this repo never triggered it.
 ADDITIONAL_EXCLUDED_DIRECTORIES:
   - ".lola-eval"
+  - "module/tests/fixtures/session-golden/repo"
 
 # ---------------------------------------------------------------------------
 # jscpd (copy-paste detection)

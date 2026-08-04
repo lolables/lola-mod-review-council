@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-post-comment-github.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Mock gh: logs args, and drives responses off env by inspecting the endpoint,
 # method, --jq filter, and whether a -f body= arg was present. The github
@@ -16,7 +16,10 @@ source "$SCRIPT_DIR/test-helpers.sh"
 #   update      : PATCH issues/comments/<id> -X PATCH -f body=...
 #   minimize    : graphql minimizeComment
 # Env: MOCK_FIND (find-by-sha stdout), MOCK_FIND_RC (its exit), MOCK_GETBODY
-# (file get-body cats), MOCK_NEWID (create stdout), MOCK_LIST (list-council %b).
+# (file get-body cats), MOCK_NEWID (create stdout), MOCK_LIST (list-council %b),
+# MOCK_ACTOR (`gh api user` login; set to "" to exercise the fail-closed path),
+# MOCK_ACTOR_RC (its exit status — a real auth failure is non-zero plus stderr,
+# not an empty success, and only that shape reaches the `|| echo ""` arm).
 make_gh() {
 	local dir="$1"
 	mkdir -p "$dir"
@@ -39,6 +42,14 @@ while [[ $i -lt ${#args[@]} ]]; do
 done
 if [[ $is_graphql -eq 1 ]]; then echo '{"data":{"minimizeComment":{"minimizedComment":{"isMinimized":true}}}}'; exit 0; fi
 case "$endpoint" in
+user)
+	if [[ "${MOCK_ACTOR_RC:-0}" -ne 0 ]]; then
+		echo "gh: Requires authentication (HTTP 401)" >&2
+		exit "$MOCK_ACTOR_RC"
+	fi
+	printf '%s' "${MOCK_ACTOR-council-bot}"
+	exit 0
+	;;
 */issues/comments/*)
 	[[ "$method" == "PATCH" ]] && exit 0
 	[[ -n "${MOCK_GETBODY:-}" ]] && cat "$MOCK_GETBODY"
@@ -60,6 +71,8 @@ GH
 # comments array (in $GH_COMMENTS) through REAL jq, so the marker+sha selection
 # and the `capture("sha=...")` regex are genuinely exercised (guards the
 # SHA-keyed upsert logic this refactor relocated). Create returns id 778.
+# Comments in $GH_COMMENTS carry `.user.login`, so the author filter is real
+# too; the authenticated login is $MOCK_ACTOR (default council-bot).
 make_gh_realjq() {
 	local dir="$1"
 	mkdir -p "$dir"
@@ -81,6 +94,12 @@ while [[ $i -lt ${#args[@]} ]]; do
 	i=$((i+1))
 done
 if [[ $is_graphql -eq 1 ]]; then echo '{"data":{}}'; exit 0; fi
+case "$endpoint" in
+user)
+	printf '%s' "${MOCK_ACTOR-council-bot}"
+	exit 0
+	;;
+esac
 comments=$(cat "$GH_COMMENTS")
 case "$endpoint" in
 */issues/comments/*)
@@ -271,7 +290,7 @@ bin=$(mktemp -d)
 make_gh_realjq "$bin"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the deterministic body (marker carries head sha)
 rbody=$(cat "$sess/comment-body.md")
-jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", body:$b}]' >"$bin/comments.json"
+jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "unchanged" "real filter finds the sha-matched comment"
@@ -286,8 +305,8 @@ make_review_session "$sess"
 bin=$(mktemp -d)
 make_gh_realjq "$bin"
 jq -n '[
-  {id:808, node_id:"NODE808", body:"old council <!-- review-council:marker sha=deadbeefdeadbeef -->"},
-  {id:700, node_id:"NODE700", body:"unrelated human comment"}
+  {id:808, node_id:"NODE808", user:{login:"council-bot"}, body:"old council <!-- review-council:marker sha=deadbeefdeadbeef -->"},
+  {id:700, node_id:"NODE700", user:{login:"human"}, body:"unrelated human comment"}
 ]' >"$bin/comments.json"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
@@ -300,7 +319,13 @@ else
 	echo "  FAIL: superseded=$sup"
 	FAIL=$((FAIL + 1))
 fi
-if grep -q 'issues/comments/808' "$bin/log" && grep -q 'NODE808' "$bin/log" && ! grep -q '700' "$bin/log"; then
+# Match comment 700 the same precise way 808 is matched. A bare `grep -q '700'`
+# scans the whole log, which also carries the session timestamp and generated
+# comment ids — any of which can contain those three digits (a run at 07:00,
+# for instance). That made this assertion fail at random, pointing at the
+# poster instead of at the test.
+if grep -q 'issues/comments/808' "$bin/log" && grep -q 'NODE808' "$bin/log" &&
+	! grep -q 'issues/comments/700' "$bin/log" && ! grep -q 'NODE700' "$bin/log"; then
 	echo "  PASS: council 808 superseded, non-council 700 untouched"
 	PASS=$((PASS + 1))
 else
@@ -335,6 +360,96 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
+
+# Test 12: the marker is a public string — it ships in every verdict comment and
+# verbatim in the docs — so it cannot be the sole proof that a comment is ours.
+# A PR participant who pastes it (with this commit's sha) would otherwise have
+# their comment body overwritten by the verdict, or banner-stamped and hidden.
+# Council identity is marker AND author, so only the posting account's comment
+# may be selected.
+echo "Test 12: comment selection requires the posting account as author"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render to learn this run's head sha
+head_sha=$(sed -n 's/.*review-council:marker sha=\([0-9a-fA-F]*\).*/\1/p' "$sess/comment-body.md")
+jq -n --arg sha "$head_sha" '[
+  {id:808, node_id:"NODE808", user:{login:"council-bot"}, body:"old council <!-- review-council:marker sha=deadbeefdeadbeef -->"},
+  {id:701, node_id:"NODE701", user:{login:"mallory"}, body:"forged <!-- review-council:marker sha=\($sha) -->"},
+  {id:702, node_id:"NODE702", user:{login:"mallory"}, body:"forged older <!-- review-council:marker sha=feedfacefeedface -->"}
+]' >"$bin/comments.json"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" MOCK_ACTOR="council-bot" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "action" "created" "forged sha match is not treated as our comment"
+sup=$(echo "$result" | jq '.superseded')
+if [[ "$sup" -eq 1 ]]; then
+	echo "  PASS: superseded=1 (own comment only)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: superseded=$sup (expected 1; forged comments were counted)"
+	FAIL=$((FAIL + 1))
+fi
+if grep -q 'issues/comments/808' "$bin/log" &&
+	! grep -q 'issues/comments/701' "$bin/log" && ! grep -q 'NODE701' "$bin/log" &&
+	! grep -q 'issues/comments/702' "$bin/log" && ! grep -q 'NODE702' "$bin/log"; then
+	echo "  PASS: third-party marker comments never read, edited or hidden"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: third-party marker comments were touched"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$bin"
+
+# Test 13: with no resolvable actor there is no author to filter on, and the
+# only remaining selector is the public marker. Fail closed rather than fall
+# back to it — an empty `.user.login` comparison matches nothing or everything
+# depending on the filter, and neither is safe to guess at.
+echo "Test 13: unresolvable actor fails closed"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_ACTOR="" MOCK_FIND="" MOCK_NEWID="779" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "error" "status is error when the actor is unresolvable"
+if ! grep -q -- '-f body=' "$bin/log" && ! grep -q -- '-X PATCH' "$bin/log"; then
+	echo "  PASS: nothing created or updated"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: wrote to the PR without knowing the acting account"
+	FAIL=$((FAIL + 1))
+fi
+# A real auth failure is not an empty success — `gh api user` exits non-zero and
+# explains itself on stderr. That is the shape the `|| echo ""` arm exists for,
+# so drive it directly rather than only through an empty stdout.
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log2" MOCK_ACTOR_RC=1 MOCK_FIND="" MOCK_NEWID="779" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "error" "status is error when gh api user exits non-zero"
+msg=$(echo "$result" | jq -r '.message')
+if grep -q 'gh auth status' <<<"$msg"; then
+	echo "  PASS: message points at gh auth status"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: message gives the user nothing to act on"
+	FAIL=$((FAIL + 1))
+fi
+# The login is interpolated into a jq string literal, so a value carrying a
+# quote would close it and let the rest be read as filter syntax. Only a
+# login-shaped value is accepted; anything else takes the same closed door —
+# but with its own message, since the account WAS resolved, just not usable.
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log3" MOCK_ACTOR='x" or true or "' MOCK_FIND="" MOCK_NEWID="779" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "error" "status is error when the login is not login-shaped"
+msg=$(echo "$result" | jq -r '.message')
+if grep -q 'not login-shaped' <<<"$msg"; then
+	echo "  PASS: shape failure reported as its own cause, not as unresolvable"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: shape failure misreported"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$bin"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

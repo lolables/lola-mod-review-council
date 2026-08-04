@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Fail loudly: report the line of any unhandled command failure to stderr so a
 # pipefail exit is never silent (stdout is reserved for the rendered report).
-# shellcheck disable=SC2329 # invoked indirectly by the ERR trap below.
+# shellcheck disable=SC2329,SC2317 # invoked indirectly by the ERR trap below.
 rc_on_err() { echo "rc-error: ${3##*/}:${2}: command failed (exit ${1}) under 'set -o pipefail'" >&2; }
 set -o errtrace
 trap 'rc_on_err "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
@@ -89,7 +89,43 @@ if [[ -z "$models_block" ]]; then
 	models_block="_Not recorded by the host — reviewer, validator, and coordinator model IDs were not exposed to the report renderer._"
 fi
 
-# Start rendering report
+# Council verdict. The orchestrator decides it (phases/report.md, "Final
+# Verdict Determination") and records it as the first line of verdict.txt; this
+# script renders it. Keeping the render here rather than asking the
+# orchestrator to append a section keeps SKILL.md's EXECUTION-CONTRACT intact —
+# the model fills the markers this script emits and nothing else — and
+# gives the report and the PR comment (rc-render-comment.sh) one shared source
+# for the verdict, so the two can never disagree.
+#
+# Resolved before the header heredoc because the verdict leads the report
+# (AGENTS.md Output Principle 1): the reader must reach the outcome before any
+# table or detail dump.
+verdict_file="$session_dir/verdict.txt"
+council_verdict=""
+if [[ -f "$verdict_file" ]]; then
+	# `head` is the producer here, so this is not the `producer | head` shape
+	# that takes SIGPIPE and, under this script's `set -euo pipefail`, would
+	# abort the render (exit 141). Keep it that way if this line grows.
+	council_verdict=$(head -n1 "$verdict_file" | tr -d '\r\n')
+fi
+if [[ -n "$council_verdict" ]]; then
+	case "$council_verdict" in
+	*"REQUEST CHANGES"*) verdict_emoji="🔴" ;;
+	*"ADVISOR"*) verdict_emoji="🟡" ;;
+	*) verdict_emoji="🟢" ;;
+	esac
+	council_verdict_line="$verdict_emoji **$council_verdict**"
+else
+	# Never infer a verdict from the findings here: a silent default would read
+	# as a council decision that was never made, and APPROVE is the unsafe
+	# direction to guess in.
+	council_verdict_line="_Not recorded — the orchestrator did not write \`verdict.txt\` before rendering._"
+fi
+
+# Start rendering report. The TLDR marker is the one splice point that is never
+# dropped: the one-line TL;DR is written to comment-summary.md at report.md
+# Step 2, after this script has already run at Step 1, so the renderer cannot
+# read it and can only anchor it.
 cat <<EOF
 # Review Council Report
 
@@ -101,6 +137,12 @@ cat <<EOF
 **Models used** (to the best of the host's disclosure):
 
 $models_block
+
+## Council Verdict
+
+$council_verdict_line
+
+<!-- TLDR -->
 
 ## Session Information
 - **Mode**: $mode
@@ -119,7 +161,15 @@ EOF
 # CI Status section if available
 ci_status_file="$session_dir/ci-status.txt"
 if [[ -f "$ci_status_file" ]]; then
-	cat "$ci_status_file"
+	# Drop the `# UNTRUSTED` envelope rc-prepare.sh writes at the head of the
+	# file. It exists to frame the content for a reviewer reading it inside a
+	# prompt; here it would render as two H1s sitting alongside the report
+	# title. Only an envelope starting at line 1 is stripped, and only up to
+	# its terminating blank line, so a `#` line in a check summary survives.
+	awk 'NR == 1 && /^# UNTRUSTED/ { skip = 1 }
+	     skip && /^#/ { next }
+	     skip && /^$/ { skip = 0; next }
+	     { print }' "$ci_status_file"
 	echo ""
 fi
 
@@ -131,6 +181,16 @@ cat <<EOF
 - **Correctable**: $correctable_count
 - **Stripped**: $stripped_count
 - **Duplicates consolidated**: $dedup_count
+
+EOF
+
+# Anchor for the deep-mode subsystem tree (phases/report.md, "Subsystem
+# Analysis"), which introduces the findings list. Emitted with no placeholder
+# sentence, unlike the NARRATIVE and LEARNINGS markers below: this section is
+# usually absent, and a bare marker left unspliced is invisible in rendered
+# markdown, where "The LLM will add ..." would publish as content.
+cat <<'EOF'
+<!-- SUBSYSTEM-ANALYSIS -->
 
 EOF
 
@@ -187,6 +247,29 @@ if [[ -f "$verdict_map" ]]; then
 fi
 
 echo ""
+
+# The findings-context slot: sections that qualify the findings above without
+# being findings themselves, so the reader has them before reaching the
+# verdict. Each is anchored here because the EXECUTION-CONTRACT lets the
+# orchestrator fill markers and nothing else — an unanchored section is one it
+# has to either drop or hand-append, and both are defects. Bare markers, no
+# placeholder prose, for the reason given at SUBSYSTEM-ANALYSIS above; every
+# one of these sections is conditional on a phase having run.
+#
+# CI-COMMENTARY, not FORGE-CI-STATUS: the `## Forge CI Status` table is already
+# script-rendered from ci-status.txt further up. A marker sharing that name
+# reads as an invitation to paste the table a second time, which is how the
+# file's `# UNTRUSTED` envelope reaches a maintainer-facing report.
+cat <<'EOF'
+<!-- MERGE-ADVISORIES -->
+
+<!-- ACCEPTANCE-CRITERIA -->
+
+<!-- DISPOSITION-OUTCOMES -->
+
+<!-- CI-COMMENTARY -->
+
+EOF
 
 # Narrative and learnings markers
 cat <<'EOF'

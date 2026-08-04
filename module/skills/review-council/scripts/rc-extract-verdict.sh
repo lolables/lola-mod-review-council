@@ -6,8 +6,10 @@ rc_trap_errors
 
 # rc-extract-verdict.sh <session_dir>
 # For each verdicts/<agent>.raw.md (raw agent output), extract the fenced ```json
-# block and validate it structurally. Writes verdicts/<agent>.json on success.
-# Emits a JSON summary. Invalid/missing blocks are reported for one re-dispatch.
+# block, validate it structurally, then enforce the one invariant the schema
+# cannot express: a verdict of APPROVE may not be filed over a CRITICAL or HIGH
+# finding. Writes verdicts/<agent>.json on success. Emits a JSON summary.
+# Invalid/missing/incoherent blocks are reported for one re-dispatch.
 
 session_dir="${1:-}"
 [[ -n "$session_dir" && -d "$session_dir" ]] || {
@@ -31,6 +33,15 @@ extract_block() { # file
 
 SCHEMA="$(cd "$(dirname "$0")/../references" && pwd)/verdict-schema.json"
 _warned_no_validator=0
+
+# Key sets allowed by "additionalProperties": false in verdict-schema.json.
+# The jq fallback below has no way to read the schema (its whole purpose is to
+# work on hosts where the schema tooling is missing), so the lists are declared
+# here and test-rc-extract-verdict.sh diffs these two lines against the schema
+# — drift fails the suite instead of silently splitting the two validation
+# paths apart. Keep each on one line: the test extracts them with sed.
+readonly RC_TOP_KEYS='["agent","files_read","verdict","findings"]'
+readonly RC_FINDING_KEYS='["severity","file","line","evidence","constraint","description","recommendation"]'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -76,18 +87,33 @@ validate() { # json_string
 		echo "rc-warning: 'jsonschema' validator not found or incompatible; using minimal jq check. Install sourcemeta/jsonschema for full schema validation." >&2
 		_warned_no_validator=1
 	fi
-	printf '%s' "$json" | jq -e '
-		(.agent | type) == "string" and
-		(.files_read | type) == "array" and
-		([.verdict] | inside(["APPROVE","REQUEST CHANGES"])) and
+	# Missing required keys are caught by the type assertions: an absent key
+	# reads as null, whose type is "null", not "string"/"array".
+	printf '%s' "$json" | jq -e \
+		--argjson topkeys "$RC_TOP_KEYS" \
+		--argjson fkeys "$RC_FINDING_KEYS" '
+		# Exact membership. The obvious `[.x] | inside([...])` compares with
+		# `contains`, which on strings is SUBSTRING containment — it accepted
+		# "APPROV" as a verdict and "HIG"/"CRIT" as severities, and accepted
+		# the empty string as both.
+		def oneof($allowed): . as $v | any($allowed[]; . == $v);
+		def nonempty_string: type == "string" and length > 0;
+		# Schema says "integer"; jq has no integer type, so check it is whole.
+		def integerish: type == "number" and (floor == .);
+		(.agent | nonempty_string) and
+		(.files_read | type) == "array" and all(.files_read[]; type == "string") and
+		(.verdict | oneof(["APPROVE","REQUEST CHANGES"])) and
 		(.findings | type) == "array" and
+		(([keys[]] - $topkeys) | length) == 0 and
 		(all(.findings[];
-			([.severity] | inside(["CRITICAL","HIGH","MEDIUM","LOW"])) and
-			(.file | type) == "string" and (.file | length) > 0 and
-			(.evidence | type) == "string" and (.evidence | length) > 0 and
-			(.description | type) == "string" and
-			(.recommendation | type) == "string" and
-			((.line == null) or (.line | type) == "number")
+			(.severity | oneof(["CRITICAL","HIGH","MEDIUM","LOW"])) and
+			(.file | nonempty_string) and
+			(.evidence | nonempty_string) and
+			(.description | nonempty_string) and
+			(.recommendation | nonempty_string) and
+			((.line == null) or (.line | integerish)) and
+			((has("constraint") | not) or (.constraint | type) == "string") and
+			(([keys[]] - $fkeys) | length) == 0
 		))
 	' >/dev/null 2>&1
 }
@@ -126,6 +152,33 @@ for raw in "${raw_files[@]}"; do
 	if ! validate "$block"; then
 		detail=$(validate_error "$block")
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "SCHEMA_INVALID" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		continue
+	fi
+	# verdict-schema.json constrains `verdict` and `severity` independently and
+	# never couples them, so an APPROVE filed over a CRITICAL finding validates.
+	# Nothing downstream re-derives the verdict — rc-verify-evidence.sh copies it
+	# verbatim — so the block would render as a green APPROVE header over a
+	# verified CRITICAL. The coupling lives here rather than in the schema
+	# because the jq fallback would have to mirror a draft-07 if/then and the two
+	# would drift; sitting outside validate() is what makes both validation paths
+	# reach it. The reason is VERDICT_INCOHERENT, not SCHEMA_INVALID: the block
+	# IS schema-valid, and a maintainer told otherwise would validate it by hand
+	# and watch it pass.
+	#
+	# Both halves of the test below fail closed, and the polarity is why: jq
+	# failing outright is caught by the `||`, and jq succeeding while printing
+	# anything other than the two expected words is caught by testing `!= "no"`
+	# rather than `== "yes"`. Do not "simplify" it to `== "yes"` — that turns
+	# every unexpected output into an acceptance. Rejecting costs one
+	# re-dispatch; accepting ships the mislabelled verdict.
+	verdict_mismatch=$(printf '%s' "$block" | jq -r '
+		if .verdict == "APPROVE"
+			and (.findings | map(.severity) | any(. == "CRITICAL" or . == "HIGH"))
+		then "yes" else "no" end
+	' 2>/dev/null) || verdict_mismatch="yes"
+	if [[ "$verdict_mismatch" != "no" ]]; then
+		detail='Verdict/severity mismatch: verdict is "APPROVE" while findings still contain a CRITICAL or HIGH entry. A reviewer holding an unresolved CRITICAL or HIGH finding must return "REQUEST CHANGES". Either change the verdict to "REQUEST CHANGES", or — if the finding does not hold at that severity — drop it or lower its severity to MEDIUM/LOW and keep "APPROVE". Whichever you choose, say so in prose alongside the block: dropping the finding without a word erases it from the review entirely.'
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "VERDICT_INCOHERENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
 	fi
 	echo "$block" | jq . >"$(dirname "$raw")/$agent.json"

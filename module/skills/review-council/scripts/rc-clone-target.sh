@@ -11,6 +11,11 @@ rc_trap_errors # report script:line on any unhandled failure (never silent)
 # Usage:
 #   rc-clone-target.sh --forge github --owner O --repo R --pr N --head REF [--url URL]
 #
+#   --url names the target repository outright, host included, and is the only
+#   way to reach a host other than github.com (a GitHub Enterprise install).
+#   The local origin is never a source for the host — see "Which host did the
+#   caller ask for?" below.
+#
 # Output JSON:
 #   {"status":"in_place|ok|skip","review_root":"<path|.>","message":"..."}
 #     in_place  -> current working tree is the target at PR head; review_root "."
@@ -71,12 +76,40 @@ if [[ "$forge" != "github" ]]; then
 	exit 0
 fi
 
-# --- Already in it? Same origin owner/repo AND current branch == PR head ---
+# --- Which host did the caller ask for? ---
+# In precedence order: an explicit --url, else the canonical host of --forge
+# (github is the only forge implemented, so github.com).
+#
+# The origin's host is deliberately not a source here. Under URL scope the
+# checkout we happen to be standing in has nothing to do with the PR being
+# reviewed, and owner/repo is a name collision away from any mirror — or any
+# host an attacker controls — that serves the same two path segments. Letting
+# the origin choose the host would point review_root at foreign content, which
+# is then evidence-verified as though it were the PR. When the caller names no
+# host, github.com is used, which is what this script did before it looked at
+# the origin at all.
+target_host="github.com"
+if [[ -n "$url" ]]; then
+	parse_remote "$url"
+	target_host="$rc_remote_host"
+fi
+
+# --- Already in it? Same host AND owner/repo AND current branch == PR head ---
 origin_url=$(git remote get-url origin 2>/dev/null || echo "")
-cur_owner=$(echo "$origin_url" | sed -E 's|.*github\.com[:/]([^/]+)/([^/]+)(\.git)?$|\1|')
-cur_repo=$(echo "$origin_url" | sed -E 's|.*github\.com[:/]([^/]+)/([^/]+)(\.git)?$|\2|' | sed -E 's/\.git$//')
+parse_remote "$origin_url"
+cur_host="$rc_remote_host" cur_owner="$rc_remote_owner" cur_repo="$rc_remote_repo"
 cur_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
-if [[ "${cur_owner,,}" == "${owner,,}" ]] && [[ "${cur_repo,,}" == "${repo,,}" ]] && [[ -n "$head" ]] && [[ "$cur_branch" == "$head" ]]; then
+# Does the checkout we are standing in hold the repository we were asked for?
+# The host is part of the question, not an incidental detail: standing in a
+# same-named repository on a different host is exactly when the working tree
+# must not be reused. Only when host, owner and repo all agree does "acme/
+# widgets" mean the same repository the caller named.
+origin_names_target=false
+if [[ -n "$cur_host" ]] && [[ "${cur_host,,}" == "${target_host,,}" ]] &&
+	[[ "${cur_owner,,}" == "${owner,,}" ]] && [[ "${cur_repo,,}" == "${repo,,}" ]]; then
+	origin_names_target=true
+fi
+if [[ "$origin_names_target" == true ]] && [[ -n "$head" ]] && [[ "$cur_branch" == "$head" ]]; then
 	review_root="."
 	emit "in_place" "Already in ${owner}/${repo} at ${head}; using working tree."
 	exit 0
@@ -85,7 +118,8 @@ fi
 # --- Materialize into per-repo cache ---
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones"
 dest="${cache_root}/${owner}-${repo}"
-clone_url="${url:-https://github.com/${owner}/${repo}.git}"
+# Built from the host the caller named, never from the origin's.
+clone_url="${url:-https://${target_host}/${owner}/${repo}.git}"
 
 mkdir -p "$cache_root" 2>/dev/null || {
 	review_root="."
@@ -99,7 +133,11 @@ if [[ -d "$dest/.git" ]]; then
 	clone_ok=true
 else
 	# Prefer gh (auth); flags after -- are passed to git clone.
-	if command -v gh >/dev/null 2>&1; then
+	# `gh repo clone OWNER/REPO` resolves against gh's own default host, so on
+	# any other host it would clone a same-named repository from github.com
+	# rather than the one asked for. Every other host goes straight to git,
+	# which honours the URL and the operator's credential helper.
+	if [[ "$target_host" == "github.com" ]] && command -v gh >/dev/null 2>&1; then
 		if rc_timeout 120 gh repo clone "${owner}/${repo}" "$dest" -- --filter=blob:none --no-checkout >/dev/null 2>&1; then
 			clone_ok=true
 		fi

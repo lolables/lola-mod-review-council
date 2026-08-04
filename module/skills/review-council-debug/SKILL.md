@@ -112,8 +112,11 @@ Validate JSON output:
 - `status` present (`ok`, `extract_error`, `nothing_to_do`, or `skip`)?
 - On `ok`, did `verdicts/<agent>.json` get written for every agent?
 - On `extract_error`, does the per-agent `reason` (`NO_JSON_BLOCK` /
-  `SCHEMA_INVALID`) and `remediation` text give an LLM orchestrator
-  enough to re-dispatch that one agent?
+  `SCHEMA_INVALID` / `VERDICT_INCOHERENT`) and `remediation` text give an
+  LLM orchestrator enough to re-dispatch that one agent? A
+  `VERDICT_INCOHERENT` block is schema-valid — it declares APPROVE over a
+  CRITICAL or HIGH finding — so do not expect `jsonschema validate` to
+  reject it.
 - `jq` can parse output as valid JSON?
 
 ### Step 3: Test rc-verify-evidence.sh
@@ -223,6 +226,11 @@ Test these scenarios for robustness:
   `rc-extract-verdict.sh` to return `status: "extract_error"` with a
   per-agent `reason` (`NO_JSON_BLOCK` / `SCHEMA_INVALID`) and
   `remediation` text -- not a silently dropped agent.
+- **Incoherent verdict**: a schema-valid block declaring
+  `"verdict": "APPROVE"` alongside a `CRITICAL` or `HIGH` finding. Expect
+  `reason: "VERDICT_INCOHERENT"` with a `detail` naming the remedies. The
+  distinct reason matters here: the block passes `jsonschema validate`, so
+  `SCHEMA_INVALID` would send you chasing a schema break that does not exist.
 - **Missing tracking.md**: Session exists but tracking.md not created
 - **Large changeset**: Test with 1000+ files, check performance
 - **Special characters**: Files and messages with quotes, newlines, unicode

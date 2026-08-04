@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 SKILL_MD="$SCRIPT_DIR/../skills/review-council/SKILL.md"
 
 echo "Test: SKILL.md derives REFERENCES_DIR from SKILL_DIR"

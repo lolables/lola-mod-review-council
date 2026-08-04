@@ -52,9 +52,14 @@ result=$(jq --argjson clusters "$clusters" '
 				+ {provenance: (($primary.provenance // {})
 					+ {consolidated_from: (($primary.provenance.consolidated_from // []) + $folded)})} ) as $newprimary
 			| ( [ $secs[] | ident ] ) as $secids
-			| .verified = ( [ .verified[]
-				| if (ident == ($primary|ident)) then $newprimary
-				  elif ($secids | any(. == (ident))) then empty
+			# `any(f)` rebinds `.` to each element of its input, so a bare
+			# `ident` inside it would be evaluated against the $secids element
+			# rather than the finding being filtered — reducing the test to
+			# `secid == secid`, always true, which deletes every non-primary
+			# finding in the array. Capture the finding as $f at the boundary.
+			| .verified = ( [ .verified[] | . as $f
+				| if (($f|ident) == ($primary|ident)) then $newprimary
+				  elif ($secids | any(. == ($f|ident))) then empty
 				  else . end ] )
 			| .records += [ {primary: ($primary|ident), merged: $secids} ]
 			| .semantic += ($secs | length)

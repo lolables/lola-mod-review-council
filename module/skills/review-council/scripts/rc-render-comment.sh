@@ -30,6 +30,21 @@ MARKER_KEY="review-council:marker"
 
 # --- Neutral helpers (read the globals rc_render_comment_body sets) ---
 
+# House style for LLM-authored prose: em/en dashes become plain hyphens.
+#
+# Applied field by field at assignment, NEVER to the assembled body. A
+# whole-body pass also rewrote bytes inside the evidence block, and
+# references/reviewer-protocol.md requires evidence to reach the reader as a
+# byte-for-byte quote of the reviewed file — it is the same string the verifier
+# matched against that file, and rc-render-report.sh renders it untouched, so a
+# body-wide filter made the comment and the report disagree about one finding.
+# Static template text in this renderer is written without those characters in
+# the first place, so it needs no filter at all.
+normalize_dashes() { # text
+	local t="${1//—/-}"
+	printf '%s' "${t//–/-}"
+}
+
 # Verified-finding count for a severity. Reads $RC_EVIDENCE.
 sev_count() { # SEVERITY
 	[[ -f "$RC_EVIDENCE" ]] || {
@@ -110,22 +125,27 @@ indent2() {
 	done
 }
 
-# Render a finding's evidence as a markdown block that cannot bleed into the
-# surrounding structure. Single-line evidence stays an inline `> `code span
-# (the compact common case). Multi-line evidence is schema-permitted and, once
-# jq -r turns its JSON \n into real newlines, an inner line beginning with
-# `#`/`>`/`-` would otherwise render as a real heading/blockquote/list item in
-# the posted comment — so it goes into an indented fenced code block instead,
-# which renders every line verbatim regardless of its leading characters.
+# Render a finding's evidence as a fenced code block that cannot bleed into the
+# surrounding structure. Evidence is verbatim content copied out of a changeset
+# file, so an author controls every byte of it: an inner line beginning with
+# `#`/`>`/`-` must not become a real heading/blockquote/list item, and no inner
+# line may terminate the block early.
+#
+# A fence only guarantees the first of those. The two spaces indent2 adds keep
+# the fence inside its list item but do NOT neutralise a fence line in the
+# evidence — up to three leading spaces is still a valid CommonMark closing
+# fence — so the delimiter is sized to the content instead: widen it one
+# backtick at a time until no run that long occurs anywhere in the evidence.
+# Single-line evidence goes through the same form; it used to render as an
+# inline code span, which any backtick in the quoted source terminates.
 evidence_block() { # evidence-text
-	local ev="$1"
-	# shellcheck disable=SC2016 # the backticks are literal markdown fence and
-	# code-span delimiters, not command substitution.
-	if [[ "$ev" == *$'\n'* ]]; then
-		printf '```\n%s\n```\n' "$ev" | indent2
-	else
-		printf '  > `%s`\n' "$ev"
-	fi
+	# shellcheck disable=SC2016 # the backticks are literal markdown fence
+	# delimiters, not command substitution.
+	local ev="$1" fence='```'
+	while [[ "$ev" == *"$fence"* ]]; do
+		fence+='`'
+	done
+	printf '%s\n%s\n%s\n' "$fence" "$ev" "$fence" | indent2
 }
 
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
@@ -146,7 +166,9 @@ rc_render_comment_body() { # session_dir body_file
 	repo=$(rc_parse_kv "$session_dir/session.txt" "Repo")
 	effort=$(rc_parse_kv "$session_dir/session.txt" "Effort")
 
-	# Verdict (orchestrator writes verdict.txt at report time).
+	# Verdict. Single source shared with rc-render-report.sh: the orchestrator
+	# writes verdict.txt at the start of the report phase (SKILL.md Step 6), so
+	# the posted comment and the rendered report cannot disagree.
 	if [[ -f "$session_dir/verdict.txt" ]]; then
 		v=$(head -n1 "$session_dir/verdict.txt" | tr -d '\n')
 		[[ -n "$v" ]] && verdict="$v"
@@ -159,7 +181,10 @@ rc_render_comment_body() { # session_dir body_file
 
 	# Human TL;DR (LLM-authored one-liner; generic fallback).
 	tldr="Automated review complete."
-	[[ -f "$session_dir/comment-summary.md" ]] && tldr=$(head -n1 "$session_dir/comment-summary.md")
+	if [[ -f "$session_dir/comment-summary.md" ]]; then
+		tldr=$(head -n1 "$session_dir/comment-summary.md")
+		tldr=$(normalize_dashes "$tldr")
+	fi
 
 	# LLM provenance: unique model IDs the host recorded, as bullets.
 	if [[ -f "$session_dir/models.json" ]]; then
@@ -242,6 +267,12 @@ rc_render_comment_body() { # session_dir body_file
 				desc=$(jq -r '.description' <<<"$base")
 				rec=$(jq -r '.recommendation' <<<"$base")
 				constraint=$(jq -r '.constraint // ""' <<<"$base")
+				# Prose the reviewer wrote takes the house-style dash pass;
+				# `evidence` deliberately does not (see normalize_dashes).
+				t=$(normalize_dashes "$t")
+				desc=$(normalize_dashes "$desc")
+				rec=$(normalize_dashes "$rec")
+				constraint=$(normalize_dashes "$constraint")
 				emoji=$(persona_emoji "$agent")
 				loc_link=$(link_location "$f" "$l")
 				findings_block+="- ${emoji} **${t}** (${loc_link})"$'\n\n'
@@ -259,13 +290,9 @@ rc_render_comment_body() { # session_dir body_file
 	fi
 
 	# Assemble. Override REVIEW_COUNCIL_REPO to point a fork's footer at its repo.
-	# House style: no em/en dashes in posted output (covers static text plus
-	# LLM-authored TL;DR and agent-authored finding titles/evidence). Filtering on
-	# write rather than with a second in-place pass keeps this portable — BSD sed
-	# takes `-i EXTENSION` as a separate argument, so `sed -i 's/…/'` reads the
-	# script as a backup suffix and the file as the script, and silently strips
-	# nothing. Nothing downstream reads variables assigned inside the group, so
-	# running it as a pipeline subshell is safe.
+	# The house-style dash pass has already run on each LLM-authored prose field
+	# above; nothing filters the assembled body, so evidence lands here exactly as
+	# the reviewer quoted it.
 	repo_url="${REVIEW_COUNCIL_REPO:-https://github.com/lolables/lola-mod-review-council}"
 	{
 		echo "## ${emoji} Review Council: ${verdict}"
@@ -306,7 +333,7 @@ rc_render_comment_body() { # session_dir body_file
 		echo "_Produced by [Review Council](${repo_url}), an open-source multi-persona code reviewer. Spot a wrong call or want the source? [File feedback](${repo_url}/issues) or browse the [repository](${repo_url})._"
 		echo ""
 		echo "$marker_line"
-	} | sed 's/—/-/g; s/–/-/g' >"$body_file"
+	} >"$body_file"
 }
 
 # --- Standalone entry: render-only fallback (no forge hooks -> plain spans). ---

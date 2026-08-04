@@ -53,10 +53,22 @@ Every rendered body ends with a hidden tag carrying the reviewed commit SHA:
 
     <!-- review-council:marker sha=<full-head-sha> -->
 
-The literal `review-council:marker` identifies any council comment; the `sha=`
-field identifies the exact commit reviewed. Both GitHub and GitLab render HTML
-comments invisibly, so the marker is portable. The body also shows a visible
-`Reviewed at commit <short-sha>` line.
+The `sha=` field identifies the exact commit reviewed. Both GitHub and GitLab
+render HTML comments invisibly, so the marker is portable. The body also shows a
+visible `Reviewed at commit <short-sha>` line.
+
+A council comment is one that carries the marker **and** was authored by the
+identity doing the posting. The marker on its own is not proof of authorship: it
+appears in every verdict comment ever posted and verbatim in this document, so
+any PR participant can paste one — including with the current head SHA. Selected
+on the marker alone, that comment would be overwritten with the verdict body, or
+banner-stamped and hidden as outdated, under the write token of whoever ran the
+review. So both listing selectors in `rc-post-comment-github.sh` (the find-by-SHA
+lookup and the supersede listing) filter on `.user.login` against the account
+resolved from `gh api user`, and every id the update and hide calls act on comes
+out of one of those two listings. When that account cannot be resolved, or comes
+back in a shape that is not a login, the script emits an `error` status and posts
+nothing rather than fall back to marker-only selection.
 
 ## Re-review policy (owned by each per-forge post script)
 
@@ -104,5 +116,6 @@ session directory and instruct the user to post it manually:
 - Cloning fetches source only. Reviewers never execute cloned project code
   (SKILL.md HARD-GATE).
 - Superseding a prior review edits and hides earlier council comments on the
-  same PR — still posting-scoped writes, never touching project code or
-  non-council comments.
+  same PR — still posting-scoped writes, never touching project code, and never
+  a comment authored by anyone but the posting identity (see "Marker and
+  reviewed commit"; the marker alone does not make a comment ours).

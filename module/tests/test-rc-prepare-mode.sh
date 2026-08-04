@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Regression: explicit --mode on a PR/url scope must still capture the PR
 # changeset. The PR diff fetch used to live only inside the mode auto-detect
@@ -122,6 +122,43 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$work" "$bindir"
+
+echo ""
+echo "Test 4: spec mode honours a secondary --scope paths filter over --scope all"
+# Regression: the secondary path filter binds tighter than the base scope. The
+# spec-location sweep used to be tested first, so `--scope all --scope paths`
+# swept specs/ and docs/ and never looked at the directories the user named.
+work=$(mktemp -d)
+(
+	cd "$work" || exit 1
+	git_init_sandbox
+	git checkout -q -b main
+	mkdir -p specs docs/design mymod
+	echo "# Default-location spec" >specs/ignored.md
+	echo "# Default-location design" >docs/design/ignored.md
+	echo "# Requested spec" >mymod/wanted.md
+	git add specs docs mymod
+	git commit -qm init
+)
+result=$(cd "$work" && AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode specs --scope all --scope paths --scope-value "mymod/" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(echo "$result" | jq -r '.session_dir // empty')
+if [[ -n "$sess" ]] && grep -q '^mymod/wanted.md$' "$sess/changeset.txt" 2>/dev/null; then
+	echo "  PASS: changeset.txt contains the requested path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: changeset.txt missing mymod/wanted.md"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -n "$sess" ]] && grep -qE '^(specs|docs/design)/' "$sess/changeset.txt" 2>/dev/null; then
+	echo "  FAIL: changeset.txt still holds default spec locations the filter excluded"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: changeset.txt excludes the default spec locations"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$work"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

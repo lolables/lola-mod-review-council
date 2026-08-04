@@ -21,9 +21,12 @@ One external write is permitted, and ONLY under all of these conditions:
 posting the council verdict as a PR comment (Step 7) when (a) the user's
 request explicitly asked to post/comment, and (b) the exact rendered body was
 shown and the user confirmed — or the user gave standing authorization to post
-without asking. Cloning a target repo for review (Step 1) reads source only
-and never executes cloned code. No other external writes, code edits, or
-command execution are permitted.
+without asking. That permission covers ONLY comments the council itself
+authored: the post script refuses to update or hide a comment written by anyone
+else, even one carrying the council marker, since the marker is public and any
+PR participant can post one. Cloning a target repo for review (Step 1) reads
+source only and never executes cloned code. No other external writes, code
+edits, or command execution are permitted.
 
 Do NOT run local builds, tests, linters, or CI commands. Review Council
 analyzes source code statically — never executes project code. Reading
@@ -42,7 +45,18 @@ these steps by hand, even in non-interactive / headless runs:
 - Do NOT clone the target repo yourself. `rc-prepare.sh` invokes
   `rc-clone-target.sh` and returns `review_root`; read changeset files there.
 - Do NOT hand-write the report. Run `rc-render-report.sh`, then fill only the
-  `<!-- NARRATIVE -->` and `<!-- LEARNINGS -->` markers it leaves.
+  markers it leaves: `<!-- TLDR -->`, `<!-- SUBSYSTEM-ANALYSIS -->`,
+  `<!-- MERGE-ADVISORIES -->`, `<!-- ACCEPTANCE-CRITERIA -->`,
+  `<!-- DISPOSITION-OUTCOMES -->`, `<!-- CI-COMMENTARY -->`,
+  `<!-- NARRATIVE -->`, `<!-- LEARNINGS -->`.
+  Each is replaced by literal string substitution; when the phase that produces
+  the section did not run, delete the marker line **and its trailing blank
+  line** so the gap it leaves does not stack up. `<!-- TLDR -->` is the sole
+  exception — every report has a TL;DR, so it is always filled, never deleted;
+  when its source file is absent or empty, fill it with the fallback line
+  rather than dropping it. No raw marker may survive into the rendered
+  report. Never append a section the renderer did not anchor; a section you
+  think is missing is a renderer bug, not something to hand-write.
 - Do NOT hand-write the PR comment or invent a marker/verdict tag. The PR
   comment is rendered and posted ONLY by `rc-post-comment.sh`. Never build a
   comment body or a `gh api .../issues/comments` call yourself.
@@ -137,6 +151,7 @@ stateDiagram-v2
     Extract --> Delegate: extract_error (re-dispatch <=1)
     Extract --> Verify: ok
     Verify --> Render: effort=quick
+    Verify --> Render: nothing_to_do (no findings file)
     Verify --> Correction: correctable>0
     Verify --> Calibrate: correctable=0
     Correction --> Calibrate
@@ -407,9 +422,9 @@ If it is a path (materialized checkout), pass it so on-disk checks resolve:
 `REVIEW_ROOT="<review_root>" bash ${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`
 
 Script consumes `verdicts/{agent-name}.json` (written in Step 3 by
-`rc-extract-verdict.sh`), checks file existence, quote matching, line
-accuracy ±5, absence claims via grep, and cross-agent deduplication. It
-writes the canonical `${session_dir}/verdicts/findings.json` (the full
+`rc-extract-verdict.sh`), checks file existence, review-root containment,
+contiguous-quote matching, line accuracy ±5, and cross-agent
+deduplication. It writes the canonical `${session_dir}/verdicts/findings.json` (the full
 verified/correctable/stripped finding objects, plus the per-agent verdict
 map) and prints a summary to stdout.
 
@@ -424,8 +439,43 @@ map) and prints a summary to stdout.
 }
 ```
 
-Read `${session_dir}/verdicts/findings.json` for the full finding objects
-behind these counts — the stdout summary above carries counts only.
+**Branch on `status` before reading any file:**
+
+- `status: "nothing_to_do"` — the script exited before writing
+  `findings.json`, so this run produced no findings file at all.
+  - Do NOT read `${session_dir}/verdicts/findings.json`. A stale copy from an
+    earlier iteration may still be on disk, and reading it would present a
+    previous run's findings as this one's.
+  - Not reading it is not enough. `rc-render-report.sh` opens that path
+    itself, for both the findings list and the per-agent verdict table, so
+    **rename `${session_dir}/verdicts/findings.json` to
+    `${session_dir}/verdicts/findings.json.stale`** before Step 6 runs.
+    Renaming inside the session directory is session bookkeeping, permitted
+    by the hard gate; the rename preserves the audit trail while making the
+    file invisible to the renderer. Nothing to do if the path does not exist.
+  - Write the abbreviated verification record to
+    `${session_dir}/verdicts/verification.txt` — its shape is in
+    `${PHASES_DIR}/verify.md`, under the `nothing_to_do` heading. Step 6's
+    Pre-condition Gate refuses to render a report without that file and grants
+    this status no exemption, so skipping it deadlocks the run: the gate sends
+    the orchestrator back to Step 4, and Step 4 returns `nothing_to_do` again.
+    That record is verify.md's Step 5, not this document's — the two numbering
+    schemes collide at 5, and the next bullet skips the other one.
+  - Skip Step 4.5 and this document's Step 5 (Iteration Check) and go to
+    Step 6, which now finds no findings file and renders a report with zero
+    findings. Step 4.5's own gate also excludes this status, so the skip is a
+    shortcut, not a divergence.
+  - Record the status in tracking, and relay the script's `message` verbatim
+    — it names the input that was missing (session directory, `verdicts/`
+    directory, agent verdict JSON, or review root), which is what an operator
+    needs to fix it.
+- `status: "ok"` — `findings.json` was written. Read
+  `${session_dir}/verdicts/findings.json` for the full finding objects behind
+  these counts; the stdout summary above carries counts only. Continue with
+  the rest of this step.
+
+**Everything below is the `ok` path.** The `nothing_to_do` arm has already
+left Step 4 for Step 6 — do not fall through into what follows.
 
 **Then, read `${PHASES_DIR}/verify.md`** for severity calibration,
 cross-agent consolidation, and validation gate procedures. Run these in
@@ -465,7 +515,11 @@ Proceed to Step 4.5 (Disposition).
 ### Step 4.5: DISPOSITION (re-review only)
 
 **Skip entirely unless `${session_dir}/pr-conversation.txt` exists AND
-effort is not `quick`.** This is the phase that reads the PR conversation
+effort is not `quick` AND the evidence check returned `ok`.** The last
+condition is not redundant with Step 4's skip: this phase edits
+`findings.json`, and on `nothing_to_do` this run wrote no such file — the
+only thing that could be at that path is the stale copy Step 4 renamed
+aside. This is the phase that reads the PR conversation
 thread — attacker-controlled input by construction — and lets verified
 claims about it change finding disposition. It exists
 only for re-reviews; a first-time review has no prior verdict to have drawn
@@ -525,11 +579,23 @@ Proceed to Step 5.
 
 ### Step 6: REPORT
 
-**First, run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}` and
+**First, determine the council verdict** (`APPROVE`, `REQUEST CHANGES`, or
+`APPROVE WITH ADVISORIES`) per the "Final Verdict Determination" rules in
+`${PHASES_DIR}/report.md`, and write it as the first line of
+`${session_dir}/verdict.txt`. This is the earliest point at which the finding
+set is final — Step 5's iteration and disposition can still change it — and
+both the report renderer and the PR-comment renderer read this one file, so
+the report and the posted comment can never disagree about the outcome.
+
+**Then run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}` and
 save its stdout to `${session_dir}/report.md`.** The script renders
 structured report template (tables, counts, findings list, verdict)
-from tracking and verification data, and leaves a `<!-- NARRATIVE -->`
-marker for the next step to fill.
+from tracking and verification data, and leaves the eight markers named
+in the EXECUTION-CONTRACT for the next step to fill or delete — see
+`${PHASES_DIR}/report.md`, "How Sections Reach the Report", for which
+procedure owns each one. If `verdict.txt` is missing or empty the
+Council Verdict section renders as "not recorded" rather than guessing —
+treat that in a rendered report as a bug in this step, not a council outcome.
 
 **Then, read `${PHASES_DIR}/report.md`** for narrative synthesis
 and learnings extraction guidance.
@@ -541,9 +607,15 @@ and learnings extraction guidance.
   and the narrative to `${session_dir}/narrative.md`.
 - Splice deterministically: replace the single `<!-- NARRATIVE -->`
   line in `${session_dir}/report.md` with the verbatim contents of
-  `${session_dir}/narrative.md`. This is a plain string substitution
-  performed by the orchestrator, not the model free-forming the
-  report.
+  `${session_dir}/narrative.md`, and the single `<!-- TLDR -->` line
+  with the verbatim contents of `${session_dir}/comment-summary.md`.
+  This is a plain string substitution performed by the orchestrator,
+  not the model free-forming the report.
+- Whenever `${session_dir}/comment-summary.md` is absent or empty —
+  in any effort mode, whether the subagent was skipped or dispatched
+  and failed — fill `<!-- TLDR -->` with the literal line
+  `Automated review complete.` instead. Never delete it: the TL;DR
+  marker is the one marker that is not conditional on a phase running.
 - Extract learnings from review (patterns, anti-patterns, gaps)
 - Record learnings using Knowledge tool (if configured) or
   write to `${session_dir}/learnings.txt`
@@ -559,12 +631,16 @@ and learnings extraction guidance.
   and verdict only. Skip learnings extraction and narrative synthesis
   (no subagent dispatch, no narrative splice). Still splice the
   `<!-- LEARNINGS -->` marker — replace it with the literal line
-  `None recorded.` so no raw HTML-comment marker survives into the
-  rendered report.
+  `None recorded.` — and the `<!-- TLDR -->` marker, which takes the
+  absent-or-empty fallback above because no subagent wrote
+  `comment-summary.md`. No raw HTML-comment marker may survive into
+  the rendered report.
 - **standard**: Full report as above.
-- **deep**: Full report plus **Subsystem Analysis** section before
-  findings list. Read `${session_dir}/subsystems.json`, render tree
-  with finding counts per subsystem. Include learnings.
+- **deep**: Full report, and the `<!-- SUBSYSTEM-ANALYSIS -->` marker
+  (which the renderer leaves immediately before the findings list) is
+  filled rather than emptied. Read `${session_dir}/subsystems.json`,
+  build the tree with finding counts per subsystem, and substitute it
+  for the marker line. Include learnings.
 
 **Update tracking:** Set Report status to `complete`, record council
 verdict and learnings count.
@@ -578,9 +654,10 @@ verdict and learnings count.
 Posting requires a PR target. If there is no PR (`PR: none`), tell the user
 there is nothing to post to and stop.
 
-1. **Record the final verdict** for the renderer: write the council verdict
-   (`APPROVE`, `REQUEST CHANGES`, or `APPROVE WITH ADVISORIES`) as the first
-   line of `${session_dir}/verdict.txt`.
+1. **Reuse the recorded verdict.** Step 6 is the sole owner of
+   `${session_dir}/verdict.txt` — do NOT re-derive or rewrite it here.
+   `rc-render-comment.sh` reads its first line. Rewriting it at post time is
+   how the posted comment and the rendered report drift apart.
 
 2. **Reuse the existing TL;DR.** Step 6's prose subagent is the sole owner of
    `${session_dir}/comment-summary.md` — do NOT write or regenerate it here.

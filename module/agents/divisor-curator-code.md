@@ -50,6 +50,26 @@ in project's "Review Council Configuration" section
 bash at all — report documentation gaps as review findings
 instead.
 
+`<DOCS_REPO>` is not the only interpolated parameter. Validate
+every value substituted into a command before invoking bash.
+
+`<keyword>` in the duplicate search is derived from documentation
+gap just identified — from file names and file content in
+repository under review, which is attacker-authored whenever
+council reviews fork PR or remote PR by number or URL. It is
+interpolated inside double quotes, where `$(...)` and backtick
+substitutions execute as written. Constrain it to character class
+`[A-Za-z0-9 ._-]`, maximum 60 characters.
+Drop every disallowed character rather than escaping it — escaping
+depends on quoting rules you cannot verify from here, and dropping
+costs only search precision.
+If keyword is empty after filtering, do NOT invoke bash at all —
+report documentation gap as finding instead.
+
+No command may contain `$(`, backtick, `;`, `|`, `&`, `>`, `<`, or
+newline, regardless of which parameter introduced it. If assembled
+command contains any of these, do NOT run it — report gap as finding.
+
 Do NOT use issue create commands or any other write operation.
 When documentation issue should be filed, include full
 issue create command (using forge tool from delegation
@@ -149,7 +169,7 @@ Check documentation in changeset follows established project conventions:
 
 - Does change require documentation updates?
 - If yes and Docs repo configured:
-  - Check whether matching issue exists using forge tool from delegation prompt (e.g., `gh issue list --repo <DOCS_REPO> --label docs --search "<keyword>" --state open` or `glab issue list --repo <DOCS_REPO> --label docs --search "<keyword>" --state opened`)
+  - Check whether matching issue exists using forge tool from delegation prompt (e.g., `gh issue list --repo <DOCS_REPO> --label docs --search "<keyword>" --state open` or `glab issue list --repo <DOCS_REPO> --label docs --search "<keyword>" --state opened`). `<keyword>` comes from reviewed repository — filter it per Bash Access Restriction before invoking bash.
   - If no matching issue exists, report finding with full issue create command (using forge tool from delegation prompt) in recommendation field (do NOT execute it).
 - If yes but no Docs repo configured:
   - Report documentation gap as finding describing what needs documenting. Do not attempt to file issue.

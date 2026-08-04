@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-render-comment.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Test 1: standalone render -> plain code spans (no hooks defined), full body
 echo "Test 1: standalone render (plain spans)"
@@ -40,15 +40,18 @@ else
 	echo "  FAIL: em/en dash present"
 	FAIL=$((FAIL + 1))
 fi
-# Blank line between finding title and its quote. Bash's =~ spans lines without
-# needing GNU grep's -z, and uses only POSIX ERE constructs.
+# Blank line between a finding title and the fence opening its evidence. Bash's
+# =~ spans lines without needing GNU grep's -z, and uses only POSIX ERE
+# constructs (a backtick is literal in an ERE).
 nl=$'\n'
-quote_re="\*\*The expiry check rejects tokens at the exact boundary\.\*\*[^${nl}]*${nl}${nl}  > "
+# shellcheck disable=SC2016 # literal markdown fence delimiter, not command substitution.
+fence='```'
+quote_re="\*\*The expiry check rejects tokens at the exact boundary\.\*\*[^${nl}]*${nl}${nl}  ${fence}"
 if [[ "$body" =~ $quote_re ]]; then
-	echo "  PASS: blank line before quote"
+	echo "  PASS: blank line before evidence fence"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: no blank line before quote"
+	echo "  FAIL: no blank line before evidence fence"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
@@ -347,6 +350,158 @@ if grep -qF '`auth/token.go:1`' <<<"$b8"; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: finding did not degrade to plain code span"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# Test 9: evidence carrying its own backticks must not break out of its block.
+# A fixed three-backtick fence is closed by any evidence line that is itself a
+# three-backtick fence -- two spaces of list indent is still <= 3, so it stays a
+# valid CommonMark closing fence. The rest of the evidence then escapes as live
+# markdown and the trailing delimiter opens an UNTERMINATED fence that swallows
+# every later finding, the footer and the <!-- review-council:marker --> line the
+# re-review upsert matches on. Evidence is verbatim content from the changeset,
+# so its author controls those bytes. The fence is therefore sized to the
+# content: one backtick wider than the longest run inside the evidence.
+echo "Test 9: evidence fence is sized to the evidence, never fixed at three"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified[0].evidence = "line one\n```\nline three"' "$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+open4=$(grep -cFx '  ````' "$sess/comment-body.md" || true)
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+inner3=$(grep -cFx '  ```' "$sess/comment-body.md" || true)
+if [[ "$open4" -eq 2 ]]; then
+	echo "  PASS: three-backtick evidence fenced with four backticks"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 2 four-backtick fence lines, got $open4"
+	FAIL=$((FAIL + 1))
+fi
+if [[ "$inner3" -eq 1 ]]; then
+	echo "  PASS: the evidence's own fence line is content, not a delimiter"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 1 three-backtick line (evidence), got $inner3"
+	FAIL=$((FAIL + 1))
+fi
+# The line after the evidence's own fence must still sit BETWEEN the block's own
+# two delimiters -- presence alone proves nothing, since the broken rendering
+# also left the text in the file, just outside the code block.
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+open_ln=$(grep -nFx '  ````' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+close_ln=$(grep -nFx '  ````' "$sess/comment-body.md" | tail -1 | cut -d: -f1 || true)
+three_ln=$(grep -nFx '  line three' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+if [[ -n "$open_ln" && -n "$close_ln" && -n "$three_ln" && "$three_ln" -gt "$open_ln" && "$three_ln" -lt "$close_ln" ]]; then
+	echo "  PASS: evidence after the inner fence stayed inside the block"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: evidence after the inner fence escaped the block (open=$open_ln line=$three_ln close=$close_ln)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# Single-line evidence takes the same sized fence. It used to render as an
+# inline `> `code span``, which any backtick in the quoted source terminates --
+# and a backtick in a cited shell or markdown line is routine, not exotic.
+sess=$(mktemp -d)
+make_review_session "$sess"
+# shellcheck disable=SC2016 # literal backticks inside the jq program's JSON string.
+jq '.verified[0].evidence = "# Run `make test` before pushing."' "$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+span3=$(grep -cFx '  ```' "$sess/comment-body.md" || true)
+if [[ "$span3" -eq 2 ]]; then
+	echo "  PASS: single-line evidence fenced (minimum three backticks)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 2 three-backtick fence lines, got $span3"
+	FAIL=$((FAIL + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span in the rejected output.
+if ! grep -qF '  > `' "$sess/comment-body.md"; then
+	echo "  PASS: no inline code span a backtick could terminate"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: single-line evidence still rendered as an inline code span"
+	FAIL=$((FAIL + 1))
+fi
+# shellcheck disable=SC2016 # literal backticks quoted from the evidence.
+if grep -qFx '  # Run `make test` before pushing.' "$sess/comment-body.md"; then
+	echo "  PASS: backticked evidence preserved verbatim"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: backticked evidence not preserved verbatim"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# Four-backtick evidence proves the width is computed from the content rather
+# than bumped to a hardcoded four.
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified[0].evidence = "line one\n````\nline three"' "$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+open5=$(grep -cFx '  `````' "$sess/comment-body.md" || true)
+# shellcheck disable=SC2016 # literal markdown fence delimiters, not command substitution.
+inner4=$(grep -cFx '  ````' "$sess/comment-body.md" || true)
+if [[ "$open5" -eq 2 && "$inner4" -eq 1 ]]; then
+	echo "  PASS: four-backtick evidence fenced with five backticks"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 2 five-backtick fences and 1 four-backtick line, got $open5/$inner4"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# Test 10: the house-style dash rewrite is a prose edit, so it must run on the
+# LLM-authored fields only. Filtering the whole assembled body rewrote bytes
+# inside the evidence block, breaking the byte-for-byte contract
+# reviewer-protocol.md places on evidence and making the same finding's evidence
+# differ between the posted comment and the rendered report.
+echo "Test 10: dash normalisation spares evidence, still cleans reviewer prose"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified[0].evidence = "flags := \"--strict\" — legacy" |
+    .verified[0].description = "The flag list carries a smart dash — it should be a hyphen." |
+    .verified[0].recommendation = "Replace the dash — use ASCII." |
+    .verified[0].title = "Smart dash — in a flag list" |
+    .verified[0].constraint = "STYLE-7: ASCII punctuation only – no en dashes"' \
+	"$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+echo "One finding — a smart dash in a flag list." >"$sess/comment-summary.md"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+if [[ "$body" == *'flags := "--strict" — legacy'* ]]; then
+	echo "  PASS: em dash inside evidence survives byte-for-byte"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: em dash inside evidence was rewritten"
+	FAIL=$((FAIL + 1))
+fi
+for prose in \
+	"The flag list carries a smart dash - it should be a hyphen." \
+	"Replace the dash - use ASCII." \
+	"Smart dash - in a flag list" \
+	"STYLE-7: ASCII punctuation only - no en dashes" \
+	"One finding - a smart dash in a flag list."; do
+	if grep -qF "$prose" <<<"$body"; then
+		echo "  PASS: normalised prose '$prose'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: prose not normalised '$prose'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+# Exactly one em dash left in the whole body: the one quoted inside evidence.
+dashes=${body//[!—]/}
+if [[ "${#dashes}" -eq 1 && "$body" != *–* ]]; then
+	echo "  PASS: the only em/en dash left is the evidence quote"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 1 em dash (evidence) and no en dash, got ${#dashes} em dashes"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"

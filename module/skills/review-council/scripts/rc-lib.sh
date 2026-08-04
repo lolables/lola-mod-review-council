@@ -24,17 +24,6 @@ if ! command -v jq >/dev/null 2>&1; then
 	exit 0
 fi
 
-# GNU timeout bounds every forge call, so a hung `gh`/`git` cannot stall a
-# review indefinitely. macOS ships no `timeout` at all, and Homebrew's coreutils
-# formula installs the GNU tools under a `g` prefix — the unprefixed names live
-# in an un-PATHed libexec/gnubin. Accept either name so `brew install coreutils`
-# is sufficient without PATH surgery.
-_RC_TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
-if [[ -z "$_RC_TIMEOUT_BIN" ]]; then
-	echo '{"status":"skip","message":"GNU timeout is required but not installed. Install it: brew install coreutils | apt-get install coreutils | dnf install coreutils"}'
-	exit 0
-fi
-
 # `file(1)` classifies candidates for the binary filter, but it is a capability,
 # not a prerequisite: a host without it is not a host that should be refused a
 # review. Probe once here so callers can degrade to admitting the candidate
@@ -125,8 +114,39 @@ parse_remote() { # url -> sets rc_remote_host / rc_remote_owner / rc_remote_repo
 	fi
 }
 
+# GNU timeout bounds every forge call, so a hung `gh`/`git` cannot stall a
+# review indefinitely. macOS ships no `timeout` at all, and Homebrew's coreutils
+# formula installs the GNU tools under a `g` prefix — the unprefixed names live
+# in an un-PATHed libexec/gnubin. Accept either name so `brew install coreutils`
+# is sufficient without PATH surgery.
+#
+# Called by the three scripts that make forge calls — rc-prepare.sh,
+# rc-clone-target.sh, rc-post-comment-github.sh — and by nobody else. It used to
+# run at source time, which gated all eight sourcing scripts on a dependency
+# five of them never touch: on a macOS host without coreutils, evidence
+# verification, consolidation, verdict extraction and comment rendering each
+# printed a skip and did nothing, for want of a timeout none of them calls.
+#
+# Called EAGERLY at the top of those three, not lazily from rc_timeout below.
+# rc-prepare.sh does not reach its first forge call until it has created the
+# session directory and written several files into it; failing there would leave
+# a half-built session behind a message that reads like nothing happened.
+# Usage: rc_require_timeout   (call once, immediately after rc_trap_errors)
+rc_require_timeout() {
+	_RC_TIMEOUT_BIN="$(command -v timeout || command -v gtimeout || true)"
+	if [[ -z "$_RC_TIMEOUT_BIN" ]]; then
+		echo '{"status":"skip","message":"GNU timeout is required but not installed. Install it: brew install coreutils | apt-get install coreutils | dnf install coreutils"}'
+		exit 0
+	fi
+}
+
 # Run a command under the resolved GNU timeout binary. Exit status is the
 # command's own, or 124 when the deadline is hit.
+#
+# _RC_TIMEOUT_BIN is deliberately left unset unless rc_require_timeout ran, so
+# a caller that reaches here without requiring it dies on `set -u` rather than
+# silently running the command unbounded — which is the failure this wrapper
+# exists to prevent.
 # Usage: rc_timeout <seconds> <command> [args...]
 rc_timeout() {
 	local secs="$1"

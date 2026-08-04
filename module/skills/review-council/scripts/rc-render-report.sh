@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fail loudly: report the line of any unhandled command failure to stderr so a
-# pipefail exit is never silent (stdout is reserved for the rendered report).
-# shellcheck disable=SC2329,SC2317 # invoked indirectly by the ERR trap below.
-rc_on_err() { echo "rc-error: ${3##*/}:${2}: command failed (exit ${1}) under 'set -o pipefail'" >&2; }
-set -o errtrace
-trap 'rc_on_err "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
-
+# The two prerequisite guards below run BEFORE rc-lib.sh is sourced, and report
+# a missing prerequisite as markdown rather than the JSON every other script
+# emits — stdout here is the report itself. Nothing between this line and the
+# source can trip the ERR trap: both guards are `if` conditions, which bash
+# exempts. The trap is therefore installed from the library afterwards, via
+# rc_trap_errors, instead of being hand-rolled here and then silently
+# overwritten by the library's identical definition at source time.
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 	echo "# Review Council Report"
 	echo ""
@@ -22,6 +22,18 @@ if ! command -v jq >/dev/null 2>&1; then
 	echo "Install it: \`apt-get install jq\` | \`brew install jq\` | \`dnf install jq\`"
 	exit 0
 fi
+
+# Sourced AFTER the two guards above, never before. Those guards report a
+# missing prerequisite as markdown, because stdout here is the report; rc-lib.sh
+# reports it as JSON, because stdout in every other script is a JSON payload.
+# Ordering them this way means rc-lib.sh's own Bash and jq guards are already
+# satisfied by the time it loads and can never fire, so the markdown contract
+# holds by construction rather than by coincidence. The library is wanted only
+# for rc_parse_kv — this script makes no forge calls and so never requires GNU
+# timeout.
+# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+source "$(dirname "$0")/rc-lib.sh"
+rc_trap_errors # report script:line on any unhandled failure (never silent)
 
 # rc-render-report.sh: renders structured markdown report template
 # Usage: rc-render-report.sh <session_dir>
@@ -47,14 +59,32 @@ fi
 
 evidence_file="$session_dir/verdicts/findings.json"
 
-# Parse tracking.md
-mode=$(grep "^- Mode:" "$tracking_file" | cut -d: -f2- | xargs || echo "Unknown")
-branch=$(grep "^- Branch:" "$tracking_file" | cut -d: -f2- | xargs || echo "unknown")
-base=$(grep "^- Base:" "$tracking_file" | cut -d: -f2- | xargs || echo "main")
-pr_line=$(grep "^- PR:" "$tracking_file" | cut -d: -f2- | xargs || echo "none")
-agents_discovered=$(grep "^- Agents discovered:" "$tracking_file" | cut -d: -f2- | xargs || echo "0")
-agents_absent=$(grep "^- Agents absent:" "$tracking_file" | cut -d: -f2- | xargs || echo "none")
-changeset=$(grep "^- Changeset size:" "$tracking_file" | cut -d: -f2- | xargs || echo "unknown")
+# Parse tracking.md through the shared reader, which trims with sed. These were
+# read with `grep | cut | xargs`, and xargs applies SHELL QUOTING to its input:
+# a value carrying a quote is rewritten or rejected outright. Git permits both
+# `'` and `"` in a refname, so a branch named `feature/don't-panic` made xargs
+# exit non-zero and the report published `Branch: unknown` — the wrong branch,
+# stated as fact, with the only warning going to stderr where nobody reads it.
+#
+# The `|| echo <default>` fallbacks those lines carried never fired either:
+# xargs exits 0 on empty input, so an absent key yielded an empty pipeline that
+# succeeded, and the value rendered blank rather than falling back. The defaults
+# are applied here as parameter expansions, where an empty result is what
+# actually triggers them.
+mode=$(rc_parse_kv "$tracking_file" "Mode")
+branch=$(rc_parse_kv "$tracking_file" "Branch")
+base=$(rc_parse_kv "$tracking_file" "Base")
+pr_line=$(rc_parse_kv "$tracking_file" "PR")
+agents_discovered=$(rc_parse_kv "$tracking_file" "Agents discovered")
+agents_absent=$(rc_parse_kv "$tracking_file" "Agents absent")
+changeset=$(rc_parse_kv "$tracking_file" "Changeset size")
+mode="${mode:-Unknown}"
+branch="${branch:-unknown}"
+base="${base:-main}"
+pr_line="${pr_line:-none}"
+agents_discovered="${agents_discovered:-0}"
+agents_absent="${agents_absent:-none}"
+changeset="${changeset:-unknown}"
 
 # Parse findings.json if exists
 total_findings=0

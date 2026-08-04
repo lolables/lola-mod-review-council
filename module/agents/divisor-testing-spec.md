@@ -69,7 +69,8 @@ Before finalizing, review every finding against red flags and rationalization ta
 
 ### 1. Testability of Requirements
 
-- Can every acceptance criterion be objectively verified? Flag vague language: "works correctly", "handles gracefully", "is fast", "is robust" without measurable definition.
+- Can every acceptance criterion be objectively verified? Flag vague language: "works correctly", "handles gracefully", "is fast", "is robust" without measurable definition. A criterion that prescribes no concrete pass condition is unverifiable — HIGH.
+- Where the spec does prescribe a concrete pass condition, check it against the requirement it is supposed to verify. A condition that still holds while the requirement is violated (asserting a 200 response for a requirement about the payload, pinning an expected value that contradicts the stated rule, checking that a job ran rather than what it wrote) certifies the broken behavior rather than missing it — CRITICAL. Quote both the requirement and the check, and state which violating implementation passes.
 - Acceptance scenarios written in Given/When/Then format with specific, verifiable outcomes?
 - Could LLM agent write failing tests from this spec alone, without ambiguity? LLMs cannot resolve implicit context — anything unstated will be guessed, often wrong.
 - Success criteria technology-agnostic and measurable?
@@ -103,15 +104,17 @@ Before finalizing, review every finding against red flags and rationalization ta
 
 ## Severity Calibration
 
-| Condition                                                              | Severity |
-|------------------------------------------------------------------------|----------|
-| Acceptance criteria that cannot be objectively verified                | HIGH     |
-| No test strategy defined (missing unit/integration/e2e classification) | HIGH     |
-| Contract surface undefined — observable side effects not specified     | HIGH     |
-| Test tasks ordered after implementation tasks (LLM will skip TDD)      | MEDIUM   |
-| Coverage targets missing or vague ("write tests")                      | MEDIUM   |
-| Fixture dependencies undocumented                                      | LOW      |
-| Test file naming patterns unspecified but inferable                    | LOW      |
+| Condition                                                                                       | Severity |
+|-------------------------------------------------------------------------------------------------|----------|
+| Constitution-mandated coverage strategy absent from the spec                                    | CRITICAL |
+| Spec prescribes a check whose stated pass condition holds even when the requirement is violated | CRITICAL |
+| Acceptance criteria that cannot be objectively verified                                         | HIGH     |
+| No test strategy defined (missing unit/integration/e2e classification)                          | HIGH     |
+| Contract surface undefined — observable side effects not specified                              | HIGH     |
+| Test tasks ordered after implementation tasks (LLM will skip TDD)                               | MEDIUM   |
+| Coverage targets missing or vague ("write tests")                                               | MEDIUM   |
+| Fixture dependencies undocumented                                                               | LOW      |
+| Test file naming patterns unspecified but inferable                                             | LOW      |
 
 ## Out of Scope
 

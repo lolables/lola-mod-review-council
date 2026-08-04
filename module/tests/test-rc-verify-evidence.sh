@@ -742,6 +742,50 @@ r=$(jq -r '.stripped[0].reason // "none"' "$s/verdicts/findings.json")
 assert_equals "$r" "FILE_NOT_FOUND" "reason FILE_NOT_FOUND"
 rm -rf "$s" "$root"
 
+echo "Test 30: an exact duplicate from another agent credits that agent"
+# Exact dedup and semantic consolidation describe the same relationship — two
+# reviewers converging on one line — so they must leave the same trace. Semantic
+# consolidation folds the loser into provenance.consolidated_from, which the
+# report renders as "Also flagged by". Exact dedup used to keep only the higher
+# severity and discard everything else about the duplicate, so the second
+# reviewer's angle vanished with nothing anywhere recording that it existed.
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
+agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
+	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+assert_json_field "$result" "verified" "1" "duplicate merged to one finding"
+assert_jq "$s/verdicts/findings.json" '.duplicates_consolidated' "1" "counted as consolidated"
+assert_jq "$s/verdicts/findings.json" '.verified[0].severity' "HIGH" "severity escalated to the max"
+assert_jq "$s/verdicts/findings.json" \
+	'[.verified[0].provenance.consolidated_from[]?.agent] | length' "1" \
+	"the losing duplicate is credited"
+assert_jq "$s/verdicts/findings.json" \
+	'.verified[0].provenance.consolidated_from[0].angle // "missing"' \
+	"no test covers the boundary" "the credited entry carries the other agent's angle"
+rm -rf "$s" "$src"
+
+echo "Test 31: a same-agent duplicate is not credited to itself"
+# The dedup key is file + line + evidence and deliberately excludes the agent,
+# so one reviewer listing the same finding twice merges here too. Crediting that
+# to consolidated_from would publish "Also flagged by: <the same agent>".
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"first pass","recommendation":"use <="},
+	  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"second pass","recommendation":"use <="}]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+assert_json_field "$result" "verified" "1" "self-duplicate merged to one finding"
+assert_jq "$s/verdicts/findings.json" '.verified[0].severity' "HIGH" "severity still escalated"
+assert_jq "$s/verdicts/findings.json" \
+	'(.verified[0].provenance.consolidated_from // []) | length' "0" \
+	"no self-credit recorded"
+rm -rf "$s" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

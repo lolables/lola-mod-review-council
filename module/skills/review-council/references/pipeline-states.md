@@ -8,12 +8,18 @@ these tokens. This is the machine-readable spine of the state diagram in SKILL.m
 | Prepare          | `rc-prepare.sh`         | `ok` \| `skip` \| `empty`                            | `ok`->Delegate; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
 | Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure)                                                       |
 | Verify           | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do`                              | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty)                                                          |
+| Consolidate      | `rc-consolidate.sh`     | `ok` \| `nothing_to_do`                              | `ok`->Validate; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`                                         |
 | Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip`                                 | ->post/Report                                                                                                                                               |
 | Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report                                                                                                                                                    |
 
-Effort gates (quick skips Correction/Calibrate/Validate/Narrative) and the
-orchestrator-run states (Correction, Calibrate, Validate, Report) are LLM
-judgment steps documented in `phases/verify.md` and `phases/report.md`.
+Effort gates (quick skips Correction/Calibrate/Consolidate/Validate/Narrative)
+and the orchestrator-run states (Correction, Calibrate, Validate, Report) are
+LLM judgment steps documented in `phases/verify.md` and `phases/report.md`.
+
+Consolidate is in the table rather than that list because it is both: the
+orchestrator judges which findings describe the same defect and writes
+`clusters.json`, then `rc-consolidate.sh` folds them and emits the status the
+orchestrator dispatches on. Only the second half is a state token.
 
 Disposition is an orchestrator-run state too, but unlike the others it has no
 script `status` — it dispatches a fresh-context subagent, not a script. It

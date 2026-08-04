@@ -126,6 +126,8 @@ When spec introduces generated artifacts (protobuf stubs, OpenAPI clients, compi
 
 | Condition                                                             | Severity |
 |-----------------------------------------------------------------------|----------|
+| Spec breaks the release pipeline with no replacement path specified   | CRITICAL |
+| Destructive operation specified with no confirmation, backup, or undo | CRITICAL |
 | No deployment path specified for user-facing feature                  | HIGH     |
 | Failure modes unspecified for critical component                      | HIGH     |
 | Breaking configuration change with no migration path                  | HIGH     |

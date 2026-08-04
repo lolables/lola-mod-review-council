@@ -90,6 +90,98 @@ the SHA-pinned deep-links). The policy is duplicated per forge — the accepted,
 honest cost of not abstracting six API calls behind a plugin layer; it is small
 next to the shared rendering.
 
+## Materializing the target repo (`rc-clone-target.sh`)
+
+`rc-prepare.sh` calls this to obtain a working tree at the PR head. It emits
+`{"status":"in_place|ok|skip","review_root":"…"}`; on every `skip` the
+`review_root` stays `.` and reviewers work from the diff. A forge other than
+`github`, or an `owner`/`repo`/`pr` failing the `^[a-zA-Z0-9._-]+$` /
+`^[0-9]+$` character gate, skips before any git command runs.
+
+**Which host was asked for.** The target host is the host in `--url` when one is
+given, otherwise `github.com`.
+
+`--url` is part of this script's interface but no shipped caller passes it.
+`rc-prepare.sh` invokes the script only when the forge resolved to `github`, and
+passes `--forge --owner --repo --pr --head` and nothing else; under `--scope url`
+it emits a terminal `skip` for any host but `github.com` or `gitlab.com`, so a
+GitHub Enterprise or other self-hosted install never gets this far. Everything
+below describing non-`github.com` targets therefore documents the script's own
+contract, not a capability the module currently offers. Read it as the boundary
+a direct caller must respect, and as what would have to hold before enterprise
+hosts could be supported.
+
+The origin remote is never a source for the target host: under
+URL scope the checkout we happen to be standing in has nothing to do with the PR
+being reviewed, and an `owner/repo` pair is one name collision away from a mirror
+— or from a host an attacker controls — serving the same two path segments.
+
+**In place.** The current working tree is reused only when the origin remote's
+host, owner and repo all match the target (compared case-insensitively) **and**
+the current branch equals `--head`. Status is then `in_place` with `review_root`
+`.`. The host is part of the test, not an incidental detail: standing in a
+same-named repository on a different host is exactly when the tree must not be
+reused, because `review_root` would then point at foreign content that the
+verify phase grounds findings against as though it were the PR. (A `--url`
+carrying an explicit port parses to no host at all, so it never matches a
+portless origin — and it never reaches the `gh` tier below.)
+
+**Clone tiers.** The destination is
+`${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones/<host>-<owner>-<repo>`.
+An existing `.git` there is reused as-is; otherwise these are tried in order,
+each bounded by a 120s timeout:
+
+1. `gh repo clone <owner>/<repo> -- --filter=blob:none --no-checkout` — only
+   when the target host is `github.com` and `gh` is on PATH. `gh repo clone`
+   resolves `OWNER/REPO` against gh's own default host, so anywhere else it
+   would clone a same-named repository from github.com rather than the one asked
+   for.
+2. `git clone --filter=blob:none --no-checkout <clone-url>`.
+3. `git clone --depth 50 <clone-url>`.
+
+`<clone-url>` is `--url` verbatim, else `https://<target-host>/<owner>/<repo>.git`
+— built from the host the caller named, never from the origin's. Tiers 2 and 3
+`rm -rf` the destination first: a failed clone leaves a partial directory behind
+and the next `git clone` would abort with "destination exists" instead of
+retrying. All three failing is a `skip`.
+
+**Fetch and checkout.** After a clone (or a cache hit), `git fetch origin
+pull/<pr>/head` — the ref lives on the base repo, so fork PRs work — then
+`git checkout FETCH_HEAD`. Each failure is its own `skip` message. The checkout
+is not cosmetic: a blobless `--no-checkout` clone has no files until it runs, and
+reporting `ok` over an empty tree would strip every finding as `FILE_NOT_FOUND`,
+producing a false-clean review.
+
+**Cache LRU.** A successful materialization `touch`es its destination to mark it
+most-recently-used. The clones directory is then listed by mtime with `ls -dt`
+(POSIX — `find -printf` is GNU-only and this cap has to hold on macOS too) and
+every entry past `REVIEW_COUNCIL_CLONE_CACHE_MAX` (default 10; a non-numeric
+value falls back to 10) is removed, skipping the destination just materialized.
+
+**Cache key.** The entry is named for the endpoint, not for the repository
+alone: `<host>-<owner>-<repo>`, so `github.com-acme-widgets` and
+`ghe.corp.example-acme-widgets` are separate checkouts. Without the host, a
+clone of `acme/widgets` taken from one host would be served back for an
+`acme/widgets` named on another; the `git fetch origin pull/<pr>/head` above
+then runs against the wrong origin and the review grounds every finding in a
+foreign repository while still reporting `ok`. That is the `in_place` host
+test's failure mode one layer down, and only a direct caller passing `--url`
+can name a second host in the first place.
+
+The host is not character-gated the way `<owner>` and `<repo>` are, so it is
+lowercased and reduced to their alphabet (`[a-z0-9._-]`, everything else
+becomes `_`) before it becomes a path component. `parse_remote` already refuses
+a host holding `/` or `:`, and the entry always ends in `-<owner>-<repo>` with
+both non-empty, so the name cannot escape the cache root or resolve to `.` or
+`..`. A URL `parse_remote` will not name — one carrying a port, for instance —
+leaves the host empty, which would file every unnamable endpoint under one key;
+those are keyed `url-<cksum of the clone URL>-<owner>-<repo>` instead, which
+keeps two ported hosts apart.
+
+Entries written under an earlier key shape are orphaned rather than migrated.
+Nothing touches them again, so they sort oldest in the `ls -dt` listing and the
+LRU prune evicts them first.
+
 ## Generic fallback
 
 When `forge` is not one with a post script (or the forge CLI is absent), scripts
@@ -103,8 +195,11 @@ session directory and instruct the user to post it manually:
 
 ## Authentication
 
-- Clone: prefer `gh repo clone` when `gh` is present (handles private-repo
-  auth); otherwise plain `git clone` of the HTTPS URL (public repos only).
+- Clone: `gh repo clone` is preferred on github.com when `gh` is present, since
+  it carries gh's own auth (private repos). Every other host, and the `gh`-less
+  case, falls through to `git clone`, which honours the URL and whatever the
+  operator's credential helper supplies — public repos without one. See
+  "Materializing the target repo".
 - Comment: `rc-post-comment-github.sh` requires `gh` authenticated for the
   target repo. Absent `gh`, `--send` degrades to render-only.
 

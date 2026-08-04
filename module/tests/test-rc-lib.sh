@@ -117,6 +117,48 @@ empty remote||||
 bare hostname|github.com|||
 CASES
 
+echo "Test: GNU timeout gates only the scripts that make forge calls"
+# rc-lib.sh used to check for GNU timeout at source time, gating all eight
+# sourcing scripts on a dependency only three of them use. On a macOS host
+# without coreutils that meant evidence verification, consolidation, verdict
+# extraction and comment rendering each printed a skip and did nothing.
+#
+# `timeout` is hidden for the script under test only, never for the suite:
+# helpers.sh requires it as its own hang guard and exits if it is missing.
+SCRIPTS_DIR="$SCRIPT_DIR/../skills/review-council/scripts"
+maskdir=$(mktemp -d)
+masked=$(path_without_command timeout "$maskdir")
+masked=$(PATH="$masked" path_without_command gtimeout "$maskdir")
+
+# The five that never call rc_timeout must run normally without it.
+for script in rc-verify-evidence.sh rc-consolidate.sh rc-extract-verdict.sh \
+	rc-render-comment.sh rc-post-comment.sh; do
+	s=$(new_session)
+	out=$(PATH="$masked" bash "$SCRIPTS_DIR/$script" "$s" 2>/dev/null || true)
+	if grep -qF "GNU timeout is required" <<<"$out"; then
+		echo "  FAIL: $script still gated on GNU timeout"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: $script runs without GNU timeout"
+		PASS=$((PASS + 1))
+	fi
+	rm -rf "$s"
+done
+
+# The three that DO call rc_timeout must still refuse to start without it —
+# and must refuse before doing anything, not part-way through a session.
+for script in rc-prepare.sh rc-clone-target.sh rc-post-comment-github.sh; do
+	out=$(PATH="$masked" bash "$SCRIPTS_DIR/$script" 2>/dev/null || true)
+	if grep -qF "GNU timeout is required" <<<"$out"; then
+		echo "  PASS: $script still requires GNU timeout"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $script no longer requires GNU timeout it depends on"
+		FAIL=$((FAIL + 1))
+	fi
+done
+rm -rf "$maskdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

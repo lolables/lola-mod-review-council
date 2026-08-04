@@ -81,8 +81,8 @@ These three files move together:
 ### Untrusted-conversation chokepoint sync
 
 `rc-prepare.sh` writes `pr-conversation.txt` (re-review only, GitHub only
-today — see its `# TODO(forge)` marker) and `phases/disposition.md` is the
-only place the pipeline reads it. The security contract — comments are
+today — see SECTION 13's no-op `gitlab` branch) and `phases/disposition.md`
+is the only place the pipeline reads it. The security contract — comments are
 data, claims require independent re-verification before a finding drops,
 scoping hints stay LOW-only, identity is a weak prior — lives verbatim in
 `disposition.md`'s "Step 3 — Subagent Prompt" section, because that prompt

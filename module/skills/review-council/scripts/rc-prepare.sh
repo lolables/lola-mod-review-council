@@ -3,7 +3,8 @@ set -uo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
-rc_trap_errors # report script:line on any unhandled failure (never silent)
+rc_trap_errors     # report script:line on any unhandled failure (never silent)
+rc_require_timeout # this script makes forge calls; fail before any side effect
 
 # Deliberate: -e is omitted. This script handles errors per-section so that
 # failures in optional enrichment (forge API, CI checks) do not abort session
@@ -38,7 +39,22 @@ while [[ $# -gt 0 ]]; do
 			json_output "skip" "--mode requires a value (code, specs, or auto)"
 			exit 0
 		}
-		mode_override="$2"
+		# Validated here, like --effort. Without this the value fell through to
+		# a `code` default, so any typo silently ran a CODE review: wrong
+		# personas, wrong scope default, and a report naming a mode the caller
+		# never asked for. `spec` is the typo that matters — the accepted token
+		# is `specs`, but the mode is called `spec` in the JSON `mode` field and
+		# in every divisor-*-spec.md filename, so the singular is the natural
+		# guess. It is refused rather than aliased: one clear rejection naming
+		# the three valid values costs a retry, while an alias grows a second
+		# spelling that every future reader has to know about.
+		case "$2" in
+		code | specs | auto) mode_override="$2" ;;
+		*)
+			json_output "skip" "Invalid --mode value: $2. Valid values: code, specs, auto"
+			exit 0
+			;;
+		esac
 		shift 2
 		;;
 	--scope)
@@ -575,6 +591,8 @@ fi
 mode="code"
 mode_reason="default"
 
+# The flag parser admits only code, specs or auto, so this branch is
+# exhaustive rather than a catch-all: reaching the else means "code".
 if [[ -n "$mode_override" ]] && [[ "$mode_override" != "auto" ]]; then
 	if [[ "$mode_override" == "specs" ]]; then
 		mode="spec"
@@ -662,6 +680,38 @@ done
 if [[ ${#agents[@]} -eq 0 ]]; then
 	json_output "skip" "No ${mode} reviewer agents found in ${AGENTS_DIR}."
 	exit 0
+fi
+
+# The council the module ships, as base names. Discovery above stays the sole
+# source of truth for who is DISPATCHED — this roster only answers the separate
+# question of who is MISSING, so a partial install cannot publish a report that
+# reads as full coverage. Before this existed, tracking.md carried the literal
+# string "none" and no phase ever updated it: a host with two of five personas
+# produced a review whose Discovery Summary claimed nothing was absent.
+#
+# The list mirrors the persona table in phases/delegate.md, and
+# test-rc-doc-guards.sh diffs the two so neither can drift — the same guard the
+# module already puts on RC_TOP_KEYS vs verdict-schema.json and on the severity
+# list shared across five scripts. Keep it on one line: the test extracts it
+# with sed.
+RC_PERSONAS=(adversary curator guard sre testing)
+
+agents_absent=()
+for persona in "${RC_PERSONAS[@]}"; do
+	[[ -f "${AGENTS_DIR}/divisor-${persona}-${suffix}.md" ]] && continue
+	agents_absent+=("divisor-${persona}-${suffix}")
+done
+# Joined with ", " for the tracking line; "none" when the roster is complete.
+# A persona present on disk but outside the roster is not reported here — it is
+# discovered, dispatched, and counted, and calling an extra reviewer "absent"
+# would invert the field's meaning.
+# Joined with printf rather than IFS: "${array[*]}" separates on the FIRST
+# character of IFS only, so IFS=', ' yields a comma with no space.
+if [[ ${#agents_absent[@]} -eq 0 ]]; then
+	agents_absent_line="none"
+else
+	agents_absent_line=$(printf '%s, ' "${agents_absent[@]}")
+	agents_absent_line="${agents_absent_line%, }"
 fi
 
 # ============================================================================
@@ -1278,7 +1328,7 @@ fi
 	echo "- Post intent: ${post_comment}"
 	echo "- Post auto-send: ${post_auto_send}"
 	echo "- Agents discovered: ${#agents[@]}"
-	echo "- Agents absent: none"
+	echo "- Agents absent: ${agents_absent_line}"
 	changeset_line_count=$(wc -l <"${session_dir}/changeset.txt")
 	echo "- Changeset size: ${changeset_line_count} files"
 	echo ""

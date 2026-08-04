@@ -214,6 +214,59 @@ check_mutation "RC-15 clone target host identity" \
 	's/"\${cur_host,,}" == "\${target_host,,}"/true/' \
 	test-rc-clone-target.sh
 
+# The clone cache was keyed on owner/repo, so one host's checkout was served
+# back for another host's same-named repository and the PR head was fetched
+# from the wrong origin. The substitution drops the host from the entry name
+# and leaves the slug computed but unused, which is exactly the shipped state
+# before the fix.
+check_mutation "RC-16 clone cache endpoint key" \
+	rc-clone-target.sh \
+	's#^[[:space:]]*dest="\$.cache_root./\$.host_slug.-#dest="${cache_root}/#' \
+	test-rc-clone-target.sh
+
+# The coherence gate fired and left no trace. The rejection buys one
+# re-dispatch which overwrites <agent>.raw.md and <agent>.json, so an agent that
+# answers the gate by deleting its own CRITICAL produces a session
+# indistinguishable from a reviewer that found nothing. Redirecting the record
+# to /dev/null is the shipped state before this log existed: the gate still
+# rejects, the remediation still goes out, and nothing survives the second pass.
+check_mutation "RC-17 gate firing log" \
+	rc-extract-verdict.sh \
+	's#^[[:space:]]*>>"\$session_dir/gate-firings\.jsonl"$#>/dev/null#' \
+	test-rc-extract-verdict.sh
+
+# The seven tracking fields were read with `grep | cut | xargs`. xargs applies
+# shell quoting to its input, so a branch name containing an apostrophe — which
+# git permits — was rejected and the report published "Branch: unknown".
+check_mutation "RC-18 tracking parse quoting" \
+	rc-render-report.sh \
+	's#^branch=\$(rc_parse_kv "\$tracking_file" "Branch")$#branch=$(grep "^- Branch:" "$tracking_file" | cut -d: -f2- | xargs || echo "unknown")#' \
+	test-rc-render-report.sh
+
+# "Agents absent" was the literal string "none", written once and updated by
+# nothing, so a host missing half its council published a report whose Discovery
+# Summary claimed complete coverage.
+check_mutation "RC-19 absent persona roster" \
+	rc-prepare.sh \
+	's#^[[:space:]]*echo "- Agents absent: \${agents_absent_line}"$#\techo "- Agents absent: none"#' \
+	test-rc-prepare.sh
+
+# Exact dedup kept the higher severity and discarded everything else about the
+# duplicate, so a second reviewer's angle vanished — while semantic
+# consolidation, describing the same event, preserved it in consolidated_from.
+check_mutation "RC-20 dedup credits the other agent" \
+	rc-verify-evidence.sh \
+	's#^[[:space:]]*( if \$x\.agent != \.\[\$idx\]\.agent$#\t\t\t( if false#' \
+	test-rc-verify-evidence.sh
+
+# --mode accepted any string and fell through to a `code` default, so `--mode
+# spec` — the natural typo, since the mode is called `spec` everywhere but the
+# flag — silently ran a code review under a mode the caller never asked for.
+check_mutation "RC-21 mode value validation" \
+	rc-prepare.sh \
+	's/^\t\tcode | specs | auto) mode_override="\$2" ;;$/\t\t*) mode_override="$2" ;;/' \
+	test-rc-prepare-mode.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

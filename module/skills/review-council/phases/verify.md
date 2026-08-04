@@ -224,7 +224,11 @@ that round has already run. Your job here is to interpret its outcome:
   Read the corrected block to fill the outcome; do not assume the agent took the
   branch you would have. A withdrawal that the agent does not justify is the
   silent drop this gate exists to expose — surface it in the report the same way
-  a still-invalid agent is surfaced.
+  a still-invalid agent is surfaced. You are not the only record of this:
+  `rc-extract-verdict.sh` appends every firing to
+  `${session_dir}/gate-firings.jsonl`, which Step 6 — Gate-Firing Disclosure
+  reads back, so a firing you never saw — a resumed session, a compacted
+  context — still reaches the report.
 - `status: "nothing_to_do"` means the whole session produced zero verdict
   blocks (e.g., no `.raw.md` files exist at all) — a delegation failure, NOT
   a per-agent "no findings" signal. Treat it as the "all agents fail" case in
@@ -350,6 +354,8 @@ Log each conversion:
 ---
 
 ## Step 3c — Cross-Agent Consolidation
+
+**Effort gate:** If effort is `quick`, skip this step entirely.
 
 Different personas often flag the **same underlying defect** from different
 angles (e.g. a bare `except` as a security swallow, an untested failure path,
@@ -560,6 +566,71 @@ forced it.
 If all verified verdicts **APPROVE** after stripping and deduplication, verification phase returns APPROVE. Include stripped findings and deduplication notes as warnings in output.
 
 If any verified verdict remains **REQUEST CHANGES**, return REQUEST CHANGES with verified findings.
+
+### Gate-Firing Disclosure
+
+Read `${session_dir}/gate-firings.jsonl`. `rc-extract-verdict.sh` appends one
+JSON object to it each time the coherence gate rejects a block:
+
+```json
+{"ts":"2026-08-03T09:14:02Z","agent":"divisor-guard-code",
+ "path":"verdicts/divisor-guard-code.raw.md","verdict":"APPROVE",
+ "findings":[{"severity":"CRITICAL","file":"auth/token.go","line":42,
+              "description":"Expired tokens are accepted at the boundary."}]}
+```
+
+`findings` holds only the CRITICAL and HIGH entries that forced the rejection.
+The file is appended to and never rewritten, and it sits outside `verdicts/`,
+so the re-dispatch that overwrites `{agent}.raw.md` and `{agent}.json` cannot
+reach it. That is the point: it is the only place an agent's original claim
+survives a re-dispatch it answered by deleting that claim.
+
+If the file is absent or empty, the gate never fired — do nothing further.
+
+This does not duplicate Step 0's logging rule; it is what makes that rule hold
+when the orchestrator did not watch the gate fire. A session resumed mid-run
+(SKILL.md Step 2) has no record of the first extractor call, and neither does
+a context that has since been compacted. Where both this step and Step 0
+produce a line for the same firing, they are the same line — write it once.
+
+For each record, establish what became of the finding it names. Match on
+`agent` plus `file` plus `description` across `findings.json`'s `verified`,
+`correctable` and `stripped` arrays, and log one line per record in
+`verification.txt` (Step 5 — SEVERITY CALIBRATION):
+
+> "Verdict gate: `{agent}` filed APPROVE over {severity} `{file}` —
+> after re-dispatch: {kept at {severity} | severity lowered to {level} |
+> finding withdrawn}. Original claim: {description}."
+
+**A firing is not by itself grounds to change a verdict.** The gate's own
+remediation text invites the agent to drop a finding or lower it to MEDIUM/LOW
+and keep APPROVE, so a later APPROVE can be an honest correction. Forcing
+REQUEST CHANGES on every firing would reject those corrections and leave the
+agent no remedy the gate accepts, which teaches the next orchestrator to route
+around this step. The verdict is already settled by the REQUEST CHANGES
+backstop above, which keys on the severity a finding actually holds after
+calibration, consolidation and validation rather than on what it was once
+claimed at. Disclosure is the entire job of this section.
+
+Disclose every record, and disclose the withdrawal branch loudest. When no
+finding in `findings.json` matches the record, the agent resolved the gate by
+deleting its own CRITICAL or HIGH, and the review carries no other trace of it
+— a maintainer reading a clean APPROVE has no way to know a reviewer once
+claimed otherwise. Say so in the report, quoting the record's `description`
+and stating that the agent withdrew it. A withdrawal the agent did not justify
+in prose is the silent drop this gate exists to expose; surface it the way a
+still-invalid agent is surfaced (Step 0).
+
+The report seam is the Council Synthesis narrative. `phases/report.md` — "How
+Sections Reach the Report" — permits filling only the markers
+`rc-render-report.sh` anchors, and `<!-- NARRATIVE -->` is the one that carries
+verification-phase prose to the reader. Append the disclosure lines to
+`${session_dir}/narrative.md` before splicing it, per `phases/report.md` —
+"Narrative Synthesis". Do not add a section the renderer does not anchor, and
+do not write the disclosure into a finding's prose fields.
+
+In `quick` mode narrative synthesis does not run, so there is no seam and the
+disclosure reaches `verification.txt` only. Write it there regardless.
 
 ### Verdict Coherence Rule
 

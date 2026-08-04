@@ -177,6 +177,34 @@ for raw in "${raw_files[@]}"; do
 		then "yes" else "no" end
 	' 2>/dev/null) || verdict_mismatch="yes"
 	if [[ "$verdict_mismatch" != "no" ]]; then
+		# Record the firing before filing the rejection. The rejection buys one
+		# re-dispatch, the agent picks its own remedy, and the re-dispatch
+		# overwrites both <agent>.raw.md and <agent>.json — so an agent that
+		# resolves the gate by deleting its own CRITICAL leaves a session that
+		# is byte-for-byte a reviewer which never found anything. This log is
+		# the only place the original claim survives; verify.md Step 6 reads it
+		# back and discloses every entry.
+		#
+		# It lives at the session root, not in verdicts/: every verdict
+		# discovery in the pipeline globs verdicts/ (RC-4 exists because one of
+		# those globs once ingested an orchestrator-written file that landed
+		# there), and the extension keeps it clear of the '*.json' and
+		# '*.raw.md' patterns besides. Appended, never rewritten — a second
+		# firing for the same agent is a second event, not a duplicate to
+		# collapse, and it is the FIRST record that carries what was originally
+		# claimed. `jq -c` emits exactly one line, which is what makes append
+		# the whole write. The block reaches jq on stdin rather than through
+		# --argjson so a large verdict cannot hit the single-argv cap.
+		fired_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+		printf '%s' "$block" | jq -c \
+			--arg ts "$fired_at" \
+			--arg agent "$agent" \
+			--arg path "$rel" \
+			'{ts: $ts, agent: $agent, path: $path, verdict: .verdict,
+			  findings: [.findings[]
+				| select(.severity == "CRITICAL" or .severity == "HIGH")
+				| {severity, file, line, description}]}' \
+			>>"$session_dir/gate-firings.jsonl"
 		detail='Verdict/severity mismatch: verdict is "APPROVE" while findings still contain a CRITICAL or HIGH entry. A reviewer holding an unresolved CRITICAL or HIGH finding must return "REQUEST CHANGES". Either change the verdict to "REQUEST CHANGES", or — if the finding does not hold at that severity — drop it or lower its severity to MEDIUM/LOW and keep "APPROVE". Whichever you choose, say so in prose alongside the block: dropping the finding without a word erases it from the review entirely.'
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "VERDICT_INCOHERENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue

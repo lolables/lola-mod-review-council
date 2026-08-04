@@ -56,7 +56,7 @@ result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 root=$(echo "$result" | jq -r '.review_root')
-if [[ "$root" == "$cache/review-council/clones/acme-widgets" ]]; then
+if [[ "$root" == "$cache/review-council/clones/github.com-acme-widgets" ]]; then
 	echo "  PASS: review_root points at cache clone"
 	PASS=$((PASS + 1))
 else
@@ -128,7 +128,7 @@ else
 	echo "  FAIL: expected 2 clones, got $remaining"
 	FAIL=$((FAIL + 1))
 fi
-if [[ -d "$clones/acme-widgets" ]]; then
+if [[ -d "$clones/github.com-acme-widgets" ]]; then
 	echo "  PASS: fresh clone retained"
 	PASS=$((PASS + 1))
 else
@@ -166,9 +166,10 @@ rm -rf "$bin" "$cache"
 
 # Test 7: malformed identifiers are rejected before any git runs
 # owner/repo are forge-derived and interpolate into both the constructed clone
-# URL and the cache directory path (`${cache_root}/${owner}-${repo}`), so the
-# character gate has to reject them up front — a clone that merely happens to
-# fail afterwards is not the same guarantee.
+# URL and the cache directory path
+# (`${cache_root}/${host_slug}-${owner}-${repo}`), so the character gate has to
+# reject them up front — a clone that merely happens to fail afterwards is not
+# the same guarantee.
 echo "Test 7: owner/repo/pr character gate"
 while IFS='|' read -r label bad_owner bad_repo bad_pr; do
 	bin=$(mktemp -d)
@@ -365,6 +366,57 @@ for tc_url in https://github.com:8443/acme/widgets.git https://ghe.corp.net:8443
 	fi
 	rm -rf "$bin" "$cache"
 done
+
+# Test 12: a cache entry belongs to one endpoint, not to an owner/repo pair
+# `git fetch origin pull/N/head` runs against whatever origin the reused
+# checkout carries, so serving one host's acme/widgets back for another host's
+# acme/widgets grounds every finding in a foreign repository while the run
+# still reports `ok` — the in_place host test's failure mode, one layer down in
+# the clone cache. The ported pair is the same claim for the endpoints
+# parse_remote refuses to name: they arrive with no host at all, and filing
+# them under one key would restore the collision for exactly those callers.
+echo "Test 12: cache entries are per target endpoint"
+while IFS='|' read -r label url_a url_b; do
+	bin=$(mktemp -d)
+	make_mockbin "$bin" ok "main"
+	make_gh_mock "$bin"
+	cache=$(mktemp -d)
+	first=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--url "$url_a" 2>/dev/null)
+	assert_json_field "$first" "status" "ok" "$label: first endpoint materialized"
+	root_a=$(echo "$first" | jq -r '.review_root')
+	# Only ever write inside the cache: a skip would hand back "." and the
+	# marker would land in the working directory.
+	if [[ "$root_a" == "$cache"/* && -d "$root_a" ]]; then
+		echo first >"$root_a/FROM_FIRST_ENDPOINT"
+	else
+		echo "  FAIL: $label: first review_root is not a cache entry ('$root_a')"
+		FAIL=$((FAIL + 1))
+	fi
+	second=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--url "$url_b" 2>/dev/null)
+	root_b=$(echo "$second" | jq -r '.review_root')
+	if [[ "$root_b" != "$root_a" ]]; then
+		echo "  PASS: $label: the two endpoints got separate cache entries"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $label: both endpoints shared '$root_b'"
+		FAIL=$((FAIL + 1))
+	fi
+	if [[ -e "$root_b/FROM_FIRST_ENDPOINT" ]]; then
+		echo "  FAIL: $label: reviewed the first endpoint's checkout"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: $label: did not reuse the first endpoint's checkout"
+		PASS=$((PASS + 1))
+	fi
+	rm -rf "$bin" "$cache"
+done <<'ENDPOINTPAIRS'
+named hosts|https://github.example.com/acme/widgets.git|https://ghe.corp.example/acme/widgets.git
+ported hosts|https://github.example.com:8443/acme/widgets.git|https://ghe.corp.example:8443/acme/widgets.git
+ENDPOINTPAIRS
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

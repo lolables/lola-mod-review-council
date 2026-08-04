@@ -3,7 +3,8 @@ set -uo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
-rc_trap_errors # report script:line on any unhandled failure (never silent)
+rc_trap_errors     # report script:line on any unhandled failure (never silent)
+rc_require_timeout # this script makes forge calls; fail before any side effect
 
 # rc-post-comment-github.sh — GitHub implementation of Review Council comment
 # posting. It defines the two URL-builder hooks, sources the neutral renderer,

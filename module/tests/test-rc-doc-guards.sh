@@ -12,6 +12,8 @@ REPORT_MD="$SKILLS/phases/report.md"
 DELEGATE_MD="$SKILLS/phases/delegate.md"
 DISPOSITION_MD="$SKILLS/phases/disposition.md"
 SEVERITY_MD="$SKILLS/references/severity.md"
+PIPELINE_STATES_MD="$SKILLS/references/pipeline-states.md"
+PREPARE_SH="$SKILLS/scripts/rc-prepare.sh"
 GUARD_MD="$AGENTS/divisor-guard-code.md"
 ADVERSARY_MD="$AGENTS/divisor-adversary-code.md"
 CURATOR_MD="$AGENTS/divisor-curator-code.md"
@@ -36,6 +38,9 @@ report_flat=$(tr '\n' ' ' <"$REPORT_MD" | tr -s ' ')
 severity_flat=$(tr '\n' ' ' <"$SEVERITY_MD" | tr -s ' ')
 testing_flat=$(tr '\n' ' ' <"$TESTING_MD" | tr -s ' ')
 testing_spec_flat=$(tr '\n' ' ' <"$TESTING_SPEC_MD" | tr -s ' ')
+delegate_flat=$(tr '\n' ' ' <"$DELEGATE_MD" | tr -s ' ')
+curator_flat=$(tr '\n' ' ' <"$CURATOR_MD" | tr -s ' ')
+pipeline_states_flat=$(tr '\n' ' ' <"$PIPELINE_STATES_MD" | tr -s ' ')
 
 # RC-005: the correction-round skip must NOT strip every finding just because an
 # agent's findings are all correctable — that is usually a citation-style or
@@ -446,7 +451,6 @@ fi
 # both the orchestrator and the debug skill read as a classification, so the
 # three documents that enumerate it must all carry the token.
 echo "Test: VERDICT_INCOHERENT is enumerated wherever reason codes are (RC-018)"
-delegate_flat=$(tr '\n' ' ' <"$DELEGATE_MD" | tr -s ' ')
 debug_flat=$(tr '\n' ' ' <"$SCRIPT_DIR/../skills/review-council-debug/SKILL.md" | tr -s ' ')
 if grep -qF 'VERDICT_INCOHERENT' <<<"$verify_flat" &&
 	grep -qF 'VERDICT_INCOHERENT' <<<"$delegate_flat" &&
@@ -782,6 +786,267 @@ else
 	echo "        README:   $rc024_readme_line"
 	FAIL=$((FAIL + 1))
 fi
+
+# RC-025: Disposition is the one phase where attacker-authored text — PR comments
+# anyone can post — reaches something that edits state. The subagent that reads
+# them cannot read `disposition.md`: Step 2 says so in as many words, and its file
+# access is the review root, not this skill. So a rule written anywhere except
+# inside the Step 3 blockquote, which is sent to it verbatim, is a rule it never
+# receives. That is not a hypothetical distinction. The prohibition on writing
+# `severity` was previously stated only in Step 2's orchestrator-facing agent
+# profile, where it constrained a reader the subagent is not; moving it back
+# there would restore a rule that reads correct and binds nothing. Every pin
+# below is therefore scoped to the prompt, not to the file.
+#
+# What the prohibition buys is the downgrade-then-suppress chain: rule 3 lets a
+# scoping hint suppress LOW findings without independent verification, so an
+# attacker who can talk a HIGH down to LOW gets it retired on argument alone.
+# Two writes, each individually within the rules, composing into a bypass.
+echo "Test: the Step 3 prompt itself carries the subagent's write allowlist (RC-025)"
+# Keep only the blockquote — the prose around it is addressed to the orchestrator
+# and never reaches the subagent, so a rule found there must not satisfy a pin.
+rc025_prompt=$(awk '/^## Step 3 /{i=1} /^## Step 4 /{i=0} i' "$DISPOSITION_MD" | sed -n 's/^> \{0,1\}//p')
+rc025_prompt_flat=$(tr '\n' ' ' <<<"$rc025_prompt" | tr -s ' ')
+if [[ -z "$rc025_prompt_flat" ]]; then
+	echo "  FAIL: disposition.md Step 3 has no prompt blockquote — the subagent cannot read"
+	echo "        the phase file, so a prompt that is not there is a subagent with no rules"
+	FAIL=$((FAIL + 1))
+else
+	# shellcheck disable=SC2016 # literal markdown code spans lifted from the prompt.
+	if grep -qF 'closed set' <<<"$rc025_prompt_flat" &&
+		grep -qF 'the only edits you may make to `findings.json`' <<<"$rc025_prompt_flat" &&
+		grep -qF 'read-only to you' <<<"$rc025_prompt_flat"; then
+		echo "  PASS: writes to findings.json are a closed set, every other field read-only"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: nothing bounds what the subagent may write to findings.json — a comment"
+		echo "        can now edit any field it can argue about"
+		FAIL=$((FAIL + 1))
+	fi
+
+	if grep -qF "never write a finding's \`severity\`" <<<"$rc025_prompt_flat" &&
+		grep -qF 'downgrade-then-suppress' <<<"$rc025_prompt_flat"; then
+		echo "  PASS: severity is unwritable in the prompt, and the chain that closes is named"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: a PR comment can argue a HIGH down to LOW, and rule 3's LOW-only scoping"
+		echo "        hint then suppresses it legitimately — a real finding retired on argument"
+		FAIL=$((FAIL + 1))
+	fi
+
+	# The allowlist and the instruction that performs the write are two paragraphs
+	# apart and were written at different times. If they disagree the subagent is
+	# either told to write a field its allowlist forbids — which the orchestrator's
+	# Step 2 audit then reads as a departed subagent and distrusts the whole run —
+	# or handed permission for a write nothing asks it to make. Compare the fields
+	# each one names rather than pinning either passage's wording.
+	rc025_allow=$(awk 'BEGIN { RS = "" } index($0, "closed set") { print; exit }' <<<"$rc025_prompt" | tr '\n' ' ' | tr -s ' ')
+	rc025_move=$(awk 'BEGIN { RS = "" } index($0, "action: \"suppressed-low\"") { print; exit }' <<<"$rc025_prompt" | tr '\n' ' ' | tr -s ' ')
+	rc025_disagree=0
+	for rc025_side in "allowlist|$rc025_allow" "suppressed-low write instruction|$rc025_move"; do
+		rc025_label="${rc025_side%%|*}"
+		rc025_body="${rc025_side#*|}"
+		# shellcheck disable=SC2016 # literal markdown code spans, not substitutions.
+		for rc025_field in 'suppressed-low' 'top-level `status`' 'top-level `reason`' '`verified`' '`stripped` array'; do
+			if ! grep -qF "$rc025_field" <<<"$rc025_body"; then
+				echo "  $rc025_label does not name: $rc025_field"
+				rc025_disagree=$((rc025_disagree + 1))
+			fi
+		done
+	done
+	if [[ "$rc025_disagree" -eq 0 ]]; then
+		echo "  PASS: allowlist and suppressed-low write instruction name the same fields"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $rc025_disagree mismatch(es) between what the subagent is permitted to"
+		echo "        write and what it is told to write — either the write is out of policy"
+		echo "        or the policy permits a write nobody performs"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+
+# RC-026: `rc-prepare.sh` detects the forge CLI (SECTION 3) and writes
+# `- Tooling: {gh|glab|none}` into tracking.md. `divisor-curator-code.md` expects a
+# `Forge tooling:` field in its delegation prompt and conditions its duplicate
+# search on it — "MUST search existing open issues to prevent recommending
+# duplicates" names no CLI of its own, and the contract defines only what to do
+# when the field says `gh`, `glab` or `none`, never what to do when it is absent.
+# delegate.md's Forge tooling block is the entire wire between the two.
+#
+# Delete it and nothing goes red: the script still writes the field, the Curator
+# still has its mandate, and the Curator silently stops deduplicating, because the
+# field it keys on never arrives and its contract leaves the absent case
+# undefined — skip the search as though the answer were `none`, or reach for a CLI
+# it was never told it has. Pin the block and both ends it joins.
+echo "Test: delegate.md carries the Tooling field into the code-review prompt (RC-026)"
+rc026_spec_start=$(grep -n '^## Spec Review Delegation$' "$DELEGATE_MD" | cut -d: -f1)
+if [[ -z "$rc026_spec_start" ]]; then
+	echo "  FAIL: no '## Spec Review Delegation' heading to split on"
+	FAIL=$((FAIL + 1))
+else
+	rc026_code=$(sed -n "1,$((rc026_spec_start - 1))p" "$DELEGATE_MD" | tr '\n' ' ' | tr -s ' ')
+	rc026_spec=$(sed -n "${rc026_spec_start},\$p" "$DELEGATE_MD" | tr '\n' ' ' | tr -s ' ')
+	# The spec half is checked for absence, not presence: `divisor-curator-spec.md`
+	# states network access is not permitted and names no forge tool, so a Forge
+	# tooling line there advertises a capability that contract denies.
+	# shellcheck disable=SC2016 # literal markdown code span, not a substitution.
+	if grep -qF '**Forge tooling:**' <<<"$rc026_code" &&
+		grep -qF '`Tooling:` field' <<<"$rc026_code" &&
+		grep -qF 'Forge tooling: {gh | glab | none}' <<<"$rc026_code" &&
+		! grep -qF 'Forge tooling: {gh | glab | none}' <<<"$rc026_spec"; then
+		echo "  PASS: the field is read from tracking.md and emitted in the code prompt only"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: the code-review prompt carries no Forge tooling line — the Curator"
+		echo "        silently stops deduplicating — or the spec prompt now advertises a CLI"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+
+echo "Test: the Tooling field survives from rc-prepare.sh to the Curator (RC-026)"
+rc026_broken=0
+# shellcheck disable=SC2016 # literal `${forge_tool}` lifted from the script, not
+# a substitution this test should perform.
+if ! grep -qF 'echo "- Tooling: ${forge_tool}"' "$PREPARE_SH"; then
+	echo "  broken link: rc-prepare.sh no longer writes a Tooling line into tracking.md"
+	rc026_broken=$((rc026_broken + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span, not a substitution.
+if ! grep -qF '`Tooling:` field' <<<"$delegate_flat"; then
+	echo "  broken link: delegate.md no longer reads the Tooling field out of tracking.md"
+	rc026_broken=$((rc026_broken + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span, not a substitution.
+if ! grep -qF '`Forge tooling:`' <<<"$curator_flat"; then
+	echo "  broken link: the Curator no longer expects a Forge tooling field"
+	rc026_broken=$((rc026_broken + 1))
+fi
+if ! grep -qF 'MUST search existing open issues' <<<"$curator_flat"; then
+	echo "  broken link: the Curator's duplicate search is no longer mandatory"
+	rc026_broken=$((rc026_broken + 1))
+fi
+if [[ "$rc026_broken" -eq 0 ]]; then
+	echo "  PASS: detection, propagation and consumption of the forge tool all present"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc026_broken link(s) broken — the Curator recommends filing issues that"
+	echo "        already exist, and nothing else in the suite notices"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-027: Step 3c (Cross-Agent Consolidation) is gated on effort the way its three
+# siblings in verify.md are — Correction, Calibration and the Validation Gate each
+# carry the same one-line gate. Three documents have to agree about it: verify.md
+# holds the gate the orchestrator obeys, SKILL.md qualifies the consolidation MUST
+# with "(standard and deep only)", and pipeline-states.md lists what `quick` skips.
+# They previously did not: SKILL.md ordered a step verify.md had no gate for, which
+# is how a `quick` run ends up paying for model reasoning it was never costed for,
+# or an orchestrator reading verify.md alone skips a step SKILL.md says it MUST run.
+# Pinning one side would leave the other two free to drift back into that state, so
+# all three are checked here and the failure names which one moved.
+echo "Test: quick mode skips Cross-Agent Consolidation in all three documents (RC-027)"
+rc027_step3c=$(awk '/^## Step 3c /{i=1} /^## Step 4 /{i=0} i' "$VERIFY_MD" | tr '\n' ' ' | tr -s ' ')
+rc027_missing=0
+# shellcheck disable=SC2016 # literal markdown code span, not a substitution.
+if ! grep -qF '**Effort gate:** If effort is `quick`, skip this step entirely.' <<<"$rc027_step3c"; then
+	echo "  missing: verify.md Step 3c has no effort gate of its own (or the heading moved)"
+	rc027_missing=$((rc027_missing + 1))
+fi
+# Bounded-window match rather than a verbatim sentence: what matters is that the
+# qualifier stays attached to the consolidation mandate, not how it is phrased.
+if ! grep -qE 'Consolidate cross-agent duplicates.{0,200}standard and deep only' <<<"$skill_flat"; then
+	echo "  missing: SKILL.md no longer scopes the consolidation MUST to standard and deep"
+	rc027_missing=$((rc027_missing + 1))
+fi
+if ! grep -qE 'quick skips[^)]*Consolidate' <<<"$pipeline_states_flat"; then
+	echo "  missing: pipeline-states.md's quick-skips list no longer names Consolidate"
+	rc027_missing=$((rc027_missing + 1))
+fi
+if [[ "$rc027_missing" -eq 0 ]]; then
+	echo "  PASS: gate, qualifier and state table agree that quick skips Step 3c"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc027_missing of the three documents disagree about whether quick runs"
+	echo "        cross-agent consolidation — a quick run either does reasoning it was never"
+	echo "        costed for, or a MUST in SKILL.md orders a step verify.md tells it to skip"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-028: `rc-extract-verdict.sh` appends every coherence-gate firing to
+# `gate-firings.jsonl` — the only record that survives a re-dispatch, since that
+# re-dispatch overwrites both `{agent}.raw.md` and `{agent}.json`. The write is
+# worth nothing on its own: a log nobody reads is a file, not a control. Step 6 is
+# the reader, and the two ends were written at different times, so pin both.
+#
+# The rule Step 6 states matters as much as the fact that it reads the file. A
+# firing does NOT make the later APPROVE illegitimate — the gate's own remediation
+# text invites an agent to lower a severity to MEDIUM/LOW and keep APPROVE — so a
+# Step 6 that forced REQUEST CHANGES on every firing would reject honest
+# corrections and leave the agent no remedy the gate accepts. Disclosure is the
+# whole mechanism, which makes the withdrawal branch the one that must be named:
+# that is the case where the log is the only surviving evidence.
+echo "Test: the gate-firing log is written, read, and disclosed rather than enforced (RC-028)"
+EXTRACT_SH="$SKILLS/scripts/rc-extract-verdict.sh"
+rc028_broken=0
+# shellcheck disable=SC2016 # literal shell redirection lifted from the script.
+if ! grep -qF '>>"$session_dir/gate-firings.jsonl"' "$EXTRACT_SH"; then
+	echo "  broken link: rc-extract-verdict.sh no longer APPENDS the firing to the log"
+	echo "               (a truncating write loses the first pass, which is the one that matters)"
+	rc028_broken=$((rc028_broken + 1))
+fi
+if ! grep -qF 'gate-firings.jsonl' <<<"$verify_flat"; then
+	echo "  broken link: verify.md never names the log, so nothing reads it back"
+	rc028_broken=$((rc028_broken + 1))
+fi
+if ! grep -qF 'A firing is not by itself grounds to change a verdict' <<<"$verify_flat"; then
+	echo "  broken link: Step 6 no longer distinguishes disclosure from enforcement — an"
+	echo "               honest severity correction now gets forced to REQUEST CHANGES"
+	rc028_broken=$((rc028_broken + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span, not a substitution.
+if ! grep -qF 'no finding in `findings.json` matches the record' <<<"$verify_flat"; then
+	echo "  broken link: the withdrawal branch is unnamed, so the one case where the log is"
+	echo "               the only evidence has no instruction attached to it"
+	rc028_broken=$((rc028_broken + 1))
+fi
+if [[ "$rc028_broken" -eq 0 ]]; then
+	echo "  PASS: append, read-back, non-enforcement and the withdrawal branch all present"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc028_broken link(s) broken — an agent can resolve the verdict gate by"
+	echo "        deleting its own CRITICAL and the review reports a clean APPROVE"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: the persona roster matches delegate.md's table and module/agents (RC-029)"
+# rc-prepare.sh reports which personas are ABSENT by diffing what it discovered
+# against a shipped roster. That roster restates phases/delegate.md's persona
+# table, and a third copy exists on disk as module/agents/divisor-*-{code,spec}.md.
+# Nothing at runtime reconciles the three: a persona added to the table and the
+# agents directory but not to RC_PERSONAS would be dispatched and never reported
+# absent when missing, and one removed everywhere but the roster would be
+# reported absent on every host forever. Bind all three here.
+#
+# Same shape as the RC_TOP_KEYS/RC_FINDING_KEYS guard in
+# test-rc-extract-verdict.sh: the script declares the list on one line so a
+# single sed can lift it back out.
+roster=$(sed -n "s/^RC_PERSONAS=(\(.*\))\$/\1/p" "$PREPARE_SH" | tr ' ' '\n' | sort | tr '\n' ' ')
+roster="${roster% }"
+# Column 1 of the table is `| \`divisor-<name>\` |`; take the base names.
+# Backticks are avoided in the expression: shellcheck reads one inside single
+# quotes as an unexpanded command substitution (SC2016). `^|[^a-z]*` still
+# anchors to a table row, since only the persona rows begin with a pipe and
+# then reach `divisor-`.
+table=$(sed -n 's/^|[^a-z]*divisor-\([a-z]*\).*/\1/p' "$DELEGATE_MD" | sort | tr '\n' ' ')
+table="${table% }"
+assert_equals "$roster" "$table" "RC_PERSONAS matches delegate.md's persona table"
+
+for sfx in code spec; do
+	on_disk=$(find "$AGENTS" -name "divisor-*-${sfx}.md" -type f -exec basename {} ".md" \; |
+		sed "s/^divisor-//; s/-${sfx}\$//" | sort | tr '\n' ' ')
+	on_disk="${on_disk% }"
+	assert_equals "$roster" "$on_disk" "RC_PERSONAS matches the shipped -${sfx} agent files"
+done
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

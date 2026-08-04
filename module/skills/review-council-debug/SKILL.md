@@ -76,17 +76,58 @@ validates against `references/verdict-schema.json`, plus the target
 file its evidence quotes verbatim (rc-verify-evidence.sh in Step 3
 greps for that exact string, so the mock must contain it).
 
+Three details below are load-bearing for Step 3, and getting any of
+them wrong still leaves both scripts exiting 0 -- a green diagnostic
+over a pipeline that never ran:
+
+- The agent is named `divisor-test-code`, not `test-agent`.
+  rc-verify-evidence.sh discovers verdicts by the `divisor-*.json`
+  glob, so any other name is invisible to it and Step 3 reports
+  `nothing_to_do` without writing `findings.json` at all.
+- The finding's `file` is relative to the mock session root, not
+  absolute. rc-verify-evidence.sh joins `REVIEW_ROOT` onto `file`
+  unconditionally, so an absolute path becomes
+  `<root>//tmp/...` and is stripped `FILE_NOT_FOUND`.
+- The mock session is the review root, and Step 3 must say so. See
+  the `REVIEW_ROOT` note there.
+
+Two rules govern the mock's lifetime, and both exist because a
+diagnostic that destroys its own evidence fails the same way a broken
+pipeline does — silently, at exit 0.
+
+**Every block echoes what its own checklist reads; nothing is left in a
+variable for a later block to find.** Both this block and Step 3's
+assign `output=$(...)`. Run them in one shell without echoing and Step
+3's assignment overwrites Step 2's, the combined run emits nothing on
+stdout, and neither step's "Validate JSON output" bullets can be
+answered. Step 3 prints `verdicts/findings.json` in full for the same
+reason: its bullets quote fields out of that file, so the file's
+contents have to reach you as output rather than as a path you are
+trusted to still be able to open.
+
+**Nothing removes the mock until Step 3's block does, and Step 3's
+block always does.** Do not wrap this `mktemp -d` in an `EXIT` trap: the
+trap fires when *this* block's shell exits, which is before Step 3 reads
+the directory. Step 3 expands `${mock_session}`, so either run it in the
+same shell as this block or substitute the path this block prints — left
+unset, both the `REVIEW_ROOT` and the session argument come out empty
+and `rc-verify-evidence.sh` answers with `nothing_to_do` at exit 0,
+indistinguishable from a clean run. Because Step 3's block deletes the
+mock on its way out, re-running Step 3 means re-running this block
+first; against the deleted directory it reports that same
+`nothing_to_do`.
+
 ```bash
-mock_session="/tmp/rc-debug-mock-$$"
+mock_session=$(mktemp -d)
 mkdir -p "${mock_session}/verdicts"
-target="${mock_session}/target.py"
-cat >"${target}" <<'PYEOF'
+target_rel="target.py"
+cat >"${mock_session}/${target_rel}" <<'PYEOF'
 def get_user(user_id):
     return db.query(f"SELECT * FROM users WHERE id = {user_id}")
 PYEOF
 
-verdict_json=$(jq -n --arg file "$target" '{
-  agent: "test-agent",
+verdict_json=$(jq -n --arg file "$target_rel" '{
+  agent: "divisor-test-code",
   files_read: [$file],
   verdict: "REQUEST CHANGES",
   findings: [{
@@ -103,9 +144,11 @@ verdict_json=$(jq -n --arg file "$target" '{
   echo '```json'
   echo "$verdict_json"
   echo '```'
-} >"${mock_session}/verdicts/test-agent.raw.md"
+} >"${mock_session}/verdicts/divisor-test-code.raw.md"
 
 output=$(${SCRIPTS_DIR}/rc-extract-verdict.sh "${mock_session}" 2>&1)
+echo "$output"
+echo "mock_session=${mock_session}"
 ```
 
 Validate JSON output:
@@ -128,10 +171,28 @@ output=$(${SCRIPTS_DIR}/rc-verify-evidence.sh "${session_dir}" 2>&1)
 ```
 
 Otherwise, continue from the mock built in Step 2 -- it consumes
-`verdicts/test-agent.json` that `rc-extract-verdict.sh` just wrote:
+`verdicts/divisor-test-code.json` that `rc-extract-verdict.sh` just
+wrote. `REVIEW_ROOT` must name the mock session: it defaults to `.`,
+which resolves the finding's `file` against the current working
+directory instead of the mock, and the finding is stripped
+(`FILE_NOT_FOUND`, or `PATH_OUTSIDE_ROOT` when it does resolve but
+lands outside the root) before the evidence matcher -- the one
+component this step exists to exercise -- ever runs. The script still
+exits 0 with `status: "ok"`, so nothing in the output says the match
+never happened:
 
 ```bash
-output=$(${SCRIPTS_DIR}/rc-verify-evidence.sh "${mock_session}" 2>&1)
+output=$(REVIEW_ROOT="${mock_session}" \
+  ${SCRIPTS_DIR}/rc-verify-evidence.sh "${mock_session}" 2>&1)
+echo "$output"
+echo "--- verdicts/findings.json ---"
+cat "${mock_session}/verdicts/findings.json"
+echo "--- matcher assertion ---"
+jq -e '(.verified | length) == 1 and (.stripped | length) == 0' \
+  "${mock_session}/verdicts/findings.json" >/dev/null \
+  && echo "matcher: PASS -- the mock finding is verified, nothing stripped" \
+  || echo "matcher: FAIL -- read .stripped[].reason above"
+rm -rf "${mock_session}"
 ```
 
 Same validation as Step 1:
@@ -140,7 +201,19 @@ Same validation as Step 1:
 - `message` clearly tells LLM what to do next?
 - Proper handling of edge cases (no findings, all stripped)?
 - `verdicts/findings.json` written with the finding's `constraint`
-  field carried through untouched?
+  field carried through untouched? Read it out of the
+  `--- verdicts/findings.json ---` dump the mock block prints, not off
+  disk: that block removes the mock as it exits.
+- Did the mock finding actually reach the matcher? The mock block
+  answers this with a `matcher:` line, requiring `verified` to hold the
+  finding and `stripped` to be empty --
+  `jq -e '(.verified | length) == 1 and (.stripped | length) == 0'`.
+  A green `status: "ok"` does not answer it: a finding stripped
+  `PATH_OUTSIDE_ROOT` or `FILE_NOT_FOUND` reports `ok` too, and
+  `findings.json` is written either way. Treat `matcher: FAIL` as a
+  failed Step 3, and read the `reason` on the stripped entry in the
+  dump -- it names which of the three Step 2 details is wrong, not a
+  defect in the script.
 
 ### Step 4: Test rc-render-report.sh
 

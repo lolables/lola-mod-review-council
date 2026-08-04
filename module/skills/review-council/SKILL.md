@@ -146,7 +146,9 @@ vocabulary and transitions: `references/pipeline-states.md`.
 stateDiagram-v2
     [*] --> Prepare
     Prepare --> Delegate: ok
-    Prepare --> [*]: skip (no repo / no changeset)
+    Prepare --> [*]: skip (any input or environment fault)
+    Prepare --> Prepare: empty (one broader-scope retry)
+    Prepare --> [*]: empty after retry (report and stop)
     Delegate --> Extract: raw verdicts written
     Extract --> Delegate: extract_error (re-dispatch <=1)
     Extract --> Verify: ok
@@ -483,8 +485,8 @@ this order:
 
 - Apply severity calibration (LLM judgment on findings severity)
 - **Consolidate cross-agent duplicates (verify.md Step 3c) — SCRIPT-OWNED,
-  you MUST run it.** When 2+ verified findings share a file, judge which
-  describe the same underlying defect, write
+  you MUST run it (standard and deep only).** When 2+ verified findings
+  share a file, judge which describe the same underlying defect, write
   `${session_dir}/verdicts/clusters.json` (a members-only manifest per
   `${REFERENCES_DIR}/consolidation-schema.json`), then run:
   `bash ${SCRIPTS_DIR}/rc-consolidate.sh ${session_dir}`
@@ -496,8 +498,9 @@ this order:
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
 **Effort-conditional behavior:**
-- **quick**: Skip correction round, severity calibration, validation
-  gate. Run only `rc-verify-evidence.sh` (mechanical evidence check).
+- **quick**: Skip correction round, severity calibration, cross-agent
+  consolidation, validation gate. Run only `rc-verify-evidence.sh`
+  (mechanical evidence check).
   Proceed directly to Step 5, skipping Step 4.5 (Disposition) — its own
   gate also excludes `quick`, so this is a shortcut, not a divergence.
 - **standard**: Full verification as above.

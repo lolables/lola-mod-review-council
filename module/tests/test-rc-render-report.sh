@@ -3,8 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-render-report.sh"
-PASS=0
-FAIL=0
+# Sourced here rather than beside the one test that needs path_without_command:
+# helpers.sh initialises PASS/FAIL, so sourcing it mid-file resets the running
+# counts and the suite reports a total covering only the tests after it.
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Test 1: Missing session directory
 echo "Test 1: Missing session directory"
@@ -805,6 +808,105 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session"
+
+# Test: tracking values containing shell quotes survive the parse
+#
+# The seven tracking fields were read with `grep | cut | xargs`. xargs applies
+# SHELL QUOTING to its input, so a value carrying a quote is either rewritten or
+# rejected outright: git permits both ' and " in a refname, and a branch named
+# feature/don't-panic made xargs exit non-zero, which the `|| echo unknown`
+# fallback then published as "Branch: unknown" with a warning on stderr. The
+# report silently misreported which branch it had reviewed.
+echo "Test: tracking values containing shell quotes survive the parse"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
+cat >"$session/tracking.md" <<'TRACKING'
+# Review Council Session Tracking
+
+## Phase: Preparation
+
+- Mode: code (code files changed)
+- Branch: feature/don't-panic
+- Base: main
+- PR: #216 "Fix quoted handling"
+- Agents discovered: 5
+- Agents absent: none
+- Changeset size: 12 files
+TRACKING
+stderr_file=$(mktemp)
+result=$(bash "$SCRIPT" "$session" 2>"$stderr_file")
+for probe in \
+	"**Branch**: feature/don't-panic" \
+	'**PR**: #216 "Fix quoted handling"' \
+	"**Mode**: code (code files changed)"; do
+	if grep -qF -- "$probe" <<<"$result"; then
+		echo "  PASS: rendered verbatim — $probe"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: not rendered verbatim — $probe"
+		got=$(grep -F -- "${probe%%:*}:" <<<"$result") || got="<line absent>"
+		echo "        got: $got"
+		FAIL=$((FAIL + 1))
+	fi
+done
+if [[ ! -s "$stderr_file" ]]; then
+	echo "  PASS: no stderr noise while parsing quoted values"
+	PASS=$((PASS + 1))
+else
+	noise=$(cat "$stderr_file") || noise="<unreadable>"
+	echo "  FAIL: stderr output: $noise"
+	FAIL=$((FAIL + 1))
+fi
+rm -f "$stderr_file"
+rm -rf "$session"
+
+# Test: a tracking key that is absent still falls back rather than rendering blank
+echo "Test: missing tracking keys fall back"
+session=$(mktemp -d)
+mkdir -p "$session/verdicts"
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "**Branch**: unknown" <<<"$result"; then
+	echo "  PASS: absent Branch falls back to unknown"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: absent Branch did not fall back"
+	got=$(grep -F -- "**Branch**:" <<<"$result") || got="<line absent>"
+	echo "        got: $got"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF -- "**Base**: main" <<<"$result"; then
+	echo "  PASS: absent Base falls back to main"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: absent Base did not fall back"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+# Test: the report renders on a host with no GNU timeout
+#
+# rc-lib.sh used to gate EVERY sourcing script on GNU timeout, a dependency only
+# the three forge-calling scripts use. This renderer makes no forge calls; on a
+# macOS box without coreutils it must still produce a report.
+echo "Test: the report renders without GNU timeout on PATH"
+session=$(mktemp -d)
+maskdir=$(mktemp -d)
+mkdir -p "$session/verdicts"
+printf '# Tracking\n\n- Mode: code\n- Branch: main\n' >"$session/tracking.md"
+masked=$(path_without_command timeout "$maskdir")
+masked=$(PATH="$masked" path_without_command gtimeout "$maskdir")
+result=$(PATH="$masked" bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "# Review Council Report" <<<"$result" && grep -qF -- "**Branch**: main" <<<"$result"; then
+	echo "  PASS: report renders with timeout hidden"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: report did not render with timeout hidden"
+	head_lines=$(head -3 <<<"$result") || head_lines="<empty>"
+	echo "        got: $head_lines"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session" "$maskdir"
 
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

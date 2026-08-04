@@ -6,6 +6,42 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Verdict coherence gate in `rc-extract-verdict.sh`: an APPROVE filed by an
+  agent over its own CRITICAL or HIGH finding is refused as
+  `VERDICT_INCOHERENT`, not `SCHEMA_INVALID` — the block is schema-valid, and
+  filing it as a schema break sends a maintainer chasing one that does not
+  exist. Every firing is appended to `gate-firings.jsonl` at the session root
+  before the rejection is filed, recording the agent, the verdict it claimed,
+  and the findings that forced the rejection. Without that record an agent
+  that resolves the gate by deleting the finding leaves a session
+  byte-for-byte identical to one where the reviewer found nothing, since the
+  re-dispatch the gate buys overwrites both `{agent}.raw.md` and
+  `{agent}.json`. `verify.md` Step 6 reads the log back and discloses it; the
+  rule is disclosure, not override, because the gate's own remediation text
+  invites lowering a severity and keeping APPROVE, which can be an honest
+  correction, and the verdict is already settled by the REQUEST CHANGES
+  backstop. The log sits at the session root rather than in `verdicts/`
+  because every verdict discovery globs that directory, and a test asserts no
+  `-name` pattern in the shipped scripts can match it. Known gap: quick mode
+  runs no narrative synthesis, so a firing reaches `verification.txt` and no
+  further
+- `task doctor` — reports what `PATH` actually resolves for each prerequisite,
+  which matters most on the platform the maintainer cannot test locally. It
+  warns when coreutils' `libexec/gnubin` is on `PATH`: that directory shadows
+  the BSD tools macOS ships, so a green local run stops meaning anything.
+  `doctor.sh` is written for Bash 3.2 because it has to run on the stock macOS
+  it diagnoses
+- A repo-root `Brewfile` as the single source of truth for the macOS
+  prerequisite set. The list previously lived in the CI workflow, in
+  `rc-lib.sh`'s skip messages and in the README, free to drift; the macOS CI
+  leg now installs from the same file a contributor runs `brew bundle`
+  against
+- CI runs the whole test matrix on Linux and macOS. It previously ran the unit
+  layer only, so the e2e, degraded and mutation layers existed without ever
+  gating a merge. Both legs always run to completion, so a failure on one
+  cannot hide whether the other was platform-specific. Venom is pinned by tag
+  and by the SHA-256 of each published asset, since ovh/venom publishes no
+  checksum file
 - Four-layer test architecture, documented in `docs/dev/testing.md`. The suite
   was previously one layer — a unit suite per script — which structurally
   cannot see the seams between scripts, cannot reach a fallback branch that
@@ -23,7 +59,7 @@ All notable changes to the Review Council module are documented here.
   - `task test:degraded` — the suite once per optional tool (`jsonschema`,
     `gh`, `glab`) hidden from `PATH`, pinning fallbacks to the same result as
     the real tool rather than to "does not crash"
-  - `task test:mutate` — reintroduces all eight fixed defects and asserts a
+  - `task test:mutate` — reintroduces all sixteen fixed defects and asserts a
     suite catches each; a mutation that applies but is not caught fails the run
   - `test-rc-prepare-git-edges.sh` — no repository at all, a subdirectory of an
     unrelated repository, and a repository holding a single root commit
@@ -67,7 +103,7 @@ All notable changes to the Review Council module are documented here.
   collapsible findings; degrades to render-only when `gh` is absent.
 - Target-repo materialization for not-checked-out GitHub PR/URL reviews:
   blobless partial clone (shallow fallback) of the PR head into an LRU-capped
-  per-repo cache, threaded to reviewers and evidence verification via
+  per-endpoint cache, threaded to reviewers and evidence verification via
   `review_root` / `REVIEW_ROOT`. Working tree is never modified.
 - `rc-extract-verdict.sh`: a new Extract stage between Delegate and Verify
   that pulls the fenced ```json verdict block out of each reviewer's raw
@@ -92,7 +128,7 @@ All notable changes to the Review Council module are documented here.
   comment already exists on a PR, `rc-prepare.sh` fetches the issue-comments
   timeline and writes replies posted at/after the marker to
   `pr-conversation.txt` as UNTRUSTED data. First reviews and non-GitHub
-  forges write no file; a `# TODO(forge)` marker tracks the GitLab gap
+  forges write no file; SECTION 13's no-op `gitlab` branch marks the gap
 - Disposition step (`phases/disposition.md`, SKILL.md Step 4.5): the one
   chokepoint that reads `pr-conversation.txt`, gated on that file existing
   and effort not `quick`. A fresh-context subagent receives the untrusted
@@ -153,13 +189,211 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
-- Fixture git repositories inherited the contributor's commit-signing config.
+- `--mode` accepted any value and fell through to a `code` default, so a typo
+  silently ran a code review: the code personas, the code scope default, and a
+  report naming a mode the caller never asked for. `--mode spec` is the typo
+  that matters — the accepted token is `specs`, but the mode is called `spec` in
+  the JSON `mode` field and in every `divisor-*-spec.md` filename, so the
+  singular is the natural guess. It is now refused by name, as `--effort` has
+  always refused its own junk values, rather than aliased to `specs`: one
+  rejection listing the three valid values costs a retry, while a second
+  accepted spelling is something every later reader has to carry
+- The report misstated which branch it had reviewed. `rc-render-report.sh` read
+  its seven tracking fields with `grep | cut | xargs`, and `xargs` applies shell
+  quoting to its input: git permits both `'` and `"` in a refname, so a branch
+  named `feature/don't-panic` made `xargs` exit non-zero and the report
+  published `Branch: unknown` — a false statement of fact, with the only warning
+  going to stderr. A `"` in a value was stripped instead. The `|| echo
+  <default>` fallbacks on those lines were dead code besides: `xargs` exits 0 on
+  empty input, so an absent key produced a successful empty pipeline and
+  rendered blank rather than falling back. All seven now go through
+  `rc_parse_kv`, the sed-based reader in `rc-lib.sh` that four other scripts
+  already shared, with the defaults applied as parameter expansions where an
+  empty result actually triggers them
+- GNU `timeout` gated every script that sourced `rc-lib.sh`, a dependency only
+  the three forge-calling ones use. On a macOS host without coreutils, evidence
+  verification, consolidation, verdict extraction and comment rendering each
+  printed a skip and did nothing, for want of a `timeout` none of them calls.
+  The check moved into `rc_require_timeout`, called at the top of `rc-prepare.sh`,
+  `rc-clone-target.sh` and `rc-post-comment-github.sh`. It stays eager rather
+  than deferring into `rc_timeout`: `rc-prepare.sh` does not reach its first
+  forge call until it has created the session directory and written to it, and
+  failing there would leave a half-built session behind a message that reads
+  like nothing happened
+- `Agents absent` in the report was the literal string `none`. `rc-prepare.sh`
+  wrote it, no phase ever updated it, and discovery is a bare glob with no
+  roster to diff against — so a host carrying two of the five personas published
+  a Discovery Summary claiming complete coverage. `RC_PERSONAS` in
+  `rc-prepare.sh` now names the shipped council and absence is the set
+  difference against what discovery found, per mode suffix.
+  `phases/delegate.md`'s persona table remains the sole source for who is
+  *dispatched*; the roster only answers who is *missing*, and
+  `test-rc-doc-guards.sh` fails on drift between the roster, that table, and the
+  `module/agents/` files, so a persona cannot be added or removed in one place
+  alone
+- Exact-duplicate dedup in `rc-verify-evidence.sh` kept the higher severity and
+  discarded everything else about the duplicate, so when two reviewers cited the
+  same line with the same evidence the second one's angle vanished with nothing
+  recording that it was filed. Semantic consolidation describes the same event
+  and preserves it in `provenance.consolidated_from`, which the report renders
+  as "Also flagged by"; exact dedup now folds into the same field in the same
+  shape. Only a duplicate from a *different* agent is credited — the dedup key
+  is file + line + evidence and excludes the agent, so one reviewer listing a
+  finding twice also merges here, and folding that would credit the survivor to
+  its own author
+- A materialized review could be grounded in the wrong repository entirely and
+  still report `ok`. Both paths are closed, and both were reachable with no
+  adversary — a same-named internal mirror or a second forge host is enough:
+  - `rc-clone-target.sh` derived the clone host from the local checkout's
+    `origin`. A repository whose origin named the same owner/repo on a hostile
+    host redirected the clone there, and with a matching branch the script
+    returned `in_place`, so the local tree was reviewed as the requested PR.
+    The host now comes from the caller and never from `origin`. The `gh` fast
+    path stays gated on github.com: the hazard is not that `gh` fails
+    elsewhere but that `gh repo clone OWNER/REPO` resolves against `gh`'s own
+    default host and would succeed, cloning a same-named github.com repository
+  - The clone cache entry was named `<owner>-<repo>`, and an existing clone at
+    that name was reused without re-checking its origin. Two hosts serve an
+    `acme/widgets` just as happily, so one host's checkout was handed back for
+    the other's, and the `git fetch origin pull/N/head` that followed ran
+    against the wrong origin. Entries are now keyed on the endpoint. A remote
+    `parse_remote` declines to name — a ported endpoint, deliberately — is
+    keyed by a checksum of the URL rather than an empty slug, which would
+    otherwise file every such endpoint under one key and reintroduce the
+    collision for exactly the callers the fix protects. Entries under the old
+    name are orphaned rather than migrated; nothing touches them, so they sort
+    oldest under the LRU listing and evict first
+- An unsupported forge host under `--scope url` reported "No changes to
+  review". That is true and useless: the empty status routes the orchestrator
+  into the recovery table and on to `--scope all`, turning "review PR 42" into
+  a full review of the local checkout returned as `ok`. It now reports `skip`,
+  which is terminal
+- Verification silently truncated a review. Cited line numbers are
+  LLM-authored and JSON Schema draft-07 defines `integer` by value, so `12.0`
+  and `1e300` both validated and then reached `$((line - 5))` as literals bash
+  rejects. That did not abort the run — it tore down the verification loop, so
+  the offending finding and every finding after it vanished from all three
+  buckets while `findings.json` was still written and `total_findings` still
+  counted them. A truncated review was indistinguishable from a clean one. The
+  value is now bounded in the schema and the shell side gates on a plain
+  decimal integer; the schema half only bites where a real validator is
+  installed, and the `jq` fallback checks integrality but not magnitude
+- `path_in_root` resolved only the directory component of a cited path,
+  leaving a symlink at the leaf free to point anywhere and still pass
+  containment. On a materialized foreign-PR review the tree under the review
+  root is PR-author-controlled. The chain is now walked a hop at a time with
+  flagless `readlink`, since the canonicalising flags are GNU extensions,
+  Homebrew leaves BSD `readlink` on `PATH`, and CI runs macOS
+- Verification died with "Argument list too long" on large reviews. Findings
+  reached `jq` through `argv`, so a review crossing Linux's per-entry
+  `MAX_ARG_STRLEN` failed before `findings.json` was written. They now arrive
+  via `--slurpfile` from files
+- A finding whose evidence contained a code fence broke every finding after
+  it out of the rendered comment. Evidence was wrapped in a fixed
+  three-backtick fence indented two spaces — still a valid closing fence — so
+  such evidence closed the block early, freed the rest as live markdown, and
+  opened an unterminated fence that swallowed every later finding and the
+  marker line the re-review upsert depends on. The single-line branch had the
+  same defect via a code span. Both now size the delimiter to the content
+- The assembled comment body was piped through a dash-normalising `sed`,
+  rewriting bytes inside evidence that `reviewer-protocol.md` requires to be a
+  byte-for-byte quote, and diverging from the report renderer, which has no
+  such filter. Normalisation now happens where the LLM-authored prose is
+  assigned
+- A council comment could be matched — and overwritten — by anyone else's
+  comment carrying the marker. Comment identity is now bound to marker AND
+  author. Reports lead with the verdict and a TL;DR anchored to a marker that
+  is never droppable, and its fallback keys on the summary file being absent
+  or empty rather than on effort mode, since a dispatched narrative subagent
+  can fail in any mode
+- Forge identity was resolved wrongly in four ways, each aiming a forge call
+  at the wrong service or the wrong project:
+  - The host was matched as a substring, so `mygithub.com` and
+    `github.company.com` both read as GitHub
+  - Owner/repo kept a `.git` suffix
+  - A GitLab URL's first two path segments were taken as owner/repo
+    unconditionally, so every project under a subgroup collapsed onto one
+    `project_id` and shared its learnings and prior-reviews cache with
+    unrelated codebases
+  - `parse_remote` demoted a nested GitLab subgroup's forge; it now parses the
+    host independently. It also refuses the whole parse when a remote carries
+    a port, because `host:8443/o/r` cannot be told apart from scp-style
+    `host:1234/repo` where the digits are an owner
+- The disposition subagent's write allowlist named `severity`, which no rule
+  in the phase ever writes — and Step 3, which the phase declares the single
+  source of truth for what the subagent is told, never mentioned severity at
+  all. Read cold, severity was not even the only reachable field: a comment
+  could argue a finding's `verdict` to APPROVE without touching severity. This
+  is the one place attacker-controlled input reaches a decision procedure.
+  Step 3 now states the closed set of permitted writes and forbids severity
+  outright, naming the chain it blocks — rewrite a HIGH to LOW and rule 3's
+  LOW-only scoping hint suppresses it legitimately. The allowlist is
+  reconciled with what Step 3 actually mandates writing, including the
+  top-level `reason` it had never named
+- Forge-sourced reviewer input is now enveloped as untrusted data per
+  artifact rather than once per prompt, so an imperative found in a PR body is
+  content to report rather than a directive to obey
+- `nothing_to_do` deadlocked against the report pre-condition gate: the
+  verification phase produced no record, and the report phase refused to run
+  without one. It is resolved by writing an abbreviated verification record
+  rather than by exempting the status — an exemption's precondition would be
+  the orchestrator's own account of a status only it observed, which is the
+  unverifiable self-report shape the disposition gate had just closed. A
+  zero-findings report now has an audit trail
+- Absence findings carried a search transcript as `evidence`, which is matched
+  against the cited file as a contiguous byte sequence and so could never
+  verify — that pattern was the entire correctable-findings class. An absence
+  finding now anchors to a verbatim quote of the thing whose counterpart is
+  missing, and the search itself belongs in `description`
+- The Curator was told to be forge-neutral and then given an escape hatch
+  worded "`gh` not available", which is unconditionally true on GitLab, so its
+  mandate to search for an existing issue before filing one could be satisfied
+  by doing nothing. The hatch now names the tool from the delegation prompt —
+  and that field had to start arriving: `rc-prepare.sh` writes `Tooling:` into
+  `tracking.md`, the Curator's contract claimed the prompt carried it, and
+  nothing propagated it. The blanket network prohibition that the same mandate
+  contradicted is narrowed to the sanctioned query
+- Four reviewer personas carried no CRITICAL row in their severity tables, so
+  they could never file one. `severity.md`'s CRITICAL entry is a per-persona
+  table, so each file gets its own persona's conditions rather than the
+  Tester's; the literal reading would have made the Adversary mandate findings
+  in a domain it disclaims. Each new row is narrowed until it partitions
+  cleanly against the rows beneath it
+- A host without `file(1)` was refused a review. `file(1)` classifies changeset
+  candidates for the binary filter, but reporting "no changes to review" for a
+  changeset that was never inspected is unrecoverable, while reviewing an
+  extra file is not: `rc-lib.sh` now probes for it once and lets callers
+  degrade. Scope resolution separately admitted binaries and mis-set
+  spec-mode paths, so a review could be built from files nothing could
+  sensibly read
+- PR metadata was misread in three ways: CI checks were split on `IFS=': '`,
+  and since `IFS` is a character set a check named "unit tests" graded as
+  `unknown`; still-running checks were filtered out entirely rather than shown
+  as pending; and an empty issue-reference array counted as one linked issue,
+  because `mapfile` on an empty string yields one empty element
+- The diagnostic skill reported green while testing nothing: its mock's agent
+  name did not match the verdict glob, its finding path defeated the resolver,
+  and `REVIEW_ROOT` went unset, so the evidence matcher never ran. Every block
+  now echoes what its own checklist reads, so no assertion depends on a
+  directory, a variable or a shell still being alive
+- The manual-install instructions pointed at `module/references/`, which does
+  not exist — both documented `cp` commands failed, and the troubleshooting
+  entry for the resulting error sent readers back to the same path. The skill
+  directory copy above them already installs the references
+- Fixture git repositories inherited the contributor's git configuration.
   With `commit.gpgsign = true` set globally — near-universal alongside
   `gpg.format = ssh` — every fixture commit failed, and because the helpers run
   inside command substitutions with stderr discarded, it surfaced not as
   "cannot sign" but as unrelated assertions failing later against repositories
-  containing no commits. All fixture repos now go through `git_init_sandbox`,
-  which stubs identity and disables commit and tag signing
+  containing no commits. Pinning settings per repo was not enough on its own:
+  `core.hooksPath` ran a contributor's own hooks against every fixture commit,
+  `init.templateDir` is applied by `git init` before any `git config` line
+  could undo it, and an `includeIf` can pull in settings nobody can enumerate.
+  `helpers.sh` now neutralises the config files wholesale (`GIT_CONFIG_GLOBAL`,
+  `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_NOSYSTEM`) and supplies identity from the
+  environment, so it lives in one place; signing is still disabled per repo as
+  the one setting with no environment equivalent. `GIT_CONFIG_GLOBAL` arrived
+  in git 2.32, which is therefore the floor for the suite's hermeticity
 - A GitHub poster test asserted `! grep -q '700'` over a log that also carries
   the session timestamp and generated comment ids, so it failed at random — a
   run at 07:00 was enough — and pointed at the poster rather than at itself.
@@ -253,9 +487,9 @@ All notable changes to the Review Council module are documented here.
   directories on separate paths), packs failed to load because
   `REFERENCES_DIR` was derived from the wrong root
 - A non-git working directory now reports the missing repository
-  distinctly from a missing review mode, and points at `--scope pr`,
-  `--scope url`, or `git init` instead of asking the user to specify a
-  mode they already gave
+  distinctly from a missing review mode, and points at `--scope url` or
+  `git init` instead of asking the user to specify a mode they already
+  gave
 - Per-agent verdict table renders `UNKNOWN` instead of defaulting to `APPROVE`
   when an agent's verdict is missing or null — an unknown verdict no longer
   reads as approval in the rendered report
@@ -263,10 +497,13 @@ All notable changes to the Review Council module are documented here.
   `verdict-schema.json` and the extractor's fallback check; `APPROVE WITH
   ADVISORIES` is a council-only aggregate and is now rejected as a reviewer
   verdict, matching `reviewer-protocol.md`
-- Evidence check no longer misreads a quote that begins with `-` as a `grep`
-  option: `rc-verify-evidence.sh` passes `grep -F --` and distinguishes a grep
-  tooling error (exit 2) from a genuine no-match, so Markdown-bullet / diff-line
-  / CLI-flag evidence is verified instead of silently marked ungrounded
+- Evidence check no longer misreads a quote that begins with `-` as a command
+  option, so Markdown-bullet / diff-line / CLI-flag evidence is verified
+  instead of silently marked ungrounded. The `grep -F --` that first closed
+  this is gone with the contiguous-matcher rewrite above; the `awk` scanner
+  that replaced it takes the evidence through the environment and so has no
+  option ambiguity to begin with. A matcher failure (unreadable file, `awk`
+  error) is still distinguished from a genuine no-match
 - Duplicate-finding merge keeps the most severe of the merged findings, so a
   HIGH citing the same line as a LOW is never silently downgraded; the dedup is
   now independent of agent/finding ordering

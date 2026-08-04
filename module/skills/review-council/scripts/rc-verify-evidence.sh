@@ -242,6 +242,18 @@ done
 # line as a LOW is never silently downgraded (the survivor's other fields stay
 # from the first occurrence). Making the kept severity the max also makes the
 # result independent of agent/finding ordering.
+#
+# The loser is folded into the survivor's provenance.consolidated_from in the
+# shape rc-consolidate.sh writes, so the report's "Also flagged by" list covers
+# both paths. Two reviewers converging on one line is the same event whether
+# they quoted the same bytes (here) or were clustered as semantically equal
+# (there); crediting it in one path and dropping it in the other loses a
+# reviewer's angle with nothing recording that it was ever filed.
+#
+# Only a duplicate from a DIFFERENT agent is credited. The dedup key is file +
+# line + evidence and deliberately excludes the agent, so one reviewer listing
+# the same finding twice also merges here — and folding that would publish
+# "Also flagged by" naming the survivor's own author.
 before=$(echo "$verified" | jq 'length')
 verified=$(echo "$verified" | jq '
 	def sevrank(s): {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}[s] // 0;
@@ -251,9 +263,17 @@ verified=$(echo "$verified" | jq '
 			 (.[$j].line != null and $x.line != null and
 			  ((.[$j].line - $x.line | if . < 0 then -. else . end) <= 5)))) | $j ] | first) as $idx
 		| if $idx == null then . + [$x]
-		  elif sevrank($x.severity) > sevrank(.[$idx].severity)
-		  then .[$idx].severity = $x.severity
-		  else . end)
+		  else
+			( if $x.agent != .[$idx].agent
+			  then .[$idx].provenance.consolidated_from =
+				((.[$idx].provenance.consolidated_from // [])
+				 + [{agent: $x.agent, severity: $x.severity,
+				     angle: $x.description, recommendation: $x.recommendation}])
+			  else . end )
+			| ( if sevrank($x.severity) > sevrank(.[$idx].severity)
+			    then .[$idx].severity = $x.severity
+			    else . end )
+		  end)
 ')
 after=$(echo "$verified" | jq 'length')
 dedup=$((before - after))

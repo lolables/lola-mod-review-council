@@ -3,7 +3,8 @@ set -uo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
-rc_trap_errors # report script:line on any unhandled failure (never silent)
+rc_trap_errors     # report script:line on any unhandled failure (never silent)
+rc_require_timeout # this script makes forge calls; fail before any side effect
 
 # rc-clone-target.sh — materialize a target repo for PR review when we are
 # not already in it. Emits JSON with review_root for downstream reads.
@@ -115,11 +116,35 @@ if [[ "$origin_names_target" == true ]] && [[ -n "$head" ]] && [[ "$cur_branch" 
 	exit 0
 fi
 
-# --- Materialize into per-repo cache ---
+# --- Materialize into per-endpoint cache ---
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones"
-dest="${cache_root}/${owner}-${repo}"
 # Built from the host the caller named, never from the origin's.
 clone_url="${url:-https://${target_host}/${owner}/${repo}.git}"
+# The entry is named for the endpoint, not for the repository alone. Two hosts
+# serve an "acme/widgets" just as happily, and a key of owner/repo alone hands
+# one host's checkout back for the other's: the `git fetch origin pull/N/head`
+# below then runs against the wrong origin and the review grounds every finding
+# in a foreign repository while still reporting `ok`. That is the in_place host
+# test's failure mode one layer down.
+#
+# The host is not character-gated the way owner and repo are, so it is reduced
+# to their alphabet before it becomes a path component. parse_remote already
+# refuses a host holding `/` or `:`; folding everything else down to `_` leaves
+# nothing that could escape the cache root, and nothing that could carry a
+# newline past the `ls -dt` listing the LRU prune splits on. The entry always
+# ends in `-${owner}-${repo}` with both non-empty, so it can never be `.` or
+# `..` either.
+host_slug="${target_host,,}"
+host_slug="${host_slug//[^a-z0-9._-]/_}"
+# A refused parse — a ported URL, or anything else parse_remote will not name —
+# leaves the host empty, which would file every unnamable endpoint under one
+# key and reintroduce the collision for exactly the callers most likely to hit
+# it. Those are keyed by the URL itself instead, via a checksum so the name
+# stays a single readable path component.
+if [[ -z "$host_slug" ]]; then
+	host_slug="url-$(printf '%s' "$clone_url" | cksum | awk '{print $1}')"
+fi
+dest="${cache_root}/${host_slug}-${owner}-${repo}"
 
 mkdir -p "$cache_root" 2>/dev/null || {
 	review_root="."
@@ -190,10 +215,13 @@ touch "$dest" 2>/dev/null || true
 cap="${REVIEW_COUNCIL_CLONE_CACHE_MAX:-10}"
 [[ "$cap" =~ ^[0-9]+$ ]] || cap=10
 # shellcheck disable=SC2012,SC2312 # `find -printf`/`-newermt` sorting is GNU-only
-# and this cap must hold on macOS too. Entry names are "${owner}-${repo}" with
-# both validated against ^[a-zA-Z0-9._-]+$, and mapfile splits on newlines, so
-# the non-alphanumeric-filename hazard SC2012 warns about cannot arise. An empty
-# or missing cache_root legitimately yields no entries.
+# and this cap must hold on macOS too. Entry names are
+# "${host_slug}-${owner}-${repo}", all three reduced to ^[a-zA-Z0-9._-]+$ before
+# they get here, and mapfile splits on newlines, so the non-alphanumeric-filename
+# hazard SC2012 warns about cannot arise. Entries left behind by an older key
+# shape are listed too: nothing touches them any more, so they sort oldest and
+# are the first evicted. An empty or missing cache_root legitimately yields no
+# entries.
 mapfile -t by_age < <(ls -dt "$cache_root"/*/ 2>/dev/null | sed 's:/*$::')
 if [[ ${#by_age[@]} -gt $cap ]]; then
 	for ((k = cap; k < ${#by_age[@]}; k++)); do

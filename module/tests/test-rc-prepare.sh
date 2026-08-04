@@ -347,6 +347,96 @@ if [[ -n "$session_dir" ]]; then
 fi
 rm -rf "$tmpdir" "$maskdir"
 
+# Build an agents directory holding only the named personas, for the chosen
+# suffix, so a partial install can be simulated without touching the shipped
+# module/agents. Usage: partial_agents_dir <workdir> <suffix> <persona>...
+partial_agents_dir() {
+	local dir="$1" suffix="$2" p
+	shift 2
+	mkdir -p "$dir"
+	for p in "$@"; do
+		printf -- '---\ndescription: fixture persona\n---\n\nFixture.\n' \
+			>"$dir/divisor-${p}-${suffix}.md"
+	done
+}
+
+# Assert that tracking.md carries <line> verbatim. Matched whole-line rather
+# than parsed back out: rc-render-report.sh reads these with rc_parse_kv, so a
+# test that parsed too would agree with a formatting bug instead of catching it.
+# Usage: assert_tracking_line <tracking.md> <line> <test_name>
+assert_tracking_line() {
+	local file="$1" line="$2" name="$3"
+	if [[ ! -f "$file" ]]; then
+		echo "  FAIL: $name — tracking file missing: $file"
+		FAIL=$((FAIL + 1))
+		return
+	fi
+	if grep -qxF -- "$line" "$file"; then
+		echo "  PASS: $name"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $name — expected line not found: $line"
+		local got
+		got=$(grep -m1 -F -- "${line%%:*}:" "$file") || got="<no such key>"
+		echo "        got: $got"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+echo "Test 21: a full roster reports no absent personas"
+# "Agents absent" used to be the literal string "none" written by this script
+# and updated by nothing, so a host missing half its council still published a
+# report claiming complete coverage. The roster makes absence measurable; this
+# case pins the negative so the field cannot become a constant again in the
+# other direction.
+tmpdir=$(mktemp -d)
+agentdir=$(mktemp -d)
+partial_agents_dir "$agentdir" code adversary curator guard sre testing
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$agentdir" bash "$SCRIPT" --mode code 2>/dev/null)
+assert_json_status "$result" "ok" "status is ok on a full roster"
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_tracking_line "$session_dir/tracking.md" "- Agents absent: none" \
+	"full roster reports absent: none"
+assert_tracking_line "$session_dir/tracking.md" "- Agents discovered: 5" \
+	"all five personas discovered"
+rm -rf "$tmpdir" "$agentdir"
+
+echo "Test 22: a partial install names the personas that are missing"
+tmpdir=$(mktemp -d)
+agentdir=$(mktemp -d)
+partial_agents_dir "$agentdir" code adversary guard testing
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$agentdir" bash "$SCRIPT" --mode code 2>/dev/null)
+assert_json_status "$result" "ok" "status is ok on a partial roster"
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_tracking_line "$session_dir/tracking.md" \
+	"- Agents absent: divisor-curator-code, divisor-sre-code" \
+	"partial roster names both missing personas in roster order"
+rm -rf "$tmpdir" "$agentdir"
+
+echo "Test 23: absence is reported against the spec suffix in spec mode"
+# The roster is suffix-agnostic; absence is not. A host carrying every -code
+# persona and no -spec ones must not read as a complete spec council.
+tmpdir=$(mktemp -d)
+agentdir=$(mktemp -d)
+partial_agents_dir "$agentdir" spec adversary curator guard sre
+cd "$tmpdir"
+git_init_sandbox
+git checkout -q -b main
+git commit --allow-empty -qm init
+git checkout -q -b feature
+mkdir -p specs && echo "# Feature spec" >specs/feature.md
+git add specs/feature.md && git commit -qm "add spec"
+result=$(AGENTS_DIR="$agentdir" bash "$SCRIPT" --mode specs 2>/dev/null)
+assert_json_status "$result" "ok" "status is ok in spec mode"
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_tracking_line "$session_dir/tracking.md" "- Agents absent: divisor-testing-spec" \
+	"spec mode names the -spec persona"
+rm -rf "$tmpdir" "$agentdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

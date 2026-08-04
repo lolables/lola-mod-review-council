@@ -87,10 +87,15 @@ The eval harness lives in `.lola-eval/` and uses `lola-eval` with custom provide
 
 ### Prerequisites
 
-The scripts need Bash 4+, [`jq`](https://jqlang.github.io/jq/), and GNU
-`timeout` (from coreutils), which bounds every forge call so a hung `gh` or
-`git` cannot stall a review. If any is missing the scripts report it and skip
-rather than misbehave.
+Every script needs Bash 4+ and [`jq`](https://jqlang.github.io/jq/). If either
+is missing the scripts report it and skip rather than misbehave.
+
+GNU `timeout` (from coreutils) is needed only by the three scripts that call a
+forge — session preparation, target cloning, and comment posting — where it
+bounds every call so a hung `gh` or `git` cannot stall a review. The rest of the
+pipeline, including evidence verification and report rendering, runs without it.
+Install it anyway if you review pull requests; skip it only if you never leave
+the local-diff path.
 
 macOS ships none of the three: its Bash is 3.2, and there is no `timeout` at
 all. Homebrew installs GNU tools under a `g` prefix, so `coreutils` provides
@@ -116,22 +121,14 @@ Clone and copy the module directory into your project's AI tool configuration:
 ```bash
 git clone https://github.com/lolables/lola-mod-review-council.git
 # For Claude Code:
+mkdir -p .claude/agents .claude/skills
 cp lola-mod-review-council/module/agents/divisor-*.md .claude/agents/
 cp -r lola-mod-review-council/module/skills/review-council/ .claude/skills/review-council/
 ```
 
-Convention references are required — all reviewer agents depend on `reviewer-protocol.md`. Copy them to your user or project
-references directory:
-
-```bash
-# User-level (applies to all projects):
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs"
-cp lola-mod-review-council/module/references/*.md "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs/"
-
-# Or project-level (applies to this repo only):
-mkdir -p .review-council/packs
-cp lola-mod-review-council/module/references/*.md .review-council/packs/
-```
+The convention packs ship inside the skill directory, so the copy above installs them — including
+`reviewer-protocol.md`, which every reviewer agent depends on. To override a shipped pack or add your own, see
+Customization under Convention Packs.
 
 Adjust agent and skill paths for your AI tool (`.cursor/`, `.gemini/`, etc.).
 
@@ -301,15 +298,15 @@ is added too — untrusted replies posted since that marker, GitHub only for now
 Convention packs define coding and documentation standards that reviewer agents check against. The module ships with
 these packs:
 
-| Pack                   | Type       | Contents                                        |
-|------------------------|------------|-------------------------------------------------|
-| `severity.md`          | Any        | Shared severity level definitions               |
-| `base.md`              | Any        | Language-agnostic coding conventions (fallback) |
-| `lang-go.md`           | Go         | Self-contained Go conventions                   |
-| `lang-typescript.md`   | TypeScript | Self-contained TypeScript conventions           |
-| `fw-react.md`          | React      | React framework conventions (additive)          |
-| `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format    |
-| `model-guidance.md`    | Any        | Model selection guidance and eval data          |
+| Pack                   | Type       | Contents                                           |
+|------------------------|------------|----------------------------------------------------|
+| `severity.md`          | Any        | Shared severity level definitions                  |
+| `base.md`              | Any        | Ships empty; anchor for project-level custom rules |
+| `lang-go.md`           | Go         | Self-contained Go conventions                      |
+| `lang-typescript.md`   | TypeScript | Self-contained TypeScript conventions              |
+| `fw-react.md`          | React      | React framework conventions (additive)             |
+| `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format       |
+| `model-guidance.md`    | Any        | Model selection guidance and eval data             |
 
 Pack filenames encode their type: `lang-{language}.md` for standalone language packs, `fw-{framework}.md` for
 additive framework packs that load alongside the language pack.
@@ -385,8 +382,9 @@ Zero matches means the module is clean.
 `.claude/agents/` for Claude Code). Run `ls .claude/agents/divisor-*` to confirm. If using a different AI tool, check
 its equivalent agents directory.
 
-**`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. Ensure you copied all files from
-`module/references/` — not just language-specific packs.
+**`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. It ships in the skill's `references/`
+directory. Run `ls .claude/skills/review-council/references/` to confirm the whole directory was copied — every pack,
+not just the language-specific ones.
 
 **Curator cannot file issues**: Install and authenticate the `gh` CLI: `gh auth login`. Without authentication, the
 Curator reports documentation gaps as findings instead of filing GitHub issues.

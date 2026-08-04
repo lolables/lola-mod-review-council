@@ -160,6 +160,57 @@ else
 fi
 rm -rf "$work"
 
+echo "Test 5: an unrecognised --mode value is refused, not silently run as code"
+# --mode accepted any string and fell through to code. The accepted token is
+# `specs`, but the mode is called `spec` everywhere else — in --help's output
+# field, in the JSON `mode` field, in the divisor-*-spec.md filenames — so
+# `--mode spec` is the natural typo, and it silently ran a CODE review: wrong
+# personas, wrong changeset default, and a report that names a mode the caller
+# never asked for. --effort has rejected its junk values from the start; this
+# closes the same hole on the flag where the wrong value is most guessable.
+work=$(mktemp -d)
+cd "$work"
+# Built inline rather than with setup_repo: all three documented modes have to
+# resolve against the same repo. The spec artifact is committed on main BEFORE
+# the topic branch exists, so it is in feature-head's tree — spec mode scopes to
+# all project files and reports `empty` without one. The topic branch changes
+# only a.go, so base...HEAD stays code-only and auto-detect still yields code.
+git_init_sandbox
+git checkout -q -b main
+echo "package main" >a.go
+mkdir -p specs && echo "# Feature spec" >specs/feature.md
+git add a.go specs/feature.md
+git commit -qm init
+git checkout -q -b feature-head
+echo "// change" >>a.go
+git commit -qam change
+for bad in spec Code SPECS code-review banana ""; do
+	result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode "$bad" 2>/dev/null)
+	status=$(jq -r '.status // "none"' <<<"$result")
+	assert_equals "$status" "skip" "--mode '$bad' is refused"
+	msg=$(jq -r '.message // ""' <<<"$result")
+	if grep -qF -- "code, specs, auto" <<<"$msg"; then
+		echo "  PASS: --mode '$bad' names the valid values"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: --mode '$bad' message does not name the valid values: $msg"
+		FAIL=$((FAIL + 1))
+	fi
+done
+
+# The three documented values must still work, in both directions.
+for good in code:code specs:spec auto:code; do
+	result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode "${good%%:*}" 2>/dev/null)
+	# Assigned before asserting, not nested inside the call: a command
+	# substitution inside another command has its exit status discarded, so a
+	# jq that errored would silently assert against the empty string.
+	status=$(jq -r '.status // "none"' <<<"$result")
+	resolved=$(jq -r '.mode // "none"' <<<"$result")
+	assert_equals "$status" "ok" "--mode ${good%%:*} is accepted"
+	assert_equals "$resolved" "${good##*:}" "--mode ${good%%:*} resolves to ${good##*:}"
+done
+rm -rf "$work"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

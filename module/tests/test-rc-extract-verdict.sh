@@ -334,6 +334,143 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# --- gate firing log --------------------------------------------------------
+# Rejecting the block buys one re-dispatch, and the re-dispatch overwrites both
+# {agent}.raw.md and {agent}.json. The agent picks its own remedy, so it may
+# resolve the gate by deleting the CRITICAL and returning a clean APPROVE —
+# after which the session on disk is byte-for-byte a reviewer that never found
+# anything, and nothing records that the gate ever fired. The log is what
+# survives: appended before the rejection is filed, never rewritten, and
+# outside `verdicts/` so no verdict discovery can reach it. verify.md Step 6
+# reads it back and discloses every firing.
+GATE_LOG_NAME="gate-firings.jsonl"
+
+# incoherent_block <agent> — an APPROVE over one CRITICAL plus one LOW.
+incoherent_block() {
+	printf '{"agent":"%s","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[%s,%s]}' \
+		"$1" \
+		'{"severity":"CRITICAL","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Expired tokens are accepted at the boundary.","recommendation":"Compare with <=."}' \
+		'{"severity":"LOW","file":"auth/token.go","line":9,"evidence":"var tok string","description":"Name is abbreviated.","recommendation":"Rename to token."}'
+}
+
+# write_raw <session> <agent> <json-body>
+write_raw() {
+	# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+	printf '```json\n%s\n```\n' "$3" >"$1/verdicts/$2.raw.md"
+}
+
+echo "Test 13: a fired gate appends a record naming the agent, verdict and finding"
+s=$(new_session)
+body=$(incoherent_block divisor-guard-code)
+write_raw "$s" divisor-guard-code "$body"
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+gate_log="$s/$GATE_LOG_NAME"
+if [[ -f "$gate_log" ]]; then
+	echo "  PASS: firing recorded outside verdicts/"
+	PASS=$((PASS + 1))
+	records=$(jq -s 'length' "$gate_log")
+	assert_equals "$records" "1" "exactly one record for one firing"
+	assert_jq "$gate_log" '.agent' "divisor-guard-code" "record names the agent"
+	assert_jq "$gate_log" '.verdict' "APPROVE" "record carries the incoherent verdict"
+	assert_jq "$gate_log" '.path' "verdicts/divisor-guard-code.raw.md" \
+		"record carries the raw path that identifies the instance"
+	# Only the findings that forced the rejection: a record listing the LOW too
+	# makes a reader work out which claim the gate actually objected to.
+	assert_jq "$gate_log" '.findings | length' "1" "record holds only the forcing finding"
+	assert_jq "$gate_log" '.findings[0].severity' "CRITICAL" "forcing severity recorded"
+	assert_jq "$gate_log" '.findings[0].file' "auth/token.go" "forcing file recorded"
+	assert_jq "$gate_log" '.findings[0].line' "42" "forcing line recorded"
+	assert_jq "$gate_log" '.findings[0].description' \
+		"Expired tokens are accepted at the boundary." "forcing claim recorded"
+else
+	echo "  FAIL: no $GATE_LOG_NAME written — a withdrawn CRITICAL leaves no trace"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test 14: the record survives a re-dispatch that deletes the offending finding"
+# The second pass is the silent-withdrawal branch: schema-valid, coherent, and
+# indistinguishable on its own from a reviewer with nothing to report.
+write_raw "$s" divisor-guard-code \
+	'{"agent":"divisor-guard-code","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[]}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "clean re-dispatch accepted"
+assert_jq "$s/verdicts/divisor-guard-code.json" '.findings | length' "0" \
+	"the verdict JSON the pipeline consumes retains nothing"
+if [[ -f "$gate_log" ]]; then
+	records=$(jq -s 'length' "$gate_log")
+	assert_equals "$records" "1" "log not truncated by the accepted second pass"
+	assert_jq "$gate_log" '.findings[0].severity' "CRITICAL" \
+		"the withdrawn CRITICAL is still readable after the re-dispatch"
+else
+	echo "  FAIL: the re-dispatch destroyed $GATE_LOG_NAME"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test 15: a second firing appends rather than replacing the first"
+# `>` would satisfy Tests 13 and 14 exactly as well as `>>` does. Two firings
+# in one session is the case that tells them apart — and it is the real one:
+# an agent that re-emits the same incoherent block burns its re-dispatch, and
+# the first record is the one carrying what it originally claimed.
+s=$(new_session)
+body=$(incoherent_block divisor-guard-code)
+write_raw "$s" divisor-guard-code "$body"
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+write_raw "$s" divisor-guard-code \
+	'{"agent":"divisor-guard-code","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[{"severity":"HIGH","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Second attempt, still incoherent.","recommendation":"Compare with <=."}]}'
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+if [[ -f "$s/$GATE_LOG_NAME" ]]; then
+	records=$(jq -s 'length' "$s/$GATE_LOG_NAME")
+	assert_equals "$records" "2" "both firings retained"
+	# One filter over both records: jq reads a JSONL stream one value at a time,
+	# so the output lines are the severities in the order they were appended.
+	severities=$(jq -r '.findings[0].severity' "$s/$GATE_LOG_NAME")
+	assert_equals "$severities" $'CRITICAL\nHIGH' \
+		"the original claim is first and the second firing follows it"
+else
+	echo "  FAIL: no $GATE_LOG_NAME written"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test 16: no discovery glob in the pipeline can ingest the log"
+# RC-4: `rc-verify-evidence.sh` once discovered verdicts with a `*.json` glob
+# and swallowed an orchestrator-written artifact that happened to sit in
+# `verdicts/`. The log must not become the next one — for the glob as it is
+# written today, and for any glob a future script adds. Extract every `-name`
+# pattern the shipped scripts search with and match the log's name against all
+# of them.
+SCRIPTS_DIR="$SCRIPT_DIR/../skills/review-council/scripts"
+glob_patterns=$(grep -hoE -- "-name '[^']+'" "$SCRIPTS_DIR"/*.sh | sed "s/^-name '//; s/'\$//" | sort -u)
+if [[ -z "$glob_patterns" ]]; then
+	echo "  FAIL: no -name patterns found in $SCRIPTS_DIR — this guard is checking nothing"
+	FAIL=$((FAIL + 1))
+else
+	glob_hits=""
+	while IFS= read -r pat; do
+		[[ -n "$pat" ]] || continue
+		# shellcheck disable=SC2053 # $pat is the glob being tested, not a literal.
+		[[ "$GATE_LOG_NAME" == $pat ]] && glob_hits="${glob_hits:+$glob_hits }$pat"
+	done <<<"$glob_patterns"
+	if [[ -z "$glob_hits" ]]; then
+		echo "  PASS: none of the pipeline's discovery patterns match $GATE_LOG_NAME"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $GATE_LOG_NAME is discoverable as a pipeline input by: $glob_hits"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+# Belt and braces: every one of those globs is rooted at `verdicts/`, so the
+# log staying out of that directory keeps it unreachable even if a pattern
+# widens.
+if [[ -f "$s/$GATE_LOG_NAME" && ! -e "$s/verdicts/$GATE_LOG_NAME" ]]; then
+	echo "  PASS: the log sits outside the directory those globs search"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the log is missing, or sits inside verdicts/ where a widened glob reaches it"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
 rm -rf "$mask_dir"
 
 echo ""

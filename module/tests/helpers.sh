@@ -174,6 +174,17 @@ assert_json_field() {
 # that entry minus <command>; entries that do not provide it are kept verbatim.
 # Mirrors are created under <workdir>, which the caller owns and removes.
 #
+# Mirror directories are named after the command being hidden, because callers
+# chain: hiding `timeout` and then `gtimeout` takes two calls, the second over
+# the PATH the first returned, and both share one workdir. On macOS the two
+# names live in the same Homebrew bindir, so the second call is handed the first
+# call's mirror — and while mirrors were numbered mask-1, mask-2, ... from zero
+# on every call, that mirror was also the second call's own output directory. It
+# mirrored itself: every `ln -s` failed with "File exists", and `gtimeout`,
+# already linked by the first call and skipped as the exclusion by this one,
+# stayed resolvable. The scripts under test went on finding the binary the test
+# had gone to some trouble to hide.
+#
 # The tempting shortcut — build a PATH out of one system directory's contents,
 # skipping <command> — is Linux-only. macOS has no /usr/bin/bash (bash lives in
 # /bin) and no system jq (Homebrew installs it outside the system directories),
@@ -190,7 +201,7 @@ path_without_command() {
 		[[ -n "$entry" ]] || continue
 		if [[ -f "$entry/$cmd" && -x "$entry/$cmd" ]]; then
 			n=$((n + 1))
-			mirror="$workdir/mask-$n"
+			mirror="$workdir/mask-$cmd-$n"
 			mkdir -p "$mirror"
 			for f in "$entry"/*; do
 				# An empty directory leaves the glob unexpanded.

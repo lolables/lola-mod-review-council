@@ -48,6 +48,11 @@ isolation. Every file matching `test-*.sh` runs automatically; the list used to
 be hand-maintained in `Taskfile.yml`, where a suite nobody remembered to
 register silently never ran. Shared code lives in `helpers.sh` — deliberately
 *not* named `test-helpers.sh`, so the discovery glob means exactly "a suite".
+`test-harness.sh` is the one suite with no `SCRIPT=`: it covers the helpers
+themselves, which have no suite of their own to go red. A helper that quietly
+stops doing its job does not fail — it weakens whatever depends on it, which is
+how a PATH-masking helper went on reporting that three scripts were tested
+without their dependency while the binary was still on the PATH it handed them.
 
 **End-to-end** (`module/tests/e2e/pipeline.venom.yml`). Unit tests cannot see
 seams. Verification Step 3c tells the orchestrator to write `clusters.json`

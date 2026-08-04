@@ -749,13 +749,23 @@ echo "Test 30: an exact duplicate from another agent credits that agent"
 # report renders as "Also flagged by". Exact dedup used to keep only the higher
 # severity and discard everything else about the duplicate, so the second
 # reviewer's angle vanished with nothing anywhere recording that it existed.
+#
+# The two verdict files are written in REVERSE agent order on purpose. Dedup
+# keeps the survivor's own description and credits the loser's, so which angle
+# lands where is decided by the order the verdicts are ingested in — and that
+# order came straight off `find`, which reports directory order. Directory order
+# is the filesystem's business: creation order on XFS, hash order on ext4,
+# neither on APFS. This test passed on the author's machine and failed on the
+# Ubuntu and macOS CI legs for that reason alone. Writing the alphabetically
+# later agent first makes creation order the wrong answer, so the assertions
+# below hold only if the ingestion is sorted.
 s=$(new_session)
 src=$(mktemp -d)
 echo 'if exp < now' >"$src/token.go"
-agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
-	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
 agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
 result=$(cd "$src" && bash "$SCRIPT" "$s")
 assert_json_field "$result" "verified" "1" "duplicate merged to one finding"
 assert_jq "$s/verdicts/findings.json" '.duplicates_consolidated' "1" "counted as consolidated"
@@ -763,6 +773,8 @@ assert_jq "$s/verdicts/findings.json" '.verified[0].severity' "HIGH" "severity e
 assert_jq "$s/verdicts/findings.json" \
 	'[.verified[0].provenance.consolidated_from[]?.agent] | length' "1" \
 	"the losing duplicate is credited"
+assert_jq "$s/verdicts/findings.json" '.verified[0].agent' \
+	"divisor-adversary-code" "the survivor is the first agent by name, not by write order"
 assert_jq "$s/verdicts/findings.json" \
 	'.verified[0].provenance.consolidated_from[0].angle // "missing"' \
 	"no test covers the boundary" "the credited entry carries the other agent's angle"

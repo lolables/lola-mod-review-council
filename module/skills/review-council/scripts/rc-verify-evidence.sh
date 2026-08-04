@@ -33,9 +33,21 @@ vdir="$session_dir/verdicts"
 # `divisor-*-{code,spec}.md`, so their verdict files are exactly `divisor-*.json`
 # (deep mode nests them one level under a subsystem directory; find still reaches
 # them).
+#
+# Sorted, because the order these are read in decides the content of the review.
+# Dedup keeps the first occurrence of a duplicated finding and credits the later
+# one to `provenance.consolidated_from`, so ingestion order picks which reviewer
+# the report quotes and which it lists under "Also flagged by". `find` reports
+# directory order, which is the filesystem's business and nobody else's:
+# creation order on XFS, hash order on ext4, neither on APFS. The same session
+# therefore produced different reports on different hosts — the CI matrix caught
+# it as one suite passing on one leg and failing on the other two, and a review
+# is not reproducible if re-running it on another machine can change who gets
+# credited. LC_ALL=C so the collation is the byte order everywhere rather than
+# the caller's locale.
 agent_files=()
 while IFS= read -r -d '' f; do agent_files+=("$f"); done \
-	< <(find "$vdir" -name 'divisor-*.json' -type f -print0 2>/dev/null || true)
+	< <(find "$vdir" -name 'divisor-*.json' -type f -print0 2>/dev/null | LC_ALL=C sort -z || true)
 [[ ${#agent_files[@]} -gt 0 ]] || {
 	json_output "nothing_to_do" "No agent verdict JSON found."
 	exit 0

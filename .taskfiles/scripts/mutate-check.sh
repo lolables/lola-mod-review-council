@@ -284,6 +284,18 @@ check_mutation "RC-23 phase state kept out of verdicts/" \
 	's|^manifest="\$vdir/_meta/clusters.json"$|manifest="$vdir/clusters.json"|' \
 	test-rc-consolidate.sh
 
+# Verdict files were ingested in `find` order, which is the filesystem's
+# directory order, so the same session credited a different reviewer under "Also
+# flagged by" depending on the host it ran on. Test 30 writes its two verdict
+# files in reverse agent order to make that visible: a filesystem reporting
+# creation order hands them over backwards. One reporting hash order could
+# happen to agree with the sort for those two names and score this MISSED —
+# which is a weaker guard than the others here, not a broken one.
+check_mutation "RC-24 deterministic verdict ingestion" \
+	rc-verify-evidence.sh \
+	's/ | LC_ALL=C sort -z//' \
+	test-rc-verify-evidence.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

@@ -1,0 +1,86 @@
+executor: rc-pipeline
+# Runs the whole Review Council script pipeline over the golden session
+# fixture and reports the outcome. Extracted into an executor because the
+# sequence is well past the handful of lines that belong inline in a step, and
+# because every test case here runs the same pipeline under a different
+# environment.
+input:
+  root: ""
+  # Where to write the rendered report. It is handed back as a file rather
+  # than as an output var on purpose: the report is multi-line and contains a
+  # `---` footer rule, and interpolating that into this file's `output:` block
+  # makes Venom parse it as a YAML document separator. Test cases read it with
+  # a `readfile` step instead.
+  out_report: ""
+  # "yes" prepends a failing `jsonschema` shim to PATH, which makes
+  # rc-extract-verdict.sh's validator self-test fail and forces the degraded
+  # jq fallback. That path only runs on hosts lacking sourcemeta/jsonschema,
+  # so on any given machine it is otherwise always or never exercised.
+  mask_jsonschema: "no"
+  # Optional sed expression applied to the review root before verification,
+  # used to prove the pipeline reacts to source drift.
+  tamper: ""
+
+steps:
+  - type: exec
+    script: |
+      set -eu
+      ROOT="{{.input.root}}"
+      SC="$ROOT/module/skills/review-council/scripts"
+      FIX="$ROOT/module/tests/fixtures/session-golden"
+      W=$(mktemp -d)
+      trap 'rm -rf "$W"' EXIT
+      cp -R "$FIX"/. "$W"/
+
+      if [ "{{.input.mask_jsonschema}}" = "yes" ]; then
+        mkdir -p "$W/shim"
+        printf '#!/bin/sh\nexit 1\n' > "$W/shim/jsonschema"
+        chmod +x "$W/shim/jsonschema"
+        PATH="$W/shim:$PATH"
+        export PATH
+      fi
+
+      if [ -n "{{.input.tamper}}" ]; then
+        sed "{{.input.tamper}}" "$W/repo/internal/mcp/tools.go" > "$W/tools.tmp"
+        mv "$W/tools.tmp" "$W/repo/internal/mcp/tools.go"
+      fi
+
+      bash "$SC/rc-extract-verdict.sh" "$W/session" >/dev/null 2>&1
+      REVIEW_ROOT="$W/repo" bash "$SC/rc-verify-evidence.sh" "$W/session" >/dev/null 2>&1
+      cp "$W/clusters.json" "$W/session/verdicts/clusters.json"
+      bash "$SC/rc-consolidate.sh" "$W/session" >/dev/null 2>&1
+      echo "REQUEST CHANGES" > "$W/session/verdict.txt"
+      bash "$SC/rc-render-report.sh" "$W/session" > "{{.input.out_report}}" 2>/dev/null
+
+      jq -r '
+        "verified=\(.verified | length)",
+        "correctable=\(.correctable | length)",
+        "stripped=\(.stripped | length)",
+        "total=\(.total_findings)",
+        "agents=\(.verdicts | keys | length)"
+      ' "$W/session/verdicts/findings.json"
+    assertions:
+      - result.code ShouldEqual 0
+    vars:
+      verified:
+        from: result.systemout
+        regex: "verified=([0-9]+)"
+      correctable:
+        from: result.systemout
+        regex: "correctable=([0-9]+)"
+      stripped:
+        from: result.systemout
+        regex: "stripped=([0-9]+)"
+      total:
+        from: result.systemout
+        regex: "total=([0-9]+)"
+      agents:
+        from: result.systemout
+        regex: "agents=([0-9]+)"
+
+output:
+  verified: "{{.verified}}"
+  correctable: "{{.correctable}}"
+  stripped: "{{.stripped}}"
+  total: "{{.total}}"
+  agents: "{{.agents}}"

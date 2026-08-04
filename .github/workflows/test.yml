@@ -22,7 +22,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # The full matrix is four layers, not one: unit, Venom e2e, three degraded
+    # PATH configurations (each a complete unit re-run), and the mutation set
+    # (each a further re-run). Ten minutes covered `task test:unit` alone.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -33,9 +36,49 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        # coreutils supplies GNU timeout, which macOS lacks entirely. Homebrew
-        # installs it prefixed as `gtimeout`; the scripts accept either name.
-        run: brew install bash jq coreutils
+        # The repo-root Brewfile is the single source of truth for this set, so
+        # a contributor's `brew bundle` and this step cannot drift apart. It
+        # records why each formula is needed — coreutils supplies GNU timeout,
+        # which macOS lacks entirely, installed prefixed as `gtimeout` — and why
+        # its libexec/gnubin must stay off PATH.
+        run: brew bundle install --file=Brewfile
+
+      - name: Install Venom
+        # `task test:e2e` has a hard precondition on venom, so the e2e layer is
+        # skipped-by-failure without it. Pinned by tag AND by the SHA-256 of
+        # each published asset: ovh/venom publishes no checksum file, and an
+        # unverified binary download is an unreviewed dependency running with
+        # the workspace mounted. Bump the tag and all three digests together.
+        env:
+          VENOM_VERSION: v1.3.0
+          SHA_LINUX_AMD64: 89832ec25e820c605cf0d3c09122e60bad43d13c1724aa6d375ef7109fbfe201
+          SHA_DARWIN_ARM64: c2f34f62180e9be2d6813cf1071946b5728f4dc4ddcfc56791dab9d213c52021
+          SHA_DARWIN_AMD64: fbabe5a44ef83c454601ccda7d7bec239566c3c8ceae4269411d3f2cea254f7b
+        run: |
+          set -euo pipefail
+          # The digest tool differs by platform and neither name is portable:
+          # macOS has no sha256sum, and shasum is a perl script absent from
+          # minimal Linux images. Pick it alongside the asset, explicitly.
+          case "${RUNNER_OS}-$(uname -m)" in
+            Linux-x86_64) asset=venom.linux-amd64;  sha=$SHA_LINUX_AMD64;  verify=(sha256sum -c -) ;;
+            macOS-arm64)  asset=venom.darwin-arm64; sha=$SHA_DARWIN_ARM64; verify=(shasum -a 256 -c -) ;;
+            macOS-x86_64) asset=venom.darwin-amd64; sha=$SHA_DARWIN_AMD64; verify=(shasum -a 256 -c -) ;;
+            *)
+              echo "No pinned venom asset for ${RUNNER_OS}-$(uname -m)." >&2
+              echo "Add its digest rather than falling back to an unverified download." >&2
+              exit 1
+              ;;
+          esac
+          curl -fsSL -o venom "https://github.com/ovh/venom/releases/download/${VENOM_VERSION}/${asset}"
+          echo "${sha}  venom" | "${verify[@]}"
+          chmod +x venom
+          sudo mv venom /usr/local/bin/venom
+          venom version
 
       - name: Run tests
-        run: task test
+        # `task test` is an alias for the unit layer alone. The e2e, degraded
+        # and mutation layers are the ones that catch platform divergence — the
+        # mutation harness is why the GNU-only sed constructs were fixed — so
+        # running only `task test` here left that fix unverified on macOS.
+        # Lint is not run here; the megalinter workflow owns it.
+        run: task test:all

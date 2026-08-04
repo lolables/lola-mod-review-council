@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# Mutation check: break each fixed defect on purpose and confirm a suite fails.
+#
+# A green suite tells you nothing on its own — it might be green because the
+# code is right, or because the tests assert nothing that matters. Two of the
+# regression tests written for these very defects passed on their first run,
+# before any fix existed, because the fixture geometry happened to satisfy
+# them. They only became real tests after being reshaped until they failed
+# against the broken code.
+#
+# This makes that check routine rather than something someone remembers to do.
+# Each mutation below reintroduces one defect into a throwaway copy of the
+# module and asserts the named suite goes red. A mutation nobody catches is a
+# hole in the suite and is reported as a failure.
+# Every mutation below is a sed expression. The `$` in them is sed's
+# end-of-line anchor or a literal dollar in the target source, never a shell
+# expansion — single quotes are required, not an oversight. The directive has
+# to sit immediately before the first command to apply file-wide.
+#
+# The expressions are POSIX BRE, which rules out GNU escapes on both sides of
+# the substitution. `\t` in particular is a GNU extension: BSD sed hands the
+# pattern to regcomp untouched, which reads `\t` as the letter `t`, so a
+# leading-tab anchor would match nothing and every mutation using one would be
+# reported as BROKEN on macOS. Leading indentation is matched with
+# `^[[:space:]]*` and dropped from the replacement — the mutated copy is only
+# ever fed to bash, which does not care what column a statement starts in.
+# shellcheck disable=SC2016
+set -uo pipefail
+
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+caught=0
+missed=0
+broken=0
+
+# check_mutation <label> <script> <sed-expr> <suite>
+#
+# <script> is relative to module/skills/review-council/scripts/, <suite> to
+# module/tests/. Anchor each expression tightly: a mutation that fails to apply
+# is reported as BROKEN rather than silently counted as caught, because "the
+# suite went red" means nothing if the code was never actually changed. A suite
+# that goes red without firing a single assertion is BROKEN for the same reason.
+check_mutation() {
+	local label="$1" script="$2" expr="$3" suite="$4"
+	local work target before after detail
+	work=$(mktemp -d)
+	cp -R "$root/module" "$work/module"
+	target="$work/module/skills/review-council/scripts/$script"
+
+	# cksum, not md5sum: the latter is GNU coreutils and absent on macOS. A
+	# CRC is weak against a forger and entirely adequate here — the only
+	# question being asked is whether sed changed the bytes at all.
+	before=$(cksum <"$target")
+	# Filter on write rather than `sed -i`: BSD sed reads `-i EXPR` as a backup
+	# suffix, so an in-place edit silently leaves the file untouched.
+	if ! sed "$expr" "$target" >"$work/mutated"; then
+		echo "BROKEN  $label"
+		echo "        sed rejected the mutation expression"
+		broken=$((broken + 1))
+		rm -rf "$work"
+		return
+	fi
+	# Redirect into the existing file rather than renaming over it. The
+	# redirection truncates the inode in place and keeps its mode; a rename
+	# would replace the 0755 script with sed's 0644 output. Every suite today
+	# runs `bash "$SCRIPT"`, so the exec bit does not matter yet, but one that
+	# ran the mutant directly would fail on the missing bit and score a
+	# spurious `caught`. `chmod --reference` is not the fix — it is GNU-only.
+	if ! cat "$work/mutated" >"$target"; then
+		echo "BROKEN  $label"
+		echo "        could not write the mutated $script back"
+		broken=$((broken + 1))
+		rm -rf "$work"
+		return
+	fi
+	after=$(cksum <"$target")
+
+	if [[ "$before" == "$after" ]]; then
+		echo "BROKEN  $label"
+		echo "        expression no longer matches $script, so this defect is unguarded here"
+		broken=$((broken + 1))
+		rm -rf "$work"
+		return
+	fi
+
+	if bash "$work/module/tests/$suite" >"$work/out.log" 2>&1; then
+		echo "MISSED  $label"
+		echo "        $suite still passes with the defect reintroduced"
+		missed=$((missed + 1))
+	else
+		detail=$(grep -cE '^[[:space:]]+FAIL:' "$work/out.log" || true)
+		if [[ "$detail" -eq 0 ]]; then
+			# A non-zero exit with no failed assertion means the suite died
+			# rather than detected anything — a syntax error, or jq erroring
+			# against a half-applied mutation. That demonstrates nothing about
+			# the guard, so it is not a catch. This is precisely how a
+			# partially-applied RC-11 scored `caught` while three of its four
+			# substitutions silently no-oped.
+			echo "BROKEN  $label"
+			echo "        $suite hard-errored with no assertion fired, so nothing here proves the defect is guarded"
+			broken=$((broken + 1))
+		else
+			echo "caught  $label"
+			echo "        $suite: $detail failing assertion(s)"
+			caught=$((caught + 1))
+		fi
+	fi
+	rm -rf "$work"
+}
+
+# Consolidation deleted every finding except one cluster primary because a jq
+# `def` was evaluated against the wrong subject inside `any()`.
+check_mutation "RC-1  consolidation ident scoping" \
+	rc-consolidate.sh \
+	's/(\$f|ident)/(ident)/g' \
+	test-rc-consolidate.sh
+
+# Multi-line evidence was searched as N independent literals by `grep -F`.
+check_mutation "RC-2  contiguous evidence matching" \
+	rc-verify-evidence.sh \
+	's#^[[:space:]]*occurrences=\$(evidence_lines.*#occurrences=$(grep -nF -- "$ev" "$fpath" | cut -d: -f1)#' \
+	test-rc-verify-evidence.sh
+
+# `head -1` on the matcher took SIGPIPE under pipefail once the quote occurred
+# more times than the pipe buffer held, killing the phase before findings.json
+# was written. The substitution drops the `|| astatus=$?` capture along with the
+# pipe, and has to: leaving the capture in place absorbs the 141 into
+# EVIDENCE_SCAN_ERROR, so the phase writes findings.json and exits 0. The suite
+# still goes red — but on the truncation assertions, because `head -1` also
+# discards every occurrence after the first. Test 15's own SIGPIPE assertion
+# passes, so that form of the mutation is scored `caught` while proving nothing
+# about the abort this entry exists to guard.
+check_mutation "RC-3  full matcher output" \
+	rc-verify-evidence.sh \
+	's#^[[:space:]]*occurrences=\$(evidence_lines.*#occurrences=$(evidence_lines "$fpath" "$ev" | head -1)#' \
+	test-rc-verify-evidence.sh
+
+# The verdict glob ingested clusters.json, which verify.md mandates writing.
+check_mutation "RC-4  verdict allow-list glob" \
+	rc-verify-evidence.sh \
+	"s/-name 'divisor-\*\.json'/-name '*.json' ! -name 'findings.json' ! -name 'verdicts-map.json'/" \
+	test-rc-verify-evidence.sh
+
+# The renderer emitted no council verdict at all. Both lines live inside the
+# header heredoc since the verdict moved to the head of the report, so the
+# mutation deletes the heading and its value rather than neutering an `echo`.
+check_mutation "RC-5  council verdict rendering" \
+	rc-render-report.sh \
+	'/^## Council Verdict$/d; /^\$council_verdict_line$/d' \
+	test-rc-render-report.sh
+
+# The jq fallback ignored "additionalProperties": false.
+check_mutation "RC-6  additionalProperties enforcement" \
+	rc-extract-verdict.sh \
+	's/((\[keys\[\]\] - \$topkeys) | length) == 0 and/true and/' \
+	test-rc-extract-verdict.sh
+
+# The jq fallback compared enums with substring containment, so "HIG" passed.
+check_mutation "RC-7  exact enum membership" \
+	rc-extract-verdict.sh \
+	's/any(\$allowed\[\]; \. == \$v)/true/' \
+	test-rc-extract-verdict.sh
+
+# Findings citing a path outside the review root were verified, not stripped.
+check_mutation "RC-8  review-root containment" \
+	rc-verify-evidence.sh \
+	's/^[[:space:]]*if ! path_in_root "\$fpath"; then$/if false; then/' \
+	test-rc-verify-evidence.sh
+
+# Numbering jumps 8 -> 10. The RC-N labels come from a defect list that predates
+# this file and is not tracked in the repo, so RC-9 itself cannot be looked up
+# from here. What is checkable is that no suite under module/tests/ asserts
+# anything about it — which is why there is no entry. A mutation with no
+# regression test behind it could only ever report MISSED.
+
+# An unresolvable ref range reported "no changes to review".
+check_mutation "RC-10 ref range resolution" \
+	rc-prepare.sh \
+	's/^[[:space:]]*require_resolvable_range .*$/:/' \
+	test-rc-prepare-git-edges.sh
+
+# The findings arrays were passed to jq as single argv entries, so a review
+# large enough to push one past MAX_ARG_STRLEN aborted the phase.
+check_mutation "RC-11 findings assembly via files" \
+	rc-verify-evidence.sh \
+	's#^[[:space:]]*--slurpfile verified ".*#--argjson verified "$verified" \\#;
+	 s#^[[:space:]]*--slurpfile correctable ".*#--argjson correctable "$correctable" \\#;
+	 s#^[[:space:]]*--slurpfile stripped ".*#--argjson stripped "$stripped" \\#;
+	 s/verified:\$verified\[0\], correctable:\$correctable\[0\], stripped:\$stripped\[0\]/verified:$verified, correctable:$correctable, stripped:$stripped/' \
+	test-rc-verify-evidence.sh
+
+# The repo name parsed from the local remote kept its trailing `.git`. The strip
+# now lives in parse_remote in rc-lib.sh, which rc-prepare.sh shares with
+# rc-clone-target.sh; the suite asserting it is still the prepare one.
+check_mutation "RC-12 remote .git suffix strip" \
+	rc-lib.sh \
+	's/%\.git}/}/' \
+	test-rc-prepare-owner.sh
+
+# The language tally counted every extension, so CI YAML outvoted the source.
+check_mutation "RC-13 language tally source filter" \
+	rc-prepare.sh \
+	's/^[[:space:]]*\*) continue ;;.*$/*) bucket="$ext" ;;/' \
+	test-rc-prepare-framework.sh
+
+# APPROVE filed over a CRITICAL or HIGH finding was accepted as coherent.
+check_mutation "RC-14 verdict/severity coupling" \
+	rc-extract-verdict.sh \
+	's/^[[:space:]]*if \[\[ "\$verdict_mismatch" != "no" \]\]; then$/if false; then/' \
+	test-rc-extract-verdict.sh
+
+# in_place asked only for a matching owner/repo, which any host can serve.
+check_mutation "RC-15 clone target host identity" \
+	rc-clone-target.sh \
+	's/"\${cur_host,,}" == "\${target_host,,}"/true/' \
+	test-rc-clone-target.sh
+
+total=$((caught + missed + broken))
+echo ""
+echo "========================================"
+echo "Mutations: $total  caught: $caught  missed: $missed  broken: $broken"
+echo "========================================"
+[[ $missed -eq 0 && $broken -eq 0 ]] || exit 1
+exit 0

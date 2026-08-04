@@ -9,6 +9,11 @@
 
 ^\.cache/
 
+# MegaLinter's own report folder. The reports quote every detector hit verbatim
+# as evidence, so scanning them re-reports each finding a second time from the
+# artifact rather than from source.
+^megalinter-reports/
+
 # TruffleHog's Gitlab detector matches any 20-22 character token-shaped
 # string. `rc-post-comment-github` is a script name asserted on in the
 # comment-rendering tests, not a credential. The hits are in committed

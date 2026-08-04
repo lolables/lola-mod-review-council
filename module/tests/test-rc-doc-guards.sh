@@ -17,6 +17,10 @@ ADVERSARY_MD="$AGENTS/divisor-adversary-code.md"
 CURATOR_MD="$AGENTS/divisor-curator-code.md"
 TESTING_MD="$AGENTS/divisor-testing-code.md"
 TESTING_SPEC_MD="$AGENTS/divisor-testing-spec.md"
+# Repo root, two levels above this directory: the packaged module lives under
+# module/, these two files do not.
+README_MD="$SCRIPT_DIR/../../README.md"
+BREWFILE="$SCRIPT_DIR/../../Brewfile"
 
 # Whitespace-flattened copies of the documents whose prose these guards pin:
 # newlines and runs of spaces collapsed to one space. Prose reflows — a sentence
@@ -720,6 +724,62 @@ if grep -qF 'Dimensions owned by other personas — do NOT produce findings for 
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: spec-mode Tester is free to duplicate the Adversary and the Guard"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-024: Brewfile is the declared single source of truth for the macOS
+# prerequisites — the macOS leg of .github/workflows/test.yml installs from it —
+# yet README.md's "### Prerequisites" block spells the same formula names out by
+# hand. That duplication is deliberate and stays: the section is read by people
+# who install this module through lola and never clone the repository, so they
+# have no Brewfile to `brew bundle` from, and sending them to a file they do not
+# have would be worse than repeating three names. What duplication costs is
+# drift — a formula added to Brewfile for CI leaves every README reader short a
+# prerequisite, and nothing notices until someone's review dies on a missing
+# tool. So the two lists are pinned to each other instead.
+#
+# Compare sets of formula names, not either file's literal bytes. A guard that
+# greps for the string `brew install bash jq coreutils` goes red the moment
+# somebody reflows the paragraph around it, and a guard that cries wolf is a
+# guard somebody deletes. Only the `brew "..."` directives are read out of
+# Brewfile: the rest of that file is comment prose that names the same formulae
+# and would otherwise count twice.
+#
+# Only the macOS line is in scope. The Debian and Fedora lines beneath it have
+# no counterpart in Brewfile — inventing one would mean standing up a second
+# source of truth, which is the failure this guard exists to prevent.
+echo "Test: README macOS prerequisites match Brewfile (RC-024)"
+rc024_brewfile=""
+rc024_readme=""
+# The `# macOS` trailer is what identifies the line, not `brew install` alone.
+# Matching every line-initial `brew install` would let an unrelated example
+# elsewhere in the README supply a formula the Prerequisites block is missing,
+# and the guard would go green over exactly the drift it exists to catch. The
+# sibling lines carry `# Debian/Ubuntu` and `# Fedora/RHEL`, so the trailer is
+# the block's own convention rather than something invented here.
+[[ -f "$BREWFILE" ]] &&
+	rc024_brewfile=$(sed -n 's/^[[:space:]]*brew "\([^"]*\)".*/\1/p' "$BREWFILE" | sort)
+[[ -f "$README_MD" ]] &&
+	rc024_readme=$(sed -n 's/^[[:space:]]*brew install \([^#]*\)#[[:space:]]*macOS.*/\1/p' "$README_MD" |
+		tr -s ' \t' '\n' | sed '/^$/d' | sort)
+rc024_brewfile_line="${rc024_brewfile//$'\n'/ }"
+rc024_readme_line="${rc024_readme//$'\n'/ }"
+# Both files sit at the repo root, outside the module/ tree these tests ship
+# inside, so an absent file is a real possibility rather than a broken checkout.
+# Guard the reads: letting `sed` fail under `set -e` would kill the whole suite
+# before the diagnostic below could run, and take any later guard with it.
+if [[ -z "$rc024_brewfile" || -z "$rc024_readme" ]]; then
+	echo "  FAIL: extracted no formulae (Brewfile: '$rc024_brewfile_line', README: '$rc024_readme_line')"
+	echo "        — one of the two files is missing or changed shape, and this guard"
+	echo "          is comparing nothing"
+	FAIL=$((FAIL + 1))
+elif [[ "$rc024_readme" == "$rc024_brewfile" ]]; then
+	echo "  PASS: both declare the same macOS formulae ($rc024_readme_line)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a reader who installs from the README gets a different toolchain than CI"
+	echo "        Brewfile: $rc024_brewfile_line"
+	echo "        README:   $rc024_readme_line"
 	FAIL=$((FAIL + 1))
 fi
 

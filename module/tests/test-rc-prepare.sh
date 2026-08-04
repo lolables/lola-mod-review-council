@@ -3,9 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
-TEST_OUTPUT="${SCRIPT_DIR}/../../.test-output/rc-prepare"
-rm -rf "$TEST_OUTPUT"
-mkdir -p "$TEST_OUTPUT"
 
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"

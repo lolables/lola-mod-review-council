@@ -391,6 +391,42 @@ its equivalent agents directory.
 **Curator cannot file issues**: Install and authenticate the `gh` CLI: `gh auth login`. Without authentication, the
 Curator reports documentation gaps as findings instead of filing GitHub issues.
 
+## Development
+
+`task check` runs every quality gate. The test suite has four layers — unit,
+end-to-end, degraded-mode, and mutation — each catching a class the others
+cannot. See [docs/dev/testing.md](docs/dev/testing.md) for what each layer is
+for and how to write a test that actually tests something.
+
+```
+task doctor          # check prerequisites are installed and reachable
+task test            # unit suites
+task test:e2e        # end-to-end pipeline (Venom)
+task test:degraded   # once per optional tool missing from PATH
+task test:mutate     # reintroduce fixed defects, confirm they are caught
+task check           # lint + all of the above
+```
+
+### Development setup (macOS)
+
+The repo-root [`Brewfile`](Brewfile) is the source of truth for the macOS
+prerequisite set, and the macOS CI leg installs from that same file — so a
+laptop and a CI run get identical formulae.
+
+```bash
+brew bundle   # bash, jq, coreutils
+task doctor   # confirm each one is what PATH actually resolves to
+```
+
+`task doctor` is the half that catches real problems: installing a formula is
+not the same as its binary winning on PATH. It reports which `bash` it found
+and where, since macOS keeps a 3.2 in `/bin` that happily shadows Homebrew's.
+
+It also warns if coreutils' `libexec/gnubin` is on your `PATH`. Homebrew leaves
+those GNU tools `g`-prefixed deliberately; putting the unprefixed directory on
+`PATH` shadows the BSD tools macOS ships, so a GNU-only construct passes
+locally and then breaks on a stock Mac. The `Brewfile` explains this at length.
+
 ## License
 
 [Apache 2.0](LICENSE)

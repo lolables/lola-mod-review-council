@@ -35,9 +35,12 @@ ADDITIONAL_EXCLUDED_DIRECTORIES:
 # shared protocol sections because agents run without access to shared
 # includes. The duplication is intentional and structural. module/tests/ is
 # kept visible so test duplication is still surfaced.
+#
+# megalinter-reports/ is MegaLinter's own output folder. jscpd writes its report
+# there mid-run, so leaving it visible means jscpd scans its own output.
 COPYPASTE_JSCPD_ARGUMENTS:
   - "--ignore"
-  - "**/.git/**,**/.lola-eval/**,**/module/agents/**,**/module/skills/**,**/module/references/**"
+  - "**/.git/**,**/.lola-eval/**,**/megalinter-reports/**,**/module/agents/**,**/module/skills/**,**/module/references/**"
 
 # ---------------------------------------------------------------------------
 # devskim (security pattern detection)
@@ -55,6 +58,8 @@ COPYPASTE_JSCPD_ARGUMENTS:
 # appending, so both defaults are repeated here. The exclusion is passed as an
 # argument rather than added to .devskim.json because that file is overlaid
 # into the workspace by the runner and is not tracked in this repo.
+# megalinter-reports/ is excluded for the same reason: the reports embed the
+# offending source lines, so devskim re-reports each finding from the artifact.
 REPOSITORY_DEVSKIM_ARGUMENTS:
   - "-g"
-  - "**/.git/**,**/bin/**,**/.lola-eval/**"
+  - "**/.git/**,**/bin/**,**/.lola-eval/**,**/megalinter-reports/**"

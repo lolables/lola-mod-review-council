@@ -1,0 +1,10 @@
+{
+  "clusters": [
+    {
+      "members": [
+        {"file": "internal/mcp/tools.go", "line": 23, "agent": "divisor-adversary-code"},
+        {"file": "internal/mcp/tools.go", "line": 23, "agent": "divisor-guard-code"}
+      ]
+    }
+  ]
+}

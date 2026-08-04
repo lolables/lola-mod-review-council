@@ -6,6 +6,33 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Four-layer test architecture, documented in `docs/dev/testing.md`. The suite
+  was previously one layer — a unit suite per script — which structurally
+  cannot see the seams between scripts, cannot reach a fallback branch that
+  only runs when a tool is absent, and cannot tell a meaningful assertion from
+  a vacuous one:
+  - `module/tests/fixtures/session-golden/` — a complete session shaped like
+    real reviewer output: multi-line evidence, a block repeated three times, a
+    partial-line quote, a fabrication, a path traversal, a cluster, and
+    bystanders. No fixture in the suite had ever contained a newline in an
+    `evidence` value, and that single omission hid three defects at once
+  - `test-rc-pipeline.sh` and `e2e/pipeline.venom.yml` — extract → verify →
+    consolidate → render over that fixture, white box and black box. The
+    `clusters.json` defect lived in the contract between two scripts that were
+    each correct alone
+  - `task test:degraded` — the suite once per optional tool (`jsonschema`,
+    `gh`, `glab`) hidden from `PATH`, pinning fallbacks to the same result as
+    the real tool rather than to "does not crash"
+  - `task test:mutate` — reintroduces all eight fixed defects and asserts a
+    suite catches each; a mutation that applies but is not caught fails the run
+  - `test-rc-prepare-git-edges.sh` — no repository at all, a subdirectory of an
+    unrelated repository, and a repository holding a single root commit
+  - `assert_conserved` — for finding-dropping transforms, asserts
+    `in − removed == out` and refuses to run against a fixture with no
+    bystanders, since asserting on survivors cannot detect collateral loss
+- Unit suites are now discovered rather than listed in `Taskfile.yml`, where a
+  suite nobody remembered to register silently never ran. Shared code moved to
+  `helpers.sh` so the `test-*.sh` glob means exactly "a suite"
 - `test-rc-portability.sh` — guards the scripts and the suite against
   GNU-only shell constructs (`timeout`, `grep -P`, `sed -i`, and GNU regex
   escapes). The regex rules matter most: unlike the others they fail
@@ -126,6 +153,83 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Fixture git repositories inherited the contributor's commit-signing config.
+  With `commit.gpgsign = true` set globally — near-universal alongside
+  `gpg.format = ssh` — every fixture commit failed, and because the helpers run
+  inside command substitutions with stderr discarded, it surfaced not as
+  "cannot sign" but as unrelated assertions failing later against repositories
+  containing no commits. All fixture repos now go through `git_init_sandbox`,
+  which stubs identity and disables commit and tag signing
+- A GitHub poster test asserted `! grep -q '700'` over a log that also carries
+  the session timestamp and generated comment ids, so it failed at random — a
+  run at 07:00 was enough — and pointed at the poster rather than at itself.
+  Anchored to `issues/comments/700` and `NODE700`
+- `rc-prepare.sh` reported an unresolvable ref range as "No changes to review".
+  `git diff` on a ref that does not exist is fatal, and the error was swallowed
+  by `2>/dev/null || echo ""` into an empty changeset — so `--scope range
+  HEAD~1..HEAD` against a repository holding a single root commit (which has no
+  `HEAD~1`) read as a clean review, for input that was never compared at all.
+  Both the code-mode and spec-mode changeset builders now resolve the range
+  first, through one shared guard so the two paths cannot drift
+- The "not a git repository" refusal advertised `--scope pr` as a way to review
+  without a local checkout. It is not: PR scope still derives the forge
+  owner/repo from the local git remote and hits the identical gate. The message
+  now names only `--scope url`, which genuinely bypasses it
+- Evidence verification matched multi-line quotes as separate patterns.
+  `rc-verify-evidence.sh` used `grep -F`, which treats each newline in the
+  pattern as a pattern separator, so a multi-line `evidence` value was searched
+  as N independent literals and accepted if any one of them matched. This broke
+  the anti-hallucination gate in both directions: a fabricated block ending on
+  a line that appears anywhere in the file (a bare `}`, `)`, `end`) verified
+  clean, and an accurate citation was reported `LINE_MISMATCH` because the line
+  number came from whichever short literal appeared first in the file.
+  Evidence is now matched as a contiguous block by an `awk` scanner, and a
+  citation is accepted when **any** occurrence starts within ±5 of the cited
+  line, so blocks that legitimately repeat across sibling functions verify
+  against a citation of any occurrence
+- Verification aborted with exit 141 on files with many matches.
+  `grep -nF … | head -1` under `set -o pipefail` took SIGPIPE once grep
+  outgrew the pipe buffer, killing the phase and leaving no `findings.json`.
+  Subsumed by the contiguous-matcher rewrite, which has no early-closing pipe.
+  `rc-prepare.sh` carries the same pipeline shape and is safe only because it
+  omits `-e`; that is now stated at its `set` line so it survives future edits
+- Cross-agent consolidation deleted every finding except one cluster primary.
+  In `rc-consolidate.sh`, `any(f)` rebinds `.` to each element of its input, so
+  the bare `ident` inside `($secids | any(. == (ident)))` was evaluated against
+  the `$secids` element rather than the finding being filtered — reducing the
+  test to `secid == secid`, always true. Findings in unrelated files, including
+  CRITICAL and HIGH ones, were dropped between verification and report while
+  the script still reported `status: "ok"`. The finding is now bound as `$f`
+  before entering `any`
+- `rc-verify-evidence.sh` parsed `verdicts/clusters.json` as an agent verdict
+  and aborted. The manifest is written at that exact path by verification Step
+  3c, so the module's own workflow broke the mid-run resume documented in
+  SKILL.md Step 2. Agent verdicts are now selected by an allow-list
+  (`divisor-*.json`) rather than a deny-list that had to grow with every new
+  artifact written into `verdicts/`
+- Findings citing a path outside the review root were verified rather than
+  discarded. The `file` field is reviewer-authored, so `../../<path>` resolved,
+  was read, and passed the evidence check — letting a reviewer present content
+  from any readable file as evidence from the changeset. Such findings are now
+  stripped with reason `PATH_OUTSIDE_ROOT`. Empty evidence, which matched every
+  file as a `grep -F` pattern, is likewise rejected (`EVIDENCE_EMPTY`)
+- The jq fallback validator accepted verdicts the real schema rejects, so the
+  same reviewer output was valid or invalid depending on whether
+  `sourcemeta/jsonschema` happened to be installed:
+  - Enum checks used `[.x] | inside([…])`, which compares with `contains` —
+    substring containment for strings. `"APPROV"` passed as a verdict, `"HIG"`
+    and `"CRIT"` as severities, and the empty string as both. Membership is
+    now exact
+  - `"additionalProperties": false` was not enforced, so unknown keys passed.
+    The two allowed key sets are now asserted, and a test diffs them against
+    `verdict-schema.json` so the fallback cannot drift from the schema
+- `rc-render-report.sh` never emitted a council verdict, contradicting SKILL.md
+  Step 6, `phases/report.md` ("End report with council verdict"), and the
+  EXECUTION-CONTRACT that forbids the orchestrator from hand-writing report
+  sections. The renderer now emits a `## Council Verdict` section ahead of
+  `## Council Synthesis`, and `verdict.txt` is written at the start of the
+  report phase instead of at post time, giving the report and the PR comment
+  one shared source for the outcome
 - macOS compatibility across the shipped scripts and the test suite, which
   had regressed on the BSD userland while Linux CI stayed green:
   - Forge and clone calls invoked GNU `timeout`, which macOS does not ship.

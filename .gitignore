@@ -16,6 +16,14 @@ node_modules/
 # Working artifacts — specs and plans (never committed)
 docs/superpowers/
 
+# MegaLinter run artifacts (REPORT_OUTPUT_FOLDER, default megalinter-reports/).
+# Keeps file-level linters off them via IGNORE_GITIGNORED_FILES, which defaults
+# to true. The repository-descriptor linters run with cli_lint_mode: project and
+# walk the tree themselves, so each needs its own exclusion — see
+# .secretlintignore, .trufflehog-exclude-paths.txt, trivy.yaml, and the devskim
+# and jscpd arguments in .mega-linter.local.yml.
+megalinter-reports/
+
 # lola-eval runtime artifacts
 .lola-eval/runs.db
 .lola-eval/workspace/

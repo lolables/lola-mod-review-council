@@ -14,8 +14,10 @@ make_mockbin() {
 #!/usr/bin/env bash
 # mode=$mode drives behavior; log invocations for assertions.
 echo "git \$*" >>"$dir/git.log"
-# Detect the checkout subcommand among args (real calls use \`git -C DEST checkout\`).
+# Detect the subcommand among args, not in "\$1": the real calls are
+# \`git -C DEST fetch\` / \`git -C DEST checkout\`, so "\$1" is -C.
 if [[ "$mode" == "checkoutfail" ]] && printf '%s\n' "\$@" | grep -qx 'checkout'; then exit 1; fi
+if [[ "$mode" == "fetchfail" ]] && printf '%s\n' "\$@" | grep -qx 'fetch'; then exit 1; fi
 case "\$1" in
 	remote) echo "$remote" ;;
 	rev-parse)
@@ -144,6 +146,22 @@ result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip on checkout failure"
 assert_json_field "$result" "review_root" "." "review_root falls back to ."
+rm -rf "$bin" "$cache"
+
+# Test 6b: fetch of the PR head fails -> skip (no false-clean empty tree)
+# The clone succeeds here, so status/review_root alone cannot tell this branch
+# apart from the clone- and checkout-failure fallbacks — assert the message.
+echo "Test 6b: fetch failure falls back to skip"
+bin=$(mktemp -d)
+make_mockbin "$bin" fetchfail "main"
+cache=$(mktemp -d)
+result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "skip" "status is skip on fetch failure"
+assert_json_field "$result" "review_root" "." "review_root falls back to ."
+assert_json_field "$result" "message" \
+	"Fetch of pull/7/head failed; reviewing from diff only." \
+	"message names the failed fetch"
 rm -rf "$bin" "$cache"
 
 # Test 7: malformed identifiers are rejected before any git runs

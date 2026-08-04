@@ -12,13 +12,19 @@
 # detection or acceptance-criteria extraction just quietly returns nothing.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
-# Scan every shell file in the module except this one — the rule patterns below
-# are themselves examples of what they forbid.
+# Scan every shell file in the repository except this one — the rule patterns
+# below are themselves examples of what they forbid.
+#
+# Both roots are listed explicitly. Scanning module/ alone left the drivers in
+# .taskfiles/scripts/ (which `task check` runs on the macOS leg of the CI
+# matrix) outside the gate entirely, and they had accumulated `sed -i`,
+# `md5sum` and a `\s` regex by the time anyone noticed.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 self=$(basename "$0")
-targets_list=$(find "$SCRIPT_DIR/.." -name '*.sh' ! -name "$self" | sort)
+targets_list=$(find "$REPO_ROOT/module" "$REPO_ROOT/.taskfiles/scripts" -name '*.sh' ! -name "$self" | sort)
 # A here-string always yields one line, so an empty result would otherwise
 # produce a single empty element and grep would read stdin.
 TARGETS=()
@@ -37,7 +43,7 @@ forbid() {
 	else
 		echo "  FAIL: $label — $remedy"
 		while IFS= read -r hit; do
-			echo "        ${hit#"$SCRIPT_DIR"/../}"
+			echo "        ${hit#"$REPO_ROOT"/}"
 		done <<<"$hits"
 		FAIL=$((FAIL + 1))
 	fi
@@ -47,7 +53,7 @@ echo "Test: no Linux-only shell constructs or path assumptions (macOS ships a BS
 
 forbid '/(usr/)?s?bin/\*' \
 	"no system bindir enumeration" \
-	"macOS keeps bash in /bin and Homebrew tools outside /usr/bin, so such a set cannot even resolve the interpreter; derive from \$PATH (see path_without_command in test-helpers.sh)"
+	"macOS keeps bash in /bin and Homebrew tools outside /usr/bin, so such a set cannot even resolve the interpreter; derive from \$PATH (see path_without_command in helpers.sh)"
 
 forbid '(^|[;&|(]|[[:space:]])g?timeout[[:space:]]+[0-9]' \
 	"no direct 'timeout' invocation" \
@@ -68,6 +74,10 @@ forbid '(grep|sed)[^#]*\\[|swdb+<>]' \
 forbid 'touch[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-d([[:space:]]|$)' \
 	"no free-form 'touch -d' timestamps" \
 	"BSD touch -d demands strict ISO-8601; use POSIX 'touch -t CCYYMMDDhhmm'"
+
+forbid 'readlink[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-[A-Za-z]*[efm]([[:space:]]|$)' \
+	"no canonicalising 'readlink -f/-e/-m'" \
+	"canonicalisation flags are GNU extensions and older BSD readlink has none of them; Homebrew coreutils installs GNU readlink as 'greadlink' and leaves BSD readlink on PATH, so this fails on the macOS CI leg rather than degrading. Follow the chain a hop at a time with flagless 'readlink' plus 'cd ... && pwd -P' (see path_in_root in rc-verify-evidence.sh)"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -291,6 +291,11 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 
+The newest `REVIEW_COUNCIL_SESSION_CACHE_MAX` sessions per project are kept (default 20); older ones are evicted on
+the next run, the same way clones are capped. Runs that produce nothing are capped too — the session directory is
+created before the changeset scan decides whether there is anything to review, so a no-op review still leaves one
+behind. The session a run is currently using is never evicted, whatever the cap.
+
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
 and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
 is added too — untrusted replies posted since that marker, GitHub only for now.

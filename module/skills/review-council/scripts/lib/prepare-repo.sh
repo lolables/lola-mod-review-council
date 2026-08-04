@@ -276,3 +276,36 @@ if ! mkdir -p "${session_dir}/verdicts/_meta" 2>/dev/null; then
 	json_output "skip" "Cannot create session directory at ${session_dir}. Check permissions and disk space."
 	exit 0
 fi
+
+# --- LRU prune: keep the newest N session dirs for this project ---
+#
+# Clones have been capped since rc-clone-target.sh gained its LRU. Sessions had
+# no cap at all, so every review ever run left a directory behind permanently —
+# and so did every run that produced nothing, because this directory is created
+# here, before the changeset scan below decides whether there is anything to
+# review at all. A no-op review is therefore exactly the kind that accumulates.
+# Under per-PR CI use that is unbounded growth in a cache nobody inspects.
+#
+# Pruning happens HERE rather than at the end of preparation so it runs on every
+# path out of this script, including the `skip` and `empty` exits that abandon
+# the session moments from now.
+#
+# The rules mirror rc-clone-target.sh deliberately — same env-var shape, same
+# ordering primitive, same "never evict what was just created" guarantee. Two
+# eviction disciplines in one cache directory would be two things to learn and
+# two things to get wrong. A cap of 0 still leaves this session: the run that
+# owns it has to be able to finish.
+session_cap="${REVIEW_COUNCIL_SESSION_CACHE_MAX:-20}"
+[[ "$session_cap" =~ ^[0-9]+$ ]] || session_cap=20
+# shellcheck disable=SC2012,SC2312 # `find -printf` sorting is GNU-only and this
+# cap has to hold on macOS too, exactly as the clone LRU does. Entry names are
+# `date +%Y%m%d-%H%M%S` run ids, so the whitespace-in-filename hazard SC2012
+# warns about cannot arise, and mapfile splits on newlines. A project directory
+# holding only this session legitimately yields one entry.
+mapfile -t rc_sessions_by_age < <(ls -dt "$(dirname "${session_dir}")"/*/ 2>/dev/null | sed 's:/*$::')
+if [[ ${#rc_sessions_by_age[@]} -gt $session_cap ]]; then
+	for ((rc_k = session_cap; rc_k < ${#rc_sessions_by_age[@]}; rc_k++)); do
+		[[ "${rc_sessions_by_age[$rc_k]}" == "${session_dir}" ]] && continue
+		rm -rf "${rc_sessions_by_age[$rc_k]}" 2>/dev/null || true
+	done
+fi

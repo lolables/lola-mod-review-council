@@ -17,6 +17,17 @@ All notable changes to the Review Council module are documented here.
   `.user.login`. GitLab keeps exactly its previous behaviour, now as a file to
   extend rather than an `elif` to find, with the required contract and the
   optional capabilities documented in `references/forge-adapters.md`
+- `REVIEW_COUNCIL_SESSION_CACHE_MAX` (default 20) caps the session cache per
+  project, mirroring the clone LRU that has always capped
+  `REVIEW_COUNCIL_CLONE_CACHE_MAX`. Sessions were uncapped, so every review ever
+  run left a directory behind permanently — and so did every run that produced
+  nothing, because the session directory is created before the changeset scan
+  decides whether there is anything to review. A no-op review is therefore
+  exactly the kind that accumulates. Pruning runs immediately after the
+  directory is created, so it fires on every exit path including the `skip` and
+  `empty` ones that abandon the session moments later. Same env-var shape, same
+  POSIX `ls -dt` ordering and same non-numeric fallback as the clone cap; the
+  session a run is using is never evicted, even at a cap of 0
 - `REVIEW_COUNCIL_SPEC_DIRS` and `REVIEW_COUNCIL_SPEC_EXTS` override which
   directories spec mode scans and which extensions count as a spec, because no
   fixed list can describe someone else's layout. Bare `docs/` stays off the

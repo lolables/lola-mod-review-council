@@ -110,6 +110,21 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
 - `verdicts`: the per-agent verdict map, copied verbatim from each agent's
   JSON — never re-derived from finding counts. Source of truth for the
   report's per-agent verdict table (see Step 6 — Verdict Upgrade Logic).
+- `missing_verdicts`: agents that `session-manifest.json` records as dispatched
+  but which produced no verdict file. Empty when the council is complete, and
+  empty when the session carries no manifest — absence of the manifest claims
+  nothing rather than accusing every agent at once.
+
+**When `missing_verdicts` is non-empty, disclose it.** Record one line per
+agent in `${session_dir}/verdicts/_meta/verification.txt` naming the agent and
+stating that it returned no verdict, and carry the same statement into the
+report narrative. A reviewer that was dispatched and returned nothing is a hole
+in the council's coverage, and it is indistinguishable in the finished report
+from a reviewer that simply found nothing — the per-agent verdict table is
+built from the verdicts that arrived, so a silent agent has no row rather than
+a visibly empty one. Never treat this as a reason to discard the verdicts that
+did arrive, and never re-dispatch on its account: the dispatch budget belongs
+to the format gate and the correction round.
 
 **When `rc-verify-evidence.sh` returns `status: "nothing_to_do"`**, it never
 reached the verification loop: the session directory is missing, `verdicts/`
@@ -119,7 +134,7 @@ there is no findings file — and Steps 1-4 and Step 6 below do not run, because
 there is nothing to correct, calibrate, consolidate, validate, or upgrade.
 
 **Step 5 still runs, abbreviated.** `phases/report.md`'s Pre-condition Gate
-refuses to render without `${session_dir}/verdicts/verification.txt`, and it
+refuses to render without `${session_dir}/verdicts/_meta/verification.txt`, and it
 refuses unconditionally — there is no exemption for this status, because such
 an exemption would rest on the orchestrator's own account of a status only it
 observed. Write the file. It is also the only record of *why* the review
@@ -376,7 +391,7 @@ Otherwise:
    findings that touch the same line but describe genuinely different problems
    (e.g. a nil-deref and a naming issue) are NOT the same defect — do not
    cluster them.
-3. Write `verdicts/clusters.json` — a members-only manifest conforming to
+3. Write `verdicts/_meta/clusters.json` — a members-only manifest conforming to
    `references/consolidation-schema.json`. Each cluster lists 2+ members by
    `{file, line, agent}`:
 
@@ -497,7 +512,7 @@ Skip validation gate if:
 
 ## Step 5 — Write Verification Summary
 
-Write combined verification, correction, and validation results to `${session_dir}/verdicts/verification.txt`.
+Write combined verification, correction, and validation results to `${session_dir}/verdicts/_meta/verification.txt`.
 
 Format:
 

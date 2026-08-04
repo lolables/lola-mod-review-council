@@ -33,7 +33,7 @@ skips every LLM-judgment step in Verification (see `verify.md`) for the
 same reason it skips this one: cost proportional to review depth.
 
 If the gate fails, proceed straight to SKILL.md Step 5 (Iteration Check) as
-if this phase did not exist. Do not create `verdicts/disposition.txt`. Do
+if this phase did not exist. Do not create `verdicts/_meta/disposition.txt`. Do
 not touch `findings.json`.
 
 ---
@@ -297,7 +297,7 @@ still verified.
 
 ## Step 5 — Write Disposition Summary
 
-Write `${session_dir}/verdicts/disposition.txt`:
+Write `${session_dir}/verdicts/_meta/disposition.txt`:
 
 ```
 === DISPOSITION GATE ===
@@ -329,7 +329,7 @@ resolved/kept/suppressed counts, verdicts upgraded.
 **Outputs are structured data only.** The only two artifacts this phase
 produces are the `provenance.disposition` edits to `findings.json` (Step 3,
 applied by the subagent; Step 4, applied by the orchestrator) and
-`verdicts/disposition.txt` (this step). Never write disposition reasoning
+`verdicts/_meta/disposition.txt` (this step). Never write disposition reasoning
 into a finding's prose fields (`description`, `recommendation`), and never
 inject it as an HTML comment anywhere a later render step might emit it
 verbatim — provenance is JSON, not prose, for the same reason `verify.md`'s

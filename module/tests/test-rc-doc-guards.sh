@@ -13,7 +13,10 @@ DELEGATE_MD="$SKILLS/phases/delegate.md"
 DISPOSITION_MD="$SKILLS/phases/disposition.md"
 SEVERITY_MD="$SKILLS/references/severity.md"
 PIPELINE_STATES_MD="$SKILLS/references/pipeline-states.md"
-PREPARE_SH="$SKILLS/scripts/rc-prepare.sh"
+# rc-prepare.sh is an entry point sourcing six stages under scripts/lib/.
+# Guards that ask "does preparation still do X" must search the whole set:
+# grepping the entry point alone would report every behaviour missing.
+PREPARE_SRC=("$SKILLS/scripts/rc-prepare.sh" "$SKILLS"/scripts/lib/prepare-*.sh)
 GUARD_MD="$AGENTS/divisor-guard-code.md"
 ADVERSARY_MD="$AGENTS/divisor-adversary-code.md"
 CURATOR_MD="$AGENTS/divisor-curator-code.md"
@@ -580,7 +583,7 @@ while IFS= read -r rc021_check; do
 		rc021_missing=$((rc021_missing + 1))
 	fi
 done <<'RC021_CHECKS'
-Read `${session_dir}/verdicts/verification.txt`
+Read `${session_dir}/verdicts/_meta/verification.txt`
 **If file does not exist or is empty**: STOP. Do not generate report
 **If file exists but has no `=== SUMMARY ===` section**: STOP
 **If SUMMARY section contains only placeholder values**
@@ -907,7 +910,7 @@ echo "Test: the Tooling field survives from rc-prepare.sh to the Curator (RC-026
 rc026_broken=0
 # shellcheck disable=SC2016 # literal `${forge_tool}` lifted from the script, not
 # a substitution this test should perform.
-if ! grep -qF 'echo "- Tooling: ${forge_tool}"' "$PREPARE_SH"; then
+if ! grep -qF 'echo "- Tooling: ${forge_tool}"' "${PREPARE_SRC[@]}"; then
 	echo "  broken link: rc-prepare.sh no longer writes a Tooling line into tracking.md"
 	rc026_broken=$((rc026_broken + 1))
 fi
@@ -1030,7 +1033,7 @@ echo "Test: the persona roster matches delegate.md's table and module/agents (RC
 # Same shape as the RC_TOP_KEYS/RC_FINDING_KEYS guard in
 # test-rc-extract-verdict.sh: the script declares the list on one line so a
 # single sed can lift it back out.
-roster=$(sed -n "s/^RC_PERSONAS=(\(.*\))\$/\1/p" "$PREPARE_SH" | tr ' ' '\n' | sort | tr '\n' ' ')
+roster=$(sed -n "s/^RC_PERSONAS=(\(.*\))\$/\1/p" "${PREPARE_SRC[@]}" | tr ' ' '\n' | sort | tr '\n' ' ')
 roster="${roster% }"
 # Column 1 of the table is `| \`divisor-<name>\` |`; take the base names.
 # Backticks are avoided in the expression: shellcheck reads one inside single

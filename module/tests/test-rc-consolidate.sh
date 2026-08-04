@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/helpers.sh"
 mk_session() { # verified_json
 	local s
 	s=$(mktemp -d)
-	mkdir -p "$s/verdicts"
+	mkdir -p "$s/verdicts/_meta"
 	jq -n --argjson v "$1" '{verified:$v, correctable:[], stripped:[],
 		total_findings:($v|length), duplicates_consolidated:0,
 		verdicts:{}}' >"$s/verdicts/findings.json"
@@ -37,7 +37,7 @@ rm -rf "$s"
 
 echo "Test 3: empty clusters -> no-op"
 s=$(mk_session '[{"agent":"a","severity":"HIGH","file":"f.go","line":1,"evidence":"e","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}]')
-echo '{"clusters":[]}' >"$s/verdicts/clusters.json"
+echo '{"clusters":[]}' >"$s/verdicts/_meta/clusters.json"
 result=$(bash "$SCRIPT" "$s")
 dc=$(jq '.duplicates_consolidated' "$s/verdicts/findings.json")
 if [[ "$dc" -eq 0 ]]; then
@@ -55,7 +55,7 @@ s=$(mk_session '[
   {"agent":"divisor-testing-code","severity":"HIGH","file":"svc/load.py","line":42,"evidence":"except:","description":"untested failure path","recommendation":"add a test","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
   {"agent":"divisor-sre-code","severity":"LOW","file":"svc/load.py","line":44,"evidence":"except:","description":"observability gap","recommendation":"log the error","verdict":"APPROVE","status":"verified","provenance":{}}
 ]')
-cat >"$s/verdicts/clusters.json" <<'CJ'
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
 {"clusters":[{"members":[
   {"file":"svc/load.py","line":42,"agent":"divisor-adversary-code"},
   {"file":"svc/load.py","line":42,"agent":"divisor-testing-code"},
@@ -111,7 +111,7 @@ s=$(mk_session '[
   {"agent":"a","severity":"HIGH","file":"x.go","line":10,"evidence":"boom","description":"da","recommendation":"ra","verdict":"APPROVE","status":"verified","provenance":{}},
   {"agent":"b","severity":"LOW","file":"x.go","line":10,"evidence":"boom","description":"db","recommendation":"rb","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}
 ]')
-cat >"$s/verdicts/clusters.json" <<'CJ'
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
 {"clusters":[{"members":[{"file":"x.go","line":10,"agent":"a"},{"file":"x.go","line":10,"agent":"b"}]}]}
 CJ
 bash "$SCRIPT" "$s" >/dev/null
@@ -130,7 +130,7 @@ s=$(mk_session '[
   {"agent":"a","severity":"HIGH","file":"x.go","line":10,"evidence":"boom","description":"da","recommendation":"ra","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
   {"agent":"b","severity":"LOW","file":"x.go","line":10,"evidence":"boom","description":"db","recommendation":"rb","verdict":"APPROVE","status":"verified","provenance":{}}
 ]')
-cat >"$s/verdicts/clusters.json" <<'CJ'
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
 {"clusters":[{"members":[{"file":"x.go","line":10,"agent":"a"},{"file":"x.go","line":10,"agent":"b"}]}]}
 CJ
 bash "$SCRIPT" "$s" >/dev/null
@@ -166,7 +166,7 @@ s=$(mk_session '[
   {"agent":"z","severity":"HIGH","file":"b.go","line":9,"evidence":"e3","description":"d3","recommendation":"r3","verdict":"APPROVE","status":"verified","provenance":{}},
   {"agent":"w","severity":"LOW","file":"c.go","line":4,"evidence":"e4","description":"d4","recommendation":"r4","verdict":"APPROVE","status":"verified","provenance":{}}
 ]')
-cat >"$s/verdicts/clusters.json" <<'CJ'
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
 {"clusters":[{"members":[{"file":"a.go","line":1,"agent":"x"},{"file":"a.go","line":1,"agent":"y"}]}]}
 CJ
 bash "$SCRIPT" "$s" >/dev/null
@@ -207,7 +207,7 @@ s=$(mk_session '[
   {"agent":"d","severity":"LOW","file":"q.go","line":7,"evidence":"e4","description":"d4","recommendation":"r4","verdict":"APPROVE","status":"verified","provenance":{}},
   {"agent":"e","severity":"CRITICAL","file":"r.go","line":5,"evidence":"e5","description":"d5","recommendation":"r5","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}
 ]')
-cat >"$s/verdicts/clusters.json" <<'CJ'
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
 {"clusters":[
   {"members":[{"file":"p.go","line":2,"agent":"a"},{"file":"p.go","line":2,"agent":"b"}]},
   {"members":[{"file":"q.go","line":7,"agent":"c"},{"file":"q.go","line":7,"agent":"d"}]}

@@ -39,9 +39,18 @@ Prepare, verify, report, and post are SCRIPT-OWNED and DETERMINISTIC. You MUST
 run the named script for each step and use its output. You MUST NOT perform
 these steps by hand, even in non-interactive / headless runs:
 
-- Do NOT hand-create or hand-edit the session directory, `tracking.md`, or
-  `session.txt`. Only `rc-prepare.sh` creates them; use the `session_dir` it
-  returns in its JSON.
+- Do NOT hand-create or hand-edit the session directory, `tracking.md`,
+  `session.txt`, or `session-manifest.json`. Only `rc-prepare.sh` creates them;
+  use the `session_dir` it returns in its JSON. `session-manifest.json` records
+  the council that was actually dispatched, and `rc-verify-evidence.sh` diffs it
+  against the verdicts that arrive to report `missing_verdicts` — editing it by
+  hand makes a reviewer appear or disappear from the coverage the report claims.
+- Write pipeline state that phases produce — `clusters.json`,
+  `verification.txt`, `disposition.txt` — under `${session_dir}/verdicts/_meta/`,
+  never in `verdicts/` itself. `verdicts/` holds per-agent verdict artifacts and
+  the derived `findings.json`; everything that discovers verdicts globs it, and
+  a phase artifact landing there gets parsed as a verdict (RC-4).
+  `rc-prepare.sh` creates `_meta/` with the session, so it always exists.
 - Do NOT clone the target repo yourself. `rc-prepare.sh` invokes
   `rc-clone-target.sh` and returns `review_root`; read changeset files there.
 - Do NOT hand-write the report. Run `rc-render-report.sh`, then fill only the
@@ -456,7 +465,7 @@ map) and prints a summary to stdout.
     by the hard gate; the rename preserves the audit trail while making the
     file invisible to the renderer. Nothing to do if the path does not exist.
   - Write the abbreviated verification record to
-    `${session_dir}/verdicts/verification.txt` — its shape is in
+    `${session_dir}/verdicts/_meta/verification.txt` — its shape is in
     `${PHASES_DIR}/verify.md`, under the `nothing_to_do` heading. Step 6's
     Pre-condition Gate refuses to render a report without that file and grants
     this status no exemption, so skipping it deadlocks the run: the gate sends
@@ -487,7 +496,7 @@ this order:
 - **Consolidate cross-agent duplicates (verify.md Step 3c) — SCRIPT-OWNED,
   you MUST run it (standard and deep only).** When 2+ verified findings
   share a file, judge which describe the same underlying defect, write
-  `${session_dir}/verdicts/clusters.json` (a members-only manifest per
+  `${session_dir}/verdicts/_meta/clusters.json` (a members-only manifest per
   `${REFERENCES_DIR}/consolidation-schema.json`), then run:
   `bash ${SCRIPTS_DIR}/rc-consolidate.sh ${session_dir}`
   It folds each cluster into one primary finding and is a safe no-op when
@@ -554,7 +563,7 @@ After the subagent returns:
   findings are upgraded to `APPROVE` per `verify.md` Step 6's logic. Only
   `resolved` removals count toward that check — `suppressed-low` removals are
   verdict-neutral and do NOT (`disposition.md` Step 4).
-- Write `${session_dir}/verdicts/disposition.txt` as the audit trail
+- Write `${session_dir}/verdicts/_meta/disposition.txt` as the audit trail
   (`disposition.md` Step 5).
 
 **Update tracking:** Append `## Phase: Disposition` with gate result,

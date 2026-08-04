@@ -61,7 +61,7 @@ else
 fi
 
 echo "Test 6: finding severity enum pinned"
-# Pins the schema end of the list. Test 8 pins the five shell-side copies to it;
+# Pins the schema end of the list. Test 8 pins the five external copies to it;
 # without that pairing this assertion only proves the schema did not move, and a
 # severity the schema accepts but a ranker scores 0 still sorts below LOW.
 senum=$(jq -rc '.properties.findings.items.properties.severity.enum' "$SCHEMA")
@@ -89,12 +89,12 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
-echo "Test 8: every shell-side copy of the severity list matches the schema"
-# Five scripts re-declare the schema's severity names, and none of them reads
-# the schema at runtime: the validator fallback in rc-extract-verdict.sh, the
-# dedup ranker in rc-verify-evidence.sh, the consolidation ranker in
-# rc-consolidate.sh, and the render loops in rc-render-report.sh and
-# rc-render-comment.sh. Drift between any copy and the schema is silent in both
+echo "Test 8: every copy of the severity list outside the schema matches it"
+# Five places re-declare the schema's severity names, and none reads the schema
+# at runtime: the validator fallback in rc-extract-verdict.sh, the render loops
+# in rc-render-report.sh and rc-render-comment.sh, and the two rankers that now
+# live as standalone jq programs — jq/dedup-findings.jq and
+# jq/consolidate-clusters.jq. Drift between any copy and the schema is silent in both
 # directions — a name the schema drops still renders, and a name the schema adds
 # ranks 0 and never gets a section — so each copy is compared here rather than
 # merely pinned.
@@ -110,8 +110,8 @@ expected=$(jq -r '.properties.findings.items.properties.severity.enum | join(" "
 # mode "exact": every line matching <anchor> must declare exactly the schema
 #               enum, in order.
 # mode "prefix": every such line must START with the schema enum, in order.
-#                rc-consolidate.sh ranks a trailing council-only INFO below LOW,
-#                which is a deliberate superset, not drift.
+#                consolidate-clusters.jq ranks a trailing council-only INFO below
+#                LOW, which is a deliberate superset, not drift.
 check_severity_copy() { # label file anchor mode
 	local label="$1" file="$2" anchor="$3" mode="$4" lines line toks decl bad=""
 	lines=$(grep -E "$anchor" "$file") || lines=""
@@ -144,14 +144,14 @@ check_severity_copy() { # label file anchor mode
 
 check_severity_copy "rc-extract-verdict.sh validator fallback" \
 	"$SCRIPTS_DIR/rc-extract-verdict.sh" '[.]severity [|] oneof' exact
-check_severity_copy "rc-verify-evidence.sh dedup ranker" \
-	"$SCRIPTS_DIR/rc-verify-evidence.sh" 'def sevrank' exact
+check_severity_copy "jq/dedup-findings.jq dedup ranker" \
+	"$SCRIPTS_DIR/jq/dedup-findings.jq" 'def sevrank' exact
 check_severity_copy "rc-render-report.sh severity sections" \
 	"$SCRIPTS_DIR/rc-render-report.sh" '^[[:space:]]*for severity in ' exact
 check_severity_copy "rc-render-comment.sh severity loops" \
 	"$SCRIPTS_DIR/rc-render-comment.sh" '^[[:space:]]*for sev in ' exact
-check_severity_copy "rc-consolidate.sh cluster ranker" \
-	"$SCRIPTS_DIR/rc-consolidate.sh" 'def rank:' prefix
+check_severity_copy "jq/consolidate-clusters.jq cluster ranker" \
+	"$SCRIPTS_DIR/jq/consolidate-clusters.jq" 'def rank:' prefix
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

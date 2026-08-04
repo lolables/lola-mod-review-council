@@ -437,6 +437,47 @@ assert_tracking_line "$session_dir/tracking.md" "- Agents absent: divisor-testin
 	"spec mode names the -spec persona"
 rm -rf "$tmpdir" "$agentdir"
 
+echo "Test 24: the session manifest records the council that was dispatched"
+# Discovery happens once, in this script, and every later phase has had to
+# re-derive or assume it. The manifest writes it down so downstream steps can
+# tell "this agent returned nothing" from "this agent was never in the council"
+# — the two look identical from a verdicts/ glob, and only one is a problem.
+tmpdir=$(mktemp -d)
+agentdir=$(mktemp -d)
+partial_agents_dir "$agentdir" code adversary guard testing
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$agentdir" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_file_exists "$session_dir/session-manifest.json" "session-manifest.json written"
+assert_jq "$session_dir/session-manifest.json" '.mode' "code" "manifest records the mode"
+assert_jq "$session_dir/session-manifest.json" '.suffix' "code" "manifest records the suffix"
+assert_jq "$session_dir/session-manifest.json" '.agents | length' "3" "manifest lists the discovered agents"
+assert_jq "$session_dir/session-manifest.json" '[.agents[]] | join(",")' \
+	"divisor-adversary-code,divisor-guard-code,divisor-testing-code" \
+	"agents are named in full, in discovery order"
+assert_jq "$session_dir/session-manifest.json" '[.absent[]] | join(",")' \
+	"divisor-curator-code,divisor-sre-code" "manifest lists the absent personas"
+rm -rf "$tmpdir" "$agentdir"
+
+echo "Test 25: the session directory carries the verdicts/_meta split"
+# Pipeline state the orchestrator writes between phases belongs in _meta/, away
+# from anything that globs verdicts/ for agent verdicts (RC-4). Creating it here
+# means no phase has to, and none can put it somewhere else.
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+if [[ -d "$session_dir/verdicts/_meta" ]]; then
+	echo "  PASS: verdicts/_meta created with the session"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: verdicts/_meta not created"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$tmpdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

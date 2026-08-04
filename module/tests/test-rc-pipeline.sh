@@ -60,7 +60,8 @@ echo "Stage 3: consolidate cross-agent duplicates"
 # run. Copying it here — rather than pre-placing it in the fixture — is what
 # exercises the ordering: the manifest is present in verdicts/ for everything
 # downstream, including a re-run of verification.
-cp "$work/clusters.json" "$session/verdicts/clusters.json"
+mkdir -p "$session/verdicts/_meta"
+cp "$work/clusters.json" "$session/verdicts/_meta/clusters.json"
 before=$(jq '.verified | length' "$findings")
 result=$(bash "$S/rc-consolidate.sh" "$session")
 assert_json_field "$result" "status" "ok" "consolidation ok"

@@ -16,7 +16,7 @@ over this fixture in sequence: extract → verify → consolidate → render.
 | `repo/` | The review root. Every `evidence` quote below is copied verbatim from it, so the fixture cannot drift into citing text that does not exist. |
 | `outside/creds.env` | A readable file **outside** the review root, one level up — the target of the path-traversal finding. Placed as a sibling of `repo/` so the traversal is a fixed `../`, independent of how deep the temp directory is. |
 | `session/` | Session directory: `tracking.md` plus the four reviewers' raw output. |
-| `clusters.json` | The cross-agent consolidation manifest. In a real run the orchestrator writes this into `session/verdicts/` between verification and consolidation; the pipeline test copies it in at that point so the ordering is exercised, not assumed. |
+| `clusters.json` | The cross-agent consolidation manifest. In a real run the orchestrator writes this into `session/verdicts/_meta/` between verification and consolidation; the pipeline test copies it in at that point so the ordering is exercised, not assumed. `_meta/` is where phase state lives — `verdicts/` proper holds per-agent verdicts, and anything else landing there gets globbed as one (RC-4). |
 
 ## What each finding is here to exercise
 

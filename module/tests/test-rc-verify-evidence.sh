@@ -786,6 +786,53 @@ assert_jq "$s/verdicts/findings.json" \
 	"no self-credit recorded"
 rm -rf "$s" "$src"
 
+echo "Test 32: an agent in the manifest with no verdict is reported missing"
+# A dispatched reviewer that returns nothing currently looks exactly like a
+# reviewer that was never in the council: both are simply absent from the
+# verdicts/ glob. Only one of them is a hole in the review, and the report has
+# no way to say so. The manifest rc-prepare.sh writes is what tells them apart.
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+cat >"$s/session-manifest.json" <<'MJ'
+{"mode":"code","suffix":"code",
+ "agents":["divisor-adversary-code","divisor-guard-code","divisor-sre-code"],
+ "absent":[]}
+MJ
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "ok" "status still ok — a missing verdict is reported, not fatal"
+assert_jq_str "$result" '.missing_verdicts // [] | tojson' \
+	'["divisor-guard-code","divisor-sre-code"]' "both silent agents named"
+assert_jq "$s/verdicts/findings.json" '[.missing_verdicts[]] | join(",")' \
+	"divisor-guard-code,divisor-sre-code" "recorded in findings.json for the report"
+rm -rf "$s" "$src"
+
+echo "Test 33: a complete council reports no missing verdicts"
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+cat >"$s/session-manifest.json" <<'MJ'
+{"mode":"code","suffix":"code","agents":["divisor-adversary-code"],"absent":[]}
+MJ
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+assert_jq_str "$result" '.missing_verdicts // [] | tojson' '[]' "no agent reported missing"
+rm -rf "$s" "$src"
+
+echo "Test 34: with no manifest, nothing is claimed about missing verdicts"
+# Sessions built by hand, and any session predating the manifest, must not have
+# every agent reported missing just because the file is absent.
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "ok" "runs without a manifest"
+assert_jq_str "$result" '.missing_verdicts // [] | tojson' '[]' "no false accusation without a manifest"
+rm -rf "$s" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

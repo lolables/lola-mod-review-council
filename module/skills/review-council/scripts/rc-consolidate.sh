@@ -6,7 +6,7 @@ rc_trap_errors
 
 # rc-consolidate.sh <session_dir>
 # Applies the model-produced cross-agent consolidation manifest
-# (verdicts/clusters.json) to verdicts/findings.json. Merges each cluster's
+# (verdicts/_meta/clusters.json) to verdicts/findings.json. Merges each cluster's
 # members into a single primary finding (highest severity), folds secondary
 # angles into primary.provenance.consolidated_from, and updates
 # duplicates_consolidated (exact + semantic) and consolidation_records.
@@ -19,7 +19,11 @@ session_dir="${1:-}"
 }
 vdir="$session_dir/verdicts"
 findings="$vdir/findings.json"
-manifest="$vdir/clusters.json"
+# Pipeline state the orchestrator writes between phases lives in verdicts/_meta/,
+# never in verdicts/ proper — everything that discovers verdicts globs the latter,
+# and a phase artifact landing there is exactly RC-4 (clusters.json fed to jq as
+# an agent verdict, aborting the run).
+manifest="$vdir/_meta/clusters.json"
 [[ -f "$findings" ]] || {
 	json_output "nothing_to_do" "No findings.json found."
 	exit 0
@@ -34,42 +38,13 @@ if [[ "$cluster_count" -eq 0 ]]; then
 	exit 0
 fi
 
-result=$(jq --argjson clusters "$clusters" '
-	def rank: {"CRITICAL":5,"HIGH":4,"MEDIUM":3,"LOW":2,"INFO":1}[.] // 0;
-	def ident: {file:.file, line:.line, agent:.agent};
-	. as $root
-	| (reduce $clusters[] as $c (
-		{verified: ($root.verified // []), records: [], semantic: 0};
-		( [ $c.members[] as $m | .verified[]
-			| select(.file==$m.file and .line==$m.line and .agent==$m.agent) ] ) as $found
-		| if ($found | length) < 2 then .
-		  else
-			( $found | sort_by([ (.severity|rank), (.evidence|length), .agent ]) | last ) as $primary
-			| ( $found | map(select(ident != ($primary|ident))) ) as $secs
-			| ( $secs | map({agent, severity, angle:.description, recommendation}) ) as $folded
-			| ( if ($found | any(.verdict=="REQUEST CHANGES")) then "REQUEST CHANGES" else $primary.verdict end ) as $verdict
-			| ( $primary + {verdict:$verdict}
-				+ {provenance: (($primary.provenance // {})
-					+ {consolidated_from: (($primary.provenance.consolidated_from // []) + $folded)})} ) as $newprimary
-			| ( [ $secs[] | ident ] ) as $secids
-			# `any(f)` rebinds `.` to each element of its input, so a bare
-			# `ident` inside it would be evaluated against the $secids element
-			# rather than the finding being filtered — reducing the test to
-			# `secid == secid`, always true, which deletes every non-primary
-			# finding in the array. Capture the finding as $f at the boundary.
-			| .verified = ( [ .verified[] | . as $f
-				| if (($f|ident) == ($primary|ident)) then $newprimary
-				  elif ($secids | any(. == ($f|ident))) then empty
-				  else . end ] )
-			| .records += [ {primary: ($primary|ident), merged: $secids} ]
-			| .semantic += ($secs | length)
-		  end
-	)) as $acc
-	| $root
-		+ {verified: $acc.verified}
-		+ {duplicates_consolidated: (($root.duplicates_consolidated // 0) + $acc.semantic)}
-		+ {consolidation_records: (($root.consolidation_records // []) + $acc.records)}
-' "$findings")
+# The merge itself lives in jq/consolidate-clusters.jq — primary selection,
+# the fold into provenance.consolidated_from, the REQUEST-CHANGES-wins verdict
+# rule, and the jq scoping trap that once deleted every non-primary finding
+# (RC-1) are all documented there. It sits in a file rather than inline so
+# test-rc-jq-programs.sh can drive it from fixture JSON without building a
+# session first, which is the coverage gap that let RC-1 survive.
+result=$(jq --argjson clusters "$clusters" -f "$(dirname "$0")/jq/consolidate-clusters.jq" "$findings")
 
 echo "$result" >"$findings"
 sem=$(echo "$result" | jq '[.consolidation_records[].merged | length] | add // 0')

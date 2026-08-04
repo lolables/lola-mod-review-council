@@ -47,7 +47,8 @@ steps:
 
       bash "$SC/rc-extract-verdict.sh" "$W/session" >/dev/null 2>&1
       REVIEW_ROOT="$W/repo" bash "$SC/rc-verify-evidence.sh" "$W/session" >/dev/null 2>&1
-      cp "$W/clusters.json" "$W/session/verdicts/clusters.json"
+      mkdir -p "$W/session/verdicts/_meta"
+      cp "$W/clusters.json" "$W/session/verdicts/_meta/clusters.json"
       bash "$SC/rc-consolidate.sh" "$W/session" >/dev/null 2>&1
       echo "REQUEST CHANGES" > "$W/session/verdict.txt"
       bash "$SC/rc-render-report.sh" "$W/session" > "{{.input.out_report}}" 2>/dev/null

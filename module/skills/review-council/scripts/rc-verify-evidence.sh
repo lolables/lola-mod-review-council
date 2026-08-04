@@ -21,12 +21,15 @@ vdir="$session_dir/verdicts"
 	exit 0
 }
 
-# Gather agent JSON files. Allow-list by agent-name prefix rather than excluding
-# known artifacts: `verdicts/` also accumulates orchestrator-written files
-# (clusters.json from verify.md Step 3c, disposition.txt, verification.txt, ...),
-# and a deny-list has to grow every time a phase writes a new one — a miss feeds
-# a non-verdict file to jq and aborts the phase, which breaks the mid-run resume
-# SKILL.md Step 2 advertises. Reviewer agents are discovered as
+# Gather agent JSON files. Allow-list by agent-name prefix, and kept that way
+# even now that orchestrator-written state lives in verdicts/_meta/ rather than
+# beside the verdicts: the two defences answer different questions. The _meta
+# split stops a phase artifact being written where this glob looks; the
+# allow-list stops anything that lands here anyway from being parsed as a
+# verdict. RC-4 was clusters.json fed to jq as an agent verdict, which aborted
+# the phase and broke the mid-run resume SKILL.md Step 2 advertises — a
+# deny-list would have to grow every time a phase writes a new artifact, and one
+# miss is all it takes. Reviewer agents are discovered as
 # `divisor-*-{code,spec}.md`, so their verdict files are exactly `divisor-*.json`
 # (deep mode nests them one level under a subsystem directory; find still reaches
 # them).
@@ -37,6 +40,24 @@ while IFS= read -r -d '' f; do agent_files+=("$f"); done \
 	json_output "nothing_to_do" "No agent verdict JSON found."
 	exit 0
 }
+
+# Agents the session manifest says were dispatched, but which produced no
+# verdict file. Without this they are invisible: a reviewer that returned
+# nothing and a reviewer that was never in the council both show up as simply
+# absent from the glob above, and only one of them is a hole in the review.
+#
+# Reported, never fatal — a silent agent is a coverage gap for the report to
+# disclose, not a reason to discard the verdicts that did arrive. A session with
+# no manifest (hand-built, or predating it) claims nothing rather than accusing
+# every agent at once.
+missing_json='[]'
+manifest="$session_dir/session-manifest.json"
+if [[ -f "$manifest" ]]; then
+	found_json=$(printf '%s\n' "${agent_files[@]}" |
+		sed 's|.*/||; s|\.json$||' | sort -u | jq -R . | jq -s .)
+	missing_json=$(jq -n --slurpfile m "$manifest" --argjson found "$found_json" \
+		'[ $m[0].agents[]? | select(. as $a | ($found | index($a)) | not) ]')
+fi
 
 # Merge all findings into one array, tagging each with its agent and verdict.
 all=$(jq -s '
@@ -237,44 +258,14 @@ for ((i = 0; i < n; i++)); do
 	verified=$(echo "$verified" | jq --argjson o "$obj" '. + [$o + {status:"verified"}]')
 done
 
-# Dedup verified: same file, line within +-5 (or both null), same evidence.
-# On merge, keep the MOST SEVERE of the duplicates so a HIGH citing the same
-# line as a LOW is never silently downgraded (the survivor's other fields stay
-# from the first occurrence). Making the kept severity the max also makes the
-# result independent of agent/finding ordering.
-#
-# The loser is folded into the survivor's provenance.consolidated_from in the
-# shape rc-consolidate.sh writes, so the report's "Also flagged by" list covers
-# both paths. Two reviewers converging on one line is the same event whether
-# they quoted the same bytes (here) or were clustered as semantically equal
-# (there); crediting it in one path and dropping it in the other loses a
-# reviewer's angle with nothing recording that it was ever filed.
-#
-# Only a duplicate from a DIFFERENT agent is credited. The dedup key is file +
-# line + evidence and deliberately excludes the agent, so one reviewer listing
-# the same finding twice also merges here — and folding that would publish
-# "Also flagged by" naming the survivor's own author.
+# Dedup verified findings. The rules — the +-5 line window, max-severity on
+# merge, and crediting a cross-agent duplicate in provenance.consolidated_from —
+# live in jq/dedup-findings.jq, which documents each and is exercised directly
+# by test-rc-jq-programs.sh. It sits in a file rather than inline because this
+# reducer has already produced one silent-data-loss bug (RC-20) that no test
+# could reach without first building a whole session.
 before=$(echo "$verified" | jq 'length')
-verified=$(echo "$verified" | jq '
-	def sevrank(s): {"CRITICAL":4,"HIGH":3,"MEDIUM":2,"LOW":1}[s] // 0;
-	reduce .[] as $x ([];
-		( [ range(0; length) as $j | select(.[$j].file == $x.file and .[$j].evidence == $x.evidence and
-			((.[$j].line == null and $x.line == null) or
-			 (.[$j].line != null and $x.line != null and
-			  ((.[$j].line - $x.line | if . < 0 then -. else . end) <= 5)))) | $j ] | first) as $idx
-		| if $idx == null then . + [$x]
-		  else
-			( if $x.agent != .[$idx].agent
-			  then .[$idx].provenance.consolidated_from =
-				((.[$idx].provenance.consolidated_from // [])
-				 + [{agent: $x.agent, severity: $x.severity,
-				     angle: $x.description, recommendation: $x.recommendation}])
-			  else . end )
-			| ( if sevrank($x.severity) > sevrank(.[$idx].severity)
-			    then .[$idx].severity = $x.severity
-			    else . end )
-		  end)
-')
+verified=$(echo "$verified" | jq -f "$(dirname "$0")/jq/dedup-findings.jq")
 after=$(echo "$verified" | jq 'length')
 dedup=$((before - after))
 
@@ -301,15 +292,19 @@ jq -n \
 	--slurpfile stripped "$argdir/stripped.json" \
 	--argjson total "$n" \
 	--argjson dedup "$dedup" \
+	--argjson missing "$missing_json" \
 	--slurpfile vmap "$vdir/verdicts-map.json" \
 	'{verified:$verified[0], correctable:$correctable[0], stripped:$stripped[0],
-	  total_findings:$total, duplicates_consolidated:$dedup, verdicts:$vmap[0]}' \
+	  total_findings:$total, duplicates_consolidated:$dedup, verdicts:$vmap[0],
+	  missing_verdicts:$missing}' \
 	>"$vdir/findings.json"
 
 vc=$(echo "$verified" | jq 'length')
 cc=$(echo "$correctable" | jq 'length')
 sc=$(echo "$stripped" | jq 'length')
-payload=$(jq -n --argjson v "$vc" --argjson c "$cc" --argjson s "$sc" '{verified:$v, correctable:$c, stripped:$s}')
+payload=$(jq -n --argjson v "$vc" --argjson c "$cc" --argjson s "$sc" \
+	--argjson m "$missing_json" \
+	'{verified:$v, correctable:$c, stripped:$s, missing_verdicts:$m}')
 json_output "ok" "Evidence verification complete. $vc verified, $cc correctable, $sc stripped." \
 	"$payload"
 exit 0

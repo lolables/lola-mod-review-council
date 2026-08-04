@@ -112,13 +112,29 @@ assert_jq() {
 	assert_equals "$actual" "$3" "$4"
 }
 
-# Create an empty session directory with its verdicts/ subdirectory and print
-# the path. Callers own it and remove it.
+# As assert_jq, but over a JSON string rather than a file — for transforms whose
+# output is held in a variable instead of written to the session.
+#
+# Same reason for the intermediate assignment: a command substitution nested
+# inside another command has its exit status discarded (SC2312), so an erroring
+# jq would silently assert against the empty string rather than aborting.
+# Usage: assert_jq_str <json> <filter> <expected> <label>
+assert_jq_str() {
+	local actual
+	actual=$(jq -r "$2" <<<"$1")
+	assert_equals "$actual" "$3" "$4"
+}
+
+# Create an empty session directory with the verdicts/ and verdicts/_meta/
+# subdirectories rc-prepare.sh creates, and print the path. Callers own it and
+# remove it. The _meta split is mirrored here so a hand-built session matches a
+# real one: a suite that had to mkdir it itself would drift the moment the
+# layout changed.
 # Usage: s=$(new_session)
 new_session() {
 	local s
 	s=$(mktemp -d)
-	mkdir -p "$s/verdicts"
+	mkdir -p "$s/verdicts/_meta"
 	printf '%s' "$s"
 }
 
@@ -201,7 +217,7 @@ git_init_sandbox() {
 # missing/unparseable-host degrade path).
 make_review_session() {
 	local s="$1" forge="${2:-github}" pr="${3:-42}" origin="${4-https://github.example.com/acme/widgets.git}"
-	mkdir -p "$s/verdicts"
+	mkdir -p "$s/verdicts/_meta"
 	local repo="$s/checkout"
 	mkdir -p "$repo"
 	(

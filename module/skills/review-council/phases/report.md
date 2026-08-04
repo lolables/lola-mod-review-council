@@ -60,7 +60,7 @@ bug — fix `rc-render-report.sh` and its tests, do not hand-append the section.
 
 **Before generating any report content**, verify Verification phase actually executed:
 
-1. Read `${session_dir}/verdicts/verification.txt`.
+1. Read `${session_dir}/verdicts/_meta/verification.txt`.
 
 2. **If file does not exist or is empty**: STOP. Do not generate report. Return to Verification phase and execute it. Display:
    > "verification.txt is missing — the Verification phase was not executed. Returning to Phase 4."
@@ -325,7 +325,7 @@ Fills `<!-- DISPOSITION-OUTCOMES -->` — all three subsections below go into
 that one marker, in the order given.
 
 **When to include:** Only when the Disposition phase ran — check
-`${session_dir}/verdicts/disposition.txt` exists and its `Result:` line
+`${session_dir}/verdicts/_meta/disposition.txt` exists and its `Result:` line
 reads `ran`, not `skipped`. A first-time review never reaches Disposition
 (no `pr-conversation.txt` to act on — see `disposition.md` Step 1), so on a
 first-time report the marker line and its trailing blank line are deleted.

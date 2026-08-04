@@ -35,7 +35,9 @@ broken=0
 # check_mutation <label> <script> <sed-expr> <suite>
 #
 # <script> is relative to module/skills/review-council/scripts/, <suite> to
-# module/tests/. Anchor each expression tightly: a mutation that fails to apply
+# module/tests/. Preparation targets carry a lib/ prefix: rc-prepare.sh is an
+# entry point that sources six stages, and each defect lives in the stage that
+# owns that step. Anchor each expression tightly: a mutation that fails to apply
 # is reported as BROKEN rather than silently counted as caught, because "the
 # suite went red" means nothing if the code was never actually changed. A suite
 # that goes red without firing a single assertion is BROKEN for the same reason.
@@ -110,9 +112,9 @@ check_mutation() {
 # Consolidation deleted every finding except one cluster primary because a jq
 # `def` was evaluated against the wrong subject inside `any()`.
 check_mutation "RC-1  consolidation ident scoping" \
-	rc-consolidate.sh \
-	's/(\$f|ident)/(ident)/g' \
-	test-rc-consolidate.sh
+	jq/consolidate-clusters.jq \
+	's/(\$f | ident)/(ident)/g' \
+	test-rc-jq-programs.sh
 
 # Multi-line evidence was searched as N independent literals by `grep -F`.
 check_mutation "RC-2  contiguous evidence matching" \
@@ -174,7 +176,7 @@ check_mutation "RC-8  review-root containment" \
 
 # An unresolvable ref range reported "no changes to review".
 check_mutation "RC-10 ref range resolution" \
-	rc-prepare.sh \
+	lib/prepare-changes.sh \
 	's/^[[:space:]]*require_resolvable_range .*$/:/' \
 	test-rc-prepare-git-edges.sh
 
@@ -198,7 +200,7 @@ check_mutation "RC-12 remote .git suffix strip" \
 
 # The language tally counted every extension, so CI YAML outvoted the source.
 check_mutation "RC-13 language tally source filter" \
-	rc-prepare.sh \
+	lib/prepare-changes.sh \
 	's/^[[:space:]]*\*) continue ;;.*$/*) bucket="$ext" ;;/' \
 	test-rc-prepare-framework.sh
 
@@ -247,7 +249,7 @@ check_mutation "RC-18 tracking parse quoting" \
 # nothing, so a host missing half its council published a report whose Discovery
 # Summary claimed complete coverage.
 check_mutation "RC-19 absent persona roster" \
-	rc-prepare.sh \
+	lib/prepare-emit.sh \
 	's#^[[:space:]]*echo "- Agents absent: \${agents_absent_line}"$#\techo "- Agents absent: none"#' \
 	test-rc-prepare.sh
 
@@ -255,17 +257,32 @@ check_mutation "RC-19 absent persona roster" \
 # duplicate, so a second reviewer's angle vanished — while semantic
 # consolidation, describing the same event, preserved it in consolidated_from.
 check_mutation "RC-20 dedup credits the other agent" \
-	rc-verify-evidence.sh \
-	's#^[[:space:]]*( if \$x\.agent != \.\[\$idx\]\.agent$#\t\t\t( if false#' \
-	test-rc-verify-evidence.sh
+	jq/dedup-findings.jq \
+	's#^[[:space:]]*( if \$x\.agent != \.\[\$idx\]\.agent$#\t    ( if false#' \
+	test-rc-jq-programs.sh
 
 # --mode accepted any string and fell through to a `code` default, so `--mode
 # spec` — the natural typo, since the mode is called `spec` everywhere but the
 # flag — silently ran a code review under a mode the caller never asked for.
 check_mutation "RC-21 mode value validation" \
-	rc-prepare.sh \
+	lib/prepare-args.sh \
 	's/^\t\tcode | specs | auto) mode_override="\$2" ;;$/\t\t*) mode_override="$2" ;;/' \
 	test-rc-prepare-mode.sh
+
+# A dispatched reviewer that returned nothing was indistinguishable from one
+# that was never in the council: both are simply absent from the verdicts glob.
+# Reporting the empty list is the shipped state before the manifest diff.
+check_mutation "RC-22 missing verdict detection" \
+	rc-verify-evidence.sh \
+	's|^if \[\[ -f "\$manifest" \]\]; then$|if false; then|' \
+	test-rc-verify-evidence.sh
+
+# Pipeline state written beside the verdicts rather than under _meta/ is how
+# RC-4 happened: clusters.json parsed as an agent verdict, aborting the phase.
+check_mutation "RC-23 phase state kept out of verdicts/" \
+	rc-consolidate.sh \
+	's|^manifest="\$vdir/_meta/clusters.json"$|manifest="$vdir/clusters.json"|' \
+	test-rc-consolidate.sh
 
 total=$((caught + missed + broken))
 echo ""

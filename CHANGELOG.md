@@ -151,6 +151,62 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- `rc-prepare.sh` split from 1,498 lines into a 48-line entry point plus six
+  stages under `scripts/lib/`, sourced in execution order: `prepare-args.sh`
+  (flags and scope), `prepare-repo.sh` (git, forge, tooling, base, session dir),
+  `prepare-target.sh` (PR metadata, materialization, mode, agent discovery),
+  `prepare-changes.sh` (changeset, language, constitution), `prepare-context.sh`
+  (issues, prior reviews) and `prepare-emit.sh` (metadata, tracking, CI, JSON).
+  No logic changed: the concatenated stages are byte-identical to the original
+  body, the sections keep their source order — Section 16 still runs after
+  Section 15 has written `tracking.md` — and because `source` runs in the same
+  shell, globals still flow between stages and an `exit` on a skip path still
+  ends the whole program. The suite is the proof: the same 769 assertions pass,
+  unchanged. Each stage restates `set -uo pipefail` (a runtime no-op, since the
+  entry point sets it before sourcing) and waives `SC2154`/`SC2034`, which are
+  the artifacts of linting a fragment standalone — reading globals a predecessor
+  set, and setting globals a successor reads. Standalone linting is kept rather
+  than relying on `shellcheck -x` through the entry point, because `-x` resolves
+  variables from a sourced file but reports no findings inside it; excluding the
+  stages would have left them entirely unchecked
+- **BREAKING (session layout)**: pipeline state the orchestrator writes between
+  phases — `clusters.json`, `verification.txt`, `disposition.txt` — now lives in
+  `${session_dir}/verdicts/_meta/` rather than beside the verdicts.
+  `rc-prepare.sh` creates `_meta/` with the session, so it always exists.
+  `verdicts/` proper holds per-agent verdict artifacts and the derived
+  `findings.json`; every step that discovers verdicts globs it, and a phase
+  artifact landing there is exactly RC-4 — `clusters.json` parsed as an agent
+  verdict, aborting the phase and breaking the mid-run resume. The `divisor-*`
+  allow-list stays as the second line: the split stops an artifact being written
+  where the glob looks, the allow-list stops anything that lands there anyway
+  from being read as a verdict. A session in flight when this lands will not
+  resume; sessions are per-run cache directories, so start a new review
+- `session-manifest.json` at the session root records the council actually
+  dispatched — mode, suffix, discovered agents, absent personas. Its consumer is
+  `rc-verify-evidence.sh`, which diffs it against the verdict files that arrived
+  and reports the difference as `missing_verdicts`, in both its JSON output and
+  `findings.json`. A dispatched reviewer that returned nothing was previously
+  indistinguishable from one that was never in the council: both are simply
+  absent from a `verdicts/` glob, and only one is a hole in the review's
+  coverage. Reported, never fatal, and a session with no manifest claims nothing
+  rather than accusing every agent at once. `verify.md` requires the disclosure
+  to reach `verification.txt` and the report narrative — the per-agent verdict
+  table is built from the verdicts that arrived, so a silent agent has no row
+  rather than a visibly empty one
+- The two load-bearing jq reducers moved out of their shell wrappers into
+  `scripts/jq/consolidate-clusters.jq` and `scripts/jq/dedup-findings.jq`,
+  invoked with `jq -f`. Behaviour is unchanged; what changes is reachability.
+  Each has already produced one silent-data-loss defect — RC-1 deleted every
+  finding outside the cluster being reduced, RC-20 dropped a second reviewer's
+  angle on an exact duplicate — and both survived as long as they did because
+  exercising them meant building a session directory and running a shell script
+  over it. As files they are pure functions from JSON to JSON, and
+  `test-rc-jq-programs.sh` drives them straight from fixture documents: the
+  `+-5` line window, order-independent max severity, unknown severities ranking
+  below every real one, REQUEST-CHANGES-wins on a merged cluster, and the
+  single-member cluster no-op are each now one assertion rather than a session
+  fixture. The RC-1 and RC-20 mutations were repointed at the new files, so
+  both defects stay guarded from the shorter path
 - **BREAKING**: Reviewer agents now emit a single fenced ```json verdict
   block (`{agent, files_read, verdict, findings: [...]}`) instead of
   markdown `### [SEVERITY]` finding blocks. Custom `divisor-*` reviewer

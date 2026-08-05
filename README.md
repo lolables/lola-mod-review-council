@@ -180,6 +180,116 @@ so reviewers read real files instead of only the diff. Your working tree is
 never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
 (default 10) repositories.
 
+### Reviewing a whole repository at once
+
+`scripts/review-open-prs.sh` points the council at every open PR in a repository
+rather than one at a time. It is an operator tool you run yourself — the module
+does not ship it and no phase of the pipeline calls it. It needs `gh`
+(authenticated), `jq`, and one of the two agent CLIs the council is installed
+for: `claude` or `opencode`.
+
+Nothing runs and nothing is posted until you pass `--run`, so start by reading
+the plan:
+
+```
+$ ./scripts/review-open-prs.sh --repo ovh/venom
+Repository: ovh/venom
+Agent CLI: claude
+Unreviewed: 929 927 924 920 917 914
+Re-review (new commits): (none)
+Skipped (already reviewed at head, unchanged): (none)
+Queue (6): 929[quick] 927[quick] 924[quick] 920[quick] 917[standard] 914[standard]
+
+DRY RUN — nothing will be executed or posted. Re-run with --run to execute.
+
+PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/929\ ...
+```
+
+**Queue order.** PRs with no prior council comment go first, then PRs whose last
+review was for an older commit. A PR already reviewed at its current head is
+skipped; `--force` queues it anyway. Both facts come from the hidden marker the
+council embeds in every comment it posts (see "Posting the verdict to a PR"). A
+failed lookup queues the PR rather than skipping it, so a flaky API call costs
+you a redundant review instead of a silently missed one.
+
+**The word in brackets** is the effort tier, classified from each PR's GitHub
+metadata so a lockfile bump does not pay for a full deep review. In the run
+above, four bot PRs were small enough to earn `quick` and two were not. `deep`
+is forced by size or by a changed path that looks security-sensitive;
+`standard` passes no effort word at all, leaving the council on its own default.
+`--effort <tier>` overrides the classifier for the whole batch.
+
+| Variable          | Default | Effect                                                  |
+|-------------------|---------|---------------------------------------------------------|
+| `DEEP_FILES`      | 10      | changed files at or above this force `deep`             |
+| `QUICK_FILES`     | 2       | bot PRs at or below this many files get `quick`         |
+| `SECURITY_PATHS`  | see `--help` | extended-regex; any matching changed path forces `deep` |
+| `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
+| `EXTRA_CLAUDE_ARGS` | unset | appended to every `claude` invocation, e.g. `--model opus` |
+| `EXTRA_OPENCODE_ARGS` | unset | appended to every `opencode` invocation                |
+
+`opencode run` has no budget flag to translate `MAX_BUDGET_USD` into, so setting
+both it and an opencode run is an error. Ignoring the cap would run the whole
+batch uncapped on the strength of a setting asking for the opposite, and you
+would find out on the invoice.
+
+**Which CLI runs the council.** `claude` is preferred when both are installed;
+otherwise whichever is on `PATH` is used, and `--cli claude|opencode` picks one
+explicitly. A `--cli` that is not installed is an error rather than a silent
+fallback — the two hosts do not reach the same models or cost the same. They
+take the command by the route each provides for it, so the argument string is
+identical and only the wrapper differs:
+
+```
+PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/929\ ...
+PR #929 -> opencode run --command review-council --auto quick\ https://github.com/ovh/venom/pull/929\ ...
+```
+
+**`--run` asks before it edits anything.** Every review ends in a public comment
+on somebody's pull request, posted by the account `gh` is authenticated with, so
+`--run` describes the damage and waits for you to type `yes` against the queue it
+just printed:
+
+```
+$ ./scripts/review-open-prs.sh --repo ovh/venom --run
+...
+Queue (6): 929[quick] 927[quick] 924[quick] 920[quick] 917[standard] 914[standard]
+
+WARNING: this makes visible edits on GitHub.
+
+Reviewing 6 pull request(s) in ovh/venom, each handed to claude
+with permissions bypassed:
+
+  --permission-mode bypassPermissions
+
+and a prompt telling the council to post its verdict without asking. Expect a
+public review comment on every PR in the queue above, authored by the account
+gh is authenticated with, plus the API spend of each review.
+
+Re-run without --run to see the plan alone, or with --yes to skip this prompt.
+Type "yes" to proceed:
+```
+
+Anything but `yes` aborts, and so does having no answer to give — under `cron`,
+with `</dev/null`, or on a closed pipe. `--yes` (alias `--no-confirm`) gives that
+consent up front for an unattended run. It is deliberately separate from
+`--force`, which only decides whether unchanged PRs get queued: forcing a
+re-review is not the same act as agreeing to publish one.
+
+With `--run`, PRs are reviewed one at a time, each transcript tee'd to
+`./.review-council-logs/<owner>-<repo>-pr-<n>.log`. A PR whose review exits
+non-zero is recorded and the batch continues; the script exits 1 at the end and
+names every PR that failed.
+
+```
+./scripts/review-open-prs.sh --help                 # full reference
+./scripts/review-open-prs.sh --run                  # current repo, every PR that needs it
+./scripts/review-open-prs.sh 123 --run              # one PR
+./scripts/review-open-prs.sh --run --yes            # unattended, no confirmation
+./scripts/review-open-prs.sh --cli opencode --run   # review through opencode
+./scripts/review-open-prs.sh --force --effort deep --run
+```
+
 ## How It Works
 
 The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates six phases

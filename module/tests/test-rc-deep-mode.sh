@@ -3,8 +3,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXTRACT="$SCRIPT_DIR/../skills/review-council/scripts/rc-extract-verdict.sh"
 VERIFY="$SCRIPT_DIR/../skills/review-council/scripts/rc-verify-evidence.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Regression guard: --effort deep writes reviewer output to nested
 # verdicts/{subsystem}/{agent}.raw.md (see phases/delegate.md). The JSON

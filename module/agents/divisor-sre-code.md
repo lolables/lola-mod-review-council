@@ -145,7 +145,6 @@ When project has generated assets (lockfiles, compiled outputs, bundled artifact
 |-------------------------------------------------------------------------------|----------|
 | Release pipeline broken (builds fail, artifacts missing)                      | CRITICAL |
 | Destructive operation without confirmation or undo                            | CRITICAL |
-| Hardcoded secret path or credential file reference                            | HIGH     |
 | Missing CI job for critical-path local automation (test suite, release build) | HIGH     |
 | Dependency with incompatible license in non-copyleft project                  | HIGH     |
 | Generated asset out of sync with source (lockfile drift, stale protobuf)      | HIGH     |

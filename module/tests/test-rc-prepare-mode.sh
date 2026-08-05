@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Regression: explicit --mode on a PR/url scope must still capture the PR
 # changeset. The PR diff fetch used to live only inside the mode auto-detect
@@ -122,6 +122,94 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$work" "$bindir"
+
+echo ""
+echo "Test 4: spec mode honours a secondary --scope paths filter over --scope all"
+# Regression: the secondary path filter binds tighter than the base scope. The
+# spec-location sweep used to be tested first, so `--scope all --scope paths`
+# swept specs/ and docs/ and never looked at the directories the user named.
+work=$(mktemp -d)
+(
+	cd "$work" || exit 1
+	git_init_sandbox
+	git checkout -q -b main
+	mkdir -p specs docs/design mymod
+	echo "# Default-location spec" >specs/ignored.md
+	echo "# Default-location design" >docs/design/ignored.md
+	echo "# Requested spec" >mymod/wanted.md
+	git add specs docs mymod
+	git commit -qm init
+)
+result=$(cd "$work" && AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode specs --scope all --scope paths --scope-value "mymod/" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(echo "$result" | jq -r '.session_dir // empty')
+if [[ -n "$sess" ]] && grep -q '^mymod/wanted.md$' "$sess/changeset.txt" 2>/dev/null; then
+	echo "  PASS: changeset.txt contains the requested path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: changeset.txt missing mymod/wanted.md"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -n "$sess" ]] && grep -qE '^(specs|docs/design)/' "$sess/changeset.txt" 2>/dev/null; then
+	echo "  FAIL: changeset.txt still holds default spec locations the filter excluded"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: changeset.txt excludes the default spec locations"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$work"
+
+echo "Test 5: an unrecognised --mode value is refused, not silently run as code"
+# --mode accepted any string and fell through to code. The accepted token is
+# `specs`, but the mode is called `spec` everywhere else — in --help's output
+# field, in the JSON `mode` field, in the divisor-*-spec.md filenames — so
+# `--mode spec` is the natural typo, and it silently ran a CODE review: wrong
+# personas, wrong changeset default, and a report that names a mode the caller
+# never asked for. --effort has rejected its junk values from the start; this
+# closes the same hole on the flag where the wrong value is most guessable.
+work=$(mktemp -d)
+cd "$work"
+# Built inline rather than with setup_repo: all three documented modes have to
+# resolve against the same repo. The spec artifact is committed on main BEFORE
+# the topic branch exists, so it is in feature-head's tree — spec mode scopes to
+# all project files and reports `empty` without one. The topic branch changes
+# only a.go, so base...HEAD stays code-only and auto-detect still yields code.
+git_init_sandbox
+git checkout -q -b main
+echo "package main" >a.go
+mkdir -p specs && echo "# Feature spec" >specs/feature.md
+git add a.go specs/feature.md
+git commit -qm init
+git checkout -q -b feature-head
+echo "// change" >>a.go
+git commit -qam change
+for bad in spec Code SPECS code-review banana ""; do
+	result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode "$bad" 2>/dev/null)
+	status=$(jq -r '.status // "none"' <<<"$result")
+	assert_equals "$status" "skip" "--mode '$bad' is refused"
+	msg=$(jq -r '.message // ""' <<<"$result")
+	if grep -qF -- "code, specs, auto" <<<"$msg"; then
+		echo "  PASS: --mode '$bad' names the valid values"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: --mode '$bad' message does not name the valid values: $msg"
+		FAIL=$((FAIL + 1))
+	fi
+done
+
+# The three documented values must still work, in both directions.
+for good in code:code specs:spec auto:code; do
+	result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode "${good%%:*}" 2>/dev/null)
+	# Assigned before asserting, not nested inside the call: a command
+	# substitution inside another command has its exit status discarded, so a
+	# jq that errored would silently assert against the empty string.
+	status=$(jq -r '.status // "none"' <<<"$result")
+	resolved=$(jq -r '.mode // "none"' <<<"$result")
+	assert_equals "$status" "ok" "--mode ${good%%:*} is accepted"
+	assert_equals "$resolved" "${good##*:}" "--mode ${good%%:*} resolves to ${good##*:}"
+done
+rm -rf "$work"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

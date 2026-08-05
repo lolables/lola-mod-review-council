@@ -1,9 +1,14 @@
 # Taskfile.yml — Review Council project automation
-version: "3"
+version: '3'
 
 includes:
   lola-eval:
     taskfile: .taskfiles/lola-eval.yml
+  test:
+    taskfile: .taskfiles/test.yml
+
+vars:
+  TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
 
 tasks:
   default:
@@ -11,37 +16,42 @@ tasks:
     cmd: |
       task --list 2>/dev/null
 
+  doctor:
+    desc: Check every prerequisite is installed and reachable on PATH
+    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/doctor.sh"
+
   test:
-    desc: Run module tests
-    env:
-      GIT_CONFIG_NOSYSTEM: "1"
-      GIT_CONFIG_GLOBAL: /dev/null
-      GIT_AUTHOR_NAME: Test
-      GIT_AUTHOR_EMAIL: test@test.local
-      GIT_COMMITTER_NAME: Test
-      GIT_COMMITTER_EMAIL: test@test.local
+    desc: Alias for test:unit — run the module unit suites
     cmds:
-      - bash module/tests/test-rc-prepare.sh
-      - bash module/tests/test-rc-verify-evidence.sh
-      - bash module/tests/test-consolidation-schema.sh
-      - bash module/tests/test-rc-consolidate.sh
-      - bash module/tests/test-rc-render-report.sh
-      - bash module/tests/test-rc-lib.sh
-      - bash module/tests/test-rc-clone-target.sh
-      - bash module/tests/test-rc-render-comment.sh
-      - bash module/tests/test-rc-post-comment.sh
-      - bash module/tests/test-rc-post-comment-github.sh
-      - bash module/tests/test-rc-prepare-clone.sh
-      - bash module/tests/test-rc-prepare-owner.sh
-      - bash module/tests/test-rc-prepare-mode.sh
-      - bash module/tests/test-rc-prepare-conversation.sh
-      - bash module/tests/test-rc-prepare-session.sh
-      - bash module/tests/test-rc-prepare-framework.sh
-      - bash module/tests/test-verdict-schema.sh
-      - bash module/tests/test-rc-extract-verdict.sh
-      - bash module/tests/test-rc-deep-mode.sh
-      - bash module/tests/test-rc-path-anchoring.sh
-      - bash module/tests/test-rc-dispatch-gate.sh
-      - bash module/tests/test-rc-doc-guards.sh
-      - bash module/tests/test-rc-state-vocab.sh
-      - bash module/tests/test-rc-portability.sh
+      - task: test:unit
+
+  lint:
+    desc: Run shellcheck and shfmt over every shell source
+    preconditions:
+      - sh: command -v shellcheck
+        msg: "shellcheck not found — dnf install ShellCheck | brew install shellcheck"
+      - sh: command -v shfmt
+        msg: "shfmt not found — go install mvdan.cc/sh/v3/cmd/shfmt@latest"
+    cmds:
+      # --enable=all turns on the optional checks (SC2310/SC2312 masking,
+      # quoting strictness); -S info fails on notes, not just warnings.
+      - find module .taskfiles/scripts -name '*.sh' -print0 | xargs -0 shellcheck -x --enable=all -S info
+      - shfmt -d module .taskfiles/scripts
+
+  fmt:
+    desc: Rewrite every shell source in canonical shfmt style
+    preconditions:
+      - sh: command -v shfmt
+        msg: "shfmt not found — go install mvdan.cc/sh/v3/cmd/shfmt@latest"
+    cmd: shfmt -w module .taskfiles/scripts
+
+  check:
+    desc: Run all quality gates — lint plus the full test matrix
+    cmds:
+      - task: lint
+      - task: test:all
+
+  clean:
+    desc: Remove test output and task cache
+    cmds:
+      - rm -rf "{{.TEST_DIR}}" .task

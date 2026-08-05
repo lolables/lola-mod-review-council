@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-post-comment.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # The router reads Forge from tracking.md and dispatches to
 # rc-post-comment-<forge>.sh (passing args through), else runs the renderer

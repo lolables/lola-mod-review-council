@@ -61,8 +61,9 @@ Apply each review criterion below. For every potential finding:
 1. Quote specific spec passage as evidence
 2. Explain what security property is left unprotected
 3. For completeness gaps: cite which OWASP Top 10 category or ASVS requirement is unaddressed
-4. Determine severity using calibration table
-5. Write finding in reviewer-protocol.md output format
+4. For injection findings: trace the spec's own data flow. Cite the passage that admits the untrusted input, the passage that describes the query or command it reaches, and show that no passage between them requires parameterization, escaping, or an allowlist. A spec that merely mentions a query is not a finding — the path from untrusted source to sink must be readable in the spec text.
+5. Determine severity using calibration table
+6. Write finding in reviewer-protocol.md output format
 
 ### Phase 3 -- Self-Check
 
@@ -97,15 +98,17 @@ Specs contradict each other on security requirements, failure mode handling, or 
 
 ## Severity Calibration
 
-| Condition                                               | Severity |
-|---------------------------------------------------------|----------|
-| No authn/authz requirements for user-facing component   | HIGH     |
-| Trust boundary undefined or inconsistent                | HIGH     |
-| Security requirement too vague to implement correctly   | HIGH     |
-| Data protection requirements missing for sensitive data | MEDIUM   |
-| Dependency failure modes undocumented (fail-open risk)  | MEDIUM   |
-| Specs contradict each other on security properties      | MEDIUM   |
-| Environment assumptions not explicit                    | LOW      |
+| Condition                                                                                                     | Severity |
+|---------------------------------------------------------------------------------------------------------------|----------|
+| Secret, API key, or token literal embedded in spec text (CWE-798)                                             | CRITICAL |
+| Spec's own data flow puts untrusted input in a query or command with no escaping requirement (CWE-89, CWE-78) | CRITICAL |
+| No authn/authz requirements for user-facing component                                                         | HIGH     |
+| Trust boundary undefined or inconsistent                                                                      | HIGH     |
+| Security requirement too vague to implement correctly                                                         | HIGH     |
+| Data protection requirements missing for sensitive data                                                       | MEDIUM   |
+| Dependency failure modes undocumented (fail-open risk)                                                        | MEDIUM   |
+| Specs contradict each other on security properties                                                            | MEDIUM   |
+| Environment assumptions not explicit                                                                          | LOW      |
 
 ## Out of Scope
 
@@ -137,6 +140,7 @@ All mean: go back to Phase 1 and re-read specs.
 | "Security requirements will be added in later phase"  | Later phases inherit spec's security model. If missing now, downstream implementations build on insecure foundation.                                                                |
 | "Spec says 'handle securely' -- that covers it"       | 'Securely' has no implementation definition. Testable spec says 'encrypt at rest with AES-256' or 'reject input exceeding 1MB.' LLM reading 'handle securely' will implement no-op. |
 | "Trust boundaries are obvious from component diagram" | LLMs cannot infer trust boundaries from diagrams. Every boundary must be stated in prose with explicit rules about what data crosses it and how it is validated.                    |
+| "That key in the spec is probably fake or rotated"    | No network access here, so liveness is not the bar. A credential-shaped literal is a finding; only an explicit placeholder (`<YOUR_API_KEY>`, `example.com`) is exempt.             |
 
 ## Output
 

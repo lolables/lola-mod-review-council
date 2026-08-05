@@ -127,6 +127,15 @@ About intent preservation at spec level — established patterns in spec authori
 
 **Scope boundary**: Check that spec-level patterns are preserved and shared concepts are consistent. Do NOT enforce template formatting (heading order, frontmatter fields) — belongs to convention packs.
 
+### 9. External Standard Verification
+
+When a spec, plan, or design doc cites an external standard (OSPS Baseline, NIST, CIS, OpenSSF, RFC, etc.) as justification for a requirement, acceptance criterion, or design decision, treat the citation as a claim to verify, not a settled fact.
+
+- **Do not trust the paraphrase**: The author's reading of a standard may be reasonable but incomplete. Check the requirement against the standard's actual language, not the spec's restatement of it.
+- **Verify against an available copy**: Network access is not permitted, so verify against a vendored, cached, or in-repo copy of the standard, or the standard text carried in the changeset, when one exists. When no source is available to check against, do NOT rubber-stamp — flag the compliance claim as unverified so a human can confirm it.
+- **Letter vs. spirit**: Flag requirements that claim conformance while specifying only the minimum threshold of a MUST/SHOULD requirement, omitting the content it recommends.
+- **Linked/upstream resources in scope**: Broken links, placeholder content (e.g. `example.com` contacts), and stale references in the reviewed specs are findings.
+
 ## Severity Calibration
 
 | Condition                                                        | Severity |

@@ -87,10 +87,15 @@ The eval harness lives in `.lola-eval/` and uses `lola-eval` with custom provide
 
 ### Prerequisites
 
-The scripts need Bash 4+, [`jq`](https://jqlang.github.io/jq/), and GNU
-`timeout` (from coreutils), which bounds every forge call so a hung `gh` or
-`git` cannot stall a review. If any is missing the scripts report it and skip
-rather than misbehave.
+Every script needs Bash 4+ and [`jq`](https://jqlang.github.io/jq/). If either
+is missing the scripts report it and skip rather than misbehave.
+
+GNU `timeout` (from coreutils) is needed only by the three scripts that call a
+forge — session preparation, target cloning, and comment posting — where it
+bounds every call so a hung `gh` or `git` cannot stall a review. The rest of the
+pipeline, including evidence verification and report rendering, runs without it.
+Install it anyway if you review pull requests; skip it only if you never leave
+the local-diff path.
 
 macOS ships none of the three: its Bash is 3.2, and there is no `timeout` at
 all. Homebrew installs GNU tools under a `g` prefix, so `coreutils` provides
@@ -116,22 +121,14 @@ Clone and copy the module directory into your project's AI tool configuration:
 ```bash
 git clone https://github.com/lolables/lola-mod-review-council.git
 # For Claude Code:
+mkdir -p .claude/agents .claude/skills
 cp lola-mod-review-council/module/agents/divisor-*.md .claude/agents/
 cp -r lola-mod-review-council/module/skills/review-council/ .claude/skills/review-council/
 ```
 
-Convention references are required — all reviewer agents depend on `reviewer-protocol.md`. Copy them to your user or project
-references directory:
-
-```bash
-# User-level (applies to all projects):
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs"
-cp lola-mod-review-council/module/references/*.md "${XDG_CONFIG_HOME:-$HOME/.config}/review-council/packs/"
-
-# Or project-level (applies to this repo only):
-mkdir -p .review-council/packs
-cp lola-mod-review-council/module/references/*.md .review-council/packs/
-```
+The convention packs ship inside the skill directory, so the copy above installs them — including
+`reviewer-protocol.md`, which every reviewer agent depends on. To override a shipped pack or add your own, see
+Customization under Convention Packs.
 
 Adjust agent and skill paths for your AI tool (`.cursor/`, `.gemini/`, etc.).
 
@@ -287,29 +284,60 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `changeset.txt` — reviewed file list
 - `diff.patch` — full patch (code review)
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
-  canonical `findings.json` (verified/correctable/stripped findings plus the per-agent verdict map), the
-  verification log (`verification.txt`), and, on a re-review, `disposition.txt` (the untrusted-conversation
-  triage audit trail)
+  canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
+- `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
+  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), and, on a re-review,
+  `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render
+  without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
+
+The newest `REVIEW_COUNCIL_SESSION_CACHE_MAX` sessions per project are kept (default 20); older ones are evicted on
+the next run, the same way clones are capped. Runs that produce nothing are capped too — the session directory is
+created before the changeset scan decides whether there is anything to review, so a no-op review still leaves one
+behind. The session a run is currently using is never evicted, whatever the cap.
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
 and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
 is added too — untrusted replies posted since that marker, GitHub only for now.
+
+### What spec mode reviews
+
+`/review-council specs` scans a fixed set of directories for spec files rather than sweeping the whole tree:
+
+```
+specs/  docs/specs/  docs/specification/  docs/design/  docs/superpowers/
+docs/rfcs/  docs/adr/  rfcs/  adr/  design/
+```
+
+Files count as specs when they end in `.md`, `.mdx`, `.markdown`, `.txt`, `.rst` or `.adoc`.
+
+Bare `docs/` is deliberately not on the list — most projects keep tutorials, blog posts and release notes there
+alongside anything spec-shaped, and scanning all of it turns a spec review into a review of the whole site.
+
+Two escape hatches when your layout differs:
+
+```bash
+/review-council specs docs/architecture/     # one run, explicit path
+REVIEW_COUNCIL_SPEC_DIRS="architecture rfc"  # every run, space or comma separated
+REVIEW_COUNCIL_SPEC_EXTS="md typ"            # every run, extensions without the dot
+```
+
+When nothing matches, the council tells you which directories it searched rather than only that it found nothing.
 
 ## Convention Packs
 
 Convention packs define coding and documentation standards that reviewer agents check against. The module ships with
 these packs:
 
-| Pack                   | Type       | Contents                                        |
-|------------------------|------------|-------------------------------------------------|
-| `severity.md`          | Any        | Shared severity level definitions               |
-| `base.md`              | Any        | Language-agnostic coding conventions (fallback) |
-| `lang-go.md`           | Go         | Self-contained Go conventions                   |
-| `lang-typescript.md`   | TypeScript | Self-contained TypeScript conventions           |
-| `fw-react.md`          | React      | React framework conventions (additive)          |
-| `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format    |
-| `model-guidance.md`    | Any        | Model selection guidance and eval data          |
+| Pack                   | Type       | Contents                                           |
+|------------------------|------------|----------------------------------------------------|
+| `severity.md`          | Any        | Shared severity level definitions                  |
+| `base.md`              | Any        | Ships empty; anchor for project-level custom rules |
+| `lang-go.md`           | Go         | Self-contained Go conventions                      |
+| `lang-typescript.md`   | TypeScript | Self-contained TypeScript conventions              |
+| `fw-react.md`          | React      | React framework conventions (additive)             |
+| `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format       |
+| `model-guidance.md`    | Any        | Model selection guidance and eval data             |
 
 Pack filenames encode their type: `lang-{language}.md` for standalone language packs, `fw-{framework}.md` for
 additive framework packs that load alongside the language pack.
@@ -385,11 +413,48 @@ Zero matches means the module is clean.
 `.claude/agents/` for Claude Code). Run `ls .claude/agents/divisor-*` to confirm. If using a different AI tool, check
 its equivalent agents directory.
 
-**`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. Ensure you copied all files from
-`module/references/` — not just language-specific packs.
+**`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. It ships in the skill's `references/`
+directory. Run `ls .claude/skills/review-council/references/` to confirm the whole directory was copied — every pack,
+not just the language-specific ones.
 
 **Curator cannot file issues**: Install and authenticate the `gh` CLI: `gh auth login`. Without authentication, the
 Curator reports documentation gaps as findings instead of filing GitHub issues.
+
+## Development
+
+`task check` runs every quality gate. The test suite has four layers — unit,
+end-to-end, degraded-mode, and mutation — each catching a class the others
+cannot. See [docs/dev/testing.md](docs/dev/testing.md) for what each layer is
+for and how to write a test that actually tests something.
+
+```
+task doctor          # check prerequisites are installed and reachable
+task test            # unit suites
+task test:e2e        # end-to-end pipeline (Venom)
+task test:degraded   # once per optional tool missing from PATH
+task test:mutate     # reintroduce fixed defects, confirm they are caught
+task check           # lint + all of the above
+```
+
+### Development setup (macOS)
+
+The repo-root [`Brewfile`](Brewfile) is the source of truth for the macOS
+prerequisite set, and the macOS CI leg installs from that same file — so a
+laptop and a CI run get identical formulae.
+
+```bash
+brew bundle   # bash, jq, coreutils
+task doctor   # confirm each one is what PATH actually resolves to
+```
+
+`task doctor` is the half that catches real problems: installing a formula is
+not the same as its binary winning on PATH. It reports which `bash` it found
+and where, since macOS keeps a 3.2 in `/bin` that happily shadows Homebrew's.
+
+It also warns if coreutils' `libexec/gnubin` is on your `PATH`. Homebrew leaves
+those GNU tools `g`-prefixed deliberately; putting the unprefixed directory on
+`PATH` shadows the BSD tools macOS ships, so a GNU-only construct passes
+locally and then breaks on a stock Mac. The `Brewfile` explains this at length.
 
 ## License
 

@@ -1,5 +1,11 @@
 # Trivy configuration
 # https://aquasecurity.github.io/trivy/latest/docs/references/configuration/config-file/
+#
+# This file OVERRIDES the shared .mega-linter.d/trivy.yaml template. The runner
+# stages a shared sub-config only when the repo has no file of the same name,
+# so this is a wholesale replacement, not a merge. Every entry the template
+# carries — .cache and megalinter-reports — must be repeated here or it is
+# silently lost.
 
 scan:
   # .lola-eval/ contains eval test fixtures with deliberately planted security
@@ -10,6 +16,12 @@ scan:
   # gitignored and not this repository's source — any edit here is destroyed on
   # the next update, so scanning it only produces findings we cannot action.
   # Vulnerabilities it reports must be fixed in the upstream module instead.
+  # .cache/ (build caches) and megalinter-reports/ (MegaLinter's own output
+  # folder) come from the shared template. Both are regenerated and gitignored,
+  # but trivy runs with cli_lint_mode: project and walks the tree itself, so
+  # IGNORE_GITIGNORED_FILES does not reach them.
   skip-dirs:
     - ".lola-eval"
     - ".lola"
+    - ".cache"
+    - "megalinter-reports"

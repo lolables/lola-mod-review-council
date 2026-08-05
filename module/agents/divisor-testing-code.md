@@ -90,7 +90,9 @@ Do NOT evaluate whether production code is secure — Adversary's domain. Cross-
 - Error messages validated when error behavior is part of contract
 - Assertions direct and explicit, not hidden behind abstraction layers
 
-**Meaningfulness filter:** Flag tests that can never fail or assert only obvious outcomes. Exception: tests intentionally locking down public contract are valid regression anchors — not filler. Filler tests = LOW severity.
+**Meaningfulness filter:** Flag tests that can never fail or assert only obvious outcomes. Exception: tests intentionally locking down public contract are valid regression anchors — not filler. Filler tests = LOW severity; filler covering critical behavior is a shallow assertion on critical behavior, MEDIUM.
+
+**Weak is not the same as concealing.** A test that simply fails to catch a bug is shallow (MEDIUM) or filler (LOW). CRITICAL is for a test that actively hides the bug: it asserts a known-wrong output as the expected one, swallows the failure it would otherwise surface (empty catch, unconditional pass, disabled assertion), or stubs out the very code it claims to exercise. Cite the line that does the hiding.
 
 ### 5. Test Isolation
 
@@ -102,16 +104,18 @@ Do NOT evaluate whether production code is secure — Adversary's domain. Cross-
 
 ## Severity Calibration
 
-| Condition                                                                       | Severity |
-|---------------------------------------------------------------------------------|----------|
-| Untested code paths in core functionality                                       | HIGH     |
-| Missing edge case coverage for boundary-sensitive code                          | HIGH     |
-| Missing regression test for bug fix                                             | HIGH     |
-| Shallow assertions on critical behavior                                         | MEDIUM   |
-| Missing property/fuzz/contract tests for untrusted input or public API contract | MEDIUM   |
-| Filler tests (can never fail, assert only obvious outcomes)                     | LOW      |
-| Missing property/fuzz/contract tests (general case)                             | LOW      |
-| Test architecture improvements on well-tested code                              | LOW      |
+| Condition                                                                                                              | Severity |
+|------------------------------------------------------------------------------------------------------------------------|----------|
+| Constitution-mandated coverage strategy absent from the changeset                                                      | CRITICAL |
+| Test conceals a wrong result (asserts buggy output as correct, swallows the failure, or stubs out the code under test) | CRITICAL |
+| Untested code paths in core functionality                                                                              | HIGH     |
+| Missing edge case coverage for boundary-sensitive code                                                                 | HIGH     |
+| Missing regression test for bug fix                                                                                    | HIGH     |
+| Shallow assertions on critical behavior                                                                                | MEDIUM   |
+| Missing property/fuzz/contract tests for untrusted input or public API contract                                        | MEDIUM   |
+| Filler tests on non-critical behavior (can never fail, assert only obvious outcomes)                                   | LOW      |
+| Missing property/fuzz/contract tests (general case)                                                                    | LOW      |
+| Test architecture improvements on well-tested code                                                                     | LOW      |
 
 ## Out of Scope
 

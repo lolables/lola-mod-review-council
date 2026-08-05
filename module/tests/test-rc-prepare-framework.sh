@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # Framework content-probes (go.mod, requirements.txt, ...) must read the
 # materialized clone (review_root), not the launch dir (CWD). In url/PR scope
@@ -65,9 +65,7 @@ make_source_repo() {
 	mkdir -p "$dir"
 	(
 		cd "$dir"
-		git init -q
-		git config user.email t@t.local
-		git config user.name t
+		git_init_sandbox
 		git checkout -q -b main
 		cat >go.mod <<'MOD'
 module foo
@@ -79,6 +77,40 @@ MOD
 		sha=$(git rev-parse HEAD)
 		git update-ref refs/pull/7/head "$sha"
 	)
+}
+
+# Build a repo whose `main`...HEAD diff adds exactly the named files, so the
+# language tally in rc-prepare.sh sees that changeset and nothing else.
+make_changeset_repo() {
+	local dir="$1" f
+	shift
+	(
+		cd "$dir" || exit 1
+		git_init_sandbox
+		git checkout -q -b main
+		git commit -q --allow-empty -m init
+		git checkout -q -b feature-head
+		for f in "$@"; do
+			mkdir -p "$(dirname "$f")"
+			printf 'x\n' >"$f"
+		done
+		git add -- "$@"
+		git commit -qm changeset
+	)
+}
+
+# Run rc-prepare.sh in code mode over a throwaway repo containing the named
+# files and print its JSON. Session artifacts land in a per-call cache that is
+# removed with the repo.
+run_language_detect() {
+	local work cache_dir result
+	work=$(mktemp -d)
+	cache_dir=$(mktemp -d)
+	make_changeset_repo "$work" "$@"
+	result=$(cd "$work" && AGENTS_DIR="$SCRIPT_DIR/../agents" XDG_CACHE_HOME="$cache_dir" \
+		"$RC_TIMEOUT_BIN" 40 bash "$SCRIPT" --mode code 2>/dev/null)
+	rm -rf "$work" "$cache_dir"
+	printf '%s' "$result"
 }
 
 url="https://github.com/acme/widgets/pull/7"
@@ -117,6 +149,39 @@ fi
 assert_json_field "$result" "framework" "gin" "framework detected as gin from review_root, not CWD"
 
 rm -rf "$launch_dir" "$source_repo" "$bindir" "$cache"
+
+# The language tally decides which convention pack every reviewer loads. An
+# `unknown` result loads base.md, which ships empty -- the language pack and its
+# Calibration Notes (the false-positive suppressors) are discarded silently. So
+# the tally must ignore extensions no pack maps, and must not let a language's
+# own file families split its vote.
+
+echo ""
+echo "Test 2: CI/docs files do not outvote the source files they accompany"
+result=$(run_language_detect main.go server.go \
+	.github/workflows/ci.yaml .github/workflows/release.yaml deploy.yaml README.md)
+assert_json_field "$result" "status" "ok" "prepare reaches status ok on a local changeset"
+assert_json_field "$result" "language" "go" "2 Go files beat 3 YAML files"
+
+echo ""
+echo "Test 3: a language's file families are one vote, not several"
+result=$(run_language_detect a.ts b.ts c.ts d.tsx e.tsx one.json two.json three.json four.json)
+assert_json_field "$result" "language" "typescript" "ts+tsx fold to beat 4 json fixtures"
+
+echo ""
+echo "Test 4: a docs-only changeset stays unknown"
+result=$(run_language_detect README.md CHANGELOG.md docs/guide.md)
+assert_json_field "$result" "language" "unknown" "no source files means no language pack"
+
+# A tie is broken on the bucket name, not on whatever order the associative
+# array happens to enumerate. Nothing else pins this: the buckets currently sort
+# order-isomorphically with the extensions they replaced (go < java < javascript
+# < python < rust < typescript mirrors go < java < js < py < rs < ts), so
+# renaming a bucket could silently reorder every tie.
+echo ""
+echo "Test 5: a tie is broken alphabetically by bucket"
+result=$(run_language_detect main.go app.ts)
+assert_json_field "$result" "language" "go" "alphabetical tie-break, not tally order"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

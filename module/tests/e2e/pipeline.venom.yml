@@ -1,0 +1,97 @@
+name: Review Council end-to-end pipeline
+# Black-box counterpart to test-rc-pipeline.sh. That suite asserts
+# stage-by-stage internals; this one asserts the contract a caller depends on,
+# and — the part unit tests structurally cannot reach — that the contract holds
+# identically across the environments the module claims to degrade gracefully
+# into.
+
+vars:
+  root: "."
+  out: ".test-output"
+
+testcases:
+  - name: Pipeline produces the expected disposition for every finding
+    steps:
+      - type: rc-pipeline
+        root: "{{.root}}"
+        out_report: "{{.out}}/e2e-baseline.md"
+        assertions:
+          # 8 findings in, every one accounted for in exactly one bucket.
+          - result.total ShouldEqual 8
+          - result.verified ShouldEqual 4
+          - result.correctable ShouldEqual 1
+          - result.stripped ShouldEqual 2
+          - result.agents ShouldEqual 4
+
+      - type: readfile
+        path: "{{.out}}/e2e-baseline.md"
+        assertions:
+          - result.content ShouldContainSubstring "## Council Verdict"
+          - result.content ShouldContainSubstring "REQUEST CHANGES"
+          # Verified findings are present...
+          - result.content ShouldContainSubstring "cmd/root.go"
+          - result.content ShouldContainSubstring "internal/auth/token.go"
+          # ...and discarded ones must not be. Stripping a finding and then
+          # printing it is the same failure as never stripping it.
+          - result.content ShouldNotContainSubstring "DROP TABLE"
+          - result.content ShouldNotContainSubstring "creds.env"
+          # This is the renderer's raw output, before the orchestrator splices
+          # anything, so every marker phases/report.md fills is expected here —
+          # a missing anchor is a section the orchestrator would have to drop,
+          # and this is the only check on the anchors that runs the real
+          # pipeline end to end rather than a unit fixture.
+          - result.content ShouldContainSubstring "<!-- SUBSYSTEM-ANALYSIS -->"
+          - result.content ShouldContainSubstring "<!-- MERGE-ADVISORIES -->"
+          - result.content ShouldContainSubstring "<!-- ACCEPTANCE-CRITERIA -->"
+          - result.content ShouldContainSubstring "<!-- DISPOSITION-OUTCOMES -->"
+          - result.content ShouldContainSubstring "<!-- CI-COMMENTARY -->"
+          # The verdict is rendered outright, never left as a marker, so the
+          # report is complete the moment the renderer finishes.
+          - result.content ShouldNotContainSubstring "<!-- VERDICT"
+
+  - name: Degraded validator path yields an identical outcome
+    # rc-extract-verdict.sh falls back to a jq structural check when
+    # sourcemeta/jsonschema is missing. The two paths disagreeing is invisible
+    # in the report — it just silently accepts different input on different
+    # hosts — so the fallback is pinned to the same result as the real
+    # validator rather than merely to "does not crash".
+    steps:
+      - type: rc-pipeline
+        root: "{{.root}}"
+        out_report: "{{.out}}/e2e-degraded.md"
+        mask_jsonschema: "yes"
+        assertions:
+          - result.total ShouldEqual 8
+          - result.verified ShouldEqual 4
+          - result.correctable ShouldEqual 1
+          - result.stripped ShouldEqual 2
+          - result.agents ShouldEqual 4
+
+      - type: readfile
+        path: "{{.out}}/e2e-degraded.md"
+        assertions:
+          - result.content ShouldContainSubstring "## Council Verdict"
+          - result.content ShouldContainSubstring "REQUEST CHANGES"
+
+  - name: Evidence that no longer matches the source stops verifying
+    # Negative case, and the one that proves the suite measures anything at
+    # all: rewrite the cited line in the review root and the findings that
+    # quoted it must fall out of `verified`. A pipeline still reporting 4
+    # verified findings here would be matching nothing.
+    steps:
+      - type: rc-pipeline
+        root: "{{.root}}"
+        out_report: "{{.out}}/e2e-tampered.md"
+        tamper: "s/json.Unmarshal/json.Decode/g"
+        assertions:
+          # Both tools.go findings quoted the unmarshal call: the adversary's
+          # three-line block and the guard's fragment. Both must now fail,
+          # leaving only the three bystanders in unrelated files.
+          - result.verified ShouldEqual 3
+          - result.correctable ShouldEqual 3
+          - result.total ShouldEqual 8
+
+      - type: readfile
+        path: "{{.out}}/e2e-tampered.md"
+        assertions:
+          - result.content ShouldNotContainSubstring "json.Unmarshal"

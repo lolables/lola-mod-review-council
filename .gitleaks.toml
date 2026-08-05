@@ -1,16 +1,46 @@
-# Gitleaks allowlist — evaluation framework test fixtures and snapshots
+# Gitleaks configuration — secret detection rules and allowlist
 #
-# .lola-eval/tests/*/starter/ contains intentionally vulnerable source code
-# (e.g. hardcoded fake API keys) used to evaluate the review council's
-# detection capabilities. Snapshots quote detected secrets verbatim as
-# evidence of successful detection.
+# This file OVERRIDES the shared .mega-linter.d/.gitleaks.toml template. The
+# runner stages a shared sub-config only when the repo has no file of the same
+# name ("target wins ... left untouched"), so this is a wholesale replacement,
+# not a merge. Every entry the template carries must be repeated here or it is
+# silently lost.
 #
-# The fake key triggering these findings: sk-prod-8kZ3mN7xR2vL9qW4jH6pY1tA5cF0bD
-# It is not a real credential for any service.
+# REPOSITORY_GITLEAKS is disabled in the shared MegaLinter config in favour of
+# REPOSITORY_BETTERLEAKS — a drop-in fork by the same author that reads this
+# same file. Verify changes with betterleaks, not gitleaks.
+
+# Inherit the upstream rule set. This is load-bearing: gitleaks and betterleaks
+# treat a config file as the complete rule set, so without `useDefault` — and
+# with no [[rules]] defined below — the scanner has zero rules and reports
+# "no leaks found" for every input. Verified against betterleaks 1.7.2: a
+# GitHub PAT and a Slack bot token both pass undetected when this stanza is
+# absent, and are both caught when it is present.
+[extend]
+useDefault = true
 
 [allowlist]
-  description = "Evaluation framework — test fixtures and snapshots contain intentional fake secrets"
+  description = "Build caches and third-party trees — generated or vendored, not this repository's source"
   paths = [
-    '''.lola-eval/tests/.*/starter/.*''',
-    '''.lola-eval/snapshots/.*'''
+    # Build caches (cloned upstream sources). From the shared template.
+    '''(^|/)\.cache/''',
+
+    # lola package manager install tree: third-party modules fetched by
+    # `lola mod update`. Gitignored and regenerated, so edits here are
+    # destroyed on the next update. The hits are a secret-scanner module's
+    # own detection-rule test fixtures. Vulnerabilities must be fixed in the
+    # upstream module instead.
+    '''(^|/)\.lola/''',
+
+    # Evaluation harness. Fixtures under tests/*/starter{,-clean}/ carry
+    # intentionally fake credentials used to score the review council's
+    # detection ability, and out/ and snapshots/ quote those same strings
+    # verbatim as evidence of successful detection. Fixing them breaks the
+    # test cases. Matches how .lola-eval is treated by every other scanner
+    # here — see trivy.yaml, .secretlintignore, and .mega-linter.local.yml.
+    #
+    # The fake key behind most findings:
+    #   sk-prod-8kZ3mN7xR2vL9qW4jH6pY1tA5cF0bD
+    # It is not a real credential for any service.
+    '''(^|/)\.lola-eval/''',
   ]

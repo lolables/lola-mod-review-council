@@ -1,0 +1,77 @@
+version: '3'
+
+vars:
+  # Deliberately not named TEST_DIR: defining a var in terms of itself makes
+  # Task apply this include's own definition to the inherited value, so the
+  # root prefix lands twice (/repo//repo/.test-output). TEST_DIR stays the
+  # relative, user-overridable knob in the root Taskfile; TEST_OUT is its
+  # absolute resolution for use inside this include.
+  TEST_OUT: '{{.ROOT_DIR}}/{{.TEST_DIR | default ".test-output"}}'
+  ARGS: '{{.ARGS | default .CLI_ARGS}}'
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  unit:
+    desc: Run every module unit suite (discovered, not hand-listed)
+    env:
+      # Fixture repos must never inherit the caller's git identity, signing
+      # config, or hooks. module/tests/helpers.sh exports the same set when a
+      # suite is sourced, so a suite run directly is hermetic on its own;
+      # repeating it here covers the harness itself and anything it runs before
+      # a suite is sourced.
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+      GIT_AUTHOR_NAME: Review Council Test
+      GIT_AUTHOR_EMAIL: review-council@test.invalid
+      GIT_COMMITTER_NAME: Review Council Test
+      GIT_COMMITTER_EMAIL: review-council@test.invalid
+    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/run-unit-tests.sh"
+
+  e2e:
+    desc: Run the end-to-end pipeline suite (Venom)
+    preconditions:
+      - sh: command -v venom
+        msg: "venom not found — install from https://github.com/ovh/venom/releases"
+    env:
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+    cmds:
+      - mkdir -p "{{.TEST_OUT}}"
+      - >-
+        venom run "{{.ROOT_DIR}}/module/tests/e2e/pipeline.venom.yml"
+        --lib-dir "{{.ROOT_DIR}}/module/tests/e2e/lib"
+        --var root="{{.ROOT_DIR}}"
+        --var out="{{.TEST_OUT}}"
+        --output-dir "{{.TEST_OUT}}"
+
+  # ARGS: space-separated tool names to hide, one run each.
+  # Defaults to "jsonschema gh glab". Example: task test:degraded -- gh
+  degraded:
+    desc: Run the unit suites once per optional tool missing from PATH (ARGS=tools)
+    env:
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/run-degraded-tests.sh" {{.ARGS}}
+
+  mutate:
+    desc: Reintroduce each fixed defect and confirm a suite catches it
+    env:
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/mutate-check.sh"
+
+  all:
+    desc: Run unit, end-to-end, degraded and mutation checks
+    cmds:
+      - task: unit
+      - task: e2e
+      - task: degraded
+      - task: mutate

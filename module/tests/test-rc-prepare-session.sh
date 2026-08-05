@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
-# shellcheck source=module/tests/test-helpers.sh
-source "$SCRIPT_DIR/test-helpers.sh"
+# shellcheck source=module/tests/helpers.sh
+source "$SCRIPT_DIR/helpers.sh"
 
 # In url scope, $PWD is a throwaway launch dir unrelated to the repo
 # under review, so hashing it fragments the per-repo learnings/prior-reviews

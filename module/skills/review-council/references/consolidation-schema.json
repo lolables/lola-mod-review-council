@@ -3,12 +3,14 @@
   "title": "Cross-agent consolidation manifest",
   "type": "object",
   "required": ["clusters"],
+  "additionalProperties": false,
   "properties": {
     "clusters": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["members"],
+        "additionalProperties": false,
         "properties": {
           "members": {
             "type": "array",
@@ -16,6 +18,7 @@
             "items": {
               "type": "object",
               "required": ["file", "agent"],
+              "additionalProperties": false,
               "properties": {
                 "file": { "type": "string" },
                 "line": { "type": ["integer", "null"] },

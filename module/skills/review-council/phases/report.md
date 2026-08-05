@@ -4,11 +4,70 @@ Guides orchestrator's narrative synthesis, learnings extraction, final verdict d
 
 ---
 
+## How Sections Reach the Report
+
+Every structured section in the report is anchored by a marker
+`rc-render-report.sh` emits. The orchestrator's whole job here is literal
+string substitution, and it has exactly two moves:
+
+- **The section applies** — replace the marker line with the section text.
+- **The phase that produces it did not run** — delete the marker line **and
+  its trailing blank line**. The renderer emits every marker as
+  `blank / marker / blank`, so deleting the marker alone leaves the two blank
+  lines touching. On the common path — a first-time review at standard effort
+  with no CI — five of the eight markers are dropped. Four of those five sit
+  together in the findings-context slot, so deleting only their marker lines
+  leaves a five-line blank gap ahead of `## Council Synthesis`. Rendered HTML
+  hides it; the `report.md` artifact a maintainer reads, and any MD012 linter,
+  do not.
+
+`<!-- TLDR -->` is the one marker the second move never applies to. Every
+report has an outcome, so every report has a TL;DR — there is no run in which
+the section does not apply, and no phase whose absence excuses it. Deleting it
+leaves the verdict heading with a bare emoji line under it, which is the
+condition the TL;DR exists to prevent.
+
+Never append a section the renderer did not anchor, and never leave a marker
+unreplaced; a raw HTML comment in a maintainer-facing report is the same
+failure the quick-mode LEARNINGS rule guards against.
+
+This is what SKILL.md's EXECUTION-CONTRACT means by "fill only the markers".
+The marker set is larger than `<!-- NARRATIVE -->` and `<!-- LEARNINGS -->`:
+
+| Marker                          | What replaces it                            | Procedure below              |
+|---------------------------------|---------------------------------------------|------------------------------|
+| `<!-- TLDR -->`                 | One-line TL;DR under the Council Verdict    | Narrative Synthesis          |
+| `<!-- SUBSYSTEM-ANALYSIS -->`   | Subsystem Analysis section                  | Subsystem Analysis           |
+| `<!-- MERGE-ADVISORIES -->`     | Merge Advisories section                    | Merge Advisories             |
+| `<!-- ACCEPTANCE-CRITERIA -->`  | Acceptance Criteria Coverage section        | Acceptance Criteria Coverage |
+| `<!-- DISPOSITION-OUTCOMES -->` | Disposition Outcomes, all three subsections | Disposition Outcomes         |
+| `<!-- CI-COMMENTARY -->`        | CI Commentary section                       | CI Commentary                |
+| `<!-- NARRATIVE -->`            | Council Synthesis body                      | Narrative Synthesis          |
+| `<!-- LEARNINGS -->`            | Prior Learnings body                        | Learnings Extraction         |
+
+The replacement text carries its own `##` heading. The renderer emits a bare
+marker line and no heading precisely so that dropping the marker leaves no
+dangling heading behind. `<!-- TLDR -->` is the exception on both counts: it
+sits under `## Council Verdict`, which the renderer already emitted, and its
+replacement is one plain sentence with no heading of its own.
+
+A section you believe belongs in the report but has no marker is a renderer
+bug — fix `rc-render-report.sh` and its tests, do not hand-append the section.
+
+---
+
 ## Pre-condition Gate
 
-**Before generating any report content**, verify Verification phase actually executed:
+**Before generating any report content**, verify Verification phase actually executed.
 
-1. Read `${session_dir}/verdicts/verification.txt`.
+Checks 2, 3 and 4 are also enforced mechanically: `rc-render-report.sh` reads
+the same file and refuses to render — emitting only a "Not rendered" notice with
+no verdict — when it is missing, empty, has no `=== SUMMARY ===` section, or
+still holds `{N}`-shaped template placeholders. Check them here anyway; reaching
+the renderer and being turned away wastes a phase, and check 5 has no mechanical
+equivalent.
+
+1. Read `${session_dir}/verdicts/_meta/verification.txt`.
 
 2. **If file does not exist or is empty**: STOP. Do not generate report. Return to Verification phase and execute it. Display:
    > "verification.txt is missing — the Verification phase was not executed. Returning to Phase 4."
@@ -20,6 +79,13 @@ Guides orchestrator's narrative synthesis, learnings extraction, final verdict d
 5. **If verification.txt shows zero tool calls were made** (no file reads, no greps, no evidence checks recorded in EVIDENCE VERIFICATION section): verification was performed mentally, not mechanically. Return to Verification phase and re-execute with actual tool calls.
 
 Only proceed to generate report once verification.txt passes all five checks above.
+
+These five checks are unconditional. No phase outcome exempts a run from them.
+That includes an evidence check that returned `nothing_to_do`: that path writes
+an abbreviated `verification.txt` precisely so it can pass these checks — see
+`phases/verify.md`, under its `nothing_to_do` heading. An exemption here would
+rest on the orchestrator's own account of a status only it observed, which is
+not evidence; the abbreviated record is.
 
 ---
 
@@ -62,10 +128,13 @@ defensively, so repeated entries across dispatch rounds are safe.
 
 **Effort gate — quick mode:** If effort is `quick`, skip narrative
 synthesis entirely. Compact report consists of:
-1. Findings list from rendered template (sorted by severity)
-2. Final verdict
+1. Council verdict and its TL;DR, which the renderer puts first
+2. Findings list from rendered template (sorted by severity)
 
-Skip to Final Verdict Determination section.
+Still splice `<!-- TLDR -->` — the marker is not droppable, and step 4 below
+gives the fallback line to use whenever `comment-summary.md` is absent or
+empty, which it always is here. Then skip to Final Verdict Determination
+section.
 
 Template rendering is performed by `rc-render-report.sh`, which owns all
 structure (tables, counts, findings list, verdict) and leaves a
@@ -80,7 +149,10 @@ is prose only — it never touches structure.
    plain-text blobs and nothing else:
 
    - A one-line TL;DR (plain-language, under 25 words) — write to
-     `${session_dir}/comment-summary.md`.
+     `${session_dir}/comment-summary.md`. This is the same one-liner that
+     fills `<!-- TLDR -->` in the report (step 4 below) and that
+     `rc-render-comment.sh` reads for the PR comment. Write it once, splice
+     it twice; the two artifacts then cannot summarise the review differently.
    - A 2-4 paragraph narrative — write to `${session_dir}/narrative.md`.
 
    The narrative should cover:
@@ -101,6 +173,24 @@ is prose only — it never touches structure.
    orchestrator performs after capturing the script's output. Replace the
    single `<!-- NARRATIVE -->` line in `${session_dir}/report.md` with the
    verbatim contents of `${session_dir}/narrative.md`.
+
+4. **Splice the TL;DR.** Replace the single `<!-- TLDR -->` line in
+   `${session_dir}/report.md` with the verbatim contents of
+   `${session_dir}/comment-summary.md`. It sits directly under
+   `## Council Verdict` at the top of the report, so the maintainer has the
+   outcome and a plain-language summary of it before any table. Do not reword
+   it for the report — the PR comment renders the same file.
+
+   **Fallback — whenever `${session_dir}/comment-summary.md` is absent or
+   empty**, replace the marker with the literal line
+   `Automated review complete.`, the same fallback `rc-render-comment.sh`
+   uses when the file is missing. This is not a `quick`-mode special case.
+   The file is missing in `quick` mode because the subagent is never
+   dispatched, and it can be missing in any mode because a dispatched
+   subagent failed, was interrupted, or returned prose without writing it.
+   The marker is never deleted instead: unlike every other marker it is not
+   conditional on a phase having run, so an empty source is a fallback, not a
+   reason to drop the section.
 
 ---
 
@@ -139,11 +229,15 @@ nothing to summarize. Replace the marker with the literal line
 
 ## Subsystem Analysis (Deep Mode Only)
 
-**Skip this section unless effort is `deep` and
-`${session_dir}/subsystems.json` exists.**
+Fills `<!-- SUBSYSTEM-ANALYSIS -->`, which the renderer leaves immediately
+before `## Findings by Severity`.
 
-Read `${session_dir}/subsystems.json` and verified findings.
-Render subsystem tree before findings list:
+**Unless effort is `deep` and `${session_dir}/subsystems.json` exists**,
+delete the marker line and its trailing blank line, then move on — deep mode
+is the only mode that produces a subsystem map.
+
+Otherwise read `${session_dir}/subsystems.json` and verified findings, and
+replace the marker with the subsystem tree:
 
 ```
 ## Subsystem Analysis
@@ -172,11 +266,12 @@ Render subsystem tree before findings list:
 
 ## Merge Advisories (if applicable)
 
-**Skip if no merge-base advisories produced during
-verification.**
+Fills `<!-- MERGE-ADVISORIES -->`.
 
-List merge-base advisories after Subsystem Analysis, before
-Verified Findings. Format:
+**If verification produced no merge-base advisories**, delete the marker line
+and its trailing blank line.
+
+Otherwise replace it with the advisory list. Format:
 
 ```
 ## Merge Advisories
@@ -198,7 +293,9 @@ or affect council verdict, while still reaching maintainer.
 
 ## Acceptance Criteria Coverage
 
-**When to include:** Only when `${session_dir}/linked-issues.txt` exists AND at least one linked issue has acceptance criteria. If no linked issues have acceptance criteria, omit this section entirely (no empty heading).
+Fills `<!-- ACCEPTANCE-CRITERIA -->`.
+
+**When to include:** Only when `${session_dir}/linked-issues.txt` exists AND at least one linked issue has acceptance criteria. Otherwise delete the marker line and its trailing blank line — an empty heading claims a coverage check that never happened.
 
 For each linked issue with acceptance criteria, produce coverage assessment:
 
@@ -208,7 +305,7 @@ For each linked issue with acceptance criteria, produce coverage assessment:
    - **PARTIALLY COVERED**: some aspects addressed but gaps remain (annotate what is missing)
    - **NOT COVERED**: no evidence of implementation in diff
 
-2. Present as checklist grouped by issue:
+2. Replace the marker with this checklist, grouped by issue:
 
    ```
    ## Acceptance Criteria Coverage
@@ -225,19 +322,22 @@ For each linked issue with acceptance criteria, produce coverage assessment:
    (No acceptance criteria found in issue)
    ```
 
-3. Issues with no acceptance criteria listed with "(No acceptance criteria found in issue)" — do not omit them, listing confirms they were checked.
-
-If report includes linked issues with acceptance criteria, add coverage checklist after acceptance criteria section. If no criteria exist, note that none were found.
+3. Issues with no acceptance criteria listed with "(No acceptance criteria found in issue)" — do not omit them, listing confirms they were checked. That applies within the section; when *no* linked issue has criteria there is nothing to confirm, so the marker is deleted per "When to include" above.
 
 ---
 
 ## Disposition Outcomes (Re-Review Only)
 
+Fills `<!-- DISPOSITION-OUTCOMES -->` — all three subsections below go into
+that one marker, in the order given.
+
 **When to include:** Only when the Disposition phase ran — check
-`${session_dir}/verdicts/disposition.txt` exists and its `Result:` line
+`${session_dir}/verdicts/_meta/disposition.txt` exists and its `Result:` line
 reads `ran`, not `skipped`. A first-time review never reaches Disposition
-(no `pr-conversation.txt` to act on — see `disposition.md` Step 1), so this
-whole section is absent from a first-time report.
+(no `pr-conversation.txt` to act on — see `disposition.md` Step 1), so on a
+first-time report the marker line and its trailing blank line are deleted.
+The same applies when Disposition ran but all three subsections come back
+empty.
 
 All three subsections below read `findings.json`'s `provenance.disposition`
 field, written by `disposition.md` Step 3. Query the array the action
@@ -246,12 +346,11 @@ actually lands in — `disposition.md` Step 4 moves both `resolved` and
 top-level `reason`s: `DISPOSITION_RESOLVED` vs.
 `DISPOSITION_SUPPRESSED_LOW`); only `kept` findings stay in `verified`.
 These are orchestrator-rendered from that structured field, the same way
-Merge Advisories and Acceptance Criteria Coverage are — no
-`rc-render-report.sh` change required.
-
-Render all three after `## Findings by Severity` / `## Per-Agent Verdicts`,
-before `## Council Synthesis` — the findings-context slot, same idea as
-Merge Advisories ahead of the findings list.
+Merge Advisories and Acceptance Criteria Coverage are — substituted into the
+marker the renderer already emits, which sits between `## Per-Agent Verdicts`
+and `## Council Synthesis`. That is the findings-context slot: the maintainer
+reads what the disposition round did to the finding set before reading the
+synthesis prose that interprets it.
 
 ### Resolved Since Last Review
 
@@ -312,7 +411,7 @@ silent:
 
 ## Final Verdict Determination
 
-End report with council verdict:
+Determine the council verdict:
 
 - **APPROVE** — all discovered reviewers returned APPROVE (after verification).
 - **REQUEST CHANGES** — one or more reviewers returned REQUEST CHANGES with verified findings.
@@ -320,27 +419,45 @@ End report with council verdict:
 
 Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) do not affect verdict.
 
+**Recording it.** Write the verdict as the first line of
+`${session_dir}/verdict.txt` **before** running `rc-render-report.sh` (SKILL.md
+Step 6 states this as the first action of the phase). The renderer emits the
+`## Council Verdict` section from that file — at the head of the report, ahead
+of every table and the findings list — and `rc-render-comment.sh` reads the
+same file for the PR comment; deciding the verdict is this step's job,
+rendering it is not. Do not append a verdict section to `report.md` by hand:
+the EXECUTION-CONTRACT limits this step to filling the markers the renderer
+emits, the verdict is not one of them (see "How Sections Reach the Report"),
+and a hand-written section would duplicate the rendered one.
+
+A report whose Council Verdict section reads "not recorded" means this step did
+not write `verdict.txt` before rendering. Fix the ordering and re-render rather
+than editing the rendered report.
+
 ---
 
-## Forge CI Status Section
+## CI Commentary
 
-**When forge CI status is available** (`${session_dir}/ci-status.txt` exists), add forge CI section to report:
+Fills `<!-- CI-COMMENTARY -->`.
+
+The `## Forge CI Status` table is script-owned: `rc-prepare.sh` writes it to
+`ci-status.txt` and `rc-render-report.sh` emits it near the top of the report,
+stripping the `# UNTRUSTED` envelope on the way through. This marker is for
+the one thing no script can derive — whether the CI state changes how the
+findings below should be read:
 
 ```
-## Forge CI Status
+## CI Commentary
 
-| Check | Status |
-|-------|--------|
-| build | pass   |
-| test  | fail   |
-| lint  | fail   |
-
-Failing checks:
-- test: FAILURE (see forge CI tab for details)
-- lint: FAILURE (see forge CI tab for details)
+Two checks are failing on the head commit (`test`, `lint`). Both touch
+`auth.go`, the same file as the CRITICAL finding above, so the failures and
+the finding are likely the same defect.
 ```
 
-Include full results table from `ci-status.txt`. Add this section after Session Information in report.
+Delete the marker line and its trailing blank line when `ci-status.txt` does
+not exist, when every check passed, or when the failures have no bearing on
+the findings. Restating the table adds nothing the maintainer cannot already
+see a few lines up.
 
 ---
 

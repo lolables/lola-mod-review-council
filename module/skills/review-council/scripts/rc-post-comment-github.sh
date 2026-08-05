@@ -3,7 +3,8 @@ set -uo pipefail
 
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
-rc_trap_errors # report script:line on any unhandled failure (never silent)
+rc_trap_errors     # report script:line on any unhandled failure (never silent)
+rc_require_timeout # this script makes forge calls; fail before any side effect
 
 # rc-post-comment-github.sh — GitHub implementation of Review Council comment
 # posting. It defines the two URL-builder hooks, sources the neutral renderer,
@@ -53,13 +54,18 @@ rc_url_commit() { # forge_web sha
 source "$(dirname "$0")/rc-render-comment.sh"
 
 # --- GitHub mechanics (each prints to stdout, non-zero on API error) ---
-gh_find_by_sha() { # owner repo pr sha
+#
+# These two listings are the ONLY selectors: every comment id and node id the
+# write helpers below touch comes out of one of them, so filtering here filters
+# every update, banner and hide. Both require marker AND author, because the
+# marker alone proves nothing — see the RC_ACTOR block for why.
+gh_find_by_sha() { # owner repo pr sha actor
 	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
-		--jq "[.[] | select((.body | contains(\"${MARKER_KEY}\")) and (.body | contains(\"sha=$4\"))) | .id] | first // empty"
+		--jq "[.[] | select(((.user.login // \"\") == \"$5\") and (.body | contains(\"${MARKER_KEY}\")) and (.body | contains(\"sha=$4\"))) | .id] | first // empty"
 }
-gh_list_council() { # owner repo pr
+gh_list_council() { # owner repo pr actor
 	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
-		--jq ".[] | select(.body | contains(\"${MARKER_KEY}\")) | [(.id | tostring), .node_id, ((.body | capture(\"sha=(?<s>[0-9a-fA-F]+)\").s) // \"\")] | @tsv"
+		--jq ".[] | select(((.user.login // \"\") == \"$4\") and (.body | contains(\"${MARKER_KEY}\"))) | [(.id | tostring), .node_id, ((.body | capture(\"sha=(?<s>[0-9a-fA-F]+)\").s) // \"\")] | @tsv"
 }
 gh_get_body() { # owner repo id
 	rc_timeout 30 gh api "repos/$1/$2/issues/comments/$3" --jq '.body'
@@ -142,12 +148,48 @@ if [[ "${REVIEW_COUNCIL_ALLOW_POST:-}" != "1" ]]; then
 	exit 0
 fi
 
+# --- Who are we? Council comment identity is marker AND author. ---
+#
+# MARKER_KEY is public: it ships in every verdict comment this tool has ever
+# posted and verbatim in references/forge-adapters.md, so any PR participant can
+# reproduce it. Were the marker the whole identity, an outsider's comment
+# carrying it would be overwritten with the verdict body, or banner-stamped and
+# hidden as outdated — destroying third-party content under a maintainer's write
+# token. So both listings above also demand the comment be ours.
+#
+# Resolved here, after the posting gate, rather than at load time: dry-run and
+# render-only runs must not require an authenticated `gh`, and this value is used
+# by nothing before the API calls that follow.
+#
+# Fail closed on both failure shapes, and say which one happened — they need
+# different actions from the user. gh's own stderr is left to flow through to
+# the caller's stderr rather than discarded; only stdout must stay pure JSON.
+#
+# `GET /user` answers for a user-to-server token, so `.login` is always a human
+# account: the `[bot]` logins GitHub Apps comment under cannot come back from
+# it. An App installation token gets 403 here instead, which lands in the
+# unresolved branch and refuses to post — deliberate, since accepting a
+# caller-supplied identity would hand an attacker the selector this whole block
+# exists to protect. The accepted shape is therefore plain account characters.
+RC_ACTOR=$(rc_timeout 30 gh api user --jq '.login' || echo "")
+rc_actor_re='^[A-Za-z0-9._-]+$'
+if [[ -z "$RC_ACTOR" ]]; then
+	json_output "error" "Could not resolve the authenticated GitHub account: \`gh api user\` returned nothing (check \`gh auth status\`; a GitHub App installation token cannot answer it). Not posting: selecting council comments by the marker alone is refused, because the marker is public and updating or hiding a participant's comment would destroy it." \
+		"$body_payload"
+	exit 0
+fi
+if [[ ! "$RC_ACTOR" =~ $rc_actor_re ]]; then
+	json_output "error" "Resolved an authenticated account name that is not login-shaped: '${RC_ACTOR}'. Not posting: this value is interpolated into a jq string literal, and a login carrying a quote or backslash would escape it and rewrite the comment selection." \
+		"$body_payload"
+	exit 0
+fi
+
 # --- Upsert policy keyed on the reviewed commit SHA ---
 sha_key="${RC_HEAD_SHA:-unknown}"
 
 # Comment already posted for THIS commit? A failed lookup must NOT be treated as
 # "none" (that would post a duplicate) - abort instead.
-if ! cur=$(gh_find_by_sha "$owner" "$repo" "$pr" "$sha_key"); then
+if ! cur=$(gh_find_by_sha "$owner" "$repo" "$pr" "$sha_key" "$RC_ACTOR"); then
 	json_output "error" "Failed to query existing comments on PR #${pr}; not posting." \
 		"$body_payload"
 	exit 0
@@ -192,7 +234,7 @@ else
 		fi
 		[[ -n "$node" ]] && { gh_minimize "$node" 2>/dev/null || true; }
 		superseded=$((superseded + 1))
-	done < <(gh_list_council "$owner" "$repo" "$pr" 2>/dev/null || true)
+	done < <(gh_list_council "$owner" "$repo" "$pr" "$RC_ACTOR" 2>/dev/null || true)
 fi
 
 posted_payload=$(jq -n --arg a "$action" --argjson s "$superseded" '{action:$a, superseded:$s}')

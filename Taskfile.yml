@@ -35,15 +35,19 @@ tasks:
     cmds:
       # --enable=all turns on the optional checks (SC2310/SC2312 masking,
       # quoting strictness); -S info fails on notes, not just warnings.
-      - find module .taskfiles/scripts -name '*.sh' -print0 | xargs -0 shellcheck -x --enable=all -S info
-      - shfmt -d module .taskfiles/scripts
+      #
+      # scripts/ holds operator tools rather than anything the module ships or
+      # `task` calls, so it is easy to leave out of a path list and never notice
+      # — nothing here fails when it goes unlinted.
+      - find module .taskfiles/scripts scripts -name '*.sh' -print0 | xargs -0 shellcheck -x --enable=all -S info
+      - shfmt -d module .taskfiles/scripts scripts
 
   fmt:
     desc: Rewrite every shell source in canonical shfmt style
     preconditions:
       - sh: command -v shfmt
         msg: "shfmt not found — go install mvdan.cc/sh/v3/cmd/shfmt@latest"
-    cmd: shfmt -w module .taskfiles/scripts
+    cmd: shfmt -w module .taskfiles/scripts scripts
 
   check:
     desc: Run all quality gates — lint plus the full test matrix

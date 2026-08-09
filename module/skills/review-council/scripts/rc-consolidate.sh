@@ -44,10 +44,21 @@ fi
 # (RC-1) are all documented there. It sits in a file rather than inline so
 # test-rc-jq-programs.sh can drive it from fixture JSON without building a
 # session first, which is the coverage gap that let RC-1 survive.
+# Count before and after so the number reported is THIS run's work. The
+# document's records accumulate by design (an exact-dedup count from
+# verification has to survive), so summing them after the fact reports every
+# merge the session has ever made — and the iteration loop in SKILL.md Step 6
+# runs this script again on a session that has already been consolidated, where
+# that reads as a fresh merge that never happened. The delta is computed here
+# rather than exposed as a new document field: verify.md pins the findings.json
+# shape and test-consolidation-schema.sh enforces it.
+before=$(jq '[.consolidation_records[]?.merged | length] | add // 0' "$findings")
+
 result=$(jq --argjson clusters "$clusters" -f "$(dirname "$0")/jq/consolidate-clusters.jq" "$findings")
 
 echo "$result" >"$findings"
-sem=$(echo "$result" | jq '[.consolidation_records[].merged | length] | add // 0')
+after=$(echo "$result" | jq '[.consolidation_records[]?.merged | length] | add // 0')
+sem=$((after - before))
 payload=$(jq -n --argjson s "$sem" '{consolidated:$s}')
 json_output "ok" "Consolidated $sem duplicate finding(s)." "$payload"
 exit 0

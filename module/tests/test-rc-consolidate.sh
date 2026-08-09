@@ -225,6 +225,120 @@ fi
 assert_json_field "$result" "consolidated" "2" "consolidated count is 2"
 rm -rf "$s"
 
+echo "Test 12: a cluster naming one identity twice is not a merge"
+# A model-produced manifest can name the same member twice. Two matches is not
+# two findings: the reducer has nothing to fold, so a record claiming a merge
+# would be a lie — and, because nothing is removed, the guard would never
+# engage on the next pass and the record would be appended again every run.
+s=$(mk_session '[
+  {"agent":"a","severity":"MEDIUM","file":"f.py","line":42,"evidence":"e","description":"d1","recommendation":"r1","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"b","severity":"LOW","file":"g.py","line":7,"evidence":"e2","description":"d2","recommendation":"r2","verdict":"APPROVE","status":"verified","provenance":{}}
+]')
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
+{"clusters":[{"members":[
+  {"file":"f.py","line":42,"agent":"a"},
+  {"file":"f.py","line":42,"agent":"a"}
+]}]}
+CJ
+bash "$SCRIPT" "$s" >/dev/null
+fj="$s/verdicts/findings.json"
+assert_jq "$fj" '.consolidation_records | length' "0" "no record for a one-identity cluster"
+assert_jq "$fj" '.duplicates_consolidated' "0" "nothing counted as consolidated"
+assert_jq "$fj" '.verified | length' "2" "both findings survive"
+rm -rf "$s"
+
+echo "Test 13: repeated runs over a one-identity cluster do not accumulate records"
+# The regression this whole branch exists for: without the distinct-identity
+# guard this grows 1, 2, 3, ... records across the iteration loop.
+s=$(mk_session '[
+  {"agent":"a","severity":"MEDIUM","file":"f.py","line":42,"evidence":"e","description":"d1","recommendation":"r1","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"a","severity":"LOW","file":"f.py","line":42,"evidence":"e2","description":"d2","recommendation":"r2","verdict":"APPROVE","status":"verified","provenance":{}}
+]')
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
+{"clusters":[{"members":[{"file":"f.py","line":42,"agent":"a"}]}]}
+CJ
+bash "$SCRIPT" "$s" >/dev/null
+assert_idempotent "consolidation over a one-identity cluster" "$s/verdicts/findings.json" \
+	bash "$SCRIPT" "$s"
+assert_jq "$s/verdicts/findings.json" '.consolidation_records | length' "0" \
+	"still no records after three runs"
+rm -rf "$s"
+
+echo "Test 14: a cluster holding a same-identity pair emits the primary once"
+# Three members, two distinct identities: A and B share (f.py,42,a), C does not.
+# The primary is B (HIGH). Selecting secondaries by identity would leave A
+# matching the primary's ident, so the rewrite emitted it as a SECOND copy of
+# the primary and dropped A's angle on the floor.
+s=$(mk_session '[
+  {"agent":"a","severity":"MEDIUM","file":"f.py","line":42,"evidence":"e1","description":"swallowed error","recommendation":"r1","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"a","severity":"HIGH","file":"f.py","line":42,"evidence":"e2","description":"unbounded retry","recommendation":"r2","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"b","severity":"LOW","file":"g.py","line":7,"evidence":"e3","description":"observability gap","recommendation":"r3","verdict":"APPROVE","status":"verified","provenance":{}},
+  {"agent":"z","severity":"LOW","file":"bystander.py","line":1,"evidence":"e4","description":"unrelated","recommendation":"r4","verdict":"APPROVE","status":"verified","provenance":{}}
+]')
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
+{"clusters":[{"members":[
+  {"file":"f.py","line":42,"agent":"a"},
+  {"file":"g.py","line":7,"agent":"b"}
+]}]}
+CJ
+before=$(jq '.verified | length' "$s/verdicts/findings.json")
+bash "$SCRIPT" "$s" >/dev/null
+fj="$s/verdicts/findings.json"
+after=$(jq '.verified | length' "$fj")
+# Three of the four findings collapse into one; the bystander is untouched.
+assert_conserved "$before" "$after" 2 "same-identity pair collapses without collateral"
+assert_jq "$fj" '[.verified[] | select(.file == "f.py")] | length' "1" \
+	"the primary appears exactly once"
+assert_jq "$fj" '.verified[] | select(.file == "f.py") | .severity' "HIGH" \
+	"the most severe member is the primary"
+# Both other angles must survive in provenance. Losing the same-identity
+# sibling's angle is the silent half of this defect: the count would still look
+# right while the reviewer's actual claim vanished.
+assert_jq "$fj" '.verified[] | select(.file == "f.py") | .provenance.consolidated_from | length' "2" \
+	"both secondary angles folded, including the same-identity sibling"
+assert_jq "$fj" \
+	'[.verified[] | select(.file == "f.py") | .provenance.consolidated_from[].angle] | sort | join("|")' \
+	"observability gap|swallowed error" "the sibling angle is named, not dropped"
+assert_jq "$fj" '.duplicates_consolidated' "2" "both merges counted"
+assert_jq "$fj" '.consolidation_records | length' "1" "one record for one cluster"
+rm -rf "$s"
+
+echo "Test 15: the same-identity cluster is idempotent"
+s=$(mk_session '[
+  {"agent":"a","severity":"MEDIUM","file":"f.py","line":42,"evidence":"e1","description":"swallowed error","recommendation":"r1","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"a","severity":"HIGH","file":"f.py","line":42,"evidence":"e2","description":"unbounded retry","recommendation":"r2","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"b","severity":"LOW","file":"g.py","line":7,"evidence":"e3","description":"observability gap","recommendation":"r3","verdict":"APPROVE","status":"verified","provenance":{}}
+]')
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
+{"clusters":[{"members":[
+  {"file":"f.py","line":42,"agent":"a"},
+  {"file":"g.py","line":7,"agent":"b"}
+]}]}
+CJ
+bash "$SCRIPT" "$s" >/dev/null
+assert_idempotent "consolidation over a same-identity pair" "$s/verdicts/findings.json" \
+	bash "$SCRIPT" "$s"
+rm -rf "$s"
+
+echo "Test 16: a repeat run reports what it did, not what the first run did"
+# `consolidated` is read back by the orchestrator. Summing the document's
+# accumulated records makes every later run re-claim the first run's merges.
+s=$(mk_session '[
+  {"agent":"a","severity":"HIGH","file":"x.go","line":10,"evidence":"boom","description":"da","recommendation":"ra","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+  {"agent":"b","severity":"LOW","file":"x.go","line":10,"evidence":"boom","description":"db","recommendation":"rb","verdict":"APPROVE","status":"verified","provenance":{}}
+]')
+cat >"$s/verdicts/_meta/clusters.json" <<'CJ'
+{"clusters":[{"members":[{"file":"x.go","line":10,"agent":"a"},{"file":"x.go","line":10,"agent":"b"}]}]}
+CJ
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "consolidated" "1" "first run reports its one merge"
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "consolidated" "0" "second run reports zero, having merged nothing"
+# The document's cumulative total is untouched by the reporting change.
+assert_jq "$s/verdicts/findings.json" '.duplicates_consolidated' "1" \
+	"the document still carries the cumulative count"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

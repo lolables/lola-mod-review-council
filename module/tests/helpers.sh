@@ -138,6 +138,68 @@ new_session() {
 	printf '%s' "$s"
 }
 
+# Run <cmd> twice and assert <state_path> is unchanged between the two runs.
+#
+# The snapshot is taken AFTER the first run, not before: the first run is the
+# one legitimately allowed to do work. Idempotence is the claim that every run
+# after it is a no-op.
+#
+# `diff -r` rather than a checksum, for two reasons. It is POSIX, so the
+# assertion holds on the non-GNU hosts this suite already accommodates; and on
+# failure it prints what actually changed, where two unequal hashes would leave
+# the reader to go and find out.
+#
+# <state_path> may name a file or a directory. Naming a subtree rather than the
+# whole session is often the point — see test-rc-idempotency.sh, where
+# rc-extract-verdict.sh is asserted on verdicts/ precisely because
+# gate-firings.jsonl beside it is required to grow.
+#
+# <cmd> is run inside a command substitution so its diagnostics can be shown on
+# failure. Its observable effect must therefore be on disk, which is what this
+# helper asserts on anyway; a command whose only effect is a shell variable
+# would not survive the subshell.
+#
+# Every branch returns 0 on purpose. A FAIL here is a report, not a fault in the
+# caller, and every suite runs under `set -e`: returning non-zero would abort the
+# run at exactly the moment the helper had something to say, before the suite
+# could print its Results line. test-harness.sh guards all three exits.
+# Usage: assert_idempotent <label> <state_path> <cmd> [args...]
+assert_idempotent() {
+	local label="$1" state="$2"
+	shift 2
+	local snap="" delta run out
+	for run in 1 2; do
+		if ! out=$("$@" 2>&1); then
+			echo "  FAIL: $label — run $run exited non-zero"
+			if [[ -n "$out" ]]; then
+				printf '%s\n' "$out" | sed 's/^/        /'
+			fi
+			FAIL=$((FAIL + 1))
+			[[ -z "$snap" ]] || rm -rf "$snap"
+			return 0
+		fi
+		if [[ ! -e "$state" ]]; then
+			echo "  FAIL: $label — state path missing after run $run: $state"
+			FAIL=$((FAIL + 1))
+			[[ -z "$snap" ]] || rm -rf "$snap"
+			return 0
+		fi
+		if [[ "$run" -eq 1 ]]; then
+			snap=$(mktemp -d)
+			cp -R "$state" "$snap/state"
+		fi
+	done
+	if delta=$(diff -r "$snap/state" "$state" 2>&1); then
+		echo "  PASS: $label"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $label — second run changed the state:"
+		printf '%s\n' "$delta" | sed 's/^/        /'
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$snap"
+}
+
 # Write the minimal verification log rc-render-report.sh requires before it will
 # render anything.
 #

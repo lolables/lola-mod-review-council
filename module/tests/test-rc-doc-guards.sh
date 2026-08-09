@@ -1119,6 +1119,42 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-030: re-running the extractor re-evaluates every raw block, including the
+# ones no re-dispatch touched, so a session that iterates carries several
+# firings that differ only in `ts`. The writer must not collapse them — a second
+# firing for the same agent can be a genuine second refusal, and the log is the
+# only surviving record of the original claim. The reader collapses instead, so
+# disclosure states each claim once and says how many times it was filed.
+echo "Test: identical gate firings are collapsed by the reader, not the writer (RC-030)"
+rc030_broken=0
+# shellcheck disable=SC2016 # literal prose from verify.md; the backticks around
+# `ts` are markdown, not command substitution, and pinning the field name is the
+# point — "identical apart from" alone would match a rule about anything.
+if ! grep -qF 'identical apart from `ts`' <<<"$verify_flat"; then
+	echo "  broken link: verify.md no longer tells Step 6 how to recognise a repeated firing"
+	rc030_broken=$((rc030_broken + 1))
+fi
+if ! grep -qF 'filed {n} times' <<<"$verify_flat"; then
+	echo "  broken link: the collapsed line no longer carries the count, so a repeated"
+	echo "               refusal reads identically to a single one"
+	rc030_broken=$((rc030_broken + 1))
+fi
+# The collapse must not become permission to rewrite the log. If this guard
+# ever reads as 'dedupe the firings' the writer is next, and the first record —
+# the only one carrying what was originally claimed — goes with it.
+if ! grep -qF 'Do not rewrite the log' <<<"$verify_flat"; then
+	echo "  broken link: verify.md no longer forbids collapsing at the writer, which is"
+	echo "               where the original claim would be lost (see RC-028)"
+	rc030_broken=$((rc030_broken + 1))
+fi
+if [[ "$rc030_broken" -eq 0 ]]; then
+	echo "  PASS: reader-side collapse is specified and the log stays append-only"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC-030 has $rc030_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

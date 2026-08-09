@@ -111,9 +111,17 @@ check_mutation() {
 
 # Consolidation deleted every finding except one cluster primary because a jq
 # `def` was evaluated against the wrong subject inside `any()`.
+#
+# Retargeted when the array rewrite became a `reduce`: the old expression
+# mutated `($f | ident)`, which under a reduce indexes the accumulator ARRAY and
+# makes jq hard-error. A mutation that crashes proves nothing — the defect being
+# guarded here is the silent one, where `.` inside `any()` binds to the element
+# of $secids rather than the finding, every test reduces to `secid == secid`,
+# and every non-primary finding including the bystanders is deleted without a
+# word. Mutating the `any()` body reproduces exactly that.
 check_mutation "RC-1  consolidation ident scoping" \
 	jq/consolidate-clusters.jq \
-	's/(\$f | ident)/(ident)/g' \
+	's/any(. == \$fid)/any(. == ident)/' \
 	test-rc-jq-programs.sh
 
 # Multi-line evidence was searched as N independent literals by `grep -F`.
@@ -295,6 +303,32 @@ check_mutation "RC-24 deterministic verdict ingestion" \
 	rc-verify-evidence.sh \
 	's/ | LC_ALL=C sort -z//' \
 	test-rc-verify-evidence.sh
+
+# Counting matched findings rather than distinct ones let a cluster naming one
+# member twice through the guard. Nothing was folded, so a record claiming a
+# merge was appended — and nothing was removed, so the guard never engaged on
+# the next pass and the record was appended again on every run of the iteration
+# loop.
+check_mutation "RC-25 cluster guard counts distinct findings" \
+	jq/consolidate-clusters.jq \
+	's/(\$idents | length) < 2/($found | length) < 2/' \
+	test-rc-consolidate.sh
+
+# Two findings in one cluster can share {file,line,agent}. Emitting the primary
+# on every identity match rather than only the first duplicated it in the
+# surviving array, while the sibling's angle was folded nowhere.
+check_mutation "RC-26 cluster primary emitted once" \
+	jq/consolidate-clusters.jq \
+	's/map(ident) | any(. == \$fid)/false/' \
+	test-rc-consolidate.sh
+
+# consolidation_records accumulate across runs by design, so reporting the
+# document's running total told the reader the re-run had merged everything the
+# session had ever merged. Reverting to the total is the shipped defect.
+check_mutation "RC-29 merge count is this run's delta" \
+	rc-consolidate.sh \
+	's/^sem=\$((after - before))$/sem=$after/' \
+	test-rc-consolidate.sh
 
 total=$((caught + missed + broken))
 echo ""

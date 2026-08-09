@@ -103,6 +103,18 @@ All notable changes to the Review Council module are documented here.
   escapes). The regex rules matter most: unlike the others they fail
   silently on macOS rather than erroring, so CI cannot be relied on to
   notice them
+- `test-rc-idempotency.sh` — every phase script is re-run against a live
+  session and its state asserted unchanged. SKILL.md Step 6 offers to fix
+  findings and return to Step 3, so re-running is part of the contract, and the
+  per-script suites only covered the specific defects that prompted them. A
+  phase script added later is registered here or it is not covered at all.
+  `rc-prepare.sh` is deliberately absent: a session *is* a run, so re-running
+  must produce a new one, and its growth is bounded by the session LRU instead
+- `assert_idempotent` — runs a command twice and asserts a named state path is
+  unchanged, snapshotting *after* run 1 because the first run is the one
+  legitimately allowed to do work. The state path is named rather than assumed
+  to be the whole session, so a subtree required to grow — `gate-firings.jsonl`
+  beside `verdicts/` — can be excluded from the claim
 - React framework convention pack (`fw-react.md`) with severity
   calibration for error boundaries (HIGH), god components (HIGH),
   prop drilling (MEDIUM), and direct DOM manipulation (MEDIUM)
@@ -274,6 +286,32 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Consolidation no longer accumulates phantom records across the review
+  iteration loop. A cluster whose manifest named one member twice — or whose
+  members shared `{file,line,agent}` because one agent filed two claims at the
+  same line — matched two findings with nothing to fold between them, so the
+  reducer appended a record asserting a merge that never happened, and, having
+  removed nothing, appended another on every subsequent run. Clusters are now
+  guarded on distinct identities, which is what the "one record per semantic
+  cluster" invariant in `phases/verify.md` always meant
+- A cluster holding two findings at the same `{file,line,agent}` no longer
+  duplicates its primary. Secondaries were selected by identity, so a sibling
+  sharing the primary's coordinates fell into neither the secondaries nor the
+  survivors, and the array rewrite turned every identity match into the primary
+  — emitting it twice while the sibling's angle was dropped entirely.
+  Secondaries are selected by position and the primary is emitted on its first
+  match only, so the sibling is folded into `consolidated_from` like any other
+- `rc-consolidate.sh` reports the merges it performed rather than every merge
+  the session has performed. The count summed the document's accumulated
+  `consolidation_records`, so the second pass of the iteration loop re-claimed
+  the first pass's work
+- Step 6's Gate-Firing Disclosure collapses records that are identical apart
+  from `ts` into one line carrying the count. Re-running the extractor
+  re-evaluates every raw block, including those no re-dispatch touched, so an
+  iterated session accumulated copies of a firing nothing new happened to and
+  disclosed each one separately. The log itself is unchanged and stays
+  append-only: a second firing can be a genuine second refusal, and the first
+  record is the only one carrying what was originally claimed
 - Every GitHub Actions check was dropped from Quality Gates.
   `statusCheckRollup` is a union of two GraphQL node types that share no field:
   `StatusContext` carries `.context`/`.state`, `CheckRun` carries

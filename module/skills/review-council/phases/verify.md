@@ -609,9 +609,22 @@ when the orchestrator did not watch the gate fire. A session resumed mid-run
 a context that has since been compacted. Where both this step and Step 0
 produce a line for the same firing, they are the same line — write it once.
 
+**Collapse repeats first.** Records identical apart from `ts` describe one
+claim, not several. Re-running the extractor re-evaluates every raw block —
+including the ones no re-dispatch touched — so an iterated session accumulates
+copies of a firing nothing new happened to. Group those into a single
+disclosure line and carry the count: append `(filed {n} times)` when `n` is
+greater than one.
+
+Do not rewrite the log to achieve this. The append is deliberate: a second
+firing can be a genuine second refusal, the first record is the only one that
+carries what was originally claimed, and collapsing at the writer would lose
+both. Collapse at the reader, where the timestamps are still there to tell the
+two cases apart.
+
 For each record, establish what became of the finding it names. Match on
 `agent` plus `file` plus `description` across `findings.json`'s `verified`,
-`correctable` and `stripped` arrays, and log one line per record in
+`correctable` and `stripped` arrays, and log one line per collapsed record in
 `verification.txt` (Step 5 — SEVERITY CALIBRATION):
 
 > "Verdict gate: `{agent}` filed APPROVE over {severity} `{file}` —
@@ -628,7 +641,9 @@ backstop above, which keys on the severity a finding actually holds after
 calibration, consolidation and validation rather than on what it was once
 claimed at. Disclosure is the entire job of this section.
 
-Disclose every record, and disclose the withdrawal branch loudest. When no
+Disclose every collapsed record, and disclose the withdrawal branch loudest.
+Every distinct claim gets a line; repeats of one claim were already folded into
+that line, with their count, by the collapse rule above. When no
 finding in `findings.json` matches the record, the agent resolved the gate by
 deleting its own CRITICAL or HIGH, and the review carries no other trace of it
 — a maintainer reading a clean APPROVE has no way to know a reviewer once

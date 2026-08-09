@@ -43,16 +43,32 @@ The suite was once a single layer — one unit suite per script — and a live r
 found six defects in an afternoon. Each layer below exists because of a defect
 that got past everything else.
 
-**Unit** (`module/tests/test-*.sh`). One `SCRIPT=` per file, exercised in
-isolation. Every file matching `test-*.sh` runs automatically; the list used to
-be hand-maintained in `Taskfile.yml`, where a suite nobody remembered to
-register silently never ran. Shared code lives in `helpers.sh` — deliberately
-*not* named `test-helpers.sh`, so the discovery glob means exactly "a suite".
-`test-harness.sh` is the one suite with no `SCRIPT=`: it covers the helpers
-themselves, which have no suite of their own to go red. A helper that quietly
-stops doing its job does not fail — it weakens whatever depends on it, which is
+**Unit** (`module/tests/test-*.sh`). Most files pin one script with `SCRIPT=`
+and exercise it in isolation. Every file matching `test-*.sh` runs
+automatically; the list used to be hand-maintained in `Taskfile.yml`, where a
+suite nobody remembered to register silently never ran. Shared code lives in
+`helpers.sh` — deliberately *not* named `test-helpers.sh`, so the discovery
+glob means exactly "a suite".
+
+A suite with no `SCRIPT=` covers something that spans scripts: a documented rule
+(`test-rc-doc-guards.sh`), a shared library (`test-rc-lib.sh`), a contract
+between scripts (`test-rc-pipeline.sh`), a schema (`test-verdict-schema.sh`), or
+the helpers themselves (`test-harness.sh`). The helpers are the case worth
+naming — they have no suite of their own to go red, and a helper that quietly
+stops doing its job does not fail. It weakens whatever depends on it, which is
 how a PATH-masking helper went on reporting that three scripts were tested
 without their dependency while the binary was still on the PATH it handed them.
+
+`test-rc-idempotency.sh` covers a property across *every* phase script: re-run
+it against a live session and its state must not change. SKILL.md Step 6 offers
+to fix findings and return to Step 3, and verify.md re-dispatches an agent and
+runs the extractor again, so re-running is part of the contract rather than an
+edge case. **Adding a phase script means adding it here** — the per-script
+suites cover the specific defects they were written for, and a script absent
+from this sweep is a script whose re-run behaviour nobody checks.
+`rc-prepare.sh` is the one deliberate omission: a session *is* a run, so
+re-running must produce a new one, and its growth is bounded by the session LRU
+instead.
 
 **End-to-end** (`module/tests/e2e/pipeline.venom.yml`). Unit tests cannot see
 seams. Verification Step 3c tells the orchestrator to write `clusters.json`
@@ -85,6 +101,17 @@ held whether the reducer merged correctly or deleted the array — which is how 
 bug that destroyed unrelated HIGH findings passed for months. Use
 `assert_conserved` and put bystanders in the fixture; it refuses to run without
 them.
+
+**Assert re-runs with `assert_idempotent`,** which runs a command twice and
+diffs a named state path. Two things about it are load-bearing. The snapshot is
+taken *after* run 1, not before: the first run is the one legitimately allowed
+to do work, and idempotence is the claim about every run after it. And the state
+path is an argument rather than "the session", so a subtree required to grow can
+be excluded from the claim — `rc-extract-verdict.sh` is asserted on `verdicts/`
+precisely because `gate-firings.jsonl` beside it must keep appending. All three
+of its exits report through `FAIL` and return 0; a helper that returned non-zero
+would take a `set -e` suite down at the exact moment it had a regression to
+report, before the suite could print its `Results:` line.
 
 **Match precisely.** `! grep -q '700'` over a log that also contains timestamps
 and generated ids fails at random — a run at 07:00 was enough. Anchor to

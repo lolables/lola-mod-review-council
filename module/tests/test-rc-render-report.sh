@@ -85,11 +85,11 @@ else
 	echo "  FAIL: report missing verified finding title"
 	FAIL=$((FAIL + 1))
 fi
-if echo "$result" | grep -q "divisor-adversary-code"; then
-	echo "  PASS: report contains agent name"
+if echo "$result" | grep -q "Adversary (code)"; then
+	echo "  PASS: report attributes the finding to a named reviewer"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: report missing agent name"
+	echo "  FAIL: report does not name the reviewer"
 	FAIL=$((FAIL + 1))
 fi
 if echo "$result" | grep -q "HIGH"; then
@@ -130,7 +130,12 @@ fi
 # RC_BUGS #2 guard: per-agent table verdict comes from findings.json .verdicts
 # (verbatim) and count from verified findings — table cannot disagree with
 # the findings listed above it.
-if echo "$result" | grep -qF "| divisor-adversary-code | REQUEST CHANGES | 1 |"; then
+#
+# The Agent column is the persona label, not the agent filename. It is the only
+# place the report decodes the glyph each finding is labelled with: a report
+# whose findings say "🛡️" and whose table says "divisor-adversary-code" leaves
+# the reader nothing to match them on.
+if echo "$result" | grep -qF "| 🛡️ Adversary (code) | REQUEST CHANGES | 1 |"; then
 	echo "  PASS: per-agent table row reflects verdicts map + finding count"
 	PASS=$((PASS + 1))
 else
@@ -280,7 +285,7 @@ else
 	echo "  FAIL: script aborted (exit $exit_code) on malformed models.json"
 	FAIL=$((FAIL + 1))
 fi
-if echo "$result" | grep -qF "| divisor-adversary-code | REQUEST CHANGES | 1 |"; then
+if echo "$result" | grep -qF "| 🛡️ Adversary (code) | REQUEST CHANGES | 1 |"; then
 	echo "  PASS: report still renders findings and verdict table"
 	PASS=$((PASS + 1))
 else
@@ -367,7 +372,7 @@ cat >"$session/verdicts/findings.json" <<'EVIDENCE'
 }
 EVIDENCE
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-row=$(echo "$result" | grep 'divisor-guard-code' || true)
+row=$(echo "$result" | grep 'Guard (code)' || true)
 if echo "$row" | grep -q 'UNKNOWN'; then
 	echo "  PASS: null verdict renders UNKNOWN"
 	PASS=$((PASS + 1))
@@ -1021,6 +1026,114 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session"
+
+echo "Test: a report finding carries everything the PR comment carries"
+# The whole output for a finding used to be one line: a 60-byte cut of the
+# description plus (file, agent). No line number — though the data had one —
+# no evidence, no recommendation. A folded SECONDARY got its full angle and its
+# recommendation, so the finding that survived consolidation was the least
+# documented thing in the section.
+s=$(new_session)
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":42,
+  "evidence":"if exp < now {",
+  "description":"Tokens that expire at exactly the current instant are rejected by the boundary check. A client that refreshes on the boundary is logged out without warning.",
+  "recommendation":"Compare with <= so a token expiring exactly now is still accepted.",
+  "status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES"}}
+FJ
+printf 'Review Council Session\nOwner:        acme\nRepo:         widgets\nEffort:       standard\nReview root:  .\n' >"$s/session.txt"
+printf '# Review Council Session Tracking\n\n## Phase: Preparation\n\n- Forge: github\n- PR: 42\n- Mode: code\n' >"$s/tracking.md"
+echo "REQUEST CHANGES" >"$s/verdict.txt"
+write_verification_log "$s"
+rep=$(bash "$SCRIPT" "$s" 2>/dev/null)
+
+if grep -qF 'auth/token.go:42' <<<"$rep"; then
+	echo "  PASS: the line number reaches the report"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no line number — it is in the data and was dropped"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF 'if exp < now {' <<<"$rep"; then
+	echo "  PASS: evidence is quoted"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no evidence — the reader cannot see what was found"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF 'Compare with <= so a token expiring exactly now is still accepted.' <<<"$rep"; then
+	echo "  PASS: the recommendation reaches the report"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no recommendation — the reader cannot act"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF 'A client that refreshes on the boundary is logged out without warning.' <<<"$rep"; then
+	echo "  PASS: the full description survives"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the description is truncated or absent"
+	FAIL=$((FAIL + 1))
+fi
+# The first sentence is 84 characters, so a 60-byte cut lands mid-word at
+# "are reject". Pin both directions: the whole sentence present, the cut absent.
+# A fixture whose first sentence happened to be 60 characters would pass under
+# either rule and guard nothing.
+if grep -qF '**Tokens that expire at exactly the current instant are rejected by the boundary check**' <<<"$rep"; then
+	echo "  PASS: headline is the whole first sentence"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: headline is not the whole first sentence"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF 'are reject**' <<<"$rep"; then
+	echo "  FAIL: the headline is still cut at 60 bytes, mid-word"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no 60-byte cut in the report"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$s"
+
+echo "Test: consolidated angles still render beneath their primary"
+# The one thing the old block did well. It must survive the rewrite: dropping a
+# folded reviewer's angle is how a perspective disappears from the review.
+s=$(new_session)
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"HIGH","file":"svc/load.py","line":42,
+  "evidence":"except:","description":"Bare except swallows every error. The failure reaches nobody.",
+  "recommendation":"Catch the specific exception.",
+  "status":"verified","verdict":"REQUEST CHANGES",
+  "provenance":{"consolidated_from":[
+    {"agent":"divisor-testing-code","severity":"MEDIUM","angle":"untested failure path","recommendation":"add a test"}]}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":1,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES"}}
+FJ
+printf 'Review Council Session\nOwner:        acme\nRepo:         widgets\nEffort:       standard\nReview root:  .\n' >"$s/session.txt"
+printf '# Review Council Session Tracking\n\n## Phase: Preparation\n\n- Forge: github\n- PR: 42\n- Mode: code\n' >"$s/tracking.md"
+echo "REQUEST CHANGES" >"$s/verdict.txt"
+write_verification_log "$s"
+rep=$(bash "$SCRIPT" "$s" 2>/dev/null)
+# Every field the "Also flagged by" line claims to carry is pinned separately.
+# Asserting only the header and the angle left the recommendation unguarded —
+# dropping it from the printf kept this green — and left the persona label
+# unguarded too, which is the whole reason the list stopped naming agent files:
+# a raw filename here names one reviewer two ways inside a single finding.
+if grep -qF 'Also flagged by:' <<<"$rep" &&
+	grep -qF 'untested failure path' <<<"$rep" &&
+	grep -qF 'add a test' <<<"$rep" &&
+	grep -qF '🧪 Tester (code)' <<<"$rep"; then
+	echo "  PASS: the folded angle, its recommendation and its persona label survive"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a consolidated reviewer's angle, recommendation or persona label was dropped"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
 
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

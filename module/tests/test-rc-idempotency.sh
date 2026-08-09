@@ -102,8 +102,22 @@ rm -rf "$s"
 echo "Test 5: rc-render-report.sh is idempotent"
 s=$(mktemp -d)
 make_review_session "$s"
+write_verification_log "$s"
 render_report() { bash "$SCRIPTS/rc-render-report.sh" "$1" >"$1/report.md"; }
 render_report "$s"
+# Assert the fixture rendered before asserting the render is stable. The
+# renderer refuses without verification.txt and writes a six-line stub instead,
+# and diffing two stubs passes while the severity loop, rc_finding_block,
+# persona_label and the consolidated_from list never execute at all. Grep for
+# the finding's own location, so this fails the moment the fixture stops
+# reaching the section the test claims to cover.
+if grep -qF 'auth/token.go:1' "$s/report.md"; then
+	echo "  PASS: the fixture renders a findings section"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: report.md holds no rendered finding — the idempotency check below is vacuous"
+	FAIL=$((FAIL + 1))
+fi
 assert_idempotent "rc-render-report.sh" "$s/report.md" render_report "$s"
 rm -rf "$s"
 

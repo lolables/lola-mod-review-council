@@ -473,6 +473,43 @@ rm -rf "$s"
 
 rm -rf "$mask_dir"
 
+echo "Test: a verdict carrying a title is accepted and the title reaches the JSON"
+s=$(new_session)
+write_raw "$s" divisor-adversary-code \
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"Expiry check rejects boundary tokens","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"Tokens expiring now are rejected.","recommendation":"Use <=."}]}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "a titled verdict validates"
+assert_jq "$s/verdicts/divisor-adversary-code.json" '.findings[0].title' \
+	"Expiry check rejects boundary tokens" "the title survives extraction"
+rm -rf "$s"
+
+echo "Test: an over-long title is rejected rather than truncated downstream"
+# 120 is enforced at the boundary on purpose. A renderer that cut an over-long
+# title would have moved the arbitrary limit rather than removed it.
+s=$(new_session)
+long=$(printf 'x%.0s' {1..121})
+write_raw "$s" divisor-adversary-code \
+	"{\"agent\":\"divisor-adversary-code\",\"files_read\":[\"a.go\"],\"verdict\":\"REQUEST CHANGES\",\"findings\":[{\"title\":\"$long\",\"severity\":\"HIGH\",\"file\":\"a.go\",\"line\":1,\"evidence\":\"if exp < now\",\"description\":\"d\",\"recommendation\":\"r\"}]}"
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "an over-long title is refused"
+rm -rf "$s"
+
+echo "Test: the remediation text names title and its limit"
+# The remediation is the only instruction a rejected reviewer sees. A field it
+# does not mention is a field the re-dispatch cannot supply.
+s=$(new_session)
+write_raw "$s" divisor-adversary-code 'not json at all'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+rem=$(jq -r '.remediation' <<<"$result")
+if grep -qF '"title"' <<<"$rem" && grep -qF '120' <<<"$rem"; then
+	echo "  PASS: remediation names title and the 120-character bound"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: remediation does not tell a rejected reviewer about title"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

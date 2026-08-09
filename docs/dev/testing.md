@@ -102,6 +102,14 @@ bug that destroyed unrelated HIGH findings passed for months. Use
 `assert_conserved` and put bystanders in the fixture; it refuses to run without
 them.
 
+**Assert the fixture reached the code you claim to test.** A renderer refusing
+its precondition still writes a file, and a test comparing two refusals passes
+without the section under test ever executing. `test-rc-idempotency.sh` Test 5
+did exactly that for as long as its fixture lacked the verification log
+`rc-render-report.sh` refuses to render without. Grep the output for something
+only the real path produces — a finding's own location — before asserting
+anything about how it behaves.
+
 **Assert re-runs with `assert_idempotent`,** which runs a command twice and
 diffs a named state path. Two things about it are load-bearing. The snapshot is
 taken *after* run 1, not before: the first run is the one legitimately allowed

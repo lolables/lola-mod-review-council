@@ -41,7 +41,7 @@ _warned_no_validator=0
 # — drift fails the suite instead of silently splitting the two validation
 # paths apart. Keep each on one line: the test extracts them with sed.
 readonly RC_TOP_KEYS='["agent","files_read","verdict","findings"]'
-readonly RC_FINDING_KEYS='["severity","file","line","evidence","constraint","description","recommendation"]'
+readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation"]'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -113,6 +113,12 @@ validate() { # json_string
 			(.recommendation | nonempty_string) and
 			((.line == null) or (.line | integerish)) and
 			((has("constraint") | not) or (.constraint | type) == "string") and
+			# `title` is optional, but when present the 120 bound has to hold
+			# HERE, not only under a real validator. This fallback is the boundary
+			# on every host without sourcemeta/jsonschema, and the bound exists so
+			# that no renderer downstream has to truncate — an unenforced limit
+			# just moves the arbitrary cut somewhere less visible.
+			((has("title") | not) or ((.title | nonempty_string) and (.title | length) <= 120)) and
 			(([keys[]] - $fkeys) | length) == 0
 		))
 	' >/dev/null 2>&1
@@ -219,7 +225,8 @@ if [[ "$invalid_count" -gt 0 ]]; then
 Your response must be exactly one fenced ```json block matching verdict-schema.json:
 { "agent": "...", "files_read": [...], "verdict": "APPROVE|REQUEST CHANGES",
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
-  "constraint": "...", "description": "...", "recommendation": "..." } ] }
+  "constraint": "...", "description": "...", "recommendation": "...",
+  "title": "optional headline, max 120 characters" } ] }
 Emit only the block — no prose before or after. Re-emit your full verdict now.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \

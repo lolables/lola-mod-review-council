@@ -99,6 +99,11 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   `verdict` (that agent's overall verdict, copied verbatim) added during
   merge, and a `provenance` object — empty at this stage, filled in by
   correction/calibration/deduplication/validation (Steps 1-4 below).
+- `title`: optional, reviewer-supplied, carried through unchanged. When a
+  reviewer sends one it becomes the finding's headline in `report.md` and the
+  PR comment; when absent the renderers derive a headline from the first
+  sentence of `description`. Bounded at 120 characters by the schema, so no
+  step in this phase needs to trim it.
 - `total_findings`: count before mechanical verification (verified +
   correctable + stripped).
 - `duplicates_consolidated`: count of duplicate findings merged away —

@@ -46,7 +46,7 @@ fi
 nl=$'\n'
 # shellcheck disable=SC2016 # literal markdown fence delimiter, not command substitution.
 fence='```'
-quote_re="\*\*The expiry check rejects tokens at the exact boundary\.\*\*[^${nl}]*${nl}${nl}  ${fence}"
+quote_re="\*\*The expiry check rejects tokens at the exact boundary\*\*[^${nl}]*${nl}${nl}  ${fence}"
 if [[ "$body" =~ $quote_re ]]; then
 	echo "  PASS: blank line before evidence fence"
 	PASS=$((PASS + 1))
@@ -165,18 +165,30 @@ else
 fi
 rm -rf "$sess"
 
-# Test 4: no title field -> falls back to first ~60 chars of description
-echo "Test 4: title falls back to description prefix"
+# Test 4: no title field -> falls back to the description's FIRST SENTENCE.
+# This used to assert a 60-byte prefix, which was not a fallback in practice:
+# `title` was absent from verdict-schema.json and additionalProperties:false
+# rejected any verdict carrying one, so every headline in every artifact was
+# that mid-word cut. The fixture's second sentence is what makes the boundary
+# observable — a single-sentence description would pass either way.
+echo "Test 4: title falls back to the description's first sentence"
 sess=$(mktemp -d)
 make_review_session "$sess"
 jq '.verified[0].title = null' "$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
-if grep -qF "**The expiry check rejects tokens at the exact boundary.**" "$sess/comment-body.md"; then
-	echo "  PASS: title falls back to description prefix"
+if grep -qF "**The expiry check rejects tokens at the exact boundary**" "$sess/comment-body.md"; then
+	echo "  PASS: headline is the first sentence, terminal period dropped"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: title fallback not rendered"
+	echo "  FAIL: first-sentence fallback not rendered"
 	FAIL=$((FAIL + 1))
+fi
+if grep -qF "logged out without warning.**" "$sess/comment-body.md"; then
+	echo "  FAIL: the headline swallowed the second sentence too"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the headline stops at the sentence boundary"
+	PASS=$((PASS + 1))
 fi
 rm -rf "$sess"
 
@@ -503,6 +515,85 @@ if [[ "${#dashes}" -eq 1 && "$body" != *–* ]]; then
 else
 	echo "  FAIL: expected 1 em dash (evidence) and no en dash, got ${#dashes} em dashes"
 	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a title-less finding is headlined by its first sentence, not 60 bytes"
+# .title was unreachable until the schema gained it, so this is the path every
+# finding took: a hard 60-byte cut, mid-word, with no ellipsis.
+sess=$(mktemp -d)
+make_review_session "$sess"
+cat >"$sess/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":42,
+  "evidence":"if exp < now {",
+  "description":"Tokens expiring at exactly the current instant are rejected. A client that refreshes on the boundary is logged out without warning.",
+  "recommendation":"Compare with <= so a token expiring exactly now is still accepted.",
+  "status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES"}}
+FJ
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body="$sess/comment-body.md"
+if grep -qE '\*\*Tokens expiring at exactly the current instant are rej\*\*' "$body"; then
+	echo "  FAIL: headline is still cut at 60 bytes, mid-sentence"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no 60-byte cut"
+	PASS=$((PASS + 1))
+fi
+if grep -qF '**Tokens expiring at exactly the current instant are rejected**' "$body"; then
+	echo "  PASS: headline is the first sentence, ending where the author ended it"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: headline is not the first sentence"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a supplied title is used verbatim"
+sess=$(mktemp -d)
+make_review_session "$sess"
+cat >"$sess/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":42,
+  "title":"Expiry check rejects boundary tokens",
+  "evidence":"if exp < now {",
+  "description":"Tokens expiring at exactly the current instant are rejected, so a client that refreshes on the boundary is logged out.",
+  "recommendation":"Use <=.","status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES"}}
+FJ
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF '**Expiry check rejects boundary tokens**' "$sess/comment-body.md"; then
+	echo "  PASS: the reviewer's own headline is used"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a supplied title was ignored"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: the analysis details is omitted when it would only repeat the headline"
+# A single-sentence description IS its own headline. Rendering it twice, once
+# collapsed, is noise dressed as structure.
+sess=$(mktemp -d)
+make_review_session "$sess"
+cat >"$sess/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":42,
+  "evidence":"if exp < now {","description":"Expired tokens are accepted at the boundary.",
+  "recommendation":"Use <=.","status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES"}}
+FJ
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF 'Full reviewer analysis' "$sess/comment-body.md"; then
+	echo "  FAIL: a details block was rendered that only repeats the headline"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no redundant analysis block"
+	PASS=$((PASS + 1))
 fi
 rm -rf "$sess"
 

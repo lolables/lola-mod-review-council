@@ -153,6 +153,24 @@ check_severity_copy "rc-render-comment.sh severity loops" \
 check_severity_copy "jq/consolidate-clusters.jq cluster ranker" \
 	"$SCRIPTS_DIR/jq/consolidate-clusters.jq" 'def rank:' prefix
 
+echo "Test: title is an optional finding property with a length bound"
+# The renderers have always headlined findings with `.title // ...`, but the
+# schema never had the property and sets additionalProperties:false — so every
+# reviewer that supplied one had its whole verdict rejected, and the fallback
+# was the only path ever taken. Making it real is what lets a reviewer write a
+# headline instead of having one cut out of its prose.
+title_prop=$(jq -c '.properties.findings.items.properties.title' "$SCHEMA")
+assert_equals "$title_prop" '{"type":"string","minLength":1,"maxLength":120}' \
+	"title is a bounded string"
+required=$(jq -c '.properties.findings.items.required' "$SCHEMA")
+if grep -qF '"title"' <<<"$required"; then
+	echo "  FAIL: title is required — every existing reviewer would break"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: title is optional"
+	PASS=$((PASS + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

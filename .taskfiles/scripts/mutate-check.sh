@@ -322,6 +322,20 @@ check_mutation "RC-26 cluster primary emitted once" \
 	's/map(ident) | any(. == \$fid)/false/' \
 	test-rc-consolidate.sh
 
+# Every finding headline in every artifact was a 60-byte mid-word cut, because
+# .title could not reach findings.json and the fallback was the only path.
+check_mutation "RC-27 finding headline is not byte-truncated" \
+	lib/render-findings.sh \
+	's/.title \/\/ (.description | split(". ")\[0\] | rtrimstr("."))/.title \/\/ (.description[0:60])/' \
+	test-rc-render-report.sh
+
+# An optional property the schema does not declare is one additionalProperties
+# rejects outright, taking the whole verdict with it.
+check_mutation "RC-28 schema declares the title property" \
+	../references/verdict-schema.json \
+	's/"title": { "type": "string", "minLength": 1, "maxLength": 120 },//' \
+	test-rc-extract-verdict.sh
+
 # consolidation_records accumulate across runs by design, so reporting the
 # document's running total told the reader the re-run had merged everything the
 # session had ever merged. Reverting to the total is the shipped defect.
@@ -329,6 +343,14 @@ check_mutation "RC-29 merge count is this run's delta" \
 	rc-consolidate.sh \
 	's/^sem=\$((after - before))$/sem=$after/' \
 	test-rc-consolidate.sh
+
+# Each finding is labelled with a persona glyph. While this table printed agent
+# filenames, nothing in report.md decoded that glyph — and on a report with no
+# consolidation no persona label appeared anywhere in the file.
+check_mutation "RC-30 report table names the persona" \
+	rc-render-report.sh \
+	's/^[[:space:]]*agent_persona=\$(persona_label "\$agent_name")$/agent_persona="$agent_name"/' \
+	test-rc-render-report.sh
 
 total=$((caught + missed + broken))
 echo ""

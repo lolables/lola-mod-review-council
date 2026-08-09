@@ -341,7 +341,7 @@ SES
   "verified": [
     {"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":1,
      "evidence":"if exp < now",
-     "description":"The expiry check rejects tokens at the exact boundary.",
+     "description":"The expiry check rejects tokens at the exact boundary. A client refreshing on the boundary is logged out without warning.",
      "recommendation":"Use `<=` so a token expiring exactly now is still valid.",
      "status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
   ],

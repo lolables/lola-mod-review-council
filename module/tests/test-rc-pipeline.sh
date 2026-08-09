@@ -138,8 +138,9 @@ else
 	echo "  FAIL: out-of-root finding leaked into the rendered report"
 	FAIL=$((FAIL + 1))
 fi
-# Per-agent table must reflect verbatim verdicts from the reviewers.
-if echo "$report" | grep -qF "| divisor-sre-code | APPROVE |"; then
+# Per-agent table must reflect verbatim verdicts from the reviewers, under the
+# persona label the findings above are tagged with.
+if echo "$report" | grep -qF "| ⚙️ Operator (code) | APPROVE |"; then
 	echo "  PASS: per-agent verdict rendered verbatim"
 	PASS=$((PASS + 1))
 else

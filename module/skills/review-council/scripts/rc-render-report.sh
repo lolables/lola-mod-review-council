@@ -33,6 +33,12 @@ fi
 # timeout.
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
+# The per-finding block is shared with the PR comment. This script defines no
+# rc_url_file hook, so link_location degrades to a plain code span — no forge
+# knowledge enters the report, and a future forge-aware report gains deep links
+# by defining the hook rather than by rewriting the block.
+# shellcheck source=module/skills/review-council/scripts/lib/render-findings.sh
+source "$(dirname "$0")/lib/render-findings.sh"
 rc_trap_errors # report script:line on any unhandled failure (never silent)
 
 # rc-render-report.sh: renders structured markdown report template
@@ -266,34 +272,57 @@ cat <<'EOF'
 EOF
 
 # Findings by Severity (from verified list)
+#
+# The per-finding block is rc_finding_block, shared with the PR comment — the
+# two used to describe the same findings.json differently, which is the defect
+# this section exists to not repeat. Only the GROUP wrapper is local: a heading
+# here, <details> there. report.md is read as a file, where a collapsible never
+# collapses and its contents are visible anyway, so the group stays flat and
+# only the long reviewer analysis is folded away.
 if [[ -f "$evidence_file" ]] && [[ $verified_count -gt 0 ]]; then
 	echo "## Findings by Severity"
 	echo ""
 
-	# Extract verified findings and group by severity
 	for severity in CRITICAL HIGH MEDIUM LOW; do
 		count=$(jq -r --arg sev "$severity" '[.verified[] | select(.severity == $sev)] | length' "$evidence_file" 2>/dev/null || echo 0)
-		if [[ $count -gt 0 ]]; then
-			echo "### $severity ($count)"
-			echo ""
-			# Cross-agent consolidation folds secondary findings into a surviving
-			# primary and records each fold in provenance.consolidated_from. Emit
-			# those folded angles as a sub-list under the primary so no reviewer's
-			# perspective is silently dropped from the report.
-			jq -r --arg sev "$severity" '
-				.verified[] | select(.severity == $sev) |
-				"- **\(.title // .description[0:60])** (\(.file), \(.agent))"
-				+ (
-					if ((.provenance.consolidated_from // []) | length) > 0 then
-						"\n  Also flagged by:\n" +
-						((.provenance.consolidated_from // []) | map("  - \(.agent) (\(.severity)): \(.angle) — \(.recommendation)") | join("\n"))
-					else
-						""
-					end
-				)
-			' "$evidence_file" 2>/dev/null || true
-			echo ""
-		fi
+		[[ $count -gt 0 ]] || continue
+		case "$severity" in
+		CRITICAL) sev_emoji="🔴" ;;
+		HIGH) sev_emoji="🟠" ;;
+		MEDIUM) sev_emoji="🟡" ;;
+		*) sev_emoji="🔵" ;;
+		esac
+		echo "### $sev_emoji $severity ($count)"
+		echo ""
+		for ((fidx = 0; fidx < count; fidx++)); do
+			base=$(jq -c --arg s "$severity" "[.verified[] | select(.severity == \$s)][$fidx]" "$evidence_file")
+			rc_finding_block "$base"
+			# Cross-agent consolidation folds secondary findings into a
+			# surviving primary and records each fold in
+			# provenance.consolidated_from. Emit those angles beneath the block
+			# so no reviewer's perspective is silently dropped from the report.
+			#
+			# Labelled with persona_label, the same way the block labels the
+			# primary. The list used to name every reviewer by agent filename,
+			# which matched a primary that did the same; now that the primary
+			# carries a persona emoji, a raw filename here would name one
+			# reviewer two ways inside a single finding.
+			cf_count=$(jq '(.provenance.consolidated_from // []) | length' <<<"$base")
+			if [[ "$cf_count" -gt 0 ]]; then
+				echo "  Also flagged by:"
+				for ((cidx = 0; cidx < cf_count; cidx++)); do
+					cf=$(jq -c "(.provenance.consolidated_from // [])[$cidx]" <<<"$base")
+					cf_agent=$(jq -r '.agent' <<<"$cf")
+					cf_sev=$(jq -r '.severity' <<<"$cf")
+					cf_angle=$(jq -r '.angle' <<<"$cf")
+					cf_rec=$(jq -r '.recommendation' <<<"$cf")
+					cf_label=$(persona_label "$cf_agent")
+					printf '  - %s (%s): %s — %s\n' \
+						"$cf_label" "$cf_sev" "$cf_angle" "$cf_rec"
+				done
+			fi
+		done
+		echo ""
 	done
 fi
 
@@ -306,6 +335,13 @@ echo "|-------|---------|----------|"
 # Read the verdict map from findings.json: verdict verbatim, count from
 # verified findings. Single source — table cannot disagree with the findings
 # listed above.
+#
+# The Agent column carries persona_label, matching what rc-render-comment.sh
+# already prints. This table is the only place the report can decode the glyph
+# every finding above is tagged with; while it printed agent filenames, a report
+# with no consolidation contained no persona label anywhere and the reader had
+# nothing to resolve "🛡️" against. The agent filename stays available verbatim
+# in verdicts/findings.json for anything parsing rather than reading.
 verdict_map="$session_dir/verdicts/findings.json"
 if [[ -f "$verdict_map" ]]; then
 	agent_names=$(jq -r '.verdicts | keys[]' "$verdict_map" 2>/dev/null || true)
@@ -313,7 +349,8 @@ if [[ -f "$verdict_map" ]]; then
 		[[ -n "$agent_name" ]] || continue
 		verdict=$(jq -r --arg a "$agent_name" '.verdicts[$a] // "UNKNOWN"' "$verdict_map")
 		finding_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent==$a)] | length' "$verdict_map")
-		echo "| $agent_name | $verdict | $finding_count |"
+		agent_persona=$(persona_label "$agent_name")
+		echo "| $agent_persona | $verdict | $finding_count |"
 	done <<<"$agent_names"
 fi
 

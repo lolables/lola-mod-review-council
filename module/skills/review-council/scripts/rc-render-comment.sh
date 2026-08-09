@@ -6,6 +6,8 @@ set -uo pipefail
 _RC_RENDER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$_RC_RENDER_DIR/rc-lib.sh"
+# shellcheck source=module/skills/review-council/scripts/lib/render-findings.sh
+source "$_RC_RENDER_DIR/lib/render-findings.sh"
 
 # rc-render-comment.sh — forge-NEUTRAL renderer for the Review Council PR
 # comment. It owns ALL markdown assembly and computes the neutral facts itself
@@ -30,21 +32,6 @@ MARKER_KEY="review-council:marker"
 
 # --- Neutral helpers (read the globals rc_render_comment_body sets) ---
 
-# House style for LLM-authored prose: em/en dashes become plain hyphens.
-#
-# Applied field by field at assignment, NEVER to the assembled body. A
-# whole-body pass also rewrote bytes inside the evidence block, and
-# references/reviewer-protocol.md requires evidence to reach the reader as a
-# byte-for-byte quote of the reviewed file — it is the same string the verifier
-# matched against that file, and rc-render-report.sh renders it untouched, so a
-# body-wide filter made the comment and the report disagree about one finding.
-# Static template text in this renderer is written without those characters in
-# the first place, so it needs no filter at all.
-normalize_dashes() { # text
-	local t="${1//—/-}"
-	printf '%s' "${t//–/-}"
-}
-
 # Verified-finding count for a severity. Reads $RC_EVIDENCE.
 sev_count() { # SEVERITY
 	[[ -f "$RC_EVIDENCE" ]] || {
@@ -68,86 +55,6 @@ agent_findings() { # agent-name
 	echo "${out:-none}"
 }
 
-# Reviewer persona label (emoji + focus + mode); host-agnostic.
-persona_label() { # agent-file-name
-	local p mode m=""
-	p=$(printf '%s' "$1" | sed -E 's/^divisor-//; s/-(code|spec)$//')
-	mode=$(printf '%s' "$1" | sed -nE 's/^divisor-[a-z]+-(code|spec)$/\1/p')
-	[[ -n "$mode" ]] && m=" (${mode})"
-	case "$p" in
-	adversary) echo "🛡️ Adversary${m}" ;;
-	architect) echo "🏛️ Architect${m}" ;;
-	guard) echo "🧭 Guard${m}" ;;
-	testing) echo "🧪 Tester${m}" ;;
-	sre) echo "⚙️ Operator${m}" ;;
-	curator) echo "📚 Curator${m}" ;;
-	*) echo "🔹 $1" ;;
-	esac
-}
-
-# Reviewer persona emoji only (matches the table); host-agnostic.
-persona_emoji() { # agent-file-name
-	local p
-	p=$(printf '%s' "$1" | sed -E 's/^divisor-//; s/-(code|spec)$//')
-	case "$p" in
-	adversary) echo "🛡️" ;;
-	architect) echo "🏛️" ;;
-	guard) echo "🧭" ;;
-	testing) echo "🧪" ;;
-	sre) echo "⚙️" ;;
-	curator) echo "📚" ;;
-	*) echo "🔹" ;;
-	esac
-}
-
-# Render a finding location as a forge deep-link when a rc_url_file hook is
-# defined AND returns a URL, else a plain code span. Reads $RC_FORGE_WEB /
-# $RC_HEAD_SHA.
-link_location() { # file line
-	local f="$1" l="$2" loc="$1" url=""
-	[[ -n "$l" && "$l" != "null" ]] && loc="$f:$l"
-	declare -F rc_url_file >/dev/null 2>&1 && url=$(rc_url_file "$RC_FORGE_WEB" "$RC_HEAD_SHA" "$f" "$l")
-	# shellcheck disable=SC2016 # the backticks are literal markdown code-span
-	# delimiters, not command substitution.
-	if [[ -n "$url" ]]; then
-		printf '[`%s`](%s)' "$loc" "$url"
-	else
-		printf '`%s`' "$loc"
-	fi
-}
-
-# Indent every line of stdin by two spaces so multi-line content stays inside
-# the enclosing markdown list item. Blank lines stay blank (no trailing spaces).
-indent2() {
-	local l
-	while IFS= read -r l || [[ -n "$l" ]]; do
-		[[ -n "$l" ]] && printf '  %s\n' "$l" || printf '\n'
-	done
-}
-
-# Render a finding's evidence as a fenced code block that cannot bleed into the
-# surrounding structure. Evidence is verbatim content copied out of a changeset
-# file, so an author controls every byte of it: an inner line beginning with
-# `#`/`>`/`-` must not become a real heading/blockquote/list item, and no inner
-# line may terminate the block early.
-#
-# A fence only guarantees the first of those. The two spaces indent2 adds keep
-# the fence inside its list item but do NOT neutralise a fence line in the
-# evidence — up to three leading spaces is still a valid CommonMark closing
-# fence — so the delimiter is sized to the content instead: widen it one
-# backtick at a time until no run that long occurs anywhere in the evidence.
-# Single-line evidence goes through the same form; it used to render as an
-# inline code span, which any backtick in the quoted source terminates.
-evidence_block() { # evidence-text
-	# shellcheck disable=SC2016 # the backticks are literal markdown fence
-	# delimiters, not command substitution.
-	local ev="$1" fence='```'
-	while [[ "$ev" == *"$fence"* ]]; do
-		fence+='`'
-	done
-	printf '%s\n%s\n%s\n' "$fence" "$ev" "$fence" | indent2
-}
-
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
 # RC_EVIDENCE (no `local`) so the sourcing per-forge script can build its own
 # forge-specific links (e.g. #issuecomment-<id>). ---
@@ -158,7 +65,7 @@ rc_render_comment_body() { # session_dir body_file
 	local stamp commit_url repo_url
 	local c_crit c_high c_med c_low
 	local agent_rows="" name av
-	local findings_block="" sev n se f l t ev agent desc rec constraint
+	local findings_block="" sev n se
 	local marker_line
 
 	RC_EVIDENCE="$session_dir/verdicts/findings.json"
@@ -259,31 +166,12 @@ rc_render_comment_body() { # session_dir body_file
 			for ((idx = 0; idx < count; idx++)); do
 				local base
 				base=$(jq -c --arg s "$sev" "[.verified[] | select(.severity==\$s)][$idx]" "$RC_EVIDENCE")
-				f=$(jq -r '.file' <<<"$base")
-				l=$(jq -r '.line // ""' <<<"$base")
-				t=$(jq -r '.title // (.description[0:60])' <<<"$base")
-				ev=$(jq -r '.evidence' <<<"$base")
-				agent=$(jq -r '.agent' <<<"$base")
-				desc=$(jq -r '.description' <<<"$base")
-				rec=$(jq -r '.recommendation' <<<"$base")
-				constraint=$(jq -r '.constraint // ""' <<<"$base")
-				# Prose the reviewer wrote takes the house-style dash pass;
-				# `evidence` deliberately does not (see normalize_dashes).
-				t=$(normalize_dashes "$t")
-				desc=$(normalize_dashes "$desc")
-				rec=$(normalize_dashes "$rec")
-				constraint=$(normalize_dashes "$constraint")
-				emoji=$(persona_emoji "$agent")
-				loc_link=$(link_location "$f" "$l")
-				findings_block+="- ${emoji} **${t}** (${loc_link})"$'\n\n'
-				findings_block+="$(evidence_block "$ev")"$'\n\n'
-				findings_block+=$(printf '💡 **Recommendation:** %s\n' "$rec" | indent2)
-				if [[ -n "$constraint" ]]; then
-					findings_block+=$'\n'"$(printf '**Constraint:** %s\n' "$constraint" | indent2)"
-				fi
-				findings_block+=$'\n\n'"  <details><summary>💬 Full reviewer analysis</summary>"$'\n\n'
-				findings_block+=$(printf '%s\n' "$desc" | indent2)
-				findings_block+=$'\n'"  </details>"$'\n\n'
+				# `$(...)` strips trailing newlines, so the block's own closing
+				# blank line has to be re-added here. Without it the group's
+				# `</details>` lands on the same line as the finding's, and the
+				# structure the reader collapses is silently one tag short.
+				findings_block+=$(rc_finding_block "$base")
+				findings_block+=$'\n\n'
 			done
 			findings_block+="</details>"$'\n\n'
 		done

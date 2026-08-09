@@ -1155,6 +1155,74 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-031: the finding template a reviewer copies is the only place `title` can
+# reach an agent. The schema accepting the field does nothing on its own — an
+# unadvertised optional property is one no reviewer ever sends, which is how
+# `.title` came to be dead code the renderers still branched on.
+echo "Test: the reviewer protocol advertises title and its bound (RC-031)"
+rc031_broken=0
+if ! grep -qF '"title"' <<<"$protocol_flat"; then
+	echo "  broken link: reviewer-protocol.md's finding template omits title, so no"
+	echo "               reviewer will ever supply one"
+	rc031_broken=$((rc031_broken + 1))
+fi
+if ! grep -qF '120 characters' <<<"$protocol_flat"; then
+	echo "  broken link: the length bound is unstated, so an over-long title is"
+	echo "               rejected by a rule the reviewer was never given"
+	rc031_broken=$((rc031_broken + 1))
+fi
+if [[ "$rc031_broken" -eq 0 ]]; then
+	echo "  PASS: reviewers are told to write a title and how long it may be"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC-031 has $rc031_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-032: report.md tells the model to headline the Disposition sections itself.
+# Those instructions carried the same 60-byte cut the renderer did, so removing
+# it from the code alone would leave one document with two headline rules.
+echo "Test: no 60-byte truncation survives in the authored headline rule (RC-032)"
+if grep -qF 'description[0:60]' <<<"$report_flat"; then
+	echo "  FAIL: report.md still instructs a 60-character cut"
+	FAIL=$((FAIL + 1))
+elif grep -qF 'first sentence of' <<<"$report_flat"; then
+	echo "  PASS: authored sections use the same first-sentence rule as the renderer"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: report.md states no headline rule at all"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-033: the report and the comment describe the same findings.json. They
+# drifted once — the comment grew evidence, a recommendation and the full
+# analysis while the report stayed at one truncated line — because the block was
+# written twice. A shared library nobody is required to use permits that again.
+echo "Test: both renderers use the shared finding block (RC-033)"
+rc033_broken=0
+RENDER_LIB="$SKILLS/scripts/lib/render-findings.sh"
+if [[ ! -f "$RENDER_LIB" ]]; then
+	echo "  broken link: lib/render-findings.sh is gone"
+	rc033_broken=$((rc033_broken + 1))
+fi
+for r in rc-render-report.sh rc-render-comment.sh; do
+	if ! grep -qF 'lib/render-findings.sh' "$SKILLS/scripts/$r"; then
+		echo "  broken link: $r no longer sources the shared block"
+		rc033_broken=$((rc033_broken + 1))
+	fi
+	if grep -qE '^rc_finding_block\(\)' "$SKILLS/scripts/$r"; then
+		echo "  broken link: $r defines its own rc_finding_block, which is the drift"
+		rc033_broken=$((rc033_broken + 1))
+	fi
+done
+if [[ "$rc033_broken" -eq 0 ]]; then
+	echo "  PASS: one finding block, used by both artifacts"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC-033 has $rc033_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

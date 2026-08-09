@@ -6,6 +6,15 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- `title` is an optional finding property reviewers can supply — a short
+  headline naming the defect, bounded at 120 characters and enforced at the
+  schema boundary *and* in the minimal jq validator, which is the boundary on
+  every host without `sourcemeta/jsonschema`. Both renderers had always
+  headlined a finding with `.title // <fallback>`, but the property was never
+  declared and `additionalProperties: false` rejected any verdict carrying one,
+  so the fallback was the only path ever taken. `references/reviewer-protocol.md`
+  now advertises the field, states the bound, and explains what the fallback is
+  so the opening sentence of `description` gets written to stand on its own
 - Per-forge preparation adapters at `scripts/lib/forge/<forge>.sh`, sourced once
   on the detected forge, mirroring the seam `rc-post-comment-<forge>.sh` already
   used for posting. Every difference between forges — CLI name, flags, API
@@ -286,6 +295,29 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- `report.md` findings carry the same detail as the PR comment. A finding used
+  to render as one line — a 60-byte cut of the description plus `(file, agent)`
+  — with no line number though the data held one, no evidence and no
+  recommendation. A folded secondary got its full angle *and* its
+  recommendation, so the finding that survived consolidation was the least
+  documented thing in the section. The per-finding block now comes from
+  `scripts/lib/render-findings.sh`, shared with the comment; only the
+  severity-group wrapper stays per-artifact, because a heading and a `<details>`
+  is the one place the two should differ. Three reader-visible consequences in
+  `report.md`: severity headings carry the comment's severity emoji
+  (`### 🟠 HIGH (1)`), the "Also flagged by" list names personas
+  (`🧪 Tester (code)`) instead of agent filenames, and the Per-Agent Verdicts
+  table does the same — it is the only place the report decodes the persona
+  glyph each finding is now tagged with. The agent filename stays verbatim in
+  `verdicts/findings.json` for anything parsing rather than reading
+- Finding headlines are the reviewer's `title`, or the first sentence of the
+  description — never a 60-byte cut. The old limit fell mid-word with no
+  ellipsis, in the report and in the PR comment alike. A single-sentence
+  description no longer renders a "Full reviewer analysis" block that only
+  repeats the headline above it
+- `phases/report.md`'s Disposition sections instructed the same 60-character cut
+  for the headlines the model writes itself, so the document carried two
+  headline conventions
 - Consolidation no longer accumulates phantom records across the review
   iteration loop. A cluster whose manifest named one member twice — or whose
   members shared `{file,line,agent}` because one agent filed two claims at the

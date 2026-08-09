@@ -195,10 +195,11 @@ the plan:
 $ ./scripts/review-open-prs.sh --repo ovh/venom
 Repository: ovh/venom
 Agent CLI: claude
-Unreviewed: 929 927 924 920 917 914
+Unreviewed: 929 927 917 914
 Re-review (new commits): (none)
 Skipped (already reviewed at head, unchanged): (none)
-Queue (6): 929[quick] 927[quick] 924[quick] 920[quick] 917[standard] 914[standard]
+Ignored (author email): 924 920
+Queue (4): 929[quick] 927[quick] 917[standard] 914[standard]
 
 DRY RUN — nothing will be executed or posted. Re-run with --run to execute.
 
@@ -214,16 +215,22 @@ you a redundant review instead of a silently missed one.
 
 **The word in brackets** is the effort tier, classified from each PR's GitHub
 metadata so a lockfile bump does not pay for a full deep review. In the run
-above, four bot PRs were small enough to earn `quick` and two were not. `deep`
-is forced by size or by a changed path that looks security-sensitive;
-`standard` passes no effort word at all, leaving the council on its own default.
-`--effort <tier>` overrides the classifier for the whole batch.
+above, two small bot PRs earned `quick` and two PRs did not. `deep` is forced by
+size or by a changed path that looks security-sensitive; `standard` passes no
+effort word at all, leaving the council on its own default. `--effort <tier>`
+overrides the classifier for the whole batch.
+
+`quick` needs a bot author, so with the default ignore list (below) it applies
+to automation *other than* Dependabot and Renovate — whose PRs are dropped
+before they are ever costed. Clear the list with `--no-ignore-emails` and those
+PRs come back as `quick` rather than as full reviews.
 
 | Variable          | Default | Effect                                                  |
 |-------------------|---------|---------------------------------------------------------|
 | `DEEP_FILES`      | 10      | changed files at or above this force `deep`             |
 | `QUICK_FILES`     | 2       | bot PRs at or below this many files get `quick`         |
 | `SECURITY_PATHS`  | see `--help` | extended-regex; any matching changed path forces `deep` |
+| `IGNORE_EMAILS`   | Dependabot + Renovate | **replaces** the ignored-author list; empty means ignore nobody |
 | `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
 | `EXTRA_CLAUDE_ARGS` | unset | appended to every `claude` invocation, e.g. `--model opus` |
 | `EXTRA_OPENCODE_ARGS` | unset | appended to every `opencode` invocation                |
@@ -232,6 +239,39 @@ is forced by size or by a changed path that looks security-sensitive;
 both it and an opencode run is an error. Ignoring the cap would run the whole
 batch uncapped on the strength of a setting asking for the opposite, and you
 would find out on the invoice.
+
+**Ignoring dependency bots.** Dependabot and Renovate open PRs faster than a
+council can review them, and every review costs money, so PRs written entirely
+by their commit-author addresses are dropped before they reach the queue and
+listed on the `Ignored (author email)` line.
+
+GitHub puts no email on the pull request itself, so the addresses compared are
+the commit authors' — and a PR is ignored only when it has at least one commit
+author and *every* one of them is on the list:
+
+| PR contents                                  | Result   |
+|----------------------------------------------|----------|
+| commits by `renovate[bot]`                   | ignored  |
+| commits by `renovate[bot]` **and** a human   | reviewed |
+| authorship lookup failed (no addresses)      | reviewed |
+
+One human commit on a Renovate branch is human work, so the PR comes back for
+review; a bot-authored rebase or merge commit cannot disqualify somebody's PR;
+and a failed lookup costs you a redundant review rather than a silent miss.
+
+Three ways to change the list, and one case where it does not apply:
+
+- `--ignore-email <addr>` adds an address, and may be repeated.
+- `--no-ignore-emails` clears the list, queueing every PR.
+- `IGNORE_EMAILS` **replaces** the built-in list rather than extending it, as a
+  comma- or whitespace-separated string. `IGNORE_EMAILS=` (empty) ignores
+  nobody. `--ignore-email` then appends to whatever is in effect.
+- Naming one PR (`./scripts/review-open-prs.sh 123`) overrides the list. Asking
+  for a PR by number or URL says which PR you want, so it is never filtered out
+  from under you; the list is triage for batch runs.
+
+It is deliberately separate from `--force`, which decides only whether *already
+reviewed* PRs get queued. `--force` will not re-review an ignored bot PR.
 
 **Which CLI runs the council.** `claude` is preferred when both are installed;
 otherwise whichever is on `PATH` is used, and `--cli claude|opencode` picks one
@@ -287,6 +327,8 @@ names every PR that failed.
 ./scripts/review-open-prs.sh 123 --run              # one PR
 ./scripts/review-open-prs.sh --run --yes            # unattended, no confirmation
 ./scripts/review-open-prs.sh --cli opencode --run   # review through opencode
+./scripts/review-open-prs.sh --no-ignore-emails --run              # bot PRs too
+./scripts/review-open-prs.sh --ignore-email ci@corp.example --run  # skip one more
 ./scripts/review-open-prs.sh --force --effort deep --run
 ```
 

@@ -67,6 +67,29 @@
 # current headRefOid. If a lookup fails, the PR is treated as needing review
 # (fail-open) rather than skipped.
 #
+# Ignoring dependency bots:
+#
+# Dependency bots open PRs faster than a council can review them, and every
+# review costs real money, so PRs written entirely by a known bot address are
+# dropped before they reach the queue. The default list covers Dependabot and
+# Renovate, in both their GitHub App and self-hosted commit-author forms.
+#
+# GitHub exposes no email on the pull request itself, so the addresses compared
+# are the commit authors' (.commits[].authors[].email), matched case-
+# insensitively against the whole address. A PR is ignored only when it has at
+# least one commit author and EVERY one of them is on the list: a Renovate
+# branch that someone has pushed a fix onto contains human work and comes back
+# for review. The at-least-one requirement also keeps an authorship lookup that
+# returns nothing from being vacuously true — a transient gh failure fails open
+# to reviewing, as everywhere else here.
+#
+# The list is batch triage, so it does not apply to a PR you name explicitly:
+# asking for #123 by number or URL says which PR you want.
+#
+#   --ignore-email <addr>   Add an address to the list. Repeatable.
+#   --no-ignore-emails      Clear the list; consider every PR.
+#   IGNORE_EMAILS           Replace the built-in list (see Environment).
+#
 # Default is a DRY RUN: it classifies the PRs and prints the plan, but does
 # not invoke claude or post anything. Pass --run to execute.
 #
@@ -87,6 +110,8 @@
 #   ./review-open-prs.sh --effort deep --run    # force deep on every PR (old behavior)
 #   ./review-open-prs.sh --run --yes            # unattended: no confirmation prompt
 #   ./review-open-prs.sh --cli opencode --run   # review through opencode, not claude
+#   ./review-open-prs.sh --ignore-email ci@corp.example --run  # also skip CI's PRs
+#   ./review-open-prs.sh --no-ignore-emails --run              # review bot PRs too
 #
 # Target selection:
 #   * A positional argument may be a PR number (123) or a GitHub PR URL. Either
@@ -108,6 +133,11 @@
 #   SECURITY_PATHS      Extended-regex; any changed path matching it (case-
 #                       insensitive) forces deep effort. Default covers
 #                       ca/crl/cert/key/auth/crypto/tls/token/rbac/sign/... .
+#   IGNORE_EMAILS       Comma- or whitespace-separated commit-author addresses
+#                       whose PRs are skipped. REPLACES the built-in Dependabot
+#                       and Renovate list rather than extending it; set it to
+#                       the empty string to consider every PR. --ignore-email
+#                       appends to whichever list is in effect.
 #
 # Requirements: gh (authenticated), jq, and one of claude or opencode.
 
@@ -157,6 +187,33 @@ QUICK_FILES="${QUICK_FILES:-2}"
 # authentication, cryptography, ...) are spelled out so they are not missed.
 SECURITY_PATHS="${SECURITY_PATHS:-(^|/)(ca|crl|certs?|certificates?|keys?|keystores?|keypairs?|auth|authn|authz|authentication|authorization|crypto|cryptography|secrets?|tls|tokens?|rbac|sign|signing|signature|passwords?|credentials?)([/._-]|$)}"
 
+# Commit-author addresses whose PRs are skipped (see header). The GitHub App
+# forms are the numeric +<id> addresses; the bare and vendor addresses cover
+# self-hosted and older deployments of the same two bots.
+IGNORE_EMAILS_DEFAULT="49699333+dependabot[bot]@users.noreply.github.com
+dependabot[bot]@users.noreply.github.com
+support@dependabot.com
+29139614+renovate[bot]@users.noreply.github.com
+renovate[bot]@users.noreply.github.com
+renovate@whitesourcesoftware.com
+bot@renovateapp.com"
+# `-` rather than `:-`, unlike the thresholds above: IGNORE_EMAILS="" has to
+# mean "ignore nobody", not "fall back to the default list".
+IGNORE_EMAILS="${IGNORE_EMAILS-$IGNORE_EMAILS_DEFAULT}"
+
+# Split on commas and whitespace. Pathname expansion is off around the unquoted
+# expansion that does the splitting because every default entry contains
+# "[bot]", which globbing reads as a bracket expression: with a file named
+# e.g. `dependabotb@users.noreply.github.com` in the working directory, the
+# address would be silently rewritten to that filename and match nothing.
+IGNORE_EMAIL_LIST=()
+set -f
+for entry in ${IGNORE_EMAILS//,/ }; do
+	IGNORE_EMAIL_LIST+=("$entry")
+done
+set +f
+unset entry
+
 usage() {
 	sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//'
 }
@@ -200,6 +257,17 @@ while [[ "$#" -gt 0 ]]; do
 			;;
 		esac
 		shift
+		;;
+	--ignore-email)
+		[[ "$#" -ge 2 ]] || {
+			echo "--ignore-email requires an argument (an email address)" >&2
+			exit 2
+		}
+		IGNORE_EMAIL_LIST+=("$2")
+		shift
+		;;
+	--no-ignore-emails)
+		IGNORE_EMAIL_LIST=()
 		;;
 	--repo)
 		[[ "$#" -ge 2 ]] || {
@@ -340,6 +408,38 @@ reviewed_sha_for() {
 	fi
 }
 
+# ignored_author <pr> -> success when the PR was written entirely by addresses
+# on IGNORE_EMAIL_LIST, and so should not be reviewed at all.
+#
+# "Entirely", not "at all": one human commit on a Renovate branch is human work
+# and has to come back for review, and a rebase or merge commit a bot authored
+# must not disqualify a human's PR. The `seen` guard makes the empty case false
+# rather than vacuously true, so a gh failure (which yields no addresses) fails
+# open to reviewing — the same stance reviewed_sha_for takes.
+ignored_author() {
+	local pr="$1" emails email pattern hit seen=0
+	[[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] || return 1
+	emails="$(gh pr view "$pr" --repo "$REPO" --json commits \
+		--jq '.commits[].authors[].email' 2>/dev/null || true)"
+	[[ -n "$emails" ]] || return 1
+	while IFS= read -r email; do
+		[[ -n "$email" ]] || continue
+		hit=0
+		for pattern in "${IGNORE_EMAIL_LIST[@]}"; do
+			# Whole-address compare, lowercased on both sides. Not a glob:
+			# "[bot]" in these addresses is a literal, and `==` would read it
+			# as a one-character bracket expression.
+			if [[ "${email,,}" = "${pattern,,}" ]]; then
+				hit=1
+				break
+			fi
+		done
+		[[ "$hit" -eq 1 ]] || return 1
+		seen=1
+	done <<<"$emails"
+	[[ "$seen" -eq 1 ]]
+}
+
 # effort_for <pr> -> quick | standard | deep
 # Classify a PR's review depth from its GitHub metadata so a trivial change is
 # not sent through an expensive deep review. --effort overrides the result. A
@@ -376,9 +476,22 @@ effort_for() {
 UNREVIEWED=() # no prior council comment
 STALE=()      # reviewed, but at an older commit (new changes since)
 SKIPPED=()    # reviewed at current head, nothing changed
+IGNORED=()    # written entirely by a denied address (batch runs only)
 
 while IFS=$'\t' read -r pr head; do
 	[[ -n "$pr" ]] || continue
+	# The deny-list is batch triage. Naming one PR by number or URL says which
+	# PR you want, so an explicit target is never filtered out from under you.
+	#
+	# shellcheck disable=SC2310 # Suspending errexit inside ignored_author is
+	# what this call wants: a non-zero return is its "not ignored" answer, not
+	# an error, and the one command in it that can genuinely fail (gh) already
+	# absorbs its own failure with `|| true` to fail open. There is nothing
+	# here for set -e to catch.
+	if [[ -z "$TARGET_PR" ]] && ignored_author "$pr"; then
+		IGNORED+=("$pr")
+		continue
+	fi
 	reviewed="$(reviewed_sha_for "$pr")"
 	if [[ -z "$reviewed" ]]; then
 		UNREVIEWED+=("$pr")
@@ -416,6 +529,9 @@ if [[ "$FORCE" -eq 1 ]]; then
 else
 	echo "Skipped (already reviewed at head, unchanged): ${SKIPPED[*]:-(none)}"
 fi
+if [[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] && [[ -z "$TARGET_PR" ]]; then
+	echo "Ignored (author email): ${IGNORED[*]:-(none)}"
+fi
 if [[ -n "$FORCE_EFFORT" ]]; then
 	echo "Effort: forced to '${FORCE_EFFORT}' for every PR (--effort)."
 fi
@@ -426,6 +542,9 @@ if [[ "${#QUEUE[@]}" -eq 0 ]]; then
 	echo "Nothing to review."
 	if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
 		echo "(${#SKIPPED[@]} PR(s) already reviewed at head; pass --force to re-review.)"
+	fi
+	if [[ "${#IGNORED[@]}" -gt 0 ]]; then
+		echo "(${#IGNORED[@]} PR(s) skipped by author email; pass --no-ignore-emails to review them.)"
 	fi
 	exit 0
 fi

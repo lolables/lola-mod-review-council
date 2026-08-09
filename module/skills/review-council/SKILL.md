@@ -518,6 +518,11 @@ this order:
   It folds each cluster into one primary finding and is a safe no-op when
   nothing qualifies. Run it **before** the validation gate so the validator
   sees the consolidated set.
+  On `status: "consolidate_error"` the fold would have removed more findings
+  than it declared merged, so it was refused and `findings.json` is unchanged.
+  Stop the review and report the message verbatim. Do not re-run it and do not
+  proceed to the validation gate: the manifest is not what failed, so rewriting
+  it changes nothing, and every later stage reads the same document.
 - Run validation gate — dispatch fresh-context validator agent
   to check findings against actual code
 - Determine iteration verdict: APPROVE or REQUEST CHANGES

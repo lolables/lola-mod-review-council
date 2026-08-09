@@ -352,6 +352,17 @@ check_mutation "RC-30 report table names the persona" \
 	's/^[[:space:]]*agent_persona=\$(persona_label "\$agent_name")$/agent_persona="$agent_name"/' \
 	test-rc-render-report.sh
 
+# Consolidation wrote whatever the reducer returned. RC-1 is the defect that
+# makes this matter: it deleted every finding outside the cluster while the
+# `consolidated` count stayed plausible, so nothing downstream could tell a
+# thinned set from a correctly merged one. Neutering the condition is the
+# shipped state before the guard — the fold still runs and its result is still
+# written, exactly as it was.
+check_mutation "RC-31 consolidation conserves findings" \
+	rc-consolidate.sh \
+	's/^if \[\[ \$removed -lt 0 || \$removed -gt \$sem \]\]; then$/if false; then/' \
+	test-rc-consolidate.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

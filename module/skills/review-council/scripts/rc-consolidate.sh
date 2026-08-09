@@ -53,12 +53,41 @@ fi
 # rather than exposed as a new document field: verify.md pins the findings.json
 # shape and test-consolidation-schema.sh enforces it.
 before=$(jq '[.consolidation_records[]?.merged | length] | add // 0' "$findings")
+verified_in=$(jq '(.verified // []) | length' "$findings")
 
 result=$(jq --argjson clusters "$clusters" -f "$(dirname "$0")/jq/consolidate-clusters.jq" "$findings")
 
-echo "$result" >"$findings"
 after=$(echo "$result" | jq '[.consolidation_records[]?.merged | length] | add // 0')
 sem=$((after - before))
+verified_out=$(echo "$result" | jq '(.verified // []) | length')
+
+# Conservation. Consolidation may only MERGE findings: one that leaves the
+# verified array has to be named in a consolidation record's merged[] list, and
+# none may appear from nowhere. Checked at runtime rather than left to the
+# suite because the failure it catches is silent — RC-1 deleted every finding
+# outside the cluster it was reducing while `consolidated` in the success
+# message stayed entirely plausible, so the published report was missing a HIGH
+# and nothing in the session said so.
+#
+# The bound is `<=`, not equality. $found in the reducer is built by matching
+# every manifest member against the verified array, so a member named twice
+# lands in it twice and the merge is declared as two while exactly one finding
+# leaves. Over-declaring is a reporting inaccuracy that costs no finding;
+# under-declaring is data loss. Only the second is refused here, because an
+# equality bound would refuse that manifest — which the model writes, and which
+# consolidate-clusters.jq already handles correctly.
+#
+# findings.json is left exactly as it was, which is why this is a stop rather
+# than a degrade: the un-consolidated document is complete and honest, so the
+# cost is a report carrying duplicates instead of one quietly missing findings.
+removed=$((verified_in - verified_out))
+if [[ $removed -lt 0 || $removed -gt $sem ]]; then
+	json_output "consolidate_error" \
+		"Refusing to write: consolidation took $verified_in verified finding(s) to $verified_out while declaring $sem merged. findings.json is unchanged."
+	exit 0
+fi
+
+echo "$result" >"$findings"
 payload=$(jq -n --argjson s "$sem" '{consolidated:$s}')
 json_output "ok" "Consolidated $sem duplicate finding(s)." "$payload"
 exit 0

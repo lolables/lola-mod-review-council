@@ -146,6 +146,42 @@ disables commit and tag signing. Without that, a contributor with
 `commit.gpgsign = true` gets every fixture commit rejected, surfacing as an
 unrelated assertion failing much later against a repo with no commits in it.
 
+## Where test state goes
+
+Every task that runs a suite goes through `.taskfiles/scripts/with-scratch.sh`,
+which creates a scratch directory, points `TMPDIR` and `XDG_CACHE_HOME` inside
+it, and deletes it when the run returns — including when the run fails.
+
+Both variables matter, for different reasons:
+
+- **`XDG_CACHE_HOME`** is the one that bites. Most suites invoke
+  `rc-prepare.sh`, which writes a session under
+  `${XDG_CACHE_HOME:-$HOME/.cache}/review-council/`. Six suites set the variable
+  themselves; the rest inherited the operator's own cache, so one `task test`
+  left 44 review sessions there, shaped exactly like the real ones. Over time
+  20,021 of them accumulated.
+- **`TMPDIR`** covers the interrupted run. The suites do remove their own
+  `mktemp -d` directories — 228 `rm -rf` calls — but none of that cleanup is on a
+  `trap`, so a run that is killed abandons whatever it had open.
+
+Redirecting the two variables fixes all 239 `mktemp` call sites at once,
+including any added later, which is why this lives in one wrapper rather than in
+the suites.
+
+**Running a suite directly bypasses it.** `bash module/tests/test-rc-prepare.sh`
+gets no scratch directory and will write into your real cache. Either go through
+`task test`, or set both variables yourself:
+
+```bash
+scratch=$(mktemp -d)
+TMPDIR="$scratch" XDG_CACHE_HOME="$scratch" bash module/tests/test-rc-prepare.sh
+rm -rf "$scratch"
+```
+
+`test-rc-test-isolation.sh` pins the wrapper's contract: isolated paths, a
+scratch root per run, cleanup on both the passing and failing path, and the
+command's exit status propagated rather than swallowed.
+
 ## Requirements
 
 `bash` 4+, `jq`, `git`, GNU `timeout` (or `gtimeout`). `shellcheck` and `shfmt`

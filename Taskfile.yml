@@ -64,7 +64,7 @@ tasks:
     preconditions:
       - sh: command -v shfmt
         msg: "shfmt not found — go install mvdan.cc/sh/v3/cmd/shfmt@latest"
-    cmd: shfmt {{.SHFMT_MODE}} {{.SH_PATHS}}
+    cmd: shfmt -i 0 {{.SHFMT_MODE}} {{.SH_PATHS}}
 
   check:
     desc: Run all quality gates — lint plus the full test matrix

@@ -168,6 +168,19 @@ Redirecting the two variables fixes all 239 `mktemp` call sites at once,
 including any added later, which is why this lives in one wrapper rather than in
 the suites.
 
+On macOS the `TMPDIR` export is not enough on its own. Apple's `mktemp(1)` takes
+the directory for a bare `mktemp` or `mktemp -d` from
+`confstr(_CS_DARWIN_USER_TEMP_DIR)` and reads `TMPDIR` only if that call fails,
+so every call site kept writing to `/var/folders` — outside the tree the wrapper
+deletes. No environment variable reaches that decision, so the wrapper also puts
+a small `mktemp` on `PATH` ahead of the real one, which supplies the `TMPDIR`
+template BSD would otherwise choose for itself and delegates everything else. A
+call that already carries a template operand is passed through untouched, since
+`mktemp` creates one path per template and appending a second would leave a
+stray one behind. The forms that name a directory in a flag — `-p`, `-t`,
+`--tmpdir` — are not supported under the wrapper: they either fail or land
+outside the scratch tree, depending on the platform. No call site uses them.
+
 **Running a suite directly bypasses it.** `bash module/tests/test-rc-prepare.sh`
 gets no scratch directory and will write into your real cache. Either go through
 `task test`, or set both variables yourself:
@@ -178,9 +191,14 @@ TMPDIR="$scratch" XDG_CACHE_HOME="$scratch" bash module/tests/test-rc-prepare.sh
 rm -rf "$scratch"
 ```
 
+On macOS that isolates the cache but not `mktemp`, for the reason above; only
+`task test` gets you both.
+
 `test-rc-test-isolation.sh` pins the wrapper's contract: isolated paths, a
 scratch root per run, cleanup on both the passing and failing path, and the
-command's exit status propagated rather than swallowed.
+command's exit status propagated rather than swallowed. It runs one case against
+a stub `mktemp` with BSD semantics, so the Linux leg of CI asserts the macOS
+behaviour too rather than leaving it to the one platform that used to break.
 
 ## Requirements
 

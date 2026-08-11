@@ -30,7 +30,11 @@ source "$SCRIPT_DIR/helpers.sh"
 # stop. The recorder file has to live outside the scratch tree, or the wrapper
 # would delete the evidence before it could be read.
 recorder=$(mktemp)
-trap 'rm -f "$recorder"' EXIT
+# The BSD-mktemp stub and the directory it stands in for share the recorder's
+# fate — see the Darwin test below, which is the only place they are used.
+stub_dir=$(mktemp -d)
+darwin_temp=$(mktemp -d)
+trap 'rm -f "$recorder"; rm -rf "$stub_dir" "$darwin_temp"' EXIT
 
 # Run the wrapper with a payload that records the scratch environment it was
 # given, then reports what the wrapper set up and tore down.
@@ -114,6 +118,46 @@ run_payload "$RECORD_ENV"
 second_root=$(dirname "$TMP_SEEN")
 [[ "$second_root" == "$scratch_root" ]] && r=reused || r=fresh
 assert_equals "$r" "fresh" "a second run does not reuse the first run's root"
+
+echo ""
+echo "Test: the scratch TMPDIR holds even where mktemp ignores TMPDIR"
+# macOS is such a host, which is why this suite went red there and nowhere else.
+# Apple's mktemp(1) resolves the -t directory — implied by a bare `mktemp` or
+# `mktemp -d`, which is every call site in this repo — from
+# confstr(_CS_DARWIN_USER_TEMP_DIR), and reads $TMPDIR only if that call fails
+# (shell_cmds/mktemp/mktemp.c, unchanged from shell_cmds-187 through -329). So
+# exporting TMPDIR redirects nothing there and the suites keep writing to
+# /var/folders, outside the tree the wrapper deletes.
+#
+# The stub reproduces that decision on any host. Without it this property is
+# only ever asserted on the platform that already satisfies it, which is how the
+# gap reached CI in the first place.
+STUB_REAL_MKTEMP="$(command -v mktemp)"
+export STUB_REAL_MKTEMP
+export STUB_DARWIN_TEMP="$darwin_temp"
+cat >"$stub_dir/mktemp" <<'STUB'
+#!/usr/bin/env bash
+# Stands in for a BSD mktemp: an explicit template is honoured, and everything
+# else lands in the per-user temp directory regardless of TMPDIR.
+for arg; do
+	case $arg in
+	-*) ;;
+	*) exec "$STUB_REAL_MKTEMP" "$@" ;;
+	esac
+done
+exec "$STUB_REAL_MKTEMP" "$@" "$STUB_DARWIN_TEMP/tmp.XXXXXXXXXX"
+STUB
+chmod +x "$stub_dir/mktemp"
+
+saved_path="$PATH"
+PATH="$stub_dir:$PATH"
+run_payload "$RECORD_ENV"
+PATH="$saved_path"
+case "$MKTEMP_SEEN" in
+"$TMP_SEEN"/*) r=inside ;;
+*) r=outside ;;
+esac
+assert_equals "$r" "inside" "mktemp -d lands in the scratch tree on a BSD mktemp"
 
 echo ""
 echo "Test: invoked with no command it fails loudly"

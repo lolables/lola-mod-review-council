@@ -48,6 +48,59 @@ export TMPDIR="$scratch/tmp"
 export XDG_CACHE_HOME="$scratch/cache"
 mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
 
+# TMPDIR alone carries that redirection on GNU/coreutils hosts but not on macOS.
+# Apple's mktemp(1) resolves the -t directory from
+# confstr(_CS_DARWIN_USER_TEMP_DIR) and reads $TMPDIR only when that call fails
+# (shell_cmds/mktemp/mktemp.c, unchanged from shell_cmds-187 through -329) — and
+# a bare `mktemp` or `mktemp -d`, which is every call site here, implies -t. So
+# on macOS the export above redirects none of them and they keep writing to
+# /var/folders, outside the tree this script deletes.
+#
+# No environment variable reaches that decision, so the seam moves up a level: a
+# mktemp ahead of the real one on PATH, supplying the template BSD would
+# otherwise choose for itself. Every invocation is routed through TMPDIR — the
+# one exception is a template operand, because mktemp creates one path per
+# template, so appending ours to a call that already carries one would create a
+# second, stray path and print two lines. rc-prepare.sh makes exactly that kind
+# of call to keep its diff cache inside the session directory.
+#
+# A consequence worth knowing before writing one: the forms that name a
+# directory in a flag — `-p DIR`, `-t PREFIX`, `--tmpdir=DIR` — are rewritten
+# too, and what that costs varies. GNU rejects `-t` and `--tmpdir` outright and
+# honours `-p`, placing the result outside the scratch tree; BSD fails on all
+# three, because the directory it takes from the flag is joined to the absolute
+# template appended here. Neither form appears at any call site: all 253 are
+# bare, 239 of them `mktemp -d`.
+#
+# The real path is baked into the generated script rather than handed over in
+# the environment. A nested run resolves `mktemp` to the outer shim, and a
+# shared variable would by then hold the inner run's value — so the outer shim
+# would exec itself, forever. Baking it in makes each shim delegate to the one
+# that spawned it.
+mktemp_real=$(command -v mktemp) || {
+	echo "with-scratch.sh: mktemp not found on PATH" >&2
+	exit 1
+}
+mkdir -p "$scratch/bin"
+{
+	printf '#!/usr/bin/env bash\n'
+	printf 'real=%q\n' "$mktemp_real"
+	cat <<'SHIM'
+# A template operand is the caller naming its own path; hand those over as they
+# are. Everything else is placed in TMPDIR, which is what BSD mktemp will not do
+# on its own.
+for arg; do
+	case $arg in
+	-*) ;;
+	*) exec "$real" "$@" ;;
+	esac
+done
+exec "$real" "$@" "${TMPDIR:-/tmp}/tmp.XXXXXXXXXX"
+SHIM
+} >"$scratch/bin/mktemp"
+chmod +x "$scratch/bin/mktemp"
+export PATH="$scratch/bin:$PATH"
+
 # No `set -e` in this script: the command's exit status is the wrapper's result
 # and has to survive being observed. Aborting here would report the wrapper's
 # own failure instead of the test run's.

@@ -34,13 +34,18 @@ analysis by specialized reviewer agents).
 
 Review Council runs a panel of specialized reviewer agents against your code or specifications:
 
-| Persona           | Focus                                | Temperature |
-|-------------------|--------------------------------------|-------------|
-| **The Guard**     | Intent drift, governance, zero-waste | 0.1         |
-| **The Adversary** | Security, resilience, secrets, CVEs  | 0.1         |
-| **The Tester**    | Test quality, coverage, isolation    | 0.1         |
-| **The Operator**  | Operations, deployment, dependencies | 0.1         |
-| **The Curator**   | Documentation gaps, content triage   | 0.2         |
+| Persona           | Agent files                                       | Focus                                | Temperature |
+|-------------------|---------------------------------------------------|--------------------------------------|-------------|
+| **The Guard**     | `divisor-guard-code.md`, `divisor-guard-spec.md`         | Intent drift, governance, zero-waste | 0.1         |
+| **The Adversary** | `divisor-adversary-code.md`, `divisor-adversary-spec.md` | Security, resilience, secrets, CVEs  | 0.1         |
+| **The Tester**    | `divisor-testing-code.md`, `divisor-testing-spec.md`     | Test quality, coverage, isolation    | 0.1         |
+| **The Operator**  | `divisor-sre-code.md`, `divisor-sre-spec.md`             | Operations, deployment, dependencies | 0.1         |
+| **The Curator**   | `divisor-curator-code.md`, `divisor-curator-spec.md`     | Documentation gaps, content triage   | 0.2         |
+
+Each persona ships as two agent files — a `-code` variant for code review and a `-spec` variant for spec review — so
+ten files install but only five personas run per review. (`divisor` is the historical prefix the agent files carry;
+it has no meaning beyond namespacing them.) Temperature is guidance the council passes to the host, not agent
+frontmatter: hosts that expose no temperature control simply ignore it.
 
 Each reviewer agent reviews independently and returns a verdict. The council verifies every finding against actual file
 content — stripping fabricated evidence — then produces a unified result: **APPROVE** or **REQUEST CHANGES**.
@@ -598,16 +603,19 @@ grep -rn \
   -e "dewey_semantic_search\b" \
   -e "gaze-reporter" \
   -e "muti-mind" \
-  lola-mod-review-council/module/
+  module/
 ```
 
-Zero matches means the module is clean.
+Zero matches means the module is clean. `grep` exits 1 when it finds nothing, so
+an empty result with exit status 1 is the passing case here — a "No such file or
+directory" error means you are not at the repo root.
 
 ## Troubleshooting
 
-**No agents found**: Verify that `divisor-*-code.md` files are in your AI tool's agents directory (e.g.,
-`.claude/agents/` for Claude Code). Run `ls .claude/agents/divisor-*` to confirm. If using a different AI tool, check
-its equivalent agents directory.
+**No agents found**: Verify that the `divisor-*.md` files are in your AI tool's agents directory (e.g.,
+`.claude/agents/` for Claude Code). Run `ls .claude/agents/divisor-*` to confirm — you should see ten files, a
+`-code.md` and a `-spec.md` for each of the five personas. If using a different AI tool, check its equivalent agents
+directory.
 
 **`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. It ships in the skill's `references/`
 directory. Run `ls .claude/skills/review-council/references/` to confirm the whole directory was copied — every pack,

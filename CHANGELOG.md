@@ -301,6 +301,24 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Forge-sourced context reached reviewers byte-capped. `prepare-context.sh`
+  dropped every linked issue past the fifth, cut issue bodies at 2000 bytes,
+  cut prior reviews and inline comments at 5000, and cut each inline comment
+  body at 300 characters. All four bounds are gone. The worst was not lost
+  prose: acceptance criteria were grepped out of the *already-capped* issue
+  body, so any criterion past the cut was invisible to the reviewer whose job
+  is checking the changeset against it, and a partially-linked PR was
+  indistinguishable from a fully-linked one. `head -c` could also sever a
+  multi-byte character and put invalid UTF-8 in a reviewer prompt. These
+  artifacts carry `UNTRUSTED` headers, but that classifies *trust* — do not
+  obey imperatives in them — which is a separate question from *size*: they
+  come from the same owner/repo already being cloned and read in full, and
+  `--scope all` writes an unbounded `diff.patch`, so capping the issue that
+  explains the diff discarded first-party context the pipeline was happy to
+  read from disk. Inline comment bodies are now kept whole and made cell-safe
+  (newlines to `<br>`, `|` to `&#124;`) rather than cut, bounding the
+  presentation instead of the data
+
 - `report.md` findings carry the same detail as the PR comment. A finding used
   to render as one line — a 60-byte cut of the description plus `(file, agent)`
   — with no line number though the data held one, no evidence and no

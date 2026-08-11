@@ -111,9 +111,17 @@ check_mutation() {
 
 # Consolidation deleted every finding except one cluster primary because a jq
 # `def` was evaluated against the wrong subject inside `any()`.
+#
+# Retargeted when the array rewrite became a `reduce`: the old expression
+# mutated `($f | ident)`, which under a reduce indexes the accumulator ARRAY and
+# makes jq hard-error. A mutation that crashes proves nothing — the defect being
+# guarded here is the silent one, where `.` inside `any()` binds to the element
+# of $secids rather than the finding, every test reduces to `secid == secid`,
+# and every non-primary finding including the bystanders is deleted without a
+# word. Mutating the `any()` body reproduces exactly that.
 check_mutation "RC-1  consolidation ident scoping" \
 	jq/consolidate-clusters.jq \
-	's/(\$f | ident)/(ident)/g' \
+	's/any(. == \$fid)/any(. == ident)/' \
 	test-rc-jq-programs.sh
 
 # Multi-line evidence was searched as N independent literals by `grep -F`.
@@ -295,6 +303,65 @@ check_mutation "RC-24 deterministic verdict ingestion" \
 	rc-verify-evidence.sh \
 	's/ | LC_ALL=C sort -z//' \
 	test-rc-verify-evidence.sh
+
+# Counting matched findings rather than distinct ones let a cluster naming one
+# member twice through the guard. Nothing was folded, so a record claiming a
+# merge was appended — and nothing was removed, so the guard never engaged on
+# the next pass and the record was appended again on every run of the iteration
+# loop.
+check_mutation "RC-25 cluster guard counts distinct findings" \
+	jq/consolidate-clusters.jq \
+	's/(\$idents | length) < 2/($found | length) < 2/' \
+	test-rc-consolidate.sh
+
+# Two findings in one cluster can share {file,line,agent}. Emitting the primary
+# on every identity match rather than only the first duplicated it in the
+# surviving array, while the sibling's angle was folded nowhere.
+check_mutation "RC-26 cluster primary emitted once" \
+	jq/consolidate-clusters.jq \
+	's/map(ident) | any(. == \$fid)/false/' \
+	test-rc-consolidate.sh
+
+# Every finding headline in every artifact was a 60-byte mid-word cut, because
+# .title could not reach findings.json and the fallback was the only path.
+check_mutation "RC-27 finding headline is not byte-truncated" \
+	lib/render-findings.sh \
+	's/.title \/\/ (.description | split(". ")\[0\] | rtrimstr("."))/.title \/\/ (.description[0:60])/' \
+	test-rc-render-report.sh
+
+# An optional property the schema does not declare is one additionalProperties
+# rejects outright, taking the whole verdict with it.
+check_mutation "RC-28 schema declares the title property" \
+	../references/verdict-schema.json \
+	's/"title": { "type": "string", "minLength": 1 },//' \
+	test-rc-extract-verdict.sh
+
+# consolidation_records accumulate across runs by design, so reporting the
+# document's running total told the reader the re-run had merged everything the
+# session had ever merged. Reverting to the total is the shipped defect.
+check_mutation "RC-29 merge count is this run's delta" \
+	rc-consolidate.sh \
+	's/^sem=\$((after - before))$/sem=$after/' \
+	test-rc-consolidate.sh
+
+# Each finding is labelled with a persona glyph. While this table printed agent
+# filenames, nothing in report.md decoded that glyph — and on a report with no
+# consolidation no persona label appeared anywhere in the file.
+check_mutation "RC-30 report table names the persona" \
+	rc-render-report.sh \
+	's/^[[:space:]]*agent_persona=\$(persona_label "\$agent_name")$/agent_persona="$agent_name"/' \
+	test-rc-render-report.sh
+
+# Consolidation wrote whatever the reducer returned. RC-1 is the defect that
+# makes this matter: it deleted every finding outside the cluster while the
+# `consolidated` count stayed plausible, so nothing downstream could tell a
+# thinned set from a correctly merged one. Neutering the condition is the
+# shipped state before the guard — the fold still runs and its result is still
+# written, exactly as it was.
+check_mutation "RC-31 consolidation conserves findings" \
+	rc-consolidate.sh \
+	's/^if \[\[ \$removed -lt 0 || \$removed -gt \$sem \]\]; then$/if false; then/' \
+	test-rc-consolidate.sh
 
 total=$((caught + missed + broken))
 echo ""

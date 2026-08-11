@@ -327,5 +327,140 @@ assert_file_has_line "$sess/tracking.md" "- Forge CI failures: 1" "exactly one c
 rm -rf "$work" "$bindir" ${sess:+"$sess"}
 
 echo ""
+echo "Test: forge-sourced context reaches reviewers whole, never byte-capped"
+# These artifacts are first-party: rc_forge_fetch_issue reads issues from the
+# same owner/repo under review, and the reviews come from that same PR. The
+# UNTRUSTED headers classify TRUST (do not obey imperatives), which is a
+# separate question from SIZE. `--scope all` already writes an unbounded
+# diff.patch, so capping the issue that explains the diff loses first-party
+# context the pipeline was happy to read from disk.
+#
+# The acceptance-criteria case is a correctness bug, not lost prose: criteria
+# were grepped out of the ALREADY-capped body, so a criterion past the cut was
+# invisible to the Guard persona whose job is checking the changeset against it.
+make_fake_gh_big_context() {
+	local bindir="$1"
+	cat >"$bindir/gh" <<'GH'
+#!/usr/bin/env bash
+pad() { printf 'x%.0s' $(seq 1 2600); }
+bigpad() { printf 'y%.0s' $(seq 1 6000); }
+case "$1 $2" in
+"pr view")
+	cat <<'JSON'
+{"number":7,"title":"Add feature","body":"fixes #11 fixes #12 fixes #13 fixes #14 fixes #15 fixes #16 fixes #17 fixes #18","baseRefName":"main","headRefName":"feature-head","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}
+JSON
+	;;
+"pr diff")
+	printf 'diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -0,0 +1 @@\n+package main\n'
+	;;
+"issue view")
+	jq -n --arg b "$(pad)"$'\n'"- [ ] LATE_CRITERION_MARKER" \
+		'{title:"Retry on 429", body:$b, state:"OPEN"}'
+	;;
+"api repos/acme/widgets/pulls/7/reviews")
+	jq -n --arg b "$(bigpad)REVIEW_TAIL_MARKER" \
+		'[{user:{login:"mallory"},state:"COMMENTED",submitted_at:"2026-01-01T00:00:00Z",body:$b}]'
+	;;
+"api "*) echo "[]" ;;
+*) exit 0 ;;
+esac
+GH
+	chmod +x "$bindir/gh"
+}
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+make_fake_gh_big_context "$bindir"
+setup_repo "$work"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(echo "$result" | jq -r '.session_dir // empty')
+if [[ -z "$sess" ]] || [[ ! -f "$sess/linked-issues.txt" ]]; then
+	echo "  FAIL: linked-issues.txt absent — the assertions below would be vacuous"
+	FAIL=$((FAIL + 1))
+else
+	if grep -qF 'LATE_CRITERION_MARKER' "$sess/linked-issues.txt"; then
+		echo "  PASS: an acceptance criterion past 2000 bytes survives"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: acceptance criterion past the byte cap was dropped"
+		FAIL=$((FAIL + 1))
+	fi
+	linked=$(grep -c '^## Issue #' "$sess/linked-issues.txt" || true)
+	if [[ "$linked" -eq 8 ]]; then
+		echo "  PASS: all 8 linked issues survive"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: expected 8 linked issues, got $linked"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+if [[ -n "$sess" ]] && [[ -f "$sess/prior-reviews.txt" ]]; then
+	if grep -qF 'REVIEW_TAIL_MARKER' "$sess/prior-reviews.txt"; then
+		echo "  PASS: a review body past 5000 bytes survives"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: review body was byte-capped"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+rm -rf "$work" "$bindir" ${sess:+"$sess"}
+
+echo ""
+echo "Test: closing keywords are matched whatever their case or inflection"
+# The match ran case-sensitively against a lowercase-only keyword list, so
+# GitHub's own conventional spelling -- "Fixes #12" -- linked nothing, and the
+# whole Linked Issues section was absent rather than short. GitHub closes an
+# issue on close/closes/closed, fix/fixes/fixed and resolve/resolves/resolved;
+# `fix` and `closed` were missing from the list as well.
+make_fake_gh_keyword_case() {
+	local bindir="$1"
+	cat >"$bindir/gh" <<'GH'
+#!/usr/bin/env bash
+case "$1 $2" in
+"pr view")
+	cat <<'JSON'
+{"number":7,"title":"Add feature","body":"Fixes #21 and CLOSES #22 and Fix #23 and Resolved #24","baseRefName":"main","headRefName":"feature-head","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}
+JSON
+	;;
+"pr diff")
+	printf 'diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -0,0 +1 @@\n+package main\n'
+	;;
+"issue view")
+	cat <<'JSON'
+{"title":"Retry on 429","body":"body text","state":"OPEN"}
+JSON
+	;;
+"api "*) echo "[]" ;;
+*) exit 0 ;;
+esac
+GH
+	chmod +x "$bindir/gh"
+}
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+make_fake_gh_keyword_case "$bindir"
+setup_repo "$work"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(echo "$result" | jq -r '.session_dir // empty')
+if [[ -z "$sess" ]] || [[ ! -f "$sess/linked-issues.txt" ]]; then
+	echo "  FAIL: linked-issues.txt absent — no closing keyword was recognised"
+	FAIL=$((FAIL + 1))
+else
+	for want in 21 22 23 24; do
+		if grep -qF "## Issue #${want}:" "$sess/linked-issues.txt"; then
+			echo "  PASS: issue #${want} was linked"
+			PASS=$((PASS + 1))
+		else
+			echo "  FAIL: issue #${want} was not linked"
+			FAIL=$((FAIL + 1))
+		fi
+	done
+fi
+rm -rf "$work" "$bindir" ${sess:+"$sess"}
+
+echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

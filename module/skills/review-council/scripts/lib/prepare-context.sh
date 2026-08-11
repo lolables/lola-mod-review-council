@@ -35,10 +35,24 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 	issue_refs=()
 
 	while IFS= read -r line; do
-		# Match patterns: Fixes #N, Closes #N, etc.
-		while [[ "$line" =~ (fixes|fixed|closes|close|resolves|resolve)[[:space:]]+\#([0-9]+) ]]; do
+		# GitHub closes an issue on close/closes/closed, fix/fixes/fixed and
+		# resolve/resolves/resolved, in any case. This matched case-sensitively
+		# against a lowercase-only list, so the conventional "Fixes #12" linked
+		# nothing at all and linked-issues.txt was never written -- the section
+		# was absent rather than short, so no reviewer saw an acceptance
+		# criterion. `fix` and `closed` were missing from the list as well.
+		#
+		# Match on a lowercased copy rather than `shopt -s nocasematch`, which
+		# would leak into every other [[ =~ ]] and case in the sourcing shell,
+		# and consume that copy as the loop advances: deleting BASH_REMATCH[0]
+		# from the original line would not match a capitalised keyword, leaving
+		# the match in place and spinning forever. Only ([0-9]+) is captured, so
+		# lowercasing loses nothing. Longest alternatives lead so `fixes` cannot
+		# be shadowed by `fix` on a matcher lacking leftmost-longest semantics.
+		lc_line="${line,,}"
+		while [[ "$lc_line" =~ (closes|closed|close|fixes|fixed|fix|resolves|resolved|resolve)[[:space:]]+\#([0-9]+) ]]; do
 			issue_refs+=("${BASH_REMATCH[2]}")
-			line="${line/${BASH_REMATCH[0]}/}" # Remove matched portion
+			lc_line="${lc_line/${BASH_REMATCH[0]}/}" # Remove matched portion
 		done
 
 		# Match URL patterns
@@ -50,7 +64,9 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 	done < <(sed -n '/^--- BODY ---$/,/^--- END BODY ---$/p' "${session_dir}/pr-metadata.txt" |
 		grep -v '^---' || true)
 
-	# Remove duplicates and limit to 5.
+	# Remove duplicates. Every linked issue is kept: a PR that links eight of
+	# them has eight the reviewers need, and dropping the tail silently made a
+	# partially-linked PR indistinguishable from a fully-linked one.
 	#
 	# Guarded on non-empty because this round trip cannot represent an empty
 	# array: `printf '%s\n' "${empty[@]}"` writes one blank line and `mapfile`
@@ -60,7 +76,7 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 	# which delegate.md gates on by existence, so an empty Linked Issues
 	# section lands in every reviewer prompt.
 	if [[ ${#issue_refs[@]} -gt 0 ]]; then
-		deduped=$(printf '%s\n' "${issue_refs[@]}" | sort -u | head -n5) || true
+		deduped=$(printf '%s\n' "${issue_refs[@]}" | sort -u) || true
 		mapfile -t issue_refs <<<"$deduped"
 	fi
 	linked_issues_count=${#issue_refs[@]}
@@ -80,13 +96,18 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 
 					if [[ -n "$issue_json" ]]; then
 						issue_title=$(echo "$issue_json" | jq -r '.title // ""')
-						issue_body=$(echo "$issue_json" | jq -r '.body // ""' | head -c 2000)
+						# Not byte-capped. The criteria grep below reads this
+						# variable, so a cap here made any acceptance criterion
+						# past the cut invisible to the reviewer checking the
+						# changeset against it. `head -c` can also sever a
+						# multi-byte character and emit invalid UTF-8.
+						issue_body=$(echo "$issue_json" | jq -r '.body // ""')
 						issue_state=$(echo "$issue_json" | jq -r '.state // ""')
 
 						echo "## Issue #${issue_num}: ${issue_title}"
 						echo "State: ${issue_state}"
 						echo ""
-						echo "### Body (truncated)"
+						echo "### Body"
 						echo "$issue_body"
 						echo ""
 						echo "### Acceptance Criteria"
@@ -145,7 +166,7 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 			if [[ $review_count -gt 0 ]]; then
 				echo "$reviews_json" | jq -r '.[] |
           "### @\(.author) (\(.state), \(.submitted_at))\n\(.body)\n"
-        ' | head -c 5000
+        '
 			fi
 
 			echo ""
@@ -156,9 +177,14 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 
 			comment_count=$(echo "$comments_json" | jq '. | length' 2>/dev/null || echo "0")
 			if [[ $comment_count -gt 0 ]]; then
+				# The body is kept whole and made cell-safe instead of cut: a
+				# newline ends the table row and a literal pipe opens a column,
+				# so both are re-encoded for markdown. That bounds the
+				# presentation, which is the renderer's business, without
+				# discarding a word the reviewer wrote.
 				echo "$comments_json" | jq -r '.[] |
-          "| \(.file) | \(.line) | @\(.author) | \"\(.body | .[0:300])\" |"
-        ' | head -c 5000
+          "| \(.file) | \(.line) | @\(.author) | \"\(.body | gsub("\\|"; "&#124;") | gsub("\r?\n"; "<br>"))\" |"
+        '
 			fi
 		} >"${session_dir}/prior-reviews.txt"
 

@@ -8,6 +8,14 @@ vars:
   # absolute resolution for use inside this include.
   TEST_OUT: '{{.ROOT_DIR}}/{{.TEST_DIR | default ".test-output"}}'
   ARGS: '{{.ARGS | default .CLI_ARGS}}'
+  # Every task that runs a suite goes through this wrapper, which points TMPDIR
+  # and XDG_CACHE_HOME at a per-run scratch directory and removes it afterwards.
+  # Most suites run rc-prepare.sh without setting XDG_CACHE_HOME, so each run
+  # otherwise writes 44 review sessions into the operator's real cache — 20,021
+  # of them had accumulated in ~/.cache/review-council before this was wired up.
+  # Redirecting the two variables fixes every call site at once, including ones
+  # added later. See .taskfiles/scripts/with-scratch.sh.
+  SCRATCH: 'bash "{{.ROOT_DIR}}/.taskfiles/scripts/with-scratch.sh"'
 
 tasks:
   default:
@@ -30,7 +38,7 @@ tasks:
       GIT_AUTHOR_EMAIL: review-council@test.invalid
       GIT_COMMITTER_NAME: Review Council Test
       GIT_COMMITTER_EMAIL: review-council@test.invalid
-    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/run-unit-tests.sh"
+    cmd: '{{.SCRATCH}} bash "{{.ROOT_DIR}}/.taskfiles/scripts/run-unit-tests.sh"'
 
   e2e:
     desc: Run the end-to-end pipeline suite (Venom)
@@ -44,6 +52,7 @@ tasks:
     cmds:
       - mkdir -p "{{.TEST_OUT}}"
       - >-
+        {{.SCRATCH}}
         venom run "{{.ROOT_DIR}}/module/tests/e2e/pipeline.venom.yml"
         --lib-dir "{{.ROOT_DIR}}/module/tests/e2e/lib"
         --var root="{{.ROOT_DIR}}"
@@ -58,7 +67,7 @@ tasks:
       GIT_CONFIG_NOSYSTEM: '1'
       GIT_CONFIG_GLOBAL: /dev/null
       GIT_CONFIG_SYSTEM: /dev/null
-    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/run-degraded-tests.sh" {{.ARGS}}
+    cmd: '{{.SCRATCH}} bash "{{.ROOT_DIR}}/.taskfiles/scripts/run-degraded-tests.sh" {{.ARGS}}'
 
   mutate:
     desc: Reintroduce each fixed defect and confirm a suite catches it
@@ -66,7 +75,7 @@ tasks:
       GIT_CONFIG_NOSYSTEM: '1'
       GIT_CONFIG_GLOBAL: /dev/null
       GIT_CONFIG_SYSTEM: /dev/null
-    cmd: bash "{{.ROOT_DIR}}/.taskfiles/scripts/mutate-check.sh"
+    cmd: '{{.SCRATCH}} bash "{{.ROOT_DIR}}/.taskfiles/scripts/mutate-check.sh"'
 
   all:
     desc: Run unit, end-to-end, degraded and mutation checks

@@ -97,6 +97,7 @@ validator rejects is re-dispatched once; do not add commentary outside the block
       "severity": "MEDIUM",
       "file": "path/to/file.go",
       "line": 42,
+      "title": "Short headline naming the defect",
       "evidence": "<direct quote from the file you read>",
       "constraint": "Which convention is violated",
       "description": "What the issue is and why it matters",
@@ -105,6 +106,14 @@ validator rejects is re-dispatched once; do not add commentary outside the block
   ]
 }
 ```
+
+`title` is optional but write one. It is the line a maintainer scans in the
+report and in the PR comment, so name the defect rather than restating the
+severity: "Expiry check rejects boundary tokens", not "HIGH severity issue in
+token.go". Keep it to one scannable line; there is no enforced limit, so write
+the headline the defect needs rather than trimming to a budget. Omit it and the
+first sentence of `description` is used instead, which is why that sentence
+should stand on its own.
 
 - `files_read` MUST list every file you opened (replaces the prose attestation).
 - `verdict` MUST be `APPROVE` or `REQUEST CHANGES` — see "## Verdict" above.

@@ -6,6 +6,21 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- `title` is an optional finding property reviewers can supply — a short
+  headline naming the defect, non-empty but **unbounded in length**. Both
+  renderers had always headlined a finding with `.title // <fallback>`, but the
+  property was never declared and `additionalProperties: false` rejected any
+  verdict carrying one, so the fallback was the only path ever taken.
+  `references/reviewer-protocol.md` now advertises the field and explains what
+  the fallback is so the opening sentence of `description` gets written to stand
+  on its own. An earlier iteration bounded the field at 120 characters at the
+  schema boundary and in the minimal jq validator; that bound rejected a
+  reviewer's entire finding set over a headline one character too long, which is
+  a presentation concern answered by discarding data. The title has a single
+  consumer, `rc_finding_block` in `scripts/lib/render-findings.sh`, which renders
+  it as a markdown bullet headline that wraps, and the sibling path deriving a
+  headline from `description` was already uncapped — so the bound is gone rather
+  than moved. `minLength` stays: an empty headline renders as an empty bold span
 - Per-forge preparation adapters at `scripts/lib/forge/<forge>.sh`, sourced once
   on the detected forge, mirroring the seam `rc-post-comment-<forge>.sh` already
   used for posting. Every difference between forges — CLI name, flags, API
@@ -103,6 +118,18 @@ All notable changes to the Review Council module are documented here.
   escapes). The regex rules matter most: unlike the others they fail
   silently on macOS rather than erroring, so CI cannot be relied on to
   notice them
+- `test-rc-idempotency.sh` — every phase script is re-run against a live
+  session and its state asserted unchanged. SKILL.md Step 6 offers to fix
+  findings and return to Step 3, so re-running is part of the contract, and the
+  per-script suites only covered the specific defects that prompted them. A
+  phase script added later is registered here or it is not covered at all.
+  `rc-prepare.sh` is deliberately absent: a session *is* a run, so re-running
+  must produce a new one, and its growth is bounded by the session LRU instead
+- `assert_idempotent` — runs a command twice and asserts a named state path is
+  unchanged, snapshotting *after* run 1 because the first run is the one
+  legitimately allowed to do work. The state path is named rather than assumed
+  to be the whole session, so a subtree required to grow — `gate-firings.jsonl`
+  beside `verdicts/` — can be excluded from the claim
 - React framework convention pack (`fw-react.md`) with severity
   calibration for error boundaries (HIGH), god components (HIGH),
   prop drilling (MEDIUM), and direct DOM manipulation (MEDIUM)
@@ -274,6 +301,85 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Linked issues were matched case-sensitively against a keyword list missing
+  `fix` and `closed`, so GitHub's own conventional spelling — `Fixes #12` —
+  linked nothing. On a PR whose body used any capitalised closing keyword,
+  `linked-issues.txt` was never written at all, so the Linked Issues section
+  was absent rather than short and no reviewer saw an acceptance criterion.
+  All nine GitHub closing keywords now match in any case. The match runs
+  against a lowercased copy of the line rather than under `shopt -s
+  nocasematch`, which would leak into every other `[[ =~ ]]` and `case` in the
+  sourcing shell; the copy is also what the loop consumes, since deleting the
+  matched text from the original line would not match a capitalised keyword
+  and would spin forever
+
+- Forge-sourced context reached reviewers byte-capped. `prepare-context.sh`
+  dropped every linked issue past the fifth, cut issue bodies at 2000 bytes,
+  cut prior reviews and inline comments at 5000, and cut each inline comment
+  body at 300 characters. All four bounds are gone. The worst was not lost
+  prose: acceptance criteria were grepped out of the *already-capped* issue
+  body, so any criterion past the cut was invisible to the reviewer whose job
+  is checking the changeset against it, and a partially-linked PR was
+  indistinguishable from a fully-linked one. `head -c` could also sever a
+  multi-byte character and put invalid UTF-8 in a reviewer prompt. These
+  artifacts carry `UNTRUSTED` headers, but that classifies *trust* — do not
+  obey imperatives in them — which is a separate question from *size*: they
+  come from the same owner/repo already being cloned and read in full, and
+  `--scope all` writes an unbounded `diff.patch`, so capping the issue that
+  explains the diff discarded first-party context the pipeline was happy to
+  read from disk. Inline comment bodies are now kept whole and made cell-safe
+  (newlines to `<br>`, `|` to `&#124;`) rather than cut, bounding the
+  presentation instead of the data
+
+- `report.md` findings carry the same detail as the PR comment. A finding used
+  to render as one line — a 60-byte cut of the description plus `(file, agent)`
+  — with no line number though the data held one, no evidence and no
+  recommendation. A folded secondary got its full angle *and* its
+  recommendation, so the finding that survived consolidation was the least
+  documented thing in the section. The per-finding block now comes from
+  `scripts/lib/render-findings.sh`, shared with the comment; only the
+  severity-group wrapper stays per-artifact, because a heading and a `<details>`
+  is the one place the two should differ. Three reader-visible consequences in
+  `report.md`: severity headings carry the comment's severity emoji
+  (`### 🟠 HIGH (1)`), the "Also flagged by" list names personas
+  (`🧪 Tester (code)`) instead of agent filenames, and the Per-Agent Verdicts
+  table does the same — it is the only place the report decodes the persona
+  glyph each finding is now tagged with. The agent filename stays verbatim in
+  `verdicts/findings.json` for anything parsing rather than reading
+- Finding headlines are the reviewer's `title`, or the first sentence of the
+  description — never a 60-byte cut. The old limit fell mid-word with no
+  ellipsis, in the report and in the PR comment alike. A single-sentence
+  description no longer renders a "Full reviewer analysis" block that only
+  repeats the headline above it
+- `phases/report.md`'s Disposition sections instructed the same 60-character cut
+  for the headlines the model writes itself, so the document carried two
+  headline conventions
+- Consolidation no longer accumulates phantom records across the review
+  iteration loop. A cluster whose manifest named one member twice — or whose
+  members shared `{file,line,agent}` because one agent filed two claims at the
+  same line — matched two findings with nothing to fold between them, so the
+  reducer appended a record asserting a merge that never happened, and, having
+  removed nothing, appended another on every subsequent run. Clusters are now
+  guarded on distinct identities, which is what the "one record per semantic
+  cluster" invariant in `phases/verify.md` always meant
+- A cluster holding two findings at the same `{file,line,agent}` no longer
+  duplicates its primary. Secondaries were selected by identity, so a sibling
+  sharing the primary's coordinates fell into neither the secondaries nor the
+  survivors, and the array rewrite turned every identity match into the primary
+  — emitting it twice while the sibling's angle was dropped entirely.
+  Secondaries are selected by position and the primary is emitted on its first
+  match only, so the sibling is folded into `consolidated_from` like any other
+- `rc-consolidate.sh` reports the merges it performed rather than every merge
+  the session has performed. The count summed the document's accumulated
+  `consolidation_records`, so the second pass of the iteration loop re-claimed
+  the first pass's work
+- Step 6's Gate-Firing Disclosure collapses records that are identical apart
+  from `ts` into one line carrying the count. Re-running the extractor
+  re-evaluates every raw block, including those no re-dispatch touched, so an
+  iterated session accumulated copies of a firing nothing new happened to and
+  disclosed each one separately. The log itself is unchanged and stays
+  append-only: a second firing can be a genuine second refusal, and the first
+  record is the only one carrying what was originally claimed
 - Every GitHub Actions check was dropped from Quality Gates.
   `statusCheckRollup` is a union of two GraphQL node types that share no field:
   `StatusContext` carries `.context`/`.state`, `CheckRun` carries

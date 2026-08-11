@@ -41,7 +41,7 @@ _warned_no_validator=0
 # — drift fails the suite instead of silently splitting the two validation
 # paths apart. Keep each on one line: the test extracts them with sed.
 readonly RC_TOP_KEYS='["agent","files_read","verdict","findings"]'
-readonly RC_FINDING_KEYS='["severity","file","line","evidence","constraint","description","recommendation"]'
+readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation"]'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -113,6 +113,15 @@ validate() { # json_string
 			(.recommendation | nonempty_string) and
 			((.line == null) or (.line | integerish)) and
 			((has("constraint") | not) or (.constraint | type) == "string") and
+			# `title` is optional and unbounded in length. It carried a 120
+			# character bound, which threw away a whole finding set over a
+			# headline one character too long — a presentation concern answered
+			# by discarding data. Its only consumer, rc_finding_block in
+			# lib/render-findings.sh, renders it as a markdown bullet headline
+			# that wraps, and the sibling path deriving a headline from
+			# `description` is already uncapped. minLength stays: an empty
+			# headline renders as an empty bold span.
+			((has("title") | not) or (.title | nonempty_string)) and
 			(([keys[]] - $fkeys) | length) == 0
 		))
 	' >/dev/null 2>&1
@@ -219,7 +228,8 @@ if [[ "$invalid_count" -gt 0 ]]; then
 Your response must be exactly one fenced ```json block matching verdict-schema.json:
 { "agent": "...", "files_read": [...], "verdict": "APPROVE|REQUEST CHANGES",
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
-  "constraint": "...", "description": "...", "recommendation": "..." } ] }
+  "constraint": "...", "description": "...", "recommendation": "...",
+  "title": "optional headline" } ] }
 Emit only the block — no prose before or after. Re-emit your full verdict now.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \

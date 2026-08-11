@@ -43,16 +43,32 @@ The suite was once a single layer — one unit suite per script — and a live r
 found six defects in an afternoon. Each layer below exists because of a defect
 that got past everything else.
 
-**Unit** (`module/tests/test-*.sh`). One `SCRIPT=` per file, exercised in
-isolation. Every file matching `test-*.sh` runs automatically; the list used to
-be hand-maintained in `Taskfile.yml`, where a suite nobody remembered to
-register silently never ran. Shared code lives in `helpers.sh` — deliberately
-*not* named `test-helpers.sh`, so the discovery glob means exactly "a suite".
-`test-harness.sh` is the one suite with no `SCRIPT=`: it covers the helpers
-themselves, which have no suite of their own to go red. A helper that quietly
-stops doing its job does not fail — it weakens whatever depends on it, which is
+**Unit** (`module/tests/test-*.sh`). Most files pin one script with `SCRIPT=`
+and exercise it in isolation. Every file matching `test-*.sh` runs
+automatically; the list used to be hand-maintained in `Taskfile.yml`, where a
+suite nobody remembered to register silently never ran. Shared code lives in
+`helpers.sh` — deliberately *not* named `test-helpers.sh`, so the discovery
+glob means exactly "a suite".
+
+A suite with no `SCRIPT=` covers something that spans scripts: a documented rule
+(`test-rc-doc-guards.sh`), a shared library (`test-rc-lib.sh`), a contract
+between scripts (`test-rc-pipeline.sh`), a schema (`test-verdict-schema.sh`), or
+the helpers themselves (`test-harness.sh`). The helpers are the case worth
+naming — they have no suite of their own to go red, and a helper that quietly
+stops doing its job does not fail. It weakens whatever depends on it, which is
 how a PATH-masking helper went on reporting that three scripts were tested
 without their dependency while the binary was still on the PATH it handed them.
+
+`test-rc-idempotency.sh` covers a property across *every* phase script: re-run
+it against a live session and its state must not change. SKILL.md Step 6 offers
+to fix findings and return to Step 3, and verify.md re-dispatches an agent and
+runs the extractor again, so re-running is part of the contract rather than an
+edge case. **Adding a phase script means adding it here** — the per-script
+suites cover the specific defects they were written for, and a script absent
+from this sweep is a script whose re-run behaviour nobody checks.
+`rc-prepare.sh` is the one deliberate omission: a session *is* a run, so
+re-running must produce a new one, and its growth is bounded by the session LRU
+instead.
 
 **End-to-end** (`module/tests/e2e/pipeline.venom.yml`). Unit tests cannot see
 seams. Verification Step 3c tells the orchestrator to write `clusters.json`
@@ -86,6 +102,25 @@ bug that destroyed unrelated HIGH findings passed for months. Use
 `assert_conserved` and put bystanders in the fixture; it refuses to run without
 them.
 
+**Assert the fixture reached the code you claim to test.** A renderer refusing
+its precondition still writes a file, and a test comparing two refusals passes
+without the section under test ever executing. `test-rc-idempotency.sh` Test 5
+did exactly that for as long as its fixture lacked the verification log
+`rc-render-report.sh` refuses to render without. Grep the output for something
+only the real path produces — a finding's own location — before asserting
+anything about how it behaves.
+
+**Assert re-runs with `assert_idempotent`,** which runs a command twice and
+diffs a named state path. Two things about it are load-bearing. The snapshot is
+taken *after* run 1, not before: the first run is the one legitimately allowed
+to do work, and idempotence is the claim about every run after it. And the state
+path is an argument rather than "the session", so a subtree required to grow can
+be excluded from the claim — `rc-extract-verdict.sh` is asserted on `verdicts/`
+precisely because `gate-firings.jsonl` beside it must keep appending. All three
+of its exits report through `FAIL` and return 0; a helper that returned non-zero
+would take a `set -e` suite down at the exact moment it had a regression to
+report, before the suite could print its `Results:` line.
+
 **Match precisely.** `! grep -q '700'` over a log that also contains timestamps
 and generated ids fails at random — a run at 07:00 was enough. Anchor to
 `issues/comments/700`.
@@ -110,6 +145,60 @@ Fixture repos are built through `git_init_sandbox`, which stubs identity and
 disables commit and tag signing. Without that, a contributor with
 `commit.gpgsign = true` gets every fixture commit rejected, surfacing as an
 unrelated assertion failing much later against a repo with no commits in it.
+
+## Where test state goes
+
+Every task that runs a suite goes through `.taskfiles/scripts/with-scratch.sh`,
+which creates a scratch directory, points `TMPDIR` and `XDG_CACHE_HOME` inside
+it, and deletes it when the run returns — including when the run fails.
+
+Both variables matter, for different reasons:
+
+- **`XDG_CACHE_HOME`** is the one that bites. Most suites invoke
+  `rc-prepare.sh`, which writes a session under
+  `${XDG_CACHE_HOME:-$HOME/.cache}/review-council/`. Six suites set the variable
+  themselves; the rest inherited the operator's own cache, so one `task test`
+  left 44 review sessions there, shaped exactly like the real ones. Over time
+  20,021 of them accumulated.
+- **`TMPDIR`** covers the interrupted run. The suites do remove their own
+  `mktemp -d` directories — 228 `rm -rf` calls — but none of that cleanup is on a
+  `trap`, so a run that is killed abandons whatever it had open.
+
+Redirecting the two variables fixes all 239 `mktemp` call sites at once,
+including any added later, which is why this lives in one wrapper rather than in
+the suites.
+
+On macOS the `TMPDIR` export is not enough on its own. Apple's `mktemp(1)` takes
+the directory for a bare `mktemp` or `mktemp -d` from
+`confstr(_CS_DARWIN_USER_TEMP_DIR)` and reads `TMPDIR` only if that call fails,
+so every call site kept writing to `/var/folders` — outside the tree the wrapper
+deletes. No environment variable reaches that decision, so the wrapper also puts
+a small `mktemp` on `PATH` ahead of the real one, which supplies the `TMPDIR`
+template BSD would otherwise choose for itself and delegates everything else. A
+call that already carries a template operand is passed through untouched, since
+`mktemp` creates one path per template and appending a second would leave a
+stray one behind. The forms that name a directory in a flag — `-p`, `-t`,
+`--tmpdir` — are not supported under the wrapper: they either fail or land
+outside the scratch tree, depending on the platform. No call site uses them.
+
+**Running a suite directly bypasses it.** `bash module/tests/test-rc-prepare.sh`
+gets no scratch directory and will write into your real cache. Either go through
+`task test`, or set both variables yourself:
+
+```bash
+scratch=$(mktemp -d)
+TMPDIR="$scratch" XDG_CACHE_HOME="$scratch" bash module/tests/test-rc-prepare.sh
+rm -rf "$scratch"
+```
+
+On macOS that isolates the cache but not `mktemp`, for the reason above; only
+`task test` gets you both.
+
+`test-rc-test-isolation.sh` pins the wrapper's contract: isolated paths, a
+scratch root per run, cleanup on both the passing and failing path, and the
+command's exit status propagated rather than swallowed. It runs one case against
+a stub `mktemp` with BSD semantics, so the Linux leg of CI asserts the macOS
+behaviour too rather than leaving it to the one platform that used to break.
 
 ## Requirements
 

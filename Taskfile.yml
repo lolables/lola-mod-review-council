@@ -9,6 +9,12 @@ includes:
 
 vars:
   TEST_DIR: '{{.TEST_DIR | default ".test-output"}}'
+  # Every shell source the project owns. Named once because both tools walk it,
+  # shellcheck and shfmt, and a path present to one but not the other goes
+  # unchecked without anything failing. scripts/ is the entry that shows why:
+  # it holds operator tools rather than anything the module ships or `task`
+  # calls, so nothing here breaks when it silently stops being linted.
+  SH_PATHS: module .taskfiles/scripts scripts
 
 tasks:
   default:
@@ -30,24 +36,35 @@ tasks:
     preconditions:
       - sh: command -v shellcheck
         msg: "shellcheck not found — dnf install ShellCheck | brew install shellcheck"
-      - sh: command -v shfmt
-        msg: "shfmt not found — go install mvdan.cc/sh/v3/cmd/shfmt@latest"
     cmds:
       # --enable=all turns on the optional checks (SC2310/SC2312 masking,
       # quoting strictness); -S info fails on notes, not just warnings.
-      #
-      # scripts/ holds operator tools rather than anything the module ships or
-      # `task` calls, so it is easy to leave out of a path list and never notice
-      # — nothing here fails when it goes unlinted.
-      - find module .taskfiles/scripts scripts -name '*.sh' -print0 | xargs -0 shellcheck -x --enable=all -S info
-      - shfmt -d module .taskfiles/scripts scripts
+      - find {{.SH_PATHS}} -name '*.sh' -print0 | xargs -0 shellcheck -x --enable=all -S info
+      - task: _shfmt
+        vars:
+          SHFMT_MODE: '-d'
 
   fmt:
     desc: Rewrite every shell source in canonical shfmt style
+    cmds:
+      - task: _shfmt
+        vars:
+          SHFMT_MODE: '-w'
+
+  # Private. lint passes -d (report a diff, change nothing), fmt passes -w
+  # (rewrite in place). One definition so the two can never disagree about
+  # style. Held apart, a flag added to only one of them makes `task fmt` emit
+  # precisely what `task lint` rejects, and the failure is loud but baffling:
+  # the formatter and the format check are the two things a contributor trusts
+  # to agree. The style is shfmt's default, tabs, which is what every committed
+  # file uses; change it here and both callers follow.
+  _shfmt:
+    requires:
+      vars: [SHFMT_MODE]
     preconditions:
       - sh: command -v shfmt
         msg: "shfmt not found — go install mvdan.cc/sh/v3/cmd/shfmt@latest"
-    cmd: shfmt -w module .taskfiles/scripts scripts
+    cmd: shfmt -i 0 {{.SHFMT_MODE}} {{.SH_PATHS}}
 
   check:
     desc: Run all quality gates — lint plus the full test matrix

@@ -10,7 +10,7 @@
 # For each PR that needs review it invokes whichever agent CLI is installed:
 #
 #   claude -p "/review-council [effort] <pr-url> -- post the verdict, auto-send without asking" \
-#          --permission-mode bypassPermissions
+#          --permission-mode bypassPermissions --output-format stream-json --verbose
 #
 #   opencode run --command review-council --auto \
 #            "[effort] <pr-url> -- post the verdict, auto-send without asking"
@@ -67,6 +67,29 @@
 # current headRefOid. If a lookup fails, the PR is treated as needing review
 # (fail-open) rather than skipped.
 #
+# Ignoring dependency bots:
+#
+# Dependency bots open PRs faster than a council can review them, and every
+# review costs real money, so PRs written entirely by a known bot address are
+# dropped before they reach the queue. The default list covers Dependabot and
+# Renovate, in both their GitHub App and self-hosted commit-author forms.
+#
+# GitHub exposes no email on the pull request itself, so the addresses compared
+# are the commit authors' (.commits[].authors[].email), matched case-
+# insensitively against the whole address. A PR is ignored only when it has at
+# least one commit author and EVERY one of them is on the list: a Renovate
+# branch that someone has pushed a fix onto contains human work and comes back
+# for review. The at-least-one requirement also keeps an authorship lookup that
+# returns nothing from being vacuously true — a transient gh failure fails open
+# to reviewing, as everywhere else here.
+#
+# The list is batch triage, so it does not apply to a PR you name explicitly:
+# asking for #123 by number or URL says which PR you want.
+#
+#   --ignore-email <addr>   Add an address to the list. Repeatable.
+#   --no-ignore-emails      Clear the list; consider every PR.
+#   IGNORE_EMAILS           Replace the built-in list (see Environment).
+#
 # Default is a DRY RUN: it classifies the PRs and prints the plan, but does
 # not invoke claude or post anything. Pass --run to execute.
 #
@@ -87,6 +110,8 @@
 #   ./review-open-prs.sh --effort deep --run    # force deep on every PR (old behavior)
 #   ./review-open-prs.sh --run --yes            # unattended: no confirmation prompt
 #   ./review-open-prs.sh --cli opencode --run   # review through opencode, not claude
+#   ./review-open-prs.sh --ignore-email ci@corp.example --run  # also skip CI's PRs
+#   ./review-open-prs.sh --no-ignore-emails --run              # review bot PRs too
 #
 # Target selection:
 #   * A positional argument may be a PR number (123) or a GitHub PR URL. Either
@@ -95,19 +120,52 @@
 #     GitHub remote of the current directory. Run inside a checkout, or pass one
 #     of the first two, to target any repository from anywhere.
 #
+# Watching a run:
+#
+# A single council review takes tens of minutes, so claude is asked for its
+# structured event stream (--output-format stream-json, which --print rejects
+# without --verbose) rather than the default text, where a `-p` run prints
+# nothing at all until its closing message. The events land verbatim in the
+# per-PR log and are rendered to the terminal a line at a time as the run
+# makes them:
+#
+#   14:02:31 → Task divisor-adversary-code
+#   14:02:33   Dispatching 5 reviewers over 2 subsystems.
+#   14:41:08 done — $8.23, 57 turns
+#
+# The log itself stays machine-readable, so a finished run can be re-read for
+# whatever the terminal did not show:
+#
+#   jq -Rr 'fromjson? | select(.type=="assistant") | .message.content[]?
+#           | select(.type=="tool_use") | .name' \
+#      .review-council-logs/<owner>-<repo>-pr-<n>.log
+#
+# -R because stderr is merged into the same file and is not JSON; reading the
+# log as a JSON stream stops at the first diagnostic in it.
+#
+# opencode writes its own human-readable output and is passed through as-is.
+#
 # Environment:
 #   MAX_BUDGET_USD      If set, passed to claude as --max-budget-usd to cap
 #                       the API spend of each individual PR review. opencode
 #                       has no equivalent flag, so asking for a cap on an
 #                       opencode run is an error rather than an uncapped batch.
 #   EXTRA_CLAUDE_ARGS   Extra whitespace-separated args appended to every
-#                       claude invocation (e.g. "--model opus").
+#                       claude invocation (e.g. "--model opus"). Naming an
+#                       --output-format here replaces the streaming default
+#                       described under Watching a run, and with it the
+#                       progress rendering that reads those events.
 #   EXTRA_OPENCODE_ARGS The same, for opencode (e.g. "--model anthropic/opus").
 #   DEEP_FILES          changedFiles at or above this force deep effort (default 10).
 #   QUICK_FILES         bot PRs at or below this many files get quick effort (default 2).
 #   SECURITY_PATHS      Extended-regex; any changed path matching it (case-
 #                       insensitive) forces deep effort. Default covers
 #                       ca/crl/cert/key/auth/crypto/tls/token/rbac/sign/... .
+#   IGNORE_EMAILS       Comma- or whitespace-separated commit-author addresses
+#                       whose PRs are skipped. REPLACES the built-in Dependabot
+#                       and Renovate list rather than extending it; set it to
+#                       the empty string to consider every PR. --ignore-email
+#                       appends to whichever list is in effect.
 #
 # Requirements: gh (authenticated), jq, and one of claude or opencode.
 
@@ -138,6 +196,29 @@ FORCE_EFFORT=""
 FORCE_CLI="" # --cli; empty => detect, preferring claude
 LOG_DIR="./.review-council-logs"
 
+# Renders claude's stream-json events into one progress line per step, so the
+# terminal shows a run advancing while the log keeps the events themselves.
+# Reads with -R rather than as JSON: stderr is merged into the same stream and
+# is not JSON, and a diagnostic is the last thing that should be swallowed.
+# Only the events that answer "is this still making progress, and at what
+# cost" are printed; the rest are dropped rather than scrolled past.
+PROGRESS_FILTER='
+def clip: if (. | length) > 100 then .[0:100] + "…" else . end;
+def stamp: (now | strflocaltime("%H:%M:%S"));
+(fromjson? // {type: "raw", line: .})
+| if .type == "assistant" then
+    .message.content[]?
+    | if .type == "tool_use" then
+        "\(stamp) → \(.name) \((.input.description // .input.subagent_type // .input.command // .input.file_path // "") | tostring | clip)"
+      elif .type == "text" and (.text | test("\\S")) then
+        "\(stamp)   \(.text | split("\n")[0] | clip)"
+      else empty end
+  elif .type == "result" then
+    "\(stamp) \(if .subtype == "success" then "done" else "FAILED: " + .subtype end) — $\(((.total_cost_usd // 0) * 100 | round) / 100), \(.num_turns // 0) turns"
+  elif .type == "raw" then .line
+  else empty end
+'
+
 # Effort-classifier thresholds (env-overridable; see header).
 DEEP_FILES="${DEEP_FILES:-10}"
 QUICK_FILES="${QUICK_FILES:-2}"
@@ -156,6 +237,33 @@ QUICK_FILES="${QUICK_FILES:-2}"
 # by the trailing boundary; the distinctive compound forms (certificates,
 # authentication, cryptography, ...) are spelled out so they are not missed.
 SECURITY_PATHS="${SECURITY_PATHS:-(^|/)(ca|crl|certs?|certificates?|keys?|keystores?|keypairs?|auth|authn|authz|authentication|authorization|crypto|cryptography|secrets?|tls|tokens?|rbac|sign|signing|signature|passwords?|credentials?)([/._-]|$)}"
+
+# Commit-author addresses whose PRs are skipped (see header). The GitHub App
+# forms are the numeric +<id> addresses; the bare and vendor addresses cover
+# self-hosted and older deployments of the same two bots.
+IGNORE_EMAILS_DEFAULT="49699333+dependabot[bot]@users.noreply.github.com
+dependabot[bot]@users.noreply.github.com
+support@dependabot.com
+29139614+renovate[bot]@users.noreply.github.com
+renovate[bot]@users.noreply.github.com
+renovate@whitesourcesoftware.com
+bot@renovateapp.com"
+# `-` rather than `:-`, unlike the thresholds above: IGNORE_EMAILS="" has to
+# mean "ignore nobody", not "fall back to the default list".
+IGNORE_EMAILS="${IGNORE_EMAILS-$IGNORE_EMAILS_DEFAULT}"
+
+# Split on commas and whitespace. Pathname expansion is off around the unquoted
+# expansion that does the splitting because every default entry contains
+# "[bot]", which globbing reads as a bracket expression: with a file named
+# e.g. `dependabotb@users.noreply.github.com` in the working directory, the
+# address would be silently rewritten to that filename and match nothing.
+IGNORE_EMAIL_LIST=()
+set -f
+for entry in ${IGNORE_EMAILS//,/ }; do
+	IGNORE_EMAIL_LIST+=("$entry")
+done
+set +f
+unset entry
 
 usage() {
 	sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//'
@@ -200,6 +308,17 @@ while [[ "$#" -gt 0 ]]; do
 			;;
 		esac
 		shift
+		;;
+	--ignore-email)
+		[[ "$#" -ge 2 ]] || {
+			echo "--ignore-email requires an argument (an email address)" >&2
+			exit 2
+		}
+		IGNORE_EMAIL_LIST+=("$2")
+		shift
+		;;
+	--no-ignore-emails)
+		IGNORE_EMAIL_LIST=()
 		;;
 	--repo)
 		[[ "$#" -ge 2 ]] || {
@@ -340,6 +459,38 @@ reviewed_sha_for() {
 	fi
 }
 
+# ignored_author <pr> -> success when the PR was written entirely by addresses
+# on IGNORE_EMAIL_LIST, and so should not be reviewed at all.
+#
+# "Entirely", not "at all": one human commit on a Renovate branch is human work
+# and has to come back for review, and a rebase or merge commit a bot authored
+# must not disqualify a human's PR. The `seen` guard makes the empty case false
+# rather than vacuously true, so a gh failure (which yields no addresses) fails
+# open to reviewing — the same stance reviewed_sha_for takes.
+ignored_author() {
+	local pr="$1" emails email pattern hit seen=0
+	[[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] || return 1
+	emails="$(gh pr view "$pr" --repo "$REPO" --json commits \
+		--jq '.commits[].authors[].email' 2>/dev/null || true)"
+	[[ -n "$emails" ]] || return 1
+	while IFS= read -r email; do
+		[[ -n "$email" ]] || continue
+		hit=0
+		for pattern in "${IGNORE_EMAIL_LIST[@]}"; do
+			# Whole-address compare, lowercased on both sides. Not a glob:
+			# "[bot]" in these addresses is a literal, and `==` would read it
+			# as a one-character bracket expression.
+			if [[ "${email,,}" = "${pattern,,}" ]]; then
+				hit=1
+				break
+			fi
+		done
+		[[ "$hit" -eq 1 ]] || return 1
+		seen=1
+	done <<<"$emails"
+	[[ "$seen" -eq 1 ]]
+}
+
 # effort_for <pr> -> quick | standard | deep
 # Classify a PR's review depth from its GitHub metadata so a trivial change is
 # not sent through an expensive deep review. --effort overrides the result. A
@@ -376,9 +527,22 @@ effort_for() {
 UNREVIEWED=() # no prior council comment
 STALE=()      # reviewed, but at an older commit (new changes since)
 SKIPPED=()    # reviewed at current head, nothing changed
+IGNORED=()    # written entirely by a denied address (batch runs only)
 
 while IFS=$'\t' read -r pr head; do
 	[[ -n "$pr" ]] || continue
+	# The deny-list is batch triage. Naming one PR by number or URL says which
+	# PR you want, so an explicit target is never filtered out from under you.
+	#
+	# shellcheck disable=SC2310 # Suspending errexit inside ignored_author is
+	# what this call wants: a non-zero return is its "not ignored" answer, not
+	# an error, and the one command in it that can genuinely fail (gh) already
+	# absorbs its own failure with `|| true` to fail open. There is nothing
+	# here for set -e to catch.
+	if [[ -z "$TARGET_PR" ]] && ignored_author "$pr"; then
+		IGNORED+=("$pr")
+		continue
+	fi
 	reviewed="$(reviewed_sha_for "$pr")"
 	if [[ -z "$reviewed" ]]; then
 		UNREVIEWED+=("$pr")
@@ -416,6 +580,9 @@ if [[ "$FORCE" -eq 1 ]]; then
 else
 	echo "Skipped (already reviewed at head, unchanged): ${SKIPPED[*]:-(none)}"
 fi
+if [[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] && [[ -z "$TARGET_PR" ]]; then
+	echo "Ignored (author email): ${IGNORED[*]:-(none)}"
+fi
 if [[ -n "$FORCE_EFFORT" ]]; then
 	echo "Effort: forced to '${FORCE_EFFORT}' for every PR (--effort)."
 fi
@@ -426,6 +593,9 @@ if [[ "${#QUEUE[@]}" -eq 0 ]]; then
 	echo "Nothing to review."
 	if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
 		echo "(${#SKIPPED[@]} PR(s) already reviewed at head; pass --force to re-review.)"
+	fi
+	if [[ "${#IGNORED[@]}" -gt 0 ]]; then
+		echo "(${#IGNORED[@]} PR(s) skipped by author email; pass --no-ignore-emails to review them.)"
 	fi
 	exit 0
 fi
@@ -487,7 +657,10 @@ for pr in "${QUEUE[@]}"; do
 	# differ only in how they are told which command these arguments belong to.
 	council_args="${effort_kw}${pr_url} -- post the verdict, auto-send without asking"
 
-	# Build the invocation once so the dry-run preview is exactly what --run executes.
+	# Build the invocation once so the dry-run preview is exactly what --run
+	# executes. `render` is what the terminal sees; anything whose output is
+	# already human-readable passes through untouched.
+	render=(cat)
 	if [[ "$AGENT_CLI" = "opencode" ]]; then
 		cmd=(opencode run --command review-council --auto "$council_args")
 		if [[ -n "${EXTRA_OPENCODE_ARGS:-}" ]]; then
@@ -498,6 +671,20 @@ for pr in "${QUEUE[@]}"; do
 		fi
 	else
 		cmd=(claude -p "/review-council ${council_args}" --permission-mode bypassPermissions)
+		# A council review runs for tens of minutes with nothing to show for it:
+		# under the default text format `claude -p` prints only its final
+		# message, so the log below stays empty until the run is already over
+		# and an operator watching it cannot tell work from a wedge. Stream
+		# structured events instead — the log keeps them verbatim for a later
+		# pass, and PROGRESS_FILTER renders them a line at a time for the
+		# terminal. --verbose is not decoration: --print rejects stream-json
+		# without it. An operator who names a format in EXTRA_CLAUDE_ARGS gets
+		# that one alone rather than two --output-format flags whose winner is
+		# decided by claude's argument parser.
+		if [[ "${EXTRA_CLAUDE_ARGS:-}" != *--output-format* ]]; then
+			cmd+=(--output-format stream-json --verbose)
+			render=(jq -Rr --unbuffered "$PROGRESS_FILTER")
+		fi
 		if [[ -n "${MAX_BUDGET_USD:-}" ]]; then
 			cmd+=(--max-budget-usd "$MAX_BUDGET_USD")
 		fi
@@ -525,7 +712,7 @@ for pr in "${QUEUE[@]}"; do
 	# even under `set +e`, and its exit would kill the run. Re-arm both after.
 	trap - ERR
 	set +e
-	"${cmd[@]}" 2>&1 | tee "$log"
+	"${cmd[@]}" 2>&1 | tee "$log" | "${render[@]}"
 	rc=${PIPESTATUS[0]}
 	set -e
 	# shellcheck disable=SC2064  # re-arm with err_trap's literal body (deferred $?/$LINENO)

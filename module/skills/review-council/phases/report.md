@@ -365,7 +365,7 @@ the maintainer claimed the fix, and the council checked the source itself:
 ```
 ## Resolved Since Last Review
 
-**1. {.title // .description[0:60]}** (`{file}:{line}`, {agent})
+**1. {.title, or the first sentence of .description}** (`{file}:{line}`, {agent})
 - **Maintainer said**: "{provenance.disposition.claim}"
 - **Council confirmed**: {provenance.disposition.evidence}
 ```
@@ -385,7 +385,7 @@ the disposition context on top of that entry; it never softens it:
 ```
 ## Claimed Fixed But Still Present
 
-**1. {.title // .description[0:60]}** (`{file}:{line}`, {agent}) — still counts, still blocks
+**1. {.title, or the first sentence of .description}** (`{file}:{line}`, {agent}) — still counts, still blocks
 - **Maintainer said**: "{provenance.disposition.claim}"
 - **Still present**: {provenance.disposition.note}
 ```

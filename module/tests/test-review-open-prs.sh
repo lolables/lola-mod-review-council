@@ -37,7 +37,17 @@ case "$args" in
 auth\ status*) exit 0 ;;
 *--json\ nameWithOwner*) echo "acme/widgets" ;;
 pr\ list*) printf '2\tbbbbbbb\n1\taaaaaaa\n' ;;
+# Single-PR target: `gh pr view <n> ... --json number,headRefOid`.
+*--json\ number,headRefOid*) printf '%s\tccccccc\n' "$3" ;;
 *--json\ comments*) : ;; # no prior council comment => both PRs are unreviewed
+# Commit authorship, already reduced by --jq to one email per line. Silence
+# unless the test declared some via MOCK_EMAILS, so the default is the
+# lookup-returned-nothing case every pre-existing test relies on.
+*--json\ commits*)
+	if [[ -n "${MOCK_EMAILS_FILE:-}" ]] && [[ -f "${MOCK_EMAILS_FILE}" ]]; then
+		awk -F'\t' -v pr="$3" '$1 == pr { print $2 }' "$MOCK_EMAILS_FILE"
+	fi
+	;;
 *--json\ changedFiles,author,files*)
 	echo '{"changedFiles":1,"author":{"is_bot":false},"files":[{"path":"README.md"}]}'
 	;;
@@ -49,6 +59,10 @@ MOCKGH
 		cat >"$dir/$cli" <<MOCKCLI
 #!/usr/bin/env bash
 echo "${cli} \$*" >>"$log"
+# Stand in for what the agent writes to stdout, so a test can drive whatever
+# the driver renders from it. Silent unless the test asked for something.
+[[ -n "\${MOCK_CLI_STDOUT:-}" ]] && printf '%s\n' "\$MOCK_CLI_STDOUT"
+exit 0
 MOCKCLI
 		chmod +x "$dir/$cli"
 	done
@@ -80,11 +94,17 @@ run_case() {
 	make_mockbin "$bin" "$log"
 	masked=$(mask_agent_clis "$work")
 
+	# Commit authorship for the mock gh, as "<pr><TAB><email>" lines. Written
+	# even when empty so the mock's -f test is the only thing distinguishing
+	# "no emails declared" from "this PR has none".
+	local emails_file="$work/emails.tsv"
+	printf '%s' "$MOCK_EMAILS" >"$emails_file"
+
 	set +e
 	if [[ "$input" == "__eof__" ]]; then
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
 	else
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
 	fi
 	RC=$?
 	set -e
@@ -100,6 +120,11 @@ run_case() {
 
 # Environment assignments prepended to the next run_case, as KEY=VALUE words.
 RUN_ENV=()
+
+# Commit authorship the next run_case's mock gh will report, as "<pr><TAB><email>"
+# lines. Empty by default: a PR whose authorship cannot be determined must be
+# reviewed, so every test that does not set this exercises the unfiltered path.
+MOCK_EMAILS=""
 
 assert_contains() {
 	local haystack="$1" needle="$2" label="$3"
@@ -262,6 +287,192 @@ run_case "yes" --repo acme/widgets --run
 RUN_ENV=()
 assert_contains "$CMDS" "--model=zen" "EXTRA_OPENCODE_ARGS reaches opencode"
 assert_not_contains "$CMDS" "--model=opus" "EXTRA_CLAUDE_ARGS does not leak into opencode"
+
+# A council review runs for tens of minutes. Under claude's default text output
+# a `-p` run emits nothing at all until the final message, so the tee'd log is
+# empty for the whole run and an operator watching it cannot tell work from a
+# wedge. Streaming structured events is therefore the default, not a knob.
+echo ""
+echo "Test: claude streams structured events so a run can be watched"
+STUB_CLIS="claude opencode"
+run_case "yes" --repo acme/widgets --run
+assert_contains "$CMDS" "--output-format stream-json" "claude emits an event per step"
+assert_contains "$CMDS" "--verbose" "stream-json under --print is rejected without it"
+
+echo ""
+echo "Test: opencode is left on its own output format"
+STUB_CLIS="opencode"
+run_case "yes" --repo acme/widgets --run
+assert_not_contains "$CMDS" "--output-format" "claude's streaming flags do not leak into opencode"
+
+# Two --output-format flags would leave the format decided by claude's own
+# last-wins parsing rather than by the operator who asked for one.
+echo ""
+echo "Test: an operator-chosen output format replaces the streaming default"
+STUB_CLIS="claude opencode"
+RUN_ENV=(EXTRA_CLAUDE_ARGS="--output-format json")
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$CMDS" "--output-format json" "EXTRA_CLAUDE_ARGS picks the format"
+assert_not_contains "$CMDS" "stream-json" "the default is dropped rather than duplicated"
+
+# The events are for the log; the terminal gets one line per step made out of
+# them. A stream nobody can read at a glance is the problem this is fixing, so
+# the rendering is pinned rather than left to be discovered mid-run.
+echo ""
+echo "Test: streamed events are rendered as progress, not raw JSON"
+STUB_CLIS="claude opencode"
+RUN_ENV=(MOCK_CLI_STDOUT='{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","input":{"subagent_type":"divisor-adversary-code","description":"Review auth"}}]}}
+{"type":"result","subtype":"success","total_cost_usd":8.23456,"num_turns":57}')
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$OUT" "→ Task Review auth" "a dispatch is shown as one readable line"
+assert_contains "$OUT" "done — \$8.23, 57 turns" "the run's cost and turn count close it out"
+assert_not_contains "$OUT" '"type":"assistant"' "the raw event does not reach the terminal"
+
+# stderr is merged into the same stream and is not JSON. A driver that renders
+# only what parses would swallow exactly the output an operator needs when a
+# run goes wrong.
+echo ""
+echo "Test: non-JSON output survives the renderer"
+RUN_ENV=(MOCK_CLI_STDOUT='Error: something went wrong')
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$OUT" "Error: something went wrong" "a diagnostic is passed through verbatim"
+
+# ---- Ignoring PRs by author email -------------------------------------------
+# Dependency bots open PRs faster than a council can review them, and each
+# review costs real money, so their addresses are skipped by default. The rule
+# is deliberately conservative: a PR is "from" an ignored address only when
+# EVERY commit on it was authored by one. A maintainer who pushes a fix onto a
+# Renovate PR has put human work in it, and that has to come back for review.
+DEPENDABOT_EMAIL="49699333+dependabot[bot]@users.noreply.github.com"
+RENOVATE_EMAIL="29139614+renovate[bot]@users.noreply.github.com"
+
+echo ""
+echo "Test: a PR authored entirely by dependabot is skipped by default"
+MOCK_EMAILS="2	${DEPENDABOT_EMAIL}"
+run_case "yes" --repo acme/widgets --run
+MOCK_EMAILS=""
+assert_contains "$OUT" "Ignored" "the plan reports the ignored PR"
+assert_contains "$CMDS" "/pull/1" "the human PR is still reviewed"
+assert_not_contains "$CMDS" "/pull/2" "the bot PR is not reviewed"
+assert_equals "$CALLS" "1" "only the human PR costs a review"
+assert_equals "$RC" "0" "the batch completes"
+
+echo ""
+echo "Test: renovate is ignored by default too"
+MOCK_EMAILS="2	${RENOVATE_EMAIL}"
+run_case "yes" --repo acme/widgets --run
+MOCK_EMAILS=""
+assert_not_contains "$CMDS" "/pull/2" "the renovate PR is not reviewed"
+assert_equals "$CALLS" "1" "only the human PR costs a review"
+
+echo ""
+echo "Test: a bot PR with a human commit on top is still reviewed"
+MOCK_EMAILS="2	${RENOVATE_EMAIL}
+2	alice@corp.example"
+run_case "yes" --repo acme/widgets --run
+MOCK_EMAILS=""
+assert_contains "$CMDS" "/pull/2" "one human commit brings the PR back into the queue"
+assert_equals "$CALLS" "2" "both PRs are reviewed"
+
+echo ""
+echo "Test: authorship that cannot be determined fails open to reviewing"
+MOCK_EMAILS=""
+run_case "yes" --repo acme/widgets --run
+assert_equals "$CALLS" "2" "an empty commit lookup never silently drops a PR"
+
+echo ""
+echo "Test: matching is case-insensitive"
+MOCK_EMAILS="2	49699333+Dependabot[BOT]@Users.NoReply.GitHub.com"
+run_case "yes" --repo acme/widgets --run
+MOCK_EMAILS=""
+assert_not_contains "$CMDS" "/pull/2" "case does not defeat the deny-list"
+assert_equals "$CALLS" "1" "only the human PR costs a review"
+
+echo ""
+echo "Test: --ignore-email adds an address to the defaults"
+MOCK_EMAILS="1	${DEPENDABOT_EMAIL}
+2	ci@corp.example"
+run_case "yes" --repo acme/widgets --run --ignore-email ci@corp.example
+MOCK_EMAILS=""
+assert_equals "$CALLS" "0" "the added address is skipped alongside the defaults"
+assert_contains "$OUT" "Nothing to review" "an entirely ignored queue says so"
+# Without this the assertion above is satisfied by the script rejecting
+# --ignore-email as an unknown option, which is not the behaviour under test.
+assert_equals "$RC" "0" "an empty queue is a clean exit, not a usage error"
+
+echo ""
+echo "Test: --ignore-email may be repeated"
+MOCK_EMAILS="1	one@corp.example
+2	two@corp.example"
+run_case "yes" --repo acme/widgets --run --ignore-email one@corp.example --ignore-email two@corp.example
+MOCK_EMAILS=""
+assert_equals "$CALLS" "0" "both addresses take effect"
+assert_equals "$RC" "0" "the flag is accepted twice, not rejected"
+
+echo ""
+echo "Test: --no-ignore-emails reviews the bots anyway"
+MOCK_EMAILS="2	${DEPENDABOT_EMAIL}"
+run_case "yes" --repo acme/widgets --run --no-ignore-emails
+MOCK_EMAILS=""
+assert_contains "$CMDS" "/pull/2" "the deny-list is cleared"
+assert_equals "$CALLS" "2" "every open PR is reviewed"
+
+echo ""
+echo "Test: IGNORE_EMAILS replaces the defaults rather than extending them"
+MOCK_EMAILS="1	${DEPENDABOT_EMAIL}
+2	ci@corp.example"
+RUN_ENV=(IGNORE_EMAILS=ci@corp.example)
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+MOCK_EMAILS=""
+assert_contains "$CMDS" "/pull/1" "dependabot is no longer on the list"
+assert_not_contains "$CMDS" "/pull/2" "the address that replaced it is"
+assert_equals "$CALLS" "1" "exactly one PR is reviewed"
+
+echo ""
+echo "Test: an empty IGNORE_EMAILS disables the deny-list"
+MOCK_EMAILS="2	${DEPENDABOT_EMAIL}"
+RUN_ENV=(IGNORE_EMAILS=)
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+MOCK_EMAILS=""
+assert_equals "$CALLS" "2" "an empty list ignores nobody"
+
+echo ""
+echo "Test: IGNORE_EMAILS accepts commas as well as whitespace"
+MOCK_EMAILS="1	one@corp.example
+2	two@corp.example"
+# Quoted as one element: the comma is the separator under test, not an array
+# separator (SC2054).
+RUN_ENV=("IGNORE_EMAILS=one@corp.example,two@corp.example")
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+MOCK_EMAILS=""
+assert_equals "$CALLS" "0" "a comma-separated list is split"
+
+echo ""
+echo "Test: naming a single PR overrides the deny-list"
+MOCK_EMAILS="2	${DEPENDABOT_EMAIL}"
+run_case "yes" --repo acme/widgets 2 --run
+MOCK_EMAILS=""
+assert_contains "$CMDS" "/pull/2" "asking for one PR by number is unambiguous"
+assert_equals "$CALLS" "1" "the named PR is reviewed"
+
+echo ""
+echo "Test: --ignore-email requires an argument"
+run_case "__eof__" --repo acme/widgets --ignore-email
+assert_contains "$OUT" "--ignore-email requires" "the error names the flag"
+assert_equals "$RC" "2" "usage errors exit 2"
+
+echo ""
+echo "Test: --help documents the deny-list"
+run_case "__eof__" --help
+assert_contains "$OUT" "--ignore-email" "usage lists --ignore-email"
+assert_contains "$OUT" "--no-ignore-emails" "usage lists --no-ignore-emails"
+assert_contains "$OUT" "IGNORE_EMAILS" "usage documents the environment override"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

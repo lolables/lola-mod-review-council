@@ -8,7 +8,7 @@ these tokens. This is the machine-readable spine of the state diagram in SKILL.m
 | Prepare          | `rc-prepare.sh`         | `ok` \| `skip` \| `empty`                            | `ok`->Delegate; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
 | Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure)                                                       |
 | Verify           | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do`                              | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty)                                                          |
-| Consolidate      | `rc-consolidate.sh`     | `ok` \| `nothing_to_do`                              | `ok`->Validate; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`                                         |
+| Consolidate      | `rc-consolidate.sh`     | `ok` \| `consolidate_error` \| `nothing_to_do`       | `ok`->Validate; `consolidate_error`->stop; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`              |
 | Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip`                                 | ->post/Report                                                                                                                                               |
 | Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report                                                                                                                                                    |
 
@@ -20,6 +20,13 @@ Consolidate is in the table rather than that list because it is both: the
 orchestrator judges which findings describe the same defect and writes
 `clusters.json`, then `rc-consolidate.sh` folds them and emits the status the
 orchestrator dispatches on. Only the second half is a state token.
+
+`consolidate_error` is the conservation guard: the fold would have taken more
+findings out of the verified array than it declared merged. `findings.json` is
+left exactly as verification wrote it, so the document behind the status is
+complete and un-consolidated rather than partial. Stop and report the guard
+rather than rendering — a set that a broken reducer has silently thinned is the
+one thing no downstream state can detect.
 
 Disposition is an orchestrator-run state too, but unlike the others it has no
 script `status` — it dispatches a fresh-context subagent, not a script. It

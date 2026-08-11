@@ -1119,6 +1119,111 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-030: re-running the extractor re-evaluates every raw block, including the
+# ones no re-dispatch touched, so a session that iterates carries several
+# firings that differ only in `ts`. The writer must not collapse them — a second
+# firing for the same agent can be a genuine second refusal, and the log is the
+# only surviving record of the original claim. The reader collapses instead, so
+# disclosure states each claim once and says how many times it was filed.
+echo "Test: identical gate firings are collapsed by the reader, not the writer (RC-030)"
+rc030_broken=0
+# shellcheck disable=SC2016 # literal prose from verify.md; the backticks around
+# `ts` are markdown, not command substitution, and pinning the field name is the
+# point — "identical apart from" alone would match a rule about anything.
+if ! grep -qF 'identical apart from `ts`' <<<"$verify_flat"; then
+	echo "  broken link: verify.md no longer tells Step 6 how to recognise a repeated firing"
+	rc030_broken=$((rc030_broken + 1))
+fi
+if ! grep -qF 'filed {n} times' <<<"$verify_flat"; then
+	echo "  broken link: the collapsed line no longer carries the count, so a repeated"
+	echo "               refusal reads identically to a single one"
+	rc030_broken=$((rc030_broken + 1))
+fi
+# The collapse must not become permission to rewrite the log. If this guard
+# ever reads as 'dedupe the firings' the writer is next, and the first record —
+# the only one carrying what was originally claimed — goes with it.
+if ! grep -qF 'Do not rewrite the log' <<<"$verify_flat"; then
+	echo "  broken link: verify.md no longer forbids collapsing at the writer, which is"
+	echo "               where the original claim would be lost (see RC-028)"
+	rc030_broken=$((rc030_broken + 1))
+fi
+if [[ "$rc030_broken" -eq 0 ]]; then
+	echo "  PASS: reader-side collapse is specified and the log stays append-only"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC-030 has $rc030_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-031: the finding template a reviewer copies is the only place `title` can
+# reach an agent. The schema accepting the field does nothing on its own — an
+# unadvertised optional property is one no reviewer ever sends, which is how
+# `.title` came to be dead code the renderers still branched on.
+echo "Test: the reviewer protocol advertises title and claims no length bound (RC-031)"
+rc031_broken=0
+if ! grep -qF '"title"' <<<"$protocol_flat"; then
+	echo "  broken link: reviewer-protocol.md's finding template omits title, so no"
+	echo "               reviewer will ever supply one"
+	rc031_broken=$((rc031_broken + 1))
+fi
+if grep -qF '120 characters' <<<"$protocol_flat"; then
+	echo "  broken link: the protocol still advertises a 120-character bound that"
+	echo "               nothing enforces, so a reviewer will trim a headline for"
+	echo "               a rule that no longer exists"
+	rc031_broken=$((rc031_broken + 1))
+fi
+if [[ "$rc031_broken" -eq 0 ]]; then
+	echo "  PASS: reviewers are told to write a title, with no phantom bound"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC-031 has $rc031_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-032: report.md tells the model to headline the Disposition sections itself.
+# Those instructions carried the same 60-byte cut the renderer did, so removing
+# it from the code alone would leave one document with two headline rules.
+echo "Test: no 60-byte truncation survives in the authored headline rule (RC-032)"
+if grep -qF 'description[0:60]' <<<"$report_flat"; then
+	echo "  FAIL: report.md still instructs a 60-character cut"
+	FAIL=$((FAIL + 1))
+elif grep -qF 'first sentence of' <<<"$report_flat"; then
+	echo "  PASS: authored sections use the same first-sentence rule as the renderer"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: report.md states no headline rule at all"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-033: the report and the comment describe the same findings.json. They
+# drifted once — the comment grew evidence, a recommendation and the full
+# analysis while the report stayed at one truncated line — because the block was
+# written twice. A shared library nobody is required to use permits that again.
+echo "Test: both renderers use the shared finding block (RC-033)"
+rc033_broken=0
+RENDER_LIB="$SKILLS/scripts/lib/render-findings.sh"
+if [[ ! -f "$RENDER_LIB" ]]; then
+	echo "  broken link: lib/render-findings.sh is gone"
+	rc033_broken=$((rc033_broken + 1))
+fi
+for r in rc-render-report.sh rc-render-comment.sh; do
+	if ! grep -qF 'lib/render-findings.sh' "$SKILLS/scripts/$r"; then
+		echo "  broken link: $r no longer sources the shared block"
+		rc033_broken=$((rc033_broken + 1))
+	fi
+	if grep -qE '^rc_finding_block\(\)' "$SKILLS/scripts/$r"; then
+		echo "  broken link: $r defines its own rc_finding_block, which is the drift"
+		rc033_broken=$((rc033_broken + 1))
+	fi
+done
+if [[ "$rc033_broken" -eq 0 ]]; then
+	echo "  PASS: one finding block, used by both artifacts"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC-033 has $rc033_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

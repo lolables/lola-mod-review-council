@@ -473,6 +473,58 @@ rm -rf "$s"
 
 rm -rf "$mask_dir"
 
+echo "Test: a verdict carrying a title is accepted and the title reaches the JSON"
+s=$(new_session)
+write_raw "$s" divisor-adversary-code \
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"Expiry check rejects boundary tokens","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"Tokens expiring now are rejected.","recommendation":"Use <=."}]}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "a titled verdict validates"
+assert_jq "$s/verdicts/divisor-adversary-code.json" '.findings[0].title' \
+	"Expiry check rejects boundary tokens" "the title survives extraction"
+rm -rf "$s"
+
+echo "Test: a long title is accepted whole rather than rejected or cut"
+# Rejecting a verdict over its title length discards the reviewer's entire
+# finding set for a presentation concern. The title has one consumer
+# (render-findings.sh rc_finding_block), which puts it in a markdown bullet
+# headline that wraps -- so nothing downstream needs a bound, and the derived
+# headline on the sibling path is already uncapped.
+s=$(new_session)
+long=$(printf 'x%.0s' {1..500})
+write_raw "$s" divisor-adversary-code \
+	"{\"agent\":\"divisor-adversary-code\",\"files_read\":[\"a.go\"],\"verdict\":\"REQUEST CHANGES\",\"findings\":[{\"title\":\"$long\",\"severity\":\"HIGH\",\"file\":\"a.go\",\"line\":1,\"evidence\":\"if exp < now\",\"description\":\"d\",\"recommendation\":\"r\"}]}"
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "a long title is accepted"
+assert_jq "$s/verdicts/divisor-adversary-code.json" '.findings[0].title | length' \
+	"500" "the title survives extraction at full length"
+rm -rf "$s"
+
+echo "Test: an empty title is still refused"
+# Dropping the length bound must not drop minLength: an empty headline renders
+# as an empty bold span, which is a defect the fallback would have avoided.
+s=$(new_session)
+write_raw "$s" divisor-adversary-code \
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "an empty title is refused"
+rm -rf "$s"
+
+echo "Test: the remediation text names title without asserting a length limit"
+# The remediation is the only instruction a rejected reviewer sees. It must name
+# the field, and must not advertise a bound that is no longer enforced.
+s=$(new_session)
+write_raw "$s" divisor-adversary-code 'not json at all'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+rem=$(jq -r '.remediation' <<<"$result")
+if grep -qF '"title"' <<<"$rem" && ! grep -qF '120' <<<"$rem"; then
+	echo "  PASS: remediation names title and claims no character bound"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: remediation omits title or still advertises the 120 bound"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

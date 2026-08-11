@@ -136,13 +136,14 @@ Clone and copy the module directory into your project's AI tool configuration. T
 you use another tool, substitute its config directory (`.cursor/`, `.gemini/`, etc.) for `.claude/` throughout
 **before** you run step 2.
 
-1. Clone the module somewhere outside your project:
+1. Clone the module outside your project — the remaining steps run from your project root, so the clone is referred
+   to by absolute path:
 
    ```bash
-   git clone https://github.com/lolables/lola-mod-review-council.git
+   git clone https://github.com/lolables/lola-mod-review-council.git /tmp/review-council
    ```
 
-2. Create the agent and skill directories in your project:
+2. From your project root, create the agent and skill directories:
 
    ```bash
    mkdir -p .claude/agents .claude/skills
@@ -151,13 +152,13 @@ you use another tool, substitute its config directory (`.cursor/`, `.gemini/`, e
 3. Copy the ten agent files:
 
    ```bash
-   cp lola-mod-review-council/module/agents/divisor-*.md .claude/agents/
+   cp /tmp/review-council/module/agents/divisor-*.md .claude/agents/
    ```
 
 4. Copy the skill directory:
 
    ```bash
-   cp -r lola-mod-review-council/module/skills/review-council/ .claude/skills/review-council/
+   cp -r /tmp/review-council/module/skills/review-council/ .claude/skills/review-council/
    ```
 
 The convention packs ship in the skill's `references/` directory, so step 4 installs them — including
@@ -227,6 +228,8 @@ sequenceDiagram
     PR-->>Council: prior verdict and its timestamp
     Council->>PR: fetch replies posted since the marker
     PR-->>Council: pr-conversation.txt for Disposition
+    Council->>You: show updated body and ask again
+    You-->>Council: approve
     Council->>PR: edit the same comment in place
 ```
 
@@ -286,7 +289,9 @@ every review — Decompose, Quality Gates, Disposition and Post are each conditi
 | **Report**        | `rc-render-report.sh` + `phases/report.md`                  | Final report, learnings feedback                          |
 | **Post**          | `rc-post-comment.sh` (opt-in, PR only)                      | Publish or update the verdict comment on the PR           |
 
-Scripts live in `skills/review-council/scripts/`. Phase files live in `skills/review-council/phases/`. Each phase
+The paths in that table are relative to the installed skill root (`.claude/skills/review-council/`, or
+`module/skills/review-council/` in this repository): `rc-*.sh` scripts live in `scripts/`, phase files in `phases/`.
+Each phase
 loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context. The full
 state-by-state status vocabulary (including the extraction re-dispatch and the verify sub-states) is documented in
 `references/pipeline-states.md`, alongside a `stateDiagram-v2` in `SKILL.md`.

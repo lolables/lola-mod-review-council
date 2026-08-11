@@ -12,8 +12,10 @@ cd lola-mod-review-council
 ./scripts/review-open-prs.sh --help
 ```
 
-It needs `gh` (authenticated), `jq`, and one of the two agent CLIs the council
-is installed for: `claude` or `opencode`. The council itself must already be
+It needs Bash 4+ (it uses associative arrays), `gh` (authenticated), `jq`, and
+one of the two agent CLIs the council is installed for: `claude` or `opencode`.
+macOS ships Bash 3.2, so install a current one — `brew install bash jq` — as the
+README's Prerequisites section describes. The council itself must already be
 installed in whatever repository you point it at.
 
 Nothing runs and nothing is posted until you pass `--run`, so start by reading
@@ -36,11 +38,12 @@ PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/9
 
 ## How a PR reaches the queue
 
-Five gates decide each PR's fate, and their order is what makes the outcomes
-non-obvious: naming a PR explicitly jumps the ignore list, but `--force` does
-not — `--force` only reopens *already reviewed* PRs, so it can never rescue an
-ignored bot PR. A failed authorship lookup falls through to the queue rather
-than out of it.
+Five gates decide each PR's fate, and the two overrides cross rather than nest:
+naming a PR by number or URL jumps the **ignore list** but still respects the
+already-reviewed check, while `--force` jumps the **already-reviewed** check but
+never rescues an ignored bot PR. So a named, unchanged, already-reviewed PR
+needs `--force` as well. A failed authorship lookup fails open — the PR carries
+on to the reviewed check rather than dropping out.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -72,10 +75,10 @@ flowchart TD
   queued["Queued with its effort tier"]
 
   pr --> named
-  named -->|yes - overrides the ignore list| tier
+  named -->|yes - ignore list does not apply| seen
   named -->|no| lookup
-  lookup -->|no - fail open| tier
-  lookup -->|yes| bots
+  lookup -->|failed - fail open| seen
+  lookup -->|ok| bots
   bots -->|yes| ignored
   bots -->|no| seen
   seen -->|yes| forced

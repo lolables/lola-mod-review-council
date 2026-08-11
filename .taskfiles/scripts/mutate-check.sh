@@ -333,7 +333,7 @@ check_mutation "RC-27 finding headline is not byte-truncated" \
 # rejects outright, taking the whole verdict with it.
 check_mutation "RC-28 schema declares the title property" \
 	../references/verdict-schema.json \
-	's/"title": { "type": "string", "minLength": 1, "maxLength": 120 },//' \
+	's/"title": { "type": "string", "minLength": 1 },//' \
 	test-rc-extract-verdict.sh
 
 # consolidation_records accumulate across runs by design, so reporting the

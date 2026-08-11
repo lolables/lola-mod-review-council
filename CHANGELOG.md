@@ -7,14 +7,20 @@ All notable changes to the Review Council module are documented here.
 ### Added
 
 - `title` is an optional finding property reviewers can supply — a short
-  headline naming the defect, bounded at 120 characters and enforced at the
-  schema boundary *and* in the minimal jq validator, which is the boundary on
-  every host without `sourcemeta/jsonschema`. Both renderers had always
-  headlined a finding with `.title // <fallback>`, but the property was never
-  declared and `additionalProperties: false` rejected any verdict carrying one,
-  so the fallback was the only path ever taken. `references/reviewer-protocol.md`
-  now advertises the field, states the bound, and explains what the fallback is
-  so the opening sentence of `description` gets written to stand on its own
+  headline naming the defect, non-empty but **unbounded in length**. Both
+  renderers had always headlined a finding with `.title // <fallback>`, but the
+  property was never declared and `additionalProperties: false` rejected any
+  verdict carrying one, so the fallback was the only path ever taken.
+  `references/reviewer-protocol.md` now advertises the field and explains what
+  the fallback is so the opening sentence of `description` gets written to stand
+  on its own. An earlier iteration bounded the field at 120 characters at the
+  schema boundary and in the minimal jq validator; that bound rejected a
+  reviewer's entire finding set over a headline one character too long, which is
+  a presentation concern answered by discarding data. The title has a single
+  consumer, `rc_finding_block` in `scripts/lib/render-findings.sh`, which renders
+  it as a markdown bullet headline that wraps, and the sibling path deriving a
+  headline from `description` was already uncapped — so the bound is gone rather
+  than moved. `minLength` stays: an empty headline renders as an empty bold span
 - Per-forge preparation adapters at `scripts/lib/forge/<forge>.sh`, sourced once
   on the detected forge, mirroring the seam `rc-post-comment-<forge>.sh` already
   used for posting. Every difference between forges — CLI name, flags, API

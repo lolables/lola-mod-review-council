@@ -102,8 +102,9 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
 - `title`: optional, reviewer-supplied, carried through unchanged. When a
   reviewer sends one it becomes the finding's headline in `report.md` and the
   PR comment; when absent the renderers derive a headline from the first
-  sentence of `description`. Bounded at 120 characters by the schema, so no
-  step in this phase needs to trim it.
+  sentence of `description`. Unbounded in length, and no step in this phase may
+  trim it: the headline renders into a markdown bullet that wraps, so a cut here
+  would discard the reviewer's words to solve a problem no renderer has.
 - `total_findings`: count before mechanical verification (verified +
   correctable + stripped).
 - `duplicates_consolidated`: count of duplicate findings merged away —

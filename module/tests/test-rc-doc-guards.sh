@@ -1159,20 +1159,21 @@ fi
 # reach an agent. The schema accepting the field does nothing on its own — an
 # unadvertised optional property is one no reviewer ever sends, which is how
 # `.title` came to be dead code the renderers still branched on.
-echo "Test: the reviewer protocol advertises title and its bound (RC-031)"
+echo "Test: the reviewer protocol advertises title and claims no length bound (RC-031)"
 rc031_broken=0
 if ! grep -qF '"title"' <<<"$protocol_flat"; then
 	echo "  broken link: reviewer-protocol.md's finding template omits title, so no"
 	echo "               reviewer will ever supply one"
 	rc031_broken=$((rc031_broken + 1))
 fi
-if ! grep -qF '120 characters' <<<"$protocol_flat"; then
-	echo "  broken link: the length bound is unstated, so an over-long title is"
-	echo "               rejected by a rule the reviewer was never given"
+if grep -qF '120 characters' <<<"$protocol_flat"; then
+	echo "  broken link: the protocol still advertises a 120-character bound that"
+	echo "               nothing enforces, so a reviewer will trim a headline for"
+	echo "               a rule that no longer exists"
 	rc031_broken=$((rc031_broken + 1))
 fi
 if [[ "$rc031_broken" -eq 0 ]]; then
-	echo "  PASS: reviewers are told to write a title and how long it may be"
+	echo "  PASS: reviewers are told to write a title, with no phantom bound"
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: RC-031 has $rc031_broken broken link(s)"

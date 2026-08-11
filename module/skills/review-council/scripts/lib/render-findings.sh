@@ -126,7 +126,9 @@ rc_finding_block() { # finding-json
 	# thought instead of mid-word. A description with no sentence break yields
 	# itself whole, which is correct — the uncapped fallback is the point, and a
 	# cap here would only move the arbitrary limit rather than remove it.
-	# Supplied titles are bounded at the schema instead (max 120).
+	# Supplied titles are unbounded too, for the same reason: this headline is a
+	# markdown bullet that wraps, so a cut here would discard the reviewer's
+	# words to solve a problem the renderer does not have.
 	t=$(jq -r '.title // (.description | split(". ")[0] | rtrimstr("."))' <<<"$base")
 	ev=$(jq -r '.evidence' <<<"$base")
 	agent=$(jq -r '.agent' <<<"$base")

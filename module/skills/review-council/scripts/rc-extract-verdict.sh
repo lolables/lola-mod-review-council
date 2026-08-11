@@ -113,12 +113,15 @@ validate() { # json_string
 			(.recommendation | nonempty_string) and
 			((.line == null) or (.line | integerish)) and
 			((has("constraint") | not) or (.constraint | type) == "string") and
-			# `title` is optional, but when present the 120 bound has to hold
-			# HERE, not only under a real validator. This fallback is the boundary
-			# on every host without sourcemeta/jsonschema, and the bound exists so
-			# that no renderer downstream has to truncate — an unenforced limit
-			# just moves the arbitrary cut somewhere less visible.
-			((has("title") | not) or ((.title | nonempty_string) and (.title | length) <= 120)) and
+			# `title` is optional and unbounded in length. It carried a 120
+			# character bound, which threw away a whole finding set over a
+			# headline one character too long — a presentation concern answered
+			# by discarding data. Its only consumer, rc_finding_block in
+			# lib/render-findings.sh, renders it as a markdown bullet headline
+			# that wraps, and the sibling path deriving a headline from
+			# `description` is already uncapped. minLength stays: an empty
+			# headline renders as an empty bold span.
+			((has("title") | not) or (.title | nonempty_string)) and
 			(([keys[]] - $fkeys) | length) == 0
 		))
 	' >/dev/null 2>&1
@@ -226,7 +229,7 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
 { "agent": "...", "files_read": [...], "verdict": "APPROVE|REQUEST CHANGES",
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
   "constraint": "...", "description": "...", "recommendation": "...",
-  "title": "optional headline, max 120 characters" } ] }
+  "title": "optional headline" } ] }
 Emit only the block — no prose before or after. Re-emit your full verdict now.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \

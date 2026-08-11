@@ -121,21 +121,37 @@ lola install review-council
 
 ### Manual
 
-Clone and copy the module directory into your project's AI tool configuration:
+Clone and copy the module directory into your project's AI tool configuration. The paths below are Claude Code's; if
+you use another tool, substitute its config directory (`.cursor/`, `.gemini/`, etc.) for `.claude/` throughout
+**before** you run step 2.
 
-```bash
-git clone https://github.com/lolables/lola-mod-review-council.git
-# For Claude Code:
-mkdir -p .claude/agents .claude/skills
-cp lola-mod-review-council/module/agents/divisor-*.md .claude/agents/
-cp -r lola-mod-review-council/module/skills/review-council/ .claude/skills/review-council/
-```
+1. Clone the module somewhere outside your project:
 
-The convention packs ship inside the skill directory, so the copy above installs them — including
+   ```bash
+   git clone https://github.com/lolables/lola-mod-review-council.git
+   ```
+
+2. Create the agent and skill directories in your project:
+
+   ```bash
+   mkdir -p .claude/agents .claude/skills
+   ```
+
+3. Copy the ten agent files:
+
+   ```bash
+   cp lola-mod-review-council/module/agents/divisor-*.md .claude/agents/
+   ```
+
+4. Copy the skill directory:
+
+   ```bash
+   cp -r lola-mod-review-council/module/skills/review-council/ .claude/skills/review-council/
+   ```
+
+The convention packs ship in the skill's `references/` directory, so step 4 installs them — including
 `reviewer-protocol.md`, which every reviewer agent depends on. To override a shipped pack or add your own, see
 Customization under Convention Packs.
-
-Adjust agent and skill paths for your AI tool (`.cursor/`, `.gemini/`, etc.).
 
 ### Optional Dependency: `gh` CLI
 
@@ -541,7 +557,8 @@ When nothing matches, the council tells you which directories it searched rather
 
 ## Convention Packs
 
-Convention packs define coding and documentation standards that reviewer agents check against. The module ships with
+Convention packs define coding and documentation standards that reviewer agents check against. They ship in the
+skill's `references/` directory (`.claude/skills/review-council/references/` once installed). The module ships with
 these packs:
 
 | Pack                   | Type       | Contents                                           |

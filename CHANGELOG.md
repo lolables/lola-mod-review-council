@@ -301,6 +301,18 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Linked issues were matched case-sensitively against a keyword list missing
+  `fix` and `closed`, so GitHub's own conventional spelling — `Fixes #12` —
+  linked nothing. On a PR whose body used any capitalised closing keyword,
+  `linked-issues.txt` was never written at all, so the Linked Issues section
+  was absent rather than short and no reviewer saw an acceptance criterion.
+  All nine GitHub closing keywords now match in any case. The match runs
+  against a lowercased copy of the line rather than under `shopt -s
+  nocasematch`, which would leak into every other `[[ =~ ]]` and `case` in the
+  sourcing shell; the copy is also what the loop consumes, since deleting the
+  matched text from the original line would not match a capitalised keyword
+  and would spin forever
+
 - Forge-sourced context reached reviewers byte-capped. `prepare-context.sh`
   dropped every linked issue past the fifth, cut issue bodies at 2000 bytes,
   cut prior reviews and inline comments at 5000, and cut each inline comment

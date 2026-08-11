@@ -407,5 +407,60 @@ fi
 rm -rf "$work" "$bindir" ${sess:+"$sess"}
 
 echo ""
+echo "Test: closing keywords are matched whatever their case or inflection"
+# The match ran case-sensitively against a lowercase-only keyword list, so
+# GitHub's own conventional spelling -- "Fixes #12" -- linked nothing, and the
+# whole Linked Issues section was absent rather than short. GitHub closes an
+# issue on close/closes/closed, fix/fixes/fixed and resolve/resolves/resolved;
+# `fix` and `closed` were missing from the list as well.
+make_fake_gh_keyword_case() {
+	local bindir="$1"
+	cat >"$bindir/gh" <<'GH'
+#!/usr/bin/env bash
+case "$1 $2" in
+"pr view")
+	cat <<'JSON'
+{"number":7,"title":"Add feature","body":"Fixes #21 and CLOSES #22 and Fix #23 and Resolved #24","baseRefName":"main","headRefName":"feature-head","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}
+JSON
+	;;
+"pr diff")
+	printf 'diff --git a/foo.go b/foo.go\n--- a/foo.go\n+++ b/foo.go\n@@ -0,0 +1 @@\n+package main\n'
+	;;
+"issue view")
+	cat <<'JSON'
+{"title":"Retry on 429","body":"body text","state":"OPEN"}
+JSON
+	;;
+"api "*) echo "[]" ;;
+*) exit 0 ;;
+esac
+GH
+	chmod +x "$bindir/gh"
+}
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+make_fake_gh_keyword_case "$bindir"
+setup_repo "$work"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode code --scope url --scope-value "$url" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(echo "$result" | jq -r '.session_dir // empty')
+if [[ -z "$sess" ]] || [[ ! -f "$sess/linked-issues.txt" ]]; then
+	echo "  FAIL: linked-issues.txt absent — no closing keyword was recognised"
+	FAIL=$((FAIL + 1))
+else
+	for want in 21 22 23 24; do
+		if grep -qF "## Issue #${want}:" "$sess/linked-issues.txt"; then
+			echo "  PASS: issue #${want} was linked"
+			PASS=$((PASS + 1))
+		else
+			echo "  FAIL: issue #${want} was not linked"
+			FAIL=$((FAIL + 1))
+		fi
+	done
+fi
+rm -rf "$work" "$bindir" ${sess:+"$sess"}
+
+echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

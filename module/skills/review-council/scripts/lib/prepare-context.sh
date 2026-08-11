@@ -35,10 +35,24 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]]; then
 	issue_refs=()
 
 	while IFS= read -r line; do
-		# Match patterns: Fixes #N, Closes #N, etc.
-		while [[ "$line" =~ (fixes|fixed|closes|close|resolves|resolve)[[:space:]]+\#([0-9]+) ]]; do
+		# GitHub closes an issue on close/closes/closed, fix/fixes/fixed and
+		# resolve/resolves/resolved, in any case. This matched case-sensitively
+		# against a lowercase-only list, so the conventional "Fixes #12" linked
+		# nothing at all and linked-issues.txt was never written -- the section
+		# was absent rather than short, so no reviewer saw an acceptance
+		# criterion. `fix` and `closed` were missing from the list as well.
+		#
+		# Match on a lowercased copy rather than `shopt -s nocasematch`, which
+		# would leak into every other [[ =~ ]] and case in the sourcing shell,
+		# and consume that copy as the loop advances: deleting BASH_REMATCH[0]
+		# from the original line would not match a capitalised keyword, leaving
+		# the match in place and spinning forever. Only ([0-9]+) is captured, so
+		# lowercasing loses nothing. Longest alternatives lead so `fixes` cannot
+		# be shadowed by `fix` on a matcher lacking leftmost-longest semantics.
+		lc_line="${line,,}"
+		while [[ "$lc_line" =~ (closes|closed|close|fixes|fixed|fix|resolves|resolved|resolve)[[:space:]]+\#([0-9]+) ]]; do
 			issue_refs+=("${BASH_REMATCH[2]}")
-			line="${line/${BASH_REMATCH[0]}/}" # Remove matched portion
+			lc_line="${lc_line/${BASH_REMATCH[0]}/}" # Remove matched portion
 		done
 
 		# Match URL patterns

@@ -321,6 +321,20 @@ With `--run`, PRs are reviewed one at a time, each transcript tee'd to
 non-zero is recorded and the batch continues; the script exits 1 at the end and
 names every PR that failed.
 
+A review takes tens of minutes, so claude is asked for its structured event
+stream rather than the default text — under which `claude -p` prints nothing at
+all until its closing message, leaving nothing to watch. The log keeps the
+events verbatim; the terminal gets a line per step as they arrive:
+
+```
+14:02:31 → Task divisor-adversary-code
+14:02:33   Dispatching 5 reviewers over 2 subsystems.
+14:41:08 done — $8.23, 57 turns
+```
+
+Set `EXTRA_CLAUDE_ARGS="--output-format json"` to choose a different format;
+that replaces the streaming default and the progress rendering along with it.
+
 ```
 ./scripts/review-open-prs.sh --help                 # full reference
 ./scripts/review-open-prs.sh --run                  # current repo, every PR that needs it

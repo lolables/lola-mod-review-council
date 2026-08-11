@@ -59,6 +59,10 @@ MOCKGH
 		cat >"$dir/$cli" <<MOCKCLI
 #!/usr/bin/env bash
 echo "${cli} \$*" >>"$log"
+# Stand in for what the agent writes to stdout, so a test can drive whatever
+# the driver renders from it. Silent unless the test asked for something.
+[[ -n "\${MOCK_CLI_STDOUT:-}" ]] && printf '%s\n' "\$MOCK_CLI_STDOUT"
+exit 0
 MOCKCLI
 		chmod +x "$dir/$cli"
 	done
@@ -283,6 +287,58 @@ run_case "yes" --repo acme/widgets --run
 RUN_ENV=()
 assert_contains "$CMDS" "--model=zen" "EXTRA_OPENCODE_ARGS reaches opencode"
 assert_not_contains "$CMDS" "--model=opus" "EXTRA_CLAUDE_ARGS does not leak into opencode"
+
+# A council review runs for tens of minutes. Under claude's default text output
+# a `-p` run emits nothing at all until the final message, so the tee'd log is
+# empty for the whole run and an operator watching it cannot tell work from a
+# wedge. Streaming structured events is therefore the default, not a knob.
+echo ""
+echo "Test: claude streams structured events so a run can be watched"
+STUB_CLIS="claude opencode"
+run_case "yes" --repo acme/widgets --run
+assert_contains "$CMDS" "--output-format stream-json" "claude emits an event per step"
+assert_contains "$CMDS" "--verbose" "stream-json under --print is rejected without it"
+
+echo ""
+echo "Test: opencode is left on its own output format"
+STUB_CLIS="opencode"
+run_case "yes" --repo acme/widgets --run
+assert_not_contains "$CMDS" "--output-format" "claude's streaming flags do not leak into opencode"
+
+# Two --output-format flags would leave the format decided by claude's own
+# last-wins parsing rather than by the operator who asked for one.
+echo ""
+echo "Test: an operator-chosen output format replaces the streaming default"
+STUB_CLIS="claude opencode"
+RUN_ENV=(EXTRA_CLAUDE_ARGS="--output-format json")
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$CMDS" "--output-format json" "EXTRA_CLAUDE_ARGS picks the format"
+assert_not_contains "$CMDS" "stream-json" "the default is dropped rather than duplicated"
+
+# The events are for the log; the terminal gets one line per step made out of
+# them. A stream nobody can read at a glance is the problem this is fixing, so
+# the rendering is pinned rather than left to be discovered mid-run.
+echo ""
+echo "Test: streamed events are rendered as progress, not raw JSON"
+STUB_CLIS="claude opencode"
+RUN_ENV=(MOCK_CLI_STDOUT='{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","input":{"subagent_type":"divisor-adversary-code","description":"Review auth"}}]}}
+{"type":"result","subtype":"success","total_cost_usd":8.23456,"num_turns":57}')
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$OUT" "→ Task Review auth" "a dispatch is shown as one readable line"
+assert_contains "$OUT" "done — \$8.23, 57 turns" "the run's cost and turn count close it out"
+assert_not_contains "$OUT" '"type":"assistant"' "the raw event does not reach the terminal"
+
+# stderr is merged into the same stream and is not JSON. A driver that renders
+# only what parses would swallow exactly the output an operator needs when a
+# run goes wrong.
+echo ""
+echo "Test: non-JSON output survives the renderer"
+RUN_ENV=(MOCK_CLI_STDOUT='Error: something went wrong')
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$OUT" "Error: something went wrong" "a diagnostic is passed through verbatim"
 
 # ---- Ignoring PRs by author email -------------------------------------------
 # Dependency bots open PRs faster than a council can review them, and each

@@ -10,7 +10,7 @@
 # For each PR that needs review it invokes whichever agent CLI is installed:
 #
 #   claude -p "/review-council [effort] <pr-url> -- post the verdict, auto-send without asking" \
-#          --permission-mode bypassPermissions
+#          --permission-mode bypassPermissions --output-format stream-json --verbose
 #
 #   opencode run --command review-council --auto \
 #            "[effort] <pr-url> -- post the verdict, auto-send without asking"
@@ -120,13 +120,41 @@
 #     GitHub remote of the current directory. Run inside a checkout, or pass one
 #     of the first two, to target any repository from anywhere.
 #
+# Watching a run:
+#
+# A single council review takes tens of minutes, so claude is asked for its
+# structured event stream (--output-format stream-json, which --print rejects
+# without --verbose) rather than the default text, where a `-p` run prints
+# nothing at all until its closing message. The events land verbatim in the
+# per-PR log and are rendered to the terminal a line at a time as the run
+# makes them:
+#
+#   14:02:31 → Task divisor-adversary-code
+#   14:02:33   Dispatching 5 reviewers over 2 subsystems.
+#   14:41:08 done — $8.23, 57 turns
+#
+# The log itself stays machine-readable, so a finished run can be re-read for
+# whatever the terminal did not show:
+#
+#   jq -Rr 'fromjson? | select(.type=="assistant") | .message.content[]?
+#           | select(.type=="tool_use") | .name' \
+#      .review-council-logs/<owner>-<repo>-pr-<n>.log
+#
+# -R because stderr is merged into the same file and is not JSON; reading the
+# log as a JSON stream stops at the first diagnostic in it.
+#
+# opencode writes its own human-readable output and is passed through as-is.
+#
 # Environment:
 #   MAX_BUDGET_USD      If set, passed to claude as --max-budget-usd to cap
 #                       the API spend of each individual PR review. opencode
 #                       has no equivalent flag, so asking for a cap on an
 #                       opencode run is an error rather than an uncapped batch.
 #   EXTRA_CLAUDE_ARGS   Extra whitespace-separated args appended to every
-#                       claude invocation (e.g. "--model opus").
+#                       claude invocation (e.g. "--model opus"). Naming an
+#                       --output-format here replaces the streaming default
+#                       described under Watching a run, and with it the
+#                       progress rendering that reads those events.
 #   EXTRA_OPENCODE_ARGS The same, for opencode (e.g. "--model anthropic/opus").
 #   DEEP_FILES          changedFiles at or above this force deep effort (default 10).
 #   QUICK_FILES         bot PRs at or below this many files get quick effort (default 2).
@@ -167,6 +195,29 @@ YES=0 # consent to the GitHub edits given up front, so --run does not prompt
 FORCE_EFFORT=""
 FORCE_CLI="" # --cli; empty => detect, preferring claude
 LOG_DIR="./.review-council-logs"
+
+# Renders claude's stream-json events into one progress line per step, so the
+# terminal shows a run advancing while the log keeps the events themselves.
+# Reads with -R rather than as JSON: stderr is merged into the same stream and
+# is not JSON, and a diagnostic is the last thing that should be swallowed.
+# Only the events that answer "is this still making progress, and at what
+# cost" are printed; the rest are dropped rather than scrolled past.
+PROGRESS_FILTER='
+def clip: if (. | length) > 100 then .[0:100] + "…" else . end;
+def stamp: (now | strflocaltime("%H:%M:%S"));
+(fromjson? // {type: "raw", line: .})
+| if .type == "assistant" then
+    .message.content[]?
+    | if .type == "tool_use" then
+        "\(stamp) → \(.name) \((.input.description // .input.subagent_type // .input.command // .input.file_path // "") | tostring | clip)"
+      elif .type == "text" and (.text | test("\\S")) then
+        "\(stamp)   \(.text | split("\n")[0] | clip)"
+      else empty end
+  elif .type == "result" then
+    "\(stamp) \(if .subtype == "success" then "done" else "FAILED: " + .subtype end) — $\(((.total_cost_usd // 0) * 100 | round) / 100), \(.num_turns // 0) turns"
+  elif .type == "raw" then .line
+  else empty end
+'
 
 # Effort-classifier thresholds (env-overridable; see header).
 DEEP_FILES="${DEEP_FILES:-10}"
@@ -606,7 +657,10 @@ for pr in "${QUEUE[@]}"; do
 	# differ only in how they are told which command these arguments belong to.
 	council_args="${effort_kw}${pr_url} -- post the verdict, auto-send without asking"
 
-	# Build the invocation once so the dry-run preview is exactly what --run executes.
+	# Build the invocation once so the dry-run preview is exactly what --run
+	# executes. `render` is what the terminal sees; anything whose output is
+	# already human-readable passes through untouched.
+	render=(cat)
 	if [[ "$AGENT_CLI" = "opencode" ]]; then
 		cmd=(opencode run --command review-council --auto "$council_args")
 		if [[ -n "${EXTRA_OPENCODE_ARGS:-}" ]]; then
@@ -617,6 +671,20 @@ for pr in "${QUEUE[@]}"; do
 		fi
 	else
 		cmd=(claude -p "/review-council ${council_args}" --permission-mode bypassPermissions)
+		# A council review runs for tens of minutes with nothing to show for it:
+		# under the default text format `claude -p` prints only its final
+		# message, so the log below stays empty until the run is already over
+		# and an operator watching it cannot tell work from a wedge. Stream
+		# structured events instead — the log keeps them verbatim for a later
+		# pass, and PROGRESS_FILTER renders them a line at a time for the
+		# terminal. --verbose is not decoration: --print rejects stream-json
+		# without it. An operator who names a format in EXTRA_CLAUDE_ARGS gets
+		# that one alone rather than two --output-format flags whose winner is
+		# decided by claude's argument parser.
+		if [[ "${EXTRA_CLAUDE_ARGS:-}" != *--output-format* ]]; then
+			cmd+=(--output-format stream-json --verbose)
+			render=(jq -Rr --unbuffered "$PROGRESS_FILTER")
+		fi
 		if [[ -n "${MAX_BUDGET_USD:-}" ]]; then
 			cmd+=(--max-budget-usd "$MAX_BUDGET_USD")
 		fi
@@ -644,7 +712,7 @@ for pr in "${QUEUE[@]}"; do
 	# even under `set +e`, and its exit would kill the run. Re-arm both after.
 	trap - ERR
 	set +e
-	"${cmd[@]}" 2>&1 | tee "$log"
+	"${cmd[@]}" 2>&1 | tee "$log" | "${render[@]}"
 	rc=${PIPESTATUS[0]}
 	set -e
 	# shellcheck disable=SC2064  # re-arm with err_trap's literal body (deferred $?/$LINENO)

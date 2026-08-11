@@ -154,8 +154,12 @@ Without `gh`, the Curator reports gaps as review findings instead.
 /review-council HEAD         # review only the latest commit
 ```
 
-See `AGENTS.md` for the full list of input forms including directory paths,
-URLs, aliases, and review instructions.
+The full list of input forms — directory paths, URLs, ref ranges, effort words,
+review instructions, and the post-the-result phrasings — is the decision table
+under "Step 0: INTERPRET INPUT" in
+[the skill itself](module/skills/review-council/SKILL.md) (installed as
+`.claude/skills/review-council/SKILL.md`). This is the module's own file, not
+the `AGENTS.md` in your project that Extension Points asks you to edit.
 
 ### Posting the verdict to a PR
 
@@ -189,9 +193,19 @@ never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
 
 `scripts/review-open-prs.sh` points the council at every open PR in a repository
 rather than one at a time. It is an operator tool you run yourself — the module
-does not ship it and no phase of the pipeline calls it. It needs `gh`
-(authenticated), `jq`, and one of the two agent CLIs the council is installed
-for: `claude` or `opencode`.
+does not ship it and no phase of the pipeline calls it, so `lola install` does
+not put it on your disk. Clone this repository to get it, and run it from the
+clone:
+
+```bash
+git clone https://github.com/lolables/lola-mod-review-council.git
+cd lola-mod-review-council
+./scripts/review-open-prs.sh --help
+```
+
+It needs `gh` (authenticated), `jq`, and one of the two agent CLIs the council
+is installed for: `claude` or `opencode`. The council itself must already be
+installed in whatever repository you point it at.
 
 Nothing runs and nothing is posted until you pass `--run`, so start by reading
 the plan:
@@ -298,11 +312,11 @@ just printed:
 ```
 $ ./scripts/review-open-prs.sh --repo ovh/venom --run
 ...
-Queue (6): 929[quick] 927[quick] 924[quick] 920[quick] 917[standard] 914[standard]
+Queue (4): 929[quick] 927[quick] 917[standard] 914[standard]
 
 WARNING: this makes visible edits on GitHub.
 
-Reviewing 6 pull request(s) in ovh/venom, each handed to claude
+Reviewing 4 pull request(s) in ovh/venom, each handed to claude
 with permissions bypassed:
 
   --permission-mode bypassPermissions
@@ -566,6 +580,7 @@ CLAUDE.md:
 - Knowledge tool: my_semantic_search
 - Docs repo: myorg/docs
 - Quality tool: my_quality_reporter
+- Batch size: 20
 ```
 
 | Extension Point | Purpose                              | Default                  |

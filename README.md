@@ -348,18 +348,21 @@ that replaces the streaming default and the progress rendering along with it.
 
 ## How It Works
 
-The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates six phases
-using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work):
+The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates nine phases
+using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work). Not every phase runs on
+every review — Decompose, Quality Gates, Disposition and Post are each conditional:
 
-| Phase             | Implementation                                    | Purpose                                                   |
-|-------------------|---------------------------------------------------|-----------------------------------------------------------|
-| **Prepare**       | `rc-prepare.sh`                                   | Mode detection, discovery, session setup                  |
-| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh` | Forge CI status checks (Code Review only)                 |
-| **Delegate**      | `phases/delegate.md`                              | Prompt construction, dispatch                             |
-| **Extract**       | `rc-extract-verdict.sh`                           | Schema-validate each reviewer's JSON verdict              |
-| **Verify**        | `rc-verify-evidence.sh` + `phases/verify.md`      | Evidence, correction, calibration, dedup                  |
-| **Disposition**   | `phases/disposition.md` (re-review only)          | Triage untrusted PR-conversation replies against findings |
-| **Report**        | `rc-render-report.sh` + `phases/report.md`        | Final report, learnings feedback                          |
+| Phase             | Implementation                                              | Purpose                                                   |
+|-------------------|-------------------------------------------------------------|-----------------------------------------------------------|
+| **Prepare**       | `rc-prepare.sh`                                             | Mode detection, discovery, session setup                  |
+| **Decompose**     | `phases/decompose.md` (deep effort only)                    | Split the changeset into subsystems (`subsystems.json`)   |
+| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh`           | Forge CI status checks (code review with a PR only)       |
+| **Delegate**      | `phases/delegate.md`                                        | Prompt construction, dispatch                             |
+| **Extract**       | `rc-extract-verdict.sh`                                     | Schema-validate each reviewer's JSON verdict              |
+| **Verify**        | `rc-verify-evidence.sh` + `rc-consolidate.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup           |
+| **Disposition**   | `phases/disposition.md` (re-review only)                    | Triage untrusted PR-conversation replies against findings |
+| **Report**        | `rc-render-report.sh` + `phases/report.md`                  | Final report, learnings feedback                          |
+| **Post**          | `rc-post-comment.sh` (opt-in, PR only)                      | Publish or update the verdict comment on the PR           |
 
 Scripts live in `skills/review-council/scripts/`. Phase files live in `skills/review-council/phases/`. Each phase
 loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context. The full
@@ -387,59 +390,86 @@ state-by-state status vocabulary (including the extraction re-dispatch and the v
 }, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
 flowchart TD
   prep["Prepare: detect mode, discover agents, capture changeset"]
-  qg{"Code review mode?"}
+  decgate{"Deep effort?"}
+  dec["Decompose: split changeset into subsystems"]
+  qg{"PR CI data available?"}
   qgrun["Quality Gates: run CI checks"]
   del["Delegate: construct prompts, dispatch agents in parallel"]
-  ver["Verify: attestation, evidence, correction, dedup"]
+  ext["Extract: schema-validate each reviewer's JSON verdict"]
+  ver["Verify: attestation, evidence, correction, calibration, consolidation"]
   dispgate{"Re-review conversation to triage? (not quick effort)"}
   disp["Disposition: triage untrusted PR conversation (GitHub only)"]
-  iter{"Verified findings remain? Iterations < 3?"}
-  report["Report: produce verdict, record learnings"]
+  report["Report: determine verdict, render artifacts, record learnings"]
+  iter{"Findings remain, effort limit not reached, session interactive?"}
+  postgate{"Post intent recorded?"}
+  post["Post: publish or update the PR comment"]
+  done["Done"]
 
-  prep --> qg
+  prep --> decgate
+  decgate -->|yes| dec
+  dec --> qg
+  decgate -->|no| qg
   qg -->|yes| qgrun
   qgrun --> del
   qg -->|no| del
-  del --> ver
+  del --> ext
+  ext -->|extract_error - re-dispatch once| del
+  ext -->|ok| ver
   ver --> dispgate
   dispgate -->|yes| disp
-  dispgate -->|no| iter
-  disp --> iter
-  iter -->|yes| del
-  iter -->|done| report
+  dispgate -->|no| report
+  disp --> report
+  report --> iter
+  iter -->|user accepts fix and re-review| del
+  iter -->|no| postgate
+  postgate -->|yes| post
+  postgate -->|no| done
+  post --> done
 
   classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
   classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
   classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
+  classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
   class qgrun sysB
   class ver,disp sysC
   class report sysD
-  class qg,iter,dispgate sysF
+  class dec,ext,post sysE
+  class qg,iter,dispgate,decgate,postgate sysF
 ```
 
 1. **Prepare** — detect mode, discover agents, set up session cache at `$XDG_CACHE_HOME/review-council/`, capture
    changeset and diff
-2. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
-3. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
+2. **Decompose** (deep effort only) — split the changeset into subsystems and write `subsystems.json`, so reviewers
+   are dispatched per subsystem rather than over the whole diff. A changeset that turns out to be cohesive falls back
+   to standard delegation and no `subsystems.json` is written
+3. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
+4. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
    tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
    fenced ` ```json ` verdict block — no markdown prose.
-4. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
+5. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
    `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
    extraction failure rather than a silently dropped finding.
-5. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
+6. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
    apply severity calibration, strip fabricated findings, deduplicate. Writes the canonical
    `verdicts/findings.json`.
-6. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
+7. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
    effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
    findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
    claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
    never the verdict itself). Comments are treated as data, never instructions. See `phases/disposition.md` for the
    full contract.
-7. **Iterate** — fix verified findings, re-run delegation+verification (up to 3 iterations)
-8. **Report** — produce final verdict, record learnings for future runs
+8. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
+   runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
+   behind
+9. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
+   to fix them and re-review. Accepting returns to Delegate and overwrites the report on the next pass. The ceiling
+   depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
+10. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
+    in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
+    the report can never disagree
 
 ### Session Cache
 

@@ -7,6 +7,17 @@ A multi-persona code and specification review [harness](https://martinfowler.com
 AI coding tools. Installs as a [Lola](https://github.com/LobsterTrap/lola) module and works with Claude Code, Cursor,
 Gemini CLI, and OpenCode.
 
+<!-- DEMO: add a hero demo showing the council running.
+     Record: /review-council on a branch with known flaws — let it run through
+             mode detection, the five reviewers dispatching in parallel, evidence
+             verification stripping a fabricated finding, and the final verdict.
+             Cut the multi-minute wait between dispatch and verdict.
+     Viewer sees: reviewers announced by name, a finding visibly stripped for
+             unverifiable evidence, then the unified verdict table ending in
+             REQUEST CHANGES.
+     Format: asciinema + svg-term-cli, or VHS (https://github.com/charmbracelet/vhs).
+     Place the rendered .gif/.svg/.cast here and link it above. -->
+
 ## Review Council as a Harness
 
 Review Council is a **harness** — the infrastructure around AI agents that guides their behavior and validates their
@@ -178,6 +189,46 @@ under "Step 0: INTERPRET INPUT" in
 the `AGENTS.md` in your project that Extension Points asks you to edit.
 
 ### Posting the verdict to a PR
+
+The hidden marker the council embeds in its comment is one artifact doing three
+jobs on the next run — it locates the comment to edit, bounds which replies
+count as new, and tells a batch run this PR was already reviewed:
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#2f6dab',
+  'primaryTextColor': '#1e1e1e',
+  'primaryBorderColor': '#7c8ba1',
+  'lineColor': '#7c8ba1',
+  'edgeLabelBackground': '#eef2f8',
+  'tertiaryColor': 'transparent',
+  'tertiaryTextColor': '#7c8ba1',
+  'tertiaryBorderColor': '#7c8ba1',
+  'clusterBkg': 'transparent',
+  'clusterBorder': '#7c8ba1',
+  'titleColor': '#7c8ba1',
+  'noteBkgColor': '#eef2f8',
+  'noteTextColor': '#1e1e1e',
+  'fontFamily': 'system-ui, sans-serif'
+}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
+sequenceDiagram
+    participant You
+    participant Council
+    participant PR as GitHub PR
+
+    Note over Council,PR: First review
+    Council->>Council: render comment body
+    Council->>You: show body and ask to send
+    You-->>Council: approve
+    Council->>PR: post comment with hidden marker
+
+    Note over Council,PR: Re-review of the same PR
+    Council->>PR: find comment by marker
+    PR-->>Council: prior verdict and its timestamp
+    Council->>PR: fetch replies posted since the marker
+    PR-->>Council: pr-conversation.txt for Disposition
+    Council->>PR: edit the same comment in place
+```
 
 For PR/URL reviews you can ask the council to post its verdict back to the PR
 ("review PR 42 and post the result"). Posting is **opt-in and PR-only**. The

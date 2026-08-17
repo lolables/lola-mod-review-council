@@ -597,6 +597,766 @@ else
 fi
 rm -rf "$sess"
 
+# --- Paring ladder -----------------------------------------------------------
+#
+# The renderer is the last place that can keep a comment postable. Everything
+# below asserts one half of the same contract: a body that fits the forge limit,
+# and a reader who can tell that it was trimmed.
+
+# Byte length, not character length. `${#var}` counts characters in a UTF-8
+# locale and bytes in C, so it disagrees with itself across hosts; the renderer
+# measures bytes for the same reason the assertions do.
+body_bytes() { # file
+	wc -c <"$1" | tr -d ' '
+}
+
+echo "Test: the reviewer table starts its own block"
+# A markdown table has to begin a block. Run onto the end of the findings-count
+# paragraph it is not a table, it is four lines of pipe characters -- and the
+# ladder refactor broke exactly this, because `$(...)` strips the trailing
+# newline that made the blank line. Pinned by content rather than by line
+# number so it survives the header growing.
+sess=$(mktemp -d)
+make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+counts_ln=$(grep -n '^\*\*Findings:\*\*' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+after_counts=$(sed -n "$((counts_ln + 1))p" "$sess/comment-body.md")
+if [[ -n "$counts_ln" && -z "$after_counts" ]]; then
+	echo "  PASS: a blank line follows the findings counts"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the counts line runs straight into '${after_counts}'"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: the disclosure line starts its own block too"
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '20000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+disc_ln=$(grep -n '^_Trimmed to fit the ' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+before_disc=$(sed -n "$((disc_ln - 1))p" "$sess/comment-body.md")
+after_disc=$(sed -n "$((disc_ln + 1))p" "$sess/comment-body.md")
+if [[ -n "$disc_ln" && -z "$before_disc" && -z "$after_disc" ]]; then
+	echo "  PASS: the disclosure is a paragraph of its own"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the disclosure is glued to '${before_disc}' / '${after_disc}'"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: no declared limit renders at full fidelity"
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+full_len=$(body_bytes "$sess/comment-body.md")
+analysis_blocks=$(grep -cF "💬 Full reviewer analysis" "$sess/comment-body.md")
+assert_equals "$analysis_blocks" "30" "every finding keeps its analysis with no limit"
+if grep -qF "Trimmed to fit the" "$sess/comment-body.md"; then
+	echo "  FAIL: an unlimited render claimed to be trimmed"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no disclosure line when nothing was trimmed"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a limit above the body length leaves it unpared"
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '1000000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+unpared_len=$(body_bytes "$sess/comment-body.md")
+assert_equals "$unpared_len" "$full_len" \
+	"a GitLab-shaped limit renders byte-identically to no limit"
+rm -rf "$sess"
+
+echo "Test: a tight limit pares the body under it and says so"
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '20000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+pared_len=$(body_bytes "$sess/comment-body.md")
+if [[ "$pared_len" -le 20000 ]]; then
+	echo "  PASS: pared body fits the declared limit ($pared_len <= 20000)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: body overflows the declared limit ($pared_len > 20000)"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "Trimmed to fit the" "$sess/comment-body.md"; then
+	echo "  PASS: pared body carries the disclosure line"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: pared body is silently incomplete"
+	FAIL=$((FAIL + 1))
+fi
+# Evidence is what makes a finding checkable, and it is what rc-verify-evidence
+# matched byte-for-byte. Analysis prose goes first, always.
+if grep -qF "subtle.ConstantTimeCompare" "$sess/comment-body.md"; then
+	echo "  PASS: CRITICAL recommendation survives paring"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: CRITICAL recommendation was pared"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "The comparison uses the == operator" "$sess/comment-body.md"; then
+	echo "  PASS: CRITICAL analysis survives paring"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: CRITICAL analysis was dropped"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: the ladder sheds the lowest severity first"
+# Sized to land on level 1: LOW analysis gone, HIGH and MEDIUM analysis intact.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '%s' "$((full_len - 400))"; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+if ! grep -qF "The exported symbol carries no doc comment" "$sess/comment-body.md"; then
+	echo "  PASS: LOW analysis is shed first"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: LOW analysis survived a level-1 pare"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "The deferred Close is called without inspecting" "$sess/comment-body.md" &&
+	grep -qF "The loop retries until the call succeeds" "$sess/comment-body.md"; then
+	echo "  PASS: MEDIUM and HIGH analysis untouched at level 1"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the ladder skipped past level 1"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: the terminal case never emits an over-limit body"
+# Far below what 30 findings can occupy at any level: this is the case the
+# ladder exists to have a defined answer for.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '3000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+term_len=$(body_bytes "$sess/comment-body.md")
+if [[ "$term_len" -le 3000 ]]; then
+	echo "  PASS: terminal body fits ($term_len <= 3000)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: terminal body overflows ($term_len > 3000)"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "Trimmed to fit the" "$sess/comment-body.md" &&
+	grep -qF "omitted entirely" "$sess/comment-body.md"; then
+	echo "  PASS: dropped findings are disclosed by count"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: findings vanished without disclosure"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a cut body still carries its marker and its disclosure"
+# Below roughly 1,240 bytes not even the verdict header with every finding
+# already gone fits, so the ladder runs out and the body is cut at a line
+# boundary. `Comment limit: 500` is valid configuration, so this is reachable
+# from tracking.md, not just from a hostile hook.
+#
+# The cut takes the tail, and both things that make the comment honest live
+# there or past it. The marker is the last line of every part and the only
+# thing the poster's listings select on: a part that loses it is invisible to
+# the next run, which posts a fresh comment beside the orphan and supersedes
+# nothing, once more on every run after that. The disclosure is what stops the
+# result reading as a complete review -- a body announcing 30 findings, showing
+# none and claiming nothing was trimmed is the failure the ladder's own
+# doctrine calls worse than an overflow error.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '600'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+cut_len=$(body_bytes "$sess/comment-body.md")
+if [[ "$cut_len" -gt 0 && "$cut_len" -le 600 ]]; then
+	echo "  PASS: cut body is non-empty and fits ($cut_len <= 600)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: cut body is empty or overflows ($cut_len)"
+	FAIL=$((FAIL + 1))
+fi
+# Anchored at column 0 and spelled out in full: the listings bind the last line
+# that STARTS with the marker opening, so a marker indented or run onto the end
+# of a kept line would not be found.
+if grep -qE '^<!-- review-council:marker sha=[^ ]+ part=1 of=1 -->$' "$sess/comment-body.md"; then
+	echo "  PASS: the marker line survives the cut"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the cut discarded the marker, orphaning the comment"
+	FAIL=$((FAIL + 1))
+fi
+# Last line, not merely present. The listing takes the LAST line opening a
+# marker, and the anti-impersonation argument rests on a counterfeit quoted in
+# evidence always sitting ABOVE the real one. A marker re-appended anywhere but
+# the end satisfies the grep above and breaks both.
+cut_last=$(tail -n 1 "$sess/comment-body.md")
+if [[ "$cut_last" == "<!-- review-council:marker sha="* ]]; then
+	echo "  PASS: the marker is the last line of the cut body"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the marker is not the last line, so evidence can sit below it"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "Trimmed to fit the" "$sess/comment-body.md"; then
+	echo "  PASS: the cut body still says it was trimmed"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the cut body reads as a complete review of 30 findings"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: under the disclosure and marker the cut keeps only those"
+# The documented floor. Below their combined length nothing readable fits under
+# any policy, so the cut keeps identity and honesty and overshoots the limit --
+# which nothing rejects, because the limit is the user's `Comment limit` and no
+# poster measures a body against it. Pinned as an exact shape so a later "clamp
+# the body to the limit" edit cannot quietly re-orphan the comment.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '50'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+floor_lines=$(wc -l <"$sess/comment-body.md" | tr -d ' ')
+floor_first=$(sed -n 1p "$sess/comment-body.md")
+floor_blank=$(sed -n 2p "$sess/comment-body.md")
+floor_last=$(tail -n 1 "$sess/comment-body.md")
+if [[ "$floor_lines" -eq 3 && "$floor_first" == "_Trimmed to fit the "* && -z "$floor_blank" &&
+	"$floor_last" == "<!-- review-council:marker sha="* ]]; then
+	echo "  PASS: the floor body is the disclosure and the marker, nothing else"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: floor body is not disclosure + marker (${floor_lines} lines, first '${floor_first}')"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a cut deep enough to keep the disclosure is not handed a second"
+# The disclosure is reserved and re-appended, and it also sits near the top of
+# the body being cut. Above roughly 900 the fill reaches it, so without the
+# containment check the reader is told twice.
+#
+# 785 is the harder half of the same case and the reason the check matches the
+# disclosure's TEXT LINE: at that budget the fill stops between the disclosure
+# and the blank line under it, so the body holds a disclosure that is not the
+# reserved string. Found by rendering every limit from 1 to 1400 and counting,
+# which is too slow to keep in this suite; the limits below are the shapes that
+# scan turned up.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+for dup_limit in 785 900 1100 1239; do
+	(
+		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+		source "$SCRIPT"
+		eval "rc_comment_limit() { printf '%s' '$dup_limit'; }"
+		rc_render_comment_body "$sess" "$sess/comment-body.md"
+	)
+	dup_disc=$(grep -c '^_Trimmed to fit the ' "$sess/comment-body.md" || true)
+	dup_marker=$(grep -c '^<!-- review-council:marker sha=' "$sess/comment-body.md" || true)
+	assert_equals "$dup_disc" "1" "limit ${dup_limit} discloses exactly once"
+	assert_equals "$dup_marker" "1" "limit ${dup_limit} carries exactly one marker"
+done
+rm -rf "$sess"
+
+echo "Test: a second render in one process reads the second findings set"
+# Rendered blocks are memoised on (finding index, variant) to keep the ladder
+# affordable, and the key carries nothing about which findings.json was loaded.
+# A cache surviving the load would hand session A's block to session B under the
+# same key, and the mismatch is silent: byte accounting, ladder and disclosure
+# would all be internally consistent with the wrong content.
+#
+# Neither session records a `Comment limit`, so both settle on level 0 and the
+# keys collide, which is what makes the staleness observable. A limit added to
+# the shared fixture that pushed the two renders to different levels would give
+# them different variants, different keys, and a test that passes vacuously.
+sess=$(mktemp -d)
+sess_b=$(mktemp -d)
+make_review_session "$sess"
+make_review_session "$sess_b"
+jq '.verified[0].title = "Nonce is reused across requests" |
+    .verified[0].file = "crypto/seal.go" |
+    .verified[0].evidence = "nonce := staticNonce" |
+    .verified[0].description = "The nonce is a package-level constant, so every request seals with the same value. Reusing it voids the confidentiality guarantee the cipher makes." |
+    .verified[0].recommendation = "Draw a fresh nonce per request."' \
+	"$sess_b/verdicts/findings.json" >"$sess_b/verdicts/fj.tmp" &&
+	mv "$sess_b/verdicts/fj.tmp" "$sess_b/verdicts/findings.json"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+	rc_render_comment_body "$sess_b" "$sess_b/comment-body.md"
+)
+if grep -qF "**Nonce is reused across requests**" "$sess_b/comment-body.md"; then
+	echo "  PASS: the second body carries the second session's finding"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the second body is missing the second session's finding"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "The expiry check rejects tokens at the exact boundary" "$sess_b/comment-body.md"; then
+	echo "  FAIL: the second body served the first session's cached block"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no block from the first session leaked into the second"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess" "$sess_b"
+
+echo "Test: the limit is read from tracking.md on the standalone path"
+# rc_comment_limit is a shell function and cannot cross the process boundary the
+# router's `exec` creates, so the resolved numbers travel through tracking.md.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Comment limit: 20000\n' >>"$sess/tracking.md"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+standalone_len=$(body_bytes "$sess/comment-body.md")
+if [[ "$standalone_len" -le 20000 ]]; then
+	echo "  PASS: standalone render honours the recorded limit ($standalone_len <= 20000)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: standalone render ignored the recorded limit ($standalone_len > 20000)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a recorded limit overrides the forge hook"
+# The override exists for self-hosted GitLab and GHE behind a proxy that
+# imposes a smaller body than the forge itself does.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Comment limit: 20000\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '1000000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+override_len=$(body_bytes "$sess/comment-body.md")
+if [[ "$override_len" -le 20000 ]]; then
+	echo "  PASS: the recorded limit wins over the hook ($override_len <= 20000)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the hook overrode the user's recorded limit ($override_len > 20000)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: evidence and recommendation outlive the analysis prose"
+# The stated ordering invariant, and the one worth pinning hardest: evidence is
+# what makes a finding checkable, and it is what rc-verify-evidence.sh matched
+# byte-for-byte. A ladder that shed it first would still fit the limit and still
+# disclose - and would still be wrong.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '20000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+med_analysis=$(grep -cF "The deferred Close is called without inspecting" "$sess/comment-body.md" || true)
+med_evidence=$(grep -cF "defer f.Close()" "$sess/comment-body.md" || true)
+med_rec=$(grep -cF "closeWithErr pattern in this package" "$sess/comment-body.md" || true)
+assert_equals "$med_analysis" "0" "MEDIUM analysis is what the level sheds"
+assert_equals "$med_evidence" "16" "every MEDIUM finding keeps its evidence"
+assert_equals "$med_rec" "16" "every MEDIUM finding keeps its recommendation"
+rm -rf "$sess"
+
+echo "Test: collapsing a finding is not losing it"
+# Levels 3 and 5 collapse findings to a headline; they do not drop them. A
+# regression that dropped instead of collapsing would shrink the body just as
+# effectively and report the same level, so the count is the only thing that
+# tells them apart.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '8000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+	printf '%s %s\n' "$RC_COMMENT_LEVEL" "$RC_COMMENT_DROPPED" >"$sess/result"
+)
+read -r collapse_level collapse_dropped <"$sess/result"
+assert_equals "$collapse_dropped" "0" "a collapse level drops no findings"
+if [[ "$collapse_level" -ge 3 ]]; then
+	echo "  PASS: reached a collapse level ($collapse_level)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected level 3 or higher, got $collapse_level"
+	FAIL=$((FAIL + 1))
+fi
+assert_equals "$(grep -cF "(case " "$sess/comment-body.md" || true)" "30" \
+	"all 30 findings still listed after collapsing"
+rm -rf "$sess"
+
+echo "Test: an unsplit verdict still declares its place in the chain"
+# part=1 of=1 rather than a bare marker: the poster's per-part matching reads
+# these, so the single-comment case has to speak the same grammar.
+sess=$(mktemp -d)
+make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF "part=1 of=1 -->" "$sess/comment-body.md"; then
+	echo "  PASS: single-comment marker carries part=1 of=1"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: single-comment marker is missing part/of"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "review-council:part-links" "$sess/comment-body.md"; then
+	echo "  FAIL: an unsplit verdict carries a part-link placeholder"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no part-link placeholder when there is nothing to link to"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+# --- Limit resolution: the values that must NOT be honoured -------------------
+#
+# A limit is a positive character count. Every other shape has to fall through
+# to the next source rather than be taken literally, because taking it literally
+# is how a body gets pared to nothing.
+
+# Render with <tracking-lines> appended and an optional hook, and print
+# "<resolved-limit> <level> <bytes>".
+#
+# hook_value is `none` for "define no rc_comment_limit at all"; every other
+# value, the empty string included, defines a hook returning it. Keying "define
+# nothing" on emptiness instead would make the empty-hook case -- a forge
+# adapter that declares the hook and returns nothing, which is a different
+# branch of the renderer's resolution -- unreachable from here.
+render_with_limit() { # session tracking_lines hook_value
+	local s="$1"
+	[[ -z "$2" ]] || printf '%b' "$2" >>"$s/tracking.md"
+	(
+		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+		source "$SCRIPT"
+		if [[ "$3" != "none" ]]; then
+			eval "rc_comment_limit() { printf '%s' '$3'; }"
+		fi
+		rc_render_comment_body "$s" "$s/comment-body.md"
+		local bytes
+		bytes=$(wc -c <"$s/comment-body.md")
+		printf '%s %s %s\n' "$RC_COMMENT_LIMIT" "$RC_COMMENT_LEVEL" "$bytes"
+	)
+}
+
+echo "Test: a recorded limit that is not a positive integer defers to the forge"
+for bad in "forge default" "abc" "-500" "0" "20 000" "65536.0"; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	make_review_session_many "$sess"
+	limit_probe=$(render_with_limit "$sess" "- Comment limit: ${bad}\n" "20000")
+	read -r got_limit got_level got_bytes <<<"$limit_probe"
+	if [[ "$got_limit" == "20000" && "$got_bytes" -gt 0 && "$got_bytes" -le 20000 ]]; then
+		echo "  PASS: '${bad}' fell through to the hook (limit=$got_limit level=$got_level)"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: '${bad}' was honoured as a limit (limit=$got_limit bytes=$got_bytes)"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done
+
+echo "Test: a forge hook that returns nonsense means no limit, not a zero one"
+# A hook is code someone else wrote. Returning an empty string, a word, or zero
+# has to read as "this adapter declares no limit" - never as "trim everything".
+for bad in "" "unlimited" "0" "-1"; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	make_review_session_many "$sess"
+	limit_probe=$(render_with_limit "$sess" "" "$bad")
+	read -r got_limit got_level got_bytes <<<"$limit_probe"
+	if [[ "$got_level" -eq 0 && "$got_bytes" -eq "$full_len" ]]; then
+		echo "  PASS: hook value '${bad}' left the body at full fidelity"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: hook value '${bad}' pared the body (limit=$got_limit level=$got_level bytes=$got_bytes)"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done
+
+echo "Test: a recorded Max comments that is not a positive integer means one"
+for bad in "abc" "0" "-3"; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	make_review_session_many "$sess"
+	limit_probe=$(render_with_limit "$sess" "- Comment limit: 12000\n- Max comments: ${bad}\n" "none")
+	read -r _ bad_level _ <<<"$limit_probe"
+	(
+		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+		source "$SCRIPT"
+		rc_render_comment_body "$sess" "$sess/comment-body.md"
+		printf '%s\n' "$RC_COMMENT_PARTS" >"$sess/parts"
+	)
+	bad_parts=$(cat "$sess/parts")
+	if [[ "$bad_parts" -eq 1 && "$bad_level" -gt 0 ]]; then
+		echo "  PASS: Max comments '${bad}' fell back to 1, so the ladder ran instead"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: Max comments '${bad}' was honoured (parts=$bad_parts level=$bad_level)"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done
+
+echo "Test: a session with no findings renders a verdict, not an empty file"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified = [] | .verdicts = {} | .total_findings = 0' "$sess/verdicts/findings.json" \
+	>"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '65536'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+empty_bytes=$(body_bytes "$sess/comment-body.md")
+if [[ "$empty_bytes" -gt 0 ]] && grep -qF "Review Council:" "$sess/comment-body.md"; then
+	echo "  PASS: a findings-free review still posts its verdict ($empty_bytes bytes)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no findings produced no body ($empty_bytes bytes)"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "Trimmed to fit the" "$sess/comment-body.md"; then
+	echo "  FAIL: a findings-free review claimed to be trimmed"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: nothing to trim, nothing claimed"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+# --- Comment chaining --------------------------------------------------------
+
+echo "Test: chaining is preferred over paring"
+# limit x max_comments is the budget, and a split body loses nothing where a
+# pared one loses reviewer analysis. At this limit a single comment would need
+# level 4; three comments hold the same findings whole.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Max comments: 3\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '12000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+	printf '%s %s\n' "$RC_COMMENT_PARTS" "$RC_COMMENT_LEVEL" >"$sess/result"
+	printf '%s\n' "${RC_COMMENT_PART_FILES[@]}" >"$sess/files"
+)
+read -r chain_parts chain_level <"$sess/result"
+assert_equals "$chain_level" "0" "a chained body is not pared"
+if [[ "$chain_parts" -gt 1 && "$chain_parts" -le 3 ]]; then
+	echo "  PASS: split across $chain_parts parts, within the configured maximum"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected 2-3 parts, got $chain_parts"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "Trimmed to fit the" "$sess"/comment-body*.md; then
+	echo "  FAIL: a chained body claimed to be trimmed"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no disclosure line on a chained, unpared body"
+	PASS=$((PASS + 1))
+fi
+# Every part must fit on its own: the budget is per comment, multiplied, not a
+# single allowance the parts share unevenly.
+chain_over=0
+while IFS= read -r f; do
+	part_len=$(body_bytes "$f")
+	[[ "$part_len" -le 12000 ]] || chain_over=$((chain_over + 1))
+done <"$sess/files"
+assert_equals "$chain_over" "0" "every part fits the per-comment limit"
+# Conservation: splitting must not lose a finding. Each fixture headline carries
+# a unique "(case N)", so counting them across the parts counts the findings.
+# Summed file by file rather than with `grep -hc`, which is not POSIX.
+chain_findings=0
+while IFS= read -r f; do
+	chain_findings=$((chain_findings + $(grep -cF "(case " "$f" || true)))
+done <"$sess/files"
+assert_equals "$chain_findings" "30" "no finding is lost in the split"
+rm -rf "$sess"
+
+echo "Test: each part is identified and self-describing"
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Max comments: 3\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '12000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+# The marker is how the poster matches a re-render against the comments it wrote
+# last time. Without part/of it can only find "some council comment for this
+# sha" and would update the wrong one.
+for part in 1 2 3; do
+	if [[ "$part" -eq 1 ]]; then part_file="$sess/comment-body.md"; else part_file="$sess/comment-body.part${part}.md"; fi
+	if grep -qF "review-council:marker sha=" "$part_file" &&
+		grep -qF "part=${part} of=3" "$part_file"; then
+		echo "  PASS: part ${part} is marked part=${part} of=3"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: part ${part} does not identify its place in the chain"
+		FAIL=$((FAIL + 1))
+	fi
+done
+# Only the head carries the verdict and the substitution point for part links; a
+# reader landing on a tail is told where the summary is.
+if grep -qF "Review Council: REQUEST CHANGES" "$sess/comment-body.md" &&
+	! grep -qF "Review Council: REQUEST CHANGES" "$sess/comment-body.part2.md"; then
+	echo "  PASS: the verdict heading appears once, on the head"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the verdict heading is missing or repeated across parts"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "review-council:part-links" "$sess/comment-body.md" &&
+	! grep -qF "review-council:part-links" "$sess/comment-body.part2.md"; then
+	echo "  PASS: the part-link substitution point is on the head only"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: part-link token misplaced"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF "The verdict and summary are in part 1." "$sess/comment-body.part2.md"; then
+	echo "  PASS: a tail part points back at the head"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a tail part does not say where the verdict is"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: a re-render that needs fewer parts removes the stale ones"
+# A run that needed three comments followed by one that needs two must not leave
+# the third on disk: the poster reads the part files, and an orphan would be
+# posted as a part of a chain it no longer belongs to.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Max comments: 3\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '12000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+if [[ -e "$sess/comment-body.part3.md" ]]; then
+	echo "  PASS: three parts on the first render"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the first render did not produce three parts"
+	FAIL=$((FAIL + 1))
+fi
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '1000000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+if [[ ! -e "$sess/comment-body.part2.md" && ! -e "$sess/comment-body.part3.md" ]]; then
+	echo "  PASS: stale parts removed when the chain shortens"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a stale part file survived the re-render"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: chaining and paring compose when even the budget is exceeded"
+# Three comments of 3,000 is 9,000 against a 27,896-char body. Chaining alone
+# cannot save this; the ladder runs against the multiplied budget.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Max comments: 3\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '3000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+	printf '%s %s\n' "$RC_COMMENT_PARTS" "$RC_COMMENT_LEVEL" >"$sess/result"
+)
+read -r both_parts both_level <"$sess/result"
+if [[ "$both_level" -gt 0 && "$both_parts" -gt 1 ]]; then
+	echo "  PASS: pared to level $both_level AND split across $both_parts parts"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected both mechanisms (level=$both_level parts=$both_parts)"
+	FAIL=$((FAIL + 1))
+fi
+both_over=0
+for f in "$sess"/comment-body.md "$sess"/comment-body.part*.md; do
+	[[ -e "$f" ]] || continue
+	part_len=$(body_bytes "$f")
+	[[ "$part_len" -le 3000 ]] || both_over=$((both_over + 1))
+done
+assert_equals "$both_over" "0" "every part still fits the per-comment limit"
+if grep -qF "Trimmed to fit the" "$sess/comment-body.md"; then
+	echo "  PASS: the head discloses the trim"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a pared chain does not disclose"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

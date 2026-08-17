@@ -40,3 +40,13 @@ rc_forge_fetch_diff() {
 
 	rc_timeout 30 glab mr diff "$mr_number" 2>/dev/null >"$out_file" || true
 }
+
+# <login> — the account the council posts as, or empty. Optional capability;
+# see the GitHub adapter for why identity is marker AND author. GitLab has no
+# post script yet, so nothing writes a marker comment here today; declaring it
+# now means the re-review filter is already correct when that lands.
+rc_forge_current_user() {
+	local user_json
+	user_json=$(rc_timeout 15 glab api user 2>/dev/null) || return 0
+	jq -r '.username // empty' <<<"$user_json" 2>/dev/null || echo ""
+}

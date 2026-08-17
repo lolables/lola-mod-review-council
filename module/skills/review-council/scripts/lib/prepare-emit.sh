@@ -100,6 +100,12 @@ fi
 	echo "- Review root: ${review_root}"
 	echo "- Post intent: ${post_comment}"
 	echo "- Post auto-send: ${post_auto_send}"
+	# Comment size policy, carried here because rc-render-comment.sh is also
+	# reached by `exec` from the router, where the per-forge rc_comment_limit
+	# hook cannot follow it. "forge default" is not a number, so the renderer
+	# falls through to the hook — and to no limit at all when there is none.
+	echo "- Comment limit: ${comment_limit:-forge default}"
+	echo "- Max comments: ${max_comments}"
 	echo "- Agents discovered: ${#agents[@]}"
 	echo "- Agents absent: ${agents_absent_line}"
 	changeset_line_count=$(wc -l <"${session_dir}/changeset.txt")

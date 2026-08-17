@@ -42,6 +42,11 @@ _warned_no_validator=0
 # paths apart. Keep each on one line: the test extracts them with sed.
 readonly RC_TOP_KEYS='["agent","files_read","verdict","findings"]'
 readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation"]'
+# The subset of RC_FINDING_KEYS that "required" in verdict-schema.json names.
+# Every top-level key is required, so RC_TOP_KEYS doubles as that list; findings
+# are the only level where the two differ (`line`, `title` and `constraint` are
+# optional). Same one-line rule as above — the schema-drift test reads it.
+readonly RC_REQUIRED_FINDING_KEYS='["severity","file","evidence","description","recommendation"]'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -127,8 +132,11 @@ validate() { # json_string
 	' >/dev/null 2>&1
 }
 
-# Precise validation error to feed back on the ONE re-dispatch. Uses the
-# validator's --json output when available; terse note under the jq path.
+# Precise validation error to feed back on the ONE re-dispatch. Both paths name
+# the offending field: sourcemeta's `--json` output when the binary is present
+# (verified against 16.7.0 — `--json`/`-j` is a global option, and unlike the
+# flagless form used by validate() it exits 0 and reports through the document,
+# hence the `|| true`), and the field-by-field mirror below when it is not.
 validate_error() { # json_string
 	local json="$1" tmp msg
 	# shellcheck disable=SC2310 # _has_validator is a predicate; see validate() above.
@@ -140,7 +148,83 @@ validate_error() { # json_string
 		printf '%s' "$msg"
 		return
 	fi
-	printf 'Failed minimal structural check (missing required key, bad enum, or non-array findings).'
+	# Fallback path: name the offending fields rather than listing every cause
+	# the check has. The agent gets one re-dispatch and this is the only text
+	# telling it which field to fix — a constant sentence naming three possible
+	# causes misdiagnoses every defect that is not one of them, and an extra key
+	# (the most common defect, because no document states the key set is closed)
+	# is not one of them. The checks below mirror validate()'s jq expression
+	# one for one, so the two cannot disagree about what is wrong.
+	printf '%s' "$json" | jq -r \
+		--argjson topkeys "$RC_TOP_KEYS" \
+		--argjson fkeys "$RC_FINDING_KEYS" \
+		--argjson reqf "$RC_REQUIRED_FINDING_KEYS" \
+		--argjson sevs '["CRITICAL","HIGH","MEDIUM","LOW"]' \
+		--argjson vrds '["APPROVE","REQUEST CHANGES"]' '
+		def nonempty_string: type == "string" and length > 0;
+		def integerish: type == "number" and (floor == .);
+		def oneof($allowed): . as $v | any($allowed[]; . == $v);
+		def quote($ks): $ks | map("`" + . + "`") | join(", ");
+		if type != "object" then ["the block is a JSON \(type), not an object"]
+		else
+			[
+				(if has("agent") and ((.agent | nonempty_string) | not)
+					then "`agent` must be a non-empty string" else empty end),
+				(if has("files_read") then
+					if (.files_read | type) != "array"
+						then "`files_read` must be an array of strings"
+					elif ([.files_read[] | select(type != "string")] | length) > 0
+						then "`files_read` must contain strings only"
+					else empty end
+				else empty end),
+				(if has("verdict") and ((.verdict | oneof($vrds)) | not)
+					then "`verdict` must be exactly \"APPROVE\" or \"REQUEST CHANGES\"" else empty end),
+				(if has("findings") and ((.findings | type) != "array")
+					then "`findings` must be an array (use [] for a clean review)" else empty end)
+			]
+			+ (($topkeys - keys) as $miss
+				| if ($miss | length) > 0 then ["missing required key(s): " + quote($miss)] else [] end)
+			+ ((keys - $topkeys) as $extra
+				| if ($extra | length) > 0 then
+					["unrecognised top-level key(s): " + quote($extra)
+					+ " — the schema sets additionalProperties:false, so only "
+					+ quote($topkeys) + " are permitted"]
+				else [] end)
+			+ (if (.findings | type) == "array" then
+				[.findings | to_entries[] | .key as $i | .value as $f
+					| if ($f | type) != "object"
+						then "findings[\($i)] is a JSON \($f | type), not an object"
+					else
+						(($reqf - ($f | keys)) as $fmiss
+							| if ($fmiss | length) > 0
+								then "findings[\($i)] missing required key(s): " + quote($fmiss)
+								else empty end),
+						((($f | keys) - $fkeys) as $fx
+							| if ($fx | length) > 0
+								then "findings[\($i)] unrecognised key(s): " + quote($fx)
+									+ " — only " + quote($fkeys) + " are permitted"
+								else empty end),
+						(if ($f | has("severity")) and (($f.severity | oneof($sevs)) | not)
+							then "findings[\($i)].severity must be one of " + quote($sevs) else empty end),
+						(if ($f | has("line")) and ($f.line != null) and (($f.line | integerish) | not)
+							then "findings[\($i)].line must be an integer or null" else empty end),
+						(if ($f | has("constraint")) and (($f.constraint | type) != "string")
+							then "findings[\($i)].constraint must be a string" else empty end),
+						(if ($f | has("title")) and (($f.title | nonempty_string) | not)
+							then "findings[\($i)].title must be a non-empty string when present" else empty end),
+						(["file", "evidence", "description", "recommendation"][] as $k
+							| if ($f | has($k)) and (($f[$k] | nonempty_string) | not)
+								then "findings[\($i)].\($k) must be a non-empty string" else empty end)
+					end]
+			else [] end)
+		end
+		# The mirror above is exhaustive, but it is a mirror: if validate()
+		# ever rejects something no branch here names, say so plainly rather
+		# than reporting an empty problem list as though nothing were wrong.
+		| if length == 0
+			then "Failed minimal structural check (missing required key, bad enum, or non-array findings)."
+			else join("; ") end
+	'
 }
 
 invalid_json="[]"
@@ -230,7 +314,13 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
   "constraint": "...", "description": "...", "recommendation": "...",
   "title": "optional headline" } ] }
-Emit only the block — no prose before or after. Re-emit your full verdict now.
+These are the only keys permitted at either level — the schema sets
+"additionalProperties": false, so any other key is rejected, however useful it
+looks. Put anything you would have added into `description`. Optional keys are
+`line`, `title` and `constraint`; every other key above is required.
+Emit only the block — no prose before or after.
+Correct only the defect named above: re-emit the SAME findings, with the same
+severities and the same evidence. This is a formatting repair, not a new review.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \
 		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem}'

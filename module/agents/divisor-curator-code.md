@@ -193,6 +193,7 @@ Check documentation in changeset follows established project conventions:
   - New major capability
 - If yes and Docs repo configured, check whether blog issue exists with label `blog`.
 - If no matching blog issue exists, report finding with full issue create command (using forge tool from delegation prompt) in recommendation field.
+- If no Docs repo configured, do NOT produce a blog finding. Whether an issue already exists is unknowable from here, and "no blog issue on record" asserts the state of a tracker you have no address for.
 - Skip for routine changes (bug fixes, minor refactoring, test-only).
 
 ### 5. Tutorial Opportunity Identification
@@ -203,7 +204,27 @@ Check documentation in changeset follows established project conventions:
   - New workflow pattern
 - If yes and Docs repo configured, check whether tutorial issue exists with label `tutorial`.
 - If no matching tutorial issue exists, report finding with full issue create command (using forge tool from delegation prompt) in recommendation field.
+- If no Docs repo configured, do NOT produce a tutorial finding, for the same reason the blog criterion above does not.
 - Skip for changes not introducing new workflows.
+
+**Content opportunities are not defects.** A missing blog post or tutorial
+describes work the project has not done yet, not something the changeset broke.
+Both criteria above are advisory and cap at LOW. A documentation gap in shipped
+docs — a stale README, an undocumented flag, a broken cross-reference — is a
+defect and keeps its own severity; do not borrow that severity for a content
+opportunity because the underlying capability is significant.
+
+**A content opportunity requires the duplicate check to have run.** If the check
+did not run, whatever prevented it, do NOT produce a `blog` or `tutorial`
+finding. Recommending one asserts that no such issue is on record, and that is a
+claim about a tracker you did not query. Every branch that skips the search lands
+here, including: no Docs repo configured; a `Docs repo` value that fails the
+`owner/repo` gate; `Forge tooling: none`; the named forge tool missing or
+erroring when run; the Docs repo inaccessible; a keyword that filters to empty or
+an assembled command carrying a prohibited character. A `docs` finding still
+stands in every one of those cases: it describes a gap in the documentation of
+the repository under review, which you read directly. See Graceful Degradation
+for what each failure leaves behind.
 
 ### Issue Filing Template
 
@@ -242,8 +263,8 @@ Where `<TYPE>` is one of: `docs` (missing/outdated documentation), `blog` (blog 
 | Documentation cross-references broken by changeset                             | MEDIUM   |
 | User-facing change with documentation issue filed but project docs not updated | MEDIUM   |
 | Documentation convention violation (format, directory, structure)              | MEDIUM   |
-| Significant capability without blog issue filed                                | MEDIUM   |
-| New workflow without tutorial issue filed                                      | MEDIUM   |
+| Significant capability without blog issue filed                                | LOW      |
+| New workflow without tutorial issue filed                                      | LOW      |
 | Minor documentation improvement opportunity                                    | LOW      |
 | Content opportunity for routine change (below significance threshold)          | LOW      |
 
@@ -263,8 +284,8 @@ Curator identifies **what** needs documenting and files tracking issues. Curator
 
 | Condition                                                                  | Behavior                                                                                                  |
 |---------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| Forge tool named in delegation prompt is not installed, or errors when run | Skip duplicate checking. Still recommend the issue per the Issue Filing Template above.                   |
-| Docs repo inaccessible                                                    | Skip duplicate checking. Still recommend the issue per the Issue Filing Template above, for manual filing. |
+| Forge tool named in delegation prompt is not installed, or errors when run | Skip duplicate checking. Still recommend the `docs` issue per the Issue Filing Template above. Do NOT produce a `blog` or `tutorial` finding — the duplicate check did not run. |
+| Docs repo inaccessible                                                    | Skip duplicate checking. Still recommend the `docs` issue per the Issue Filing Template above, for manual filing. Do NOT produce a `blog` or `tutorial` finding — the duplicate check did not run. |
 | `Docs repo` value is invalid (not `owner/repo` format)                    | Report documentation gaps as findings. Do not invoke bash. Note misconfiguration.                          |
 | Knowledge layer not available                                             | Skip Prior Learnings (see reviewer-protocol.md), proceed with standard review.                             |
 | No content pack loaded                                                    | Skip content quality checks on issue descriptions. Recommend issues with best-effort descriptions.         |

@@ -721,6 +721,14 @@ there is nothing to post to and stop.
 
    Read the rendered `${session_dir}/comment-body.md` and show it to the user.
 
+   The result carries `parts`, `pare_level` and `findings_dropped`. When
+   `parts` is greater than 1 the verdict did not fit one comment and was
+   split: `part_files` lists every file, in order, and the user must be shown
+   that there are several — not just the first. When `pare_level` is greater
+   than 0 the body was trimmed to fit; say so, and say that the full verdict
+   is in the report and the run artifacts. Do NOT present a trimmed body as
+   the complete review.
+
 4. **Confirm and send**:
    - Read `Post auto-send:` from tracking.md.
    - If `no`: ask the user — "Post this comment to PR #{N} on {forge}?" Only on
@@ -743,10 +751,13 @@ there is nothing to post to and stop.
      created/updated when the script reported an error.
    - The action may be `created`, `updated`, or `unchanged` (same commit,
      nothing changed); a `created` on a new commit also supersedes and hides the
-     prior commit's comment. Relay the action and `superseded` count faithfully.
+     prior commit's comment, every part of it. Relay the action and `superseded`
+     count faithfully. On a chained verdict the action summarises the whole
+     chain, with per-part `created`/`updated`/`unchanged` counts alongside it.
 
 5. **Report the outcome**: state whether the comment was created, updated, or
-   left for manual posting.
+   left for manual posting — and, when the verdict was split or trimmed, say
+   that too.
 
 **Update tracking:** Append a `## Phase: Post` section recording intent,
 whether sent, and the action (created/updated/manual).
@@ -850,10 +861,23 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Knowledge tool: my_semantic_search
 - Docs repo: myorg/docs
 - Quality tool: my_quality_reporter
+- Max comments: 1
+- Comment limit: 65536
 ```
 
 All extension points optional, degrade gracefully when omitted.
 No Constitution path configured: constitution-specific checks skipped.
+
+`Max comments` and `Comment limit` govern an oversized verdict. A review
+with enough findings renders a comment the forge rejects: GitHub caps an
+issue comment at 65,536 characters and a 30-finding review reaches about
+58,000. `Max comments` (default 1) is how many comments one verdict may
+be spread across; `Comment limit` overrides the forge's own value, and is
+only needed when the effective limit is smaller — self-hosted GitLab, or
+GHE behind a proxy. Beyond `Comment limit` x `Max comments` the renderer
+trims, analysis prose before evidence and CRITICAL last, and says so in a
+line beginning `Trimmed to fit the`. The full verdict is always in the
+run artifacts. See README "Oversized verdicts".
 
 Convention packs define project-specific coding standards. Override or
 extend shipped packs by placing files in `.review-council/packs/`

@@ -176,3 +176,18 @@ rc_forge_fetch_conversation() {
 		body: (.body // "")
 	}]' <<<"$conversation_json" 2>/dev/null || echo "[]"
 }
+
+# <login> — a bare login naming the account the council posts as, or empty.
+#
+# Optional capability. Preparation uses it to tell the council's own verdict
+# comment apart from a participant's reply that merely quotes it: the marker is
+# public, so identity is marker AND author, exactly as the post script already
+# requires before it will update or hide a comment. An adapter that omits this
+# degrades to marker-only matching, which is disclosed in the artifact rather
+# than assumed away.
+#
+# Empty on failure by design, like every other function here: an unauthenticated
+# or rate-limited forge must not abort preparation.
+rc_forge_current_user() {
+	rc_timeout 15 gh api user --jq '.login' 2>/dev/null || echo ""
+}

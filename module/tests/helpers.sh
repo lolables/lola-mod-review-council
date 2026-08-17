@@ -217,6 +217,28 @@ write_verification_log() {
 		>"$session/verdicts/_meta/verification.txt"
 }
 
+# Assert the value of a "- Key: value" line in a session's tracking.md.
+#
+# Anchored at the start of the line, matching rc_parse_kv in rc-lib.sh, which is
+# what the scripts under test use. The library itself is not sourced here: a
+# missing prerequisite makes it print skip-JSON and `exit 0`, which inside a test
+# reads as a pass.
+#
+# The read happens here rather than at the call site for the same reason as
+# assert_jq: a command substitution nested inside another command has its exit
+# status discarded, so a failing read would silently assert against the empty
+# string instead of aborting.
+# Usage: assert_track <session_dir> <key> <expected> <label>
+assert_track() { # session_dir key expected label
+	local actual
+	# One sed rather than a grep/head/sed pipeline: a pipe inside a command
+	# substitution hides the exit status of every stage but the last (SC2312).
+	# `q` after the first match is what makes it first-match-wins.
+	actual=$(sed -nE "/^[-[:space:]]*${2}:/{s/^[-[:space:]]*${2}:[[:space:]]*//;s/[[:space:]]+\$//;p;q;}" \
+		"$1/tracking.md" 2>/dev/null)
+	assert_equals "$actual" "$3" "$4"
+}
+
 assert_json_field() {
 	local json="$1" field="$2" expected="$3" test_name="$4"
 	local actual
@@ -352,6 +374,95 @@ SES
 FJ
 	echo "REQUEST CHANGES" >"$s/verdict.txt"
 	echo "One high-severity boundary bug in token expiry." >"$s/comment-summary.md"
+}
+
+# Overwrite a fixture session's findings.json with MANY findings, in the
+# severity mix a real 30-finding review produced (1 CRITICAL / 10 HIGH /
+# 16 MEDIUM / 3 LOW).
+#
+# The defaults are that run's actual distribution rather than a round number,
+# because the paring ladder sheds analysis prose one severity at a time and a
+# flat mix would let a level pass its test without ever being the level that
+# made the body fit. Each finding carries an explicit title AND a multi-sentence
+# description, so `rc_finding_block` emits a "Full reviewer analysis" block for
+# every one of them — the thing levels 1, 2 and 4 remove.
+#
+# Prose lengths are shaped after that run but shorter than it. The fixture
+# renders ~930 characters per finding, of which ~620 is the analysis block, for
+# a body of ~27,900 characters. The live run that motivated chaining rendered
+# 58,000 across the same 30 findings, so this is the pressure case at roughly
+# half scale — enough to drive the ladder, at budgets a suite scales to the
+# fixture rather than copies from the real review.
+# Usage: make_review_session_many <dir> [crit=1] [high=10] [med=16] [low=3]
+make_review_session_many() {
+	local s="$1" n_crit="${2:-1}" n_high="${3:-10}" n_med="${4:-16}" n_low="${5:-3}"
+	jq -n \
+		--argjson crit "$n_crit" --argjson high "$n_high" \
+		--argjson med "$n_med" --argjson low "$n_low" '
+		def spec($sev):
+			{
+				CRITICAL: {
+					agent: "divisor-adversary-code",
+					dir: "auth",
+					title: "Session token is compared in non-constant time",
+					evidence: "if req.Token == stored.Token {\n\treturn allow(ctx, req)\n}",
+					description: "The comparison uses the == operator on two secrets, so it returns as soon as the first differing byte is reached. The time it takes therefore leaks how many leading bytes of the supplied token were correct, which is enough to recover the value one byte at a time over a few thousand requests. This endpoint is unauthenticated by design, so there is no rate limit in front of it to make that impractical. The standard library ships crypto/subtle for exactly this case. Every other secret comparison in this package already goes through the helper in internal/crypto, so this is the one site that diverges.",
+					recommendation: "Compare with subtle.ConstantTimeCompare, through the existing helper in internal/crypto."
+				},
+				HIGH: {
+					agent: "divisor-testing-code",
+					dir: "internal/retry",
+					title: "Retry loop has no attempt ceiling",
+					evidence: "for {\n\tif err := call(ctx); err == nil {\n\t\tbreak\n\t}\n}",
+					description: "The loop retries until the call succeeds and has no attempt ceiling and no backoff between iterations. A dependency returning a permanent error therefore produces an unbounded hot loop that holds the connection and the goroutine for as long as the process runs. Under the load this path already sees, a single upstream outage would exhaust the connection pool within seconds and take down the endpoints that share it. The test added alongside it exercises the success path only, so the loop has never been run against a permanent failure. There is an existing withBackoff helper in internal/retry that the two neighbouring call sites already use.",
+					recommendation: "Wrap the call in withBackoff from internal/retry, with a ceiling of 3 attempts."
+				},
+				MEDIUM: {
+					agent: "divisor-guard-code",
+					dir: "internal/store",
+					title: "Close error is discarded on a write handle",
+					evidence: "defer f.Close()",
+					description: "The deferred Close is called without inspecting the error it returns, so a failure to flush the buffered writer is discarded silently. For a read that is harmless, but this handle is opened for writing and the write is the operation the caller is told succeeded. A partial file therefore reports as a complete one, and the mismatch only surfaces later when something tries to parse it. The package already has a closeWithErr pattern in three other files that assigns into the named return, so adopting it here costs one line.",
+					recommendation: "Assign the Close error into the named return, following the closeWithErr pattern in this package."
+				},
+				LOW: {
+					agent: "divisor-curator-code",
+					dir: "docs",
+					title: "Exported function has no doc comment",
+					evidence: "func Handle(ctx context.Context, w http.ResponseWriter) error {",
+					description: "The exported symbol carries no doc comment, so it is absent from the package documentation the rest of the team browses. Every other exported symbol in this file has one, which makes this the odd entry rather than a house style. The comment should start with the symbol name so that godoc renders it as a sentence.",
+					recommendation: "Add a doc comment beginning with the symbol name."
+				}
+			}[$sev];
+		def findings($sev; $n):
+			spec($sev) as $t
+			| [range($n) | . as $i | {
+				agent: $t.agent,
+				severity: $sev,
+				file: "\($t.dir)/handler_\($i).go",
+				line: (7 * $i + 3),
+				evidence: $t.evidence,
+				title: "\($t.title) (case \($i))",
+				description: $t.description,
+				recommendation: $t.recommendation,
+				status: "verified",
+				verdict: "REQUEST CHANGES",
+				provenance: {}
+			}];
+		(findings("CRITICAL"; $crit) + findings("HIGH"; $high)
+			+ findings("MEDIUM"; $med) + findings("LOW"; $low)) as $all
+		| {
+			verified: $all,
+			correctable: [],
+			stripped: [],
+			total_findings: ($all | length),
+			duplicates_consolidated: 0,
+			verdicts: ($all | map({key: .agent, value: "REQUEST CHANGES"}) | from_entries)
+		}
+	' >"$s/verdicts/findings.json"
+	printf 'REQUEST CHANGES\n' >"$s/verdict.txt"
+	printf 'One critical token comparison plus a long tail of retry and error-handling defects.\n' \
+		>"$s/comment-summary.md"
 }
 
 # Build a git repo containing exactly ONE commit under <dir>. The root commit

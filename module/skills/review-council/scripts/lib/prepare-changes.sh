@@ -375,23 +375,53 @@ fi
 [[ "$framework" == "unknown" ]] && framework="none"
 
 # ============================================================================
-# SECTION 11: Resolve Constitution
+# SECTION 11: Read the Review Council Configuration block
 # ============================================================================
 
-constitution="none"
-constitution_source=""
-
-# Check AGENTS.md and CLAUDE.md for Review Council Configuration
+# Both AGENTS.md and CLAUDE.md may carry a "## Review Council Configuration"
+# section. They are concatenated in that order and then read key by key, so a
+# key defined in both resolves to the AGENTS.md value. That is the same
+# precedence the Constitution lookup had when it was the only key, expressed per
+# key instead of per file — which is what it takes to carry a second key out of
+# a loop that used to `break` on the first hit.
+rc_config_section=""
 for config_file in AGENTS.md CLAUDE.md; do
-	if [[ -f "$config_file" ]]; then
-		rc_config_section=$(sed -n '/^## Review Council Configuration$/,/^## /{/^## Review Council Configuration$/d;/^## /d;p}' "$config_file" 2>/dev/null)
-		if echo "$rc_config_section" | grep -q "Constitution:"; then
-			constitution=$(echo "$rc_config_section" | grep "Constitution:" | sed 's/.*Constitution: *//' | head -n1)
-			constitution_source="explicit"
-			break
-		fi
-	fi
+	[[ -f "$config_file" ]] || continue
+	rc_config_section+=$(sed -n '/^## Review Council Configuration$/,/^## /{/^## Review Council Configuration$/d;/^## /d;p}' "$config_file" 2>/dev/null)$'\n'
 done
 
-# No fallback auto-discovery. If no explicit Constitution is configured,
-# constitution stays "none" and reviewers skip constitution-specific checks.
+# First value for <key> in the collected block, trimmed. Anchored at the start
+# of the line, matching rc_parse_kv, so prose that happens to mention a key name
+# mid-sentence cannot be read as configuration.
+rc_config_value() { # key
+	printf '%s\n' "$rc_config_section" |
+		grep -m1 -E "^[-[:space:]]*${1}:" 2>/dev/null |
+		sed -E "s/^[-[:space:]]*${1}:[[:space:]]*//" |
+		sed -E 's/[[:space:]]+$//' || true
+}
+
+constitution=$(rc_config_value "Constitution")
+constitution_source=""
+if [[ -n "$constitution" ]]; then
+	constitution_source="explicit"
+else
+	# No fallback auto-discovery. With no explicit Constitution configured,
+	# reviewers skip constitution-specific checks.
+	constitution="none"
+fi
+
+# --- Comment size policy ---
+#
+# `Comment limit` is the forge's per-comment character cap. It is normally
+# supplied by the per-forge post script and needs configuring only when the
+# effective limit is smaller than the forge's own — self-hosted GitLab, or GHE
+# behind a proxy that truncates bodies. `Max comments` is policy, not a fact
+# about the API: it is how many comments the council may spend on one verdict.
+#
+# Both are validated here rather than at the point of use. A value that is not a
+# positive integer is dropped, not clamped: a typo that silently became "1" would
+# change what gets posted while reading as if it had been honoured.
+comment_limit=$(rc_config_value "Comment limit")
+[[ "$comment_limit" =~ ^[1-9][0-9]*$ ]] || comment_limit=""
+max_comments=$(rc_config_value "Max comments")
+[[ "$max_comments" =~ ^[1-9][0-9]*$ ]] || max_comments=1

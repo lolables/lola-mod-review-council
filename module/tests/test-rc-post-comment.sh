@@ -65,17 +65,28 @@ result=$(PATH="$ghstub:$PATH" bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "confirm_required" "status is confirm_required (--send reached gate, no ALLOW_POST)"
 rm -rf "$sess" "$ghstub"
 
-# Test 6: unsupported forge -> render-only fallback (renderer standalone)
-echo "Test 6: unsupported forge render-only fallback"
+# Test 6: a forge with NO post script -> render-only fallback (renderer standalone)
+#
+# This used to name gitlab, and stopped testing the fallback the day
+# rc-post-comment-gitlab.sh landed: the router found a per-forge script and
+# execed it, and the assertions still passed because both paths answer
+# `rendered` with a "manually" message. The forge here must be one with no
+# sibling script, or the test quietly moves to whatever does exist.
+echo "Test 6: a forge with no post script falls back to render-only"
 sess=$(mktemp -d)
-make_review_session "$sess" gitlab 42
+make_review_session "$sess" bitbucket 42
+if [[ -f "$(dirname "$SCRIPT")/rc-post-comment-bitbucket.sh" ]]; then
+	echo "  FAIL: rc-post-comment-bitbucket.sh now exists; pick a forge without one"
+	FAIL=$((FAIL + 1))
+fi
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered (fallback)"
-if echo "$result" | jq -r '.message' | grep -qF "manually"; then
-	echo "  PASS: render-only fallback message"
+# The neutral renderer names no forge; a per-forge script names its own.
+if echo "$result" | jq -r '.message' | grep -qF "no posting integration for this forge"; then
+	echo "  PASS: the message is the neutral renderer's, not a per-forge script's"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: not the fallback path"
+	echo "  FAIL: the router did not reach the standalone renderer"
 	FAIL=$((FAIL + 1))
 fi
 if grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md"; then
@@ -83,6 +94,21 @@ if grep -qF "<!-- review-council:marker sha=" "$sess/comment-body.md"; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: no body"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# Test 7: a forge that HAS a post script is routed to it
+echo "Test 7: gitlab routes to its own post script"
+sess=$(mktemp -d)
+make_review_session "$sess" gitlab 42
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "status is rendered"
+if echo "$result" | jq -r '.message' | grep -qF "merge request"; then
+	echo "  PASS: routed to rc-post-comment-gitlab.sh (it says merge request)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: gitlab was not routed to its per-forge script"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"

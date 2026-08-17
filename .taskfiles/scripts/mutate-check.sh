@@ -363,6 +363,173 @@ check_mutation "RC-31 consolidation conserves findings" \
 	's/^if \[\[ \$removed -lt 0 || \$removed -gt \$sem \]\]; then$/if false; then/' \
 	test-rc-consolidate.sh
 
+# The format gate rejected a block and told the agent only that the block had
+# "a missing required key, bad enum, or non-array findings" — one constant
+# sentence for every defect. An extra key, the commonest defect of all, is none
+# of those three, so the agent was handed a diagnosis that ruled out its own
+# problem and spent its single re-dispatch re-emitting the same block. Dropping
+# the key name from the message is the shipped state before the fix: the
+# sentence still renders, still reads like a diagnosis, and still names nothing.
+check_mutation "RC-34 rejection detail names the offending key" \
+	rc-extract-verdict.sh \
+	's/^[[:space:]]*\["unrecognised top-level key(s): " + quote(\$extra)$/["unrecognised top-level key(s): " + ""/' \
+	test-rc-extract-verdict.sh
+
+# The council's own comment is identified by marker AND author. The marker is
+# public and GitHub's "Quote reply" copies the body it quotes wholesale, HTML
+# comment included, so any participant can post one. Dropping the author clause
+# is the shipped state before the fix, and it is the silent kind: the file is
+# still written, it is simply missing the reply that quotes a finding to argue
+# with it -- the most engaged human on the thread.
+#
+# Two entries, because the clause is tested in two jq programs that fail apart.
+# The exclusion decides WHICH comments are dropped; the anchor decides WHERE the
+# window opens. Since the marker is matched at the start of a line, quoting no
+# longer trips either one, so what the exclusion's clause now guards is a
+# participant putting a marker at column 0 deliberately -- and what the anchor's
+# guards is the window opening on someone else's comment. Neither mutation
+# reproduces the other's symptom.
+check_mutation "RC-039 re-review exclusion tests the author" \
+	lib/prepare-context.sh \
+	's#and (\$me == "" or (\.author // "") == \$me)) | not#and true) | not#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-039 re-review anchor tests the author" \
+	lib/prepare-context.sh \
+	's#and (\$me == "" or (\.author // "") == \$me))\] | last#and true)] | last#' \
+	test-rc-prepare-conversation.sh
+
+# The marker only counts at the START of a line. rc-render-comment.sh emits it
+# that way and GitHub's "Quote reply" indents what it copies, so column 0 is
+# what tells a verdict from a quote of one when there is no author to compare
+# against. Matching it anywhere in the body -- the shipped state before the fix
+# -- costs the whole artifact on that path: the anchor lands on the quote, the
+# exclusion then drops that same quote as ours, nothing is left to write, and
+# the disclosure that exists to say "your input may be short" goes with it.
+#
+# Two entries again, and again they fail apart: neutering the anchor closes the
+# window, neutering the exclusion drops the quoting reply out of a file that is
+# still written. `.*` spans the `split("\n")` rather than spelling it -- `\n` in
+# a POSIX BRE is a GNU escape that BSD sed reads as the letter `n`, the same
+# portability trap as `\t` described at the top of this file.
+check_mutation "RC-039 anchor matches a marker line, not the body" \
+	lib/prepare-context.sh \
+	's#^[[:space:]]*| select(((\.body // "") | split(.*any(startswith(\$open)))#| select(((.body // "") | contains($open))#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-039 exclusion matches a marker line, not the body" \
+	lib/prepare-context.sh \
+	's#^[[:space:]]*(((\.body // "") | split(.*any(startswith(\$open)))#(((.body // "") | contains($open))#' \
+	test-rc-prepare-conversation.sh
+
+# Testing the author is right; requiring it is not. The login names the account
+# this RUN holds a token for, and the verdict on the PR may have been posted by
+# another one — CI files it as a bot, a maintainer re-runs locally, the token
+# rotates. The author-filtered anchor then matches nothing, which reads as "no
+# prior verdict", so the whole block is skipped: no conversation file and no
+# disclosure, on a PR that is mid-argument. Deleting the fallback is the
+# quietest failure of the three, which is why it is guarded like the others.
+check_mutation "RC-039 anchor falls back when no comment matches" \
+	lib/prepare-context.sh \
+	's/^[[:space:]]*if \[\[ -n "\$council_login" \]\] && \[\[ -z "\$marker_created_at" \]\]; then$/if false; then/' \
+	test-rc-prepare-conversation.sh
+
+# The renderer's last resort keeps whole lines from the top until the limit is
+# reached, and the marker is the last line of the body — so the cut took it.
+# Dropping the re-append is the shipped state: the body is still written, still
+# fits, and still carries the verdict heading and the finding counts, but no
+# listing selects on it. The next run finds no part to update, posts a fresh
+# comment beside the orphan, and the pull request accumulates one more on every
+# run after that.
+check_mutation "RC-041 a cut body keeps its marker" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*_RC_PART_BODIES=("\${out}\${marker}")$/_RC_PART_BODIES=("$out")/' \
+	test-rc-render-comment.sh
+
+# The cut took the disclosure with it for the same reason, and that half is the
+# one the ladder's own doctrine calls worse than an overflow error: what is left
+# announces a finding count, shows no findings, and says nothing was trimmed, so
+# a maintainer cannot tell a cut review from a clean one. Neutering the
+# re-append leaves the reserve in place, so the body still fits — it is only
+# silent.
+check_mutation "RC-041 a cut body keeps its disclosure" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*out+="\$disc"$/:/' \
+	test-rc-render-comment.sh
+
+# Reserving the two before the fill rather than after is what keeps the result
+# inside the limit; filling to the whole limit and then appending overshoots by
+# their combined length every time. Guarded separately because the two entries
+# above pass with the reserve gone: the marker and the disclosure are both still
+# there, the body is simply too big.
+check_mutation "RC-041 the cut reserves what it re-appends" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*fill_budget=\$((limit - \$(_rc_bytes "\${disc}\${marker}")))$/fill_budget="$limit"/' \
+	test-rc-render-comment.sh
+
+# The GitHub poster decides which comments on a pull request are the council's
+# and which part of a chained verdict each one holds, and it decides both by
+# reading a marker out of the comment. A finding's evidence is a verbatim quote
+# of the source under review, so it is author-controlled text rendered into that
+# same comment, and the marker key is public — it ships in every verdict and
+# verbatim in references/forge-adapters.md. Every entry below reintroduces one
+# way of reading that marker loosely enough for the quote to answer instead.
+#
+# The failure is never an error. The run reports `posted`, and the pull request
+# quietly ends up with a duplicate verdict, an overwritten third-party comment,
+# or its fresh verdict folded away as outdated.
+
+# The subject. Matching over the whole body finds the counterfeit in the quoted
+# source, because jq's `capture` returns the FIRST match and the real marker is
+# the LAST line. Widest of the five: it takes the ordinary single-comment upsert
+# down with it, which is what Test 9 reports.
+check_mutation "RC-042 marker read from its own line" \
+	rc-post-comment-github.sh \
+	's/^RC_MARKER_LINE_JQ=.*$/RC_MARKER_LINE_JQ=".body"/' \
+	test-rc-post-comment-github.sh
+
+# The direction. Scanning back is what makes the real marker win: a counterfeit
+# lives in the evidence, and evidence renders ABOVE the marker the renderer
+# appends after the footer. Taking the first marker line instead reads the
+# forgery — with the subject and both patterns otherwise intact, which is why
+# this is guarded apart from the entry above.
+check_mutation "RC-042 the last marker line wins" \
+	rc-post-comment-github.sh \
+	's/^\(RC_MARKER_LINE_JQ=.*\)| last)/\1| first)/' \
+	test-rc-post-comment-github.sh
+
+# The selector. "Is this comment part of the verdict for the commit under
+# review?" answered by searching the body for `sha=<head>` adopts a PRIOR
+# commit's verdict that merely quotes this commit's sha: it is overwritten in
+# place with the new verdict instead of being banner-stamped and folded away.
+# Distinct symptom — the comment is claimed rather than misread.
+check_mutation "RC-042 sha selector tests the marker line" \
+	rc-post-comment-github.sh \
+	's/^[[:space:]]*| select(\\\$m | startswith.*$/| select(.body | contains(\\"sha=$4\\"))/' \
+	test-rc-post-comment-github.sh
+
+# The sweep's half of the same read. Searching the body for the sha makes the
+# supersede listing report a counterfeit sha for a comment it just posted, and
+# an edited prior verdict as one it has never seen — so the prior verdict is
+# never retired and the pull request carries two live verdicts for good. No
+# other entry here produces that: the others lose comments, this one keeps one
+# too many.
+check_mutation "RC-042 supersede sha read off the marker line" \
+	rc-post-comment-github.sh \
+	's/((\\\$m | capture(\\"\^\${RC_MARKER_OPEN}(?<s>/((.body | capture(\\"sha=(?<s>/' \
+	test-rc-post-comment-github.sh
+
+# The field's shape. `sha=` is one space-delimited token and NOT necessarily
+# hex: an unresolvable HEAD renders `sha=unknown`. A hex-only class reads
+# nothing out of those markers, so every part of a chain falls back to its
+# `part=1` default — parts 2..N are re-created as duplicates on every run while
+# part 1 is written over whichever comment last landed in that slot. Invisible
+# on a hex sha, which is every other test here.
+check_mutation "RC-042 marker captures accept a non-hex sha" \
+	rc-post-comment-github.sh \
+	's/capture(\\"\^\${RC_MARKER_OPEN}\[\^ \]+ part=/capture(\\"^${RC_MARKER_OPEN}[0-9a-fA-F]+ part=/' \
+	test-rc-post-comment-github.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

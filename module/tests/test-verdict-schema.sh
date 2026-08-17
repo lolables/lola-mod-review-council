@@ -142,8 +142,17 @@ check_severity_copy() { # label file anchor mode
 	fi
 }
 
+# rc-extract-verdict.sh holds TWO copies, because validate() and validate_error()
+# are separate jq programs and neither can see the other's bindings: the accept/
+# reject check, and the list the rejection message quotes back to the agent. The
+# first anchor requires an inline literal (`oneof([`) so it selects the check and
+# not validate_error()'s `oneof($sevs)`, whose literal lives on the --argjson line
+# the second anchor covers. Both must match the schema — a message that offers a
+# severity the validator refuses sends the agent round the loop again.
 check_severity_copy "rc-extract-verdict.sh validator fallback" \
-	"$SCRIPTS_DIR/rc-extract-verdict.sh" '[.]severity [|] oneof' exact
+	"$SCRIPTS_DIR/rc-extract-verdict.sh" '[.]severity [|] oneof[(][[]' exact
+check_severity_copy "rc-extract-verdict.sh rejection message" \
+	"$SCRIPTS_DIR/rc-extract-verdict.sh" 'argjson sevs' exact
 check_severity_copy "jq/dedup-findings.jq dedup ranker" \
 	"$SCRIPTS_DIR/jq/dedup-findings.jq" 'def sevrank' exact
 check_severity_copy "rc-render-report.sh severity sections" \

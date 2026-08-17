@@ -118,8 +118,21 @@ evidence_block() { # evidence-text
 # Takes the finding as compact JSON so the caller does the selecting and this
 # does the formatting. Fields are read with `jq -r` one at a time, never @tsv:
 # evidence may contain real tabs and newlines that would corrupt a TSV row.
-rc_finding_block() { # finding-json
-	local base="$1" f l t ev agent desc rec constraint emoji loc_link out=""
+#
+# The variant selects how much of the finding is rendered. It exists for the
+# comment renderer's paring ladder, which sheds detail in a fixed order when a
+# body would otherwise exceed the forge's comment limit:
+#
+#   full         headline, evidence, recommendation, constraint, analysis
+#   no-analysis  the same, minus the collapsed "Full reviewer analysis" block
+#   headline     headline and permalink only
+#
+# The order is not arbitrary. Evidence is what makes a finding checkable and
+# what rc-verify-evidence.sh matched byte-for-byte, so it outlives the analysis
+# prose in every variant that keeps the finding at all. The report renderer
+# passes no variant and is unaffected.
+rc_finding_block() { # finding-json [variant=full]
+	local base="$1" variant="${2:-full}" f l t ev agent desc rec constraint emoji loc_link out=""
 	f=$(jq -r '.file' <<<"$base")
 	l=$(jq -r '.line // ""' <<<"$base")
 	# First sentence, not first 60 bytes: it ends where the author ended a
@@ -130,24 +143,38 @@ rc_finding_block() { # finding-json
 	# markdown bullet that wraps, so a cut here would discard the reviewer's
 	# words to solve a problem the renderer does not have.
 	t=$(jq -r '.title // (.description | split(". ")[0] | rtrimstr("."))' <<<"$base")
-	ev=$(jq -r '.evidence' <<<"$base")
 	agent=$(jq -r '.agent' <<<"$base")
+	t=$(normalize_dashes "$t")
+	emoji=$(persona_emoji "$agent")
+	loc_link=$(link_location "$f" "$l")
+	out+="- ${emoji} **${t}** (${loc_link})"$'\n\n'
+
+	# A collapsed finding is a pointer, not a summary: headline and permalink,
+	# nothing that could read as the whole story. The remaining fields are not
+	# even parsed, so this variant costs four jq calls instead of eight.
+	if [[ "$variant" == "headline" ]]; then
+		printf '%s' "$out"
+		return
+	fi
+
+	ev=$(jq -r '.evidence' <<<"$base")
 	desc=$(jq -r '.description' <<<"$base")
 	rec=$(jq -r '.recommendation' <<<"$base")
 	constraint=$(jq -r '.constraint // ""' <<<"$base")
 	# Prose the reviewer wrote takes the house-style dash pass; `evidence`
 	# deliberately does not (see normalize_dashes).
-	t=$(normalize_dashes "$t")
 	desc=$(normalize_dashes "$desc")
 	rec=$(normalize_dashes "$rec")
 	constraint=$(normalize_dashes "$constraint")
-	emoji=$(persona_emoji "$agent")
-	loc_link=$(link_location "$f" "$l")
-	out+="- ${emoji} **${t}** (${loc_link})"$'\n\n'
 	out+="$(evidence_block "$ev")"$'\n\n'
 	out+=$(printf '💡 **Recommendation:** %s\n' "$rec" | indent2)
 	if [[ -n "$constraint" ]]; then
 		out+=$'\n'"$(printf '**Constraint:** %s\n' "$constraint" | indent2)"
+	fi
+	if [[ "$variant" == "no-analysis" ]]; then
+		out+=$'\n\n'
+		printf '%s' "$out"
+		return
 	fi
 	# A <details> whose body only repeats the headline is noise dressed as
 	# structure. That happens exactly when the headline was DERIVED from a

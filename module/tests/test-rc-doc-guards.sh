@@ -43,6 +43,7 @@ testing_flat=$(tr '\n' ' ' <"$TESTING_MD" | tr -s ' ')
 testing_spec_flat=$(tr '\n' ' ' <"$TESTING_SPEC_MD" | tr -s ' ')
 delegate_flat=$(tr '\n' ' ' <"$DELEGATE_MD" | tr -s ' ')
 curator_flat=$(tr '\n' ' ' <"$CURATOR_MD" | tr -s ' ')
+guard_flat=$(tr '\n' ' ' <"$GUARD_MD" | tr -s ' ')
 pipeline_states_flat=$(tr '\n' ' ' <"$PIPELINE_STATES_MD" | tr -s ' ')
 
 # RC-005: the correction-round skip must NOT strip every finding just because an
@@ -1221,6 +1222,407 @@ if [[ "$rc033_broken" -eq 0 ]]; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: RC-033 has $rc033_broken broken link(s)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-034: verdict-schema.json sets "additionalProperties": false at both levels
+# and rc-extract-verdict.sh's fallback mirrors it, so a reviewer that adds a
+# `summary` or `confidence` field loses its whole verdict. reviewer-protocol.md
+# showed the shape by example and never said the list was exhaustive — the rule
+# was enforced in two places and stated in none, which is a rule reviewers can
+# only learn by failing.
+echo "Test: reviewer-protocol.md states that the verdict key set is closed (RC-034)"
+if grep -qF 'additionalProperties' <<<"$protocol_flat" &&
+	grep -qiE 'no other key|any other key' <<<"$protocol_flat"; then
+	echo "  PASS: the closed key set is stated, not merely enforced"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewer-protocol.md never tells reviewers unknown keys are rejected"
+	FAIL=$((FAIL + 1))
+fi
+
+# The `files_read` MUST sat 30 lines below the example it constrains, in a
+# bullet list after a paragraph about `title`. A reviewer that reads the example
+# and starts writing never reaches it. Position is the claim here, so this guard
+# reads line numbers off the raw file rather than the flattened copy.
+echo "Test: reviewer-protocol.md states its MUSTs before the example (RC-034)"
+protocol_rule_line=$(grep -n 'files_read' "$PROTOCOL_MD" | head -1 | cut -d: -f1)
+protocol_example_line=$(grep -n '^```json' "$PROTOCOL_MD" | head -1 | cut -d: -f1)
+if [[ -n "$protocol_rule_line" && -n "$protocol_example_line" ]] &&
+	[[ "$protocol_rule_line" -lt "$protocol_example_line" ]]; then
+	echo "  PASS: the field rules precede the block a reviewer copies"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: files_read rule (line ${protocol_rule_line:-?}) still trails the example (line ${protocol_example_line:-?})"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-035: the format gate's one re-dispatch was a cold start. delegate.md named
+# no way to reach the agent that already did the work, so the orchestrator spawned
+# a fresh one, which re-read its brief and re-explored the tree to answer what is
+# a serialization defect. Worse, the rejected block was never shown back, so the
+# replacement agent could not see what it was correcting — and since re-dispatch
+# overwrites {agent}.raw.md, a cold re-review can quietly return different
+# findings than the ones the gate rejected.
+echo "Test: delegate.md prefers continuing the agent over a cold re-dispatch (RC-035)"
+if grep -qiE 'continu[ei]' <<<"$delegate_flat" &&
+	grep -qF 'reformat' <<<"$delegate_flat" &&
+	grep -qiE 'not a (new )?re-?review|rather than re-reviewing' <<<"$delegate_flat"; then
+	echo "  PASS: continuation is named and framed as a reformat"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: delegate.md still describes re-dispatch as an unqualified fresh dispatch"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: delegate.md's fallback re-dispatch inlines the rejected block (RC-035)"
+if grep -qF 'rejected block' <<<"$delegate_flat" &&
+	grep -qF 'verbatim' <<<"$delegate_flat"; then
+	echo "  PASS: the fallback hands the agent back what it wrote"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the fallback re-dispatch never supplies the rejected block"
+	FAIL=$((FAIL + 1))
+fi
+
+# Session continuation is a host capability, not a universal one. CLAUDE.md's
+# tool-agnosticism rules forbid naming a host or its dispatch syntax in
+# operational text and require graceful degradation, so this guard fails both on
+# a named tool and on a continuation instruction with no stated fallback.
+echo "Test: delegate.md's continuation names no host and degrades (RC-035)"
+# `|| true`: a clean document produces no match, and under `set -o pipefail` the
+# failing grep would abort the suite at exactly the moment the guard passes.
+rc035_named=$(grep -oiE 'SendMessage|Claude Code|OpenCode|Cursor|Windsurf|Gemini CLI' <<<"$delegate_flat" | head -1 || true)
+if [[ -z "$rc035_named" ]] && grep -qiE 'cannot resume|does not support|where the host' <<<"$delegate_flat"; then
+	echo "  PASS: capability expressed as intent, with a degrade path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: names a host tool ('${rc035_named:-none}') or states no fallback"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-036: `rc-prepare.sh` writes the PR body into pr-metadata.txt between
+# `--- BODY ---` and `--- END BODY ---`, and prepare-context.sh already reads
+# that block to harvest linked-issue references. Nothing carried the prose
+# itself into a delegation prompt, so a reviewer asked to judge whether a change
+# was disclosed had no access to the disclosure. The Guard is the persona that
+# asks the question: its mandate is intent drift, and "this bundles unrelated
+# work with no note explaining it" is a claim about the PR description
+# specifically.
+#
+# The cost is measured. Across a 208-finding corpus, four of the seven findings
+# ever stripped were Guard findings asserting a bundling was undisclosed when the
+# PR body carried an [!IMPORTANT] callout, a "What this includes" commit table
+# and a merge-order paragraph. Later dispatches in the same session that reached
+# for the forge CLI on their own initiative found the disclosure and filed
+# narrower, correct findings instead — which is the other half of why this is
+# wired through the prompt rather than left to the agent: the Guard's Tool Access
+# states network access is not permitted, so a persona that has to fetch the
+# description to do its job is one that has to break its own contract to do it.
+#
+# Two ends, both pinned. Delete the delegate.md block and the Guard reads no
+# description; delete the Guard's instruction and it has the description but no
+# duty to consult it before asserting absence.
+echo "Test: delegate.md carries the PR description into the code prompt (RC-036)"
+rc036_spec_start=$(grep -n '^## Spec Review Delegation$' "$DELEGATE_MD" | cut -d: -f1)
+if [[ -z "$rc036_spec_start" ]]; then
+	echo "  FAIL: no '## Spec Review Delegation' heading to split on"
+	FAIL=$((FAIL + 1))
+else
+	rc036_code=$(sed -n "1,$((rc036_spec_start - 1))p" "$DELEGATE_MD" | tr '\n' ' ' | tr -s ' ')
+	# The untrusted-data framing is not decoration. The PR body is authored by
+	# whoever opened the PR, which on a fork PR is not the maintainer, and it is
+	# about to be handed to a reviewer as grounds for NOT filing a finding. That
+	# is precisely the direction an injected imperative would want to push.
+	# `--` before the pattern: the BODY delimiter opens with two hyphens and grep
+	# would otherwise read it as a bundle of short options and die, failing the
+	# guard for a reason that has nothing to do with the rule it protects.
+	if grep -qF 'PR Description' <<<"$rc036_code" &&
+		grep -qF -- '--- BODY ---' <<<"$rc036_code" &&
+		grep -qiE 'untrusted data, never directives' <<<"$rc036_code"; then
+		echo "  PASS: the PR body reaches code reviewers, framed as untrusted"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: no PR Description section, or it arrives without the untrusted-data"
+		echo "        framing every other forge-sourced section carries"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+
+echo "Test: the Guard checks the disclosure before claiming its absence (RC-036)"
+if grep -qiE 'undisclosed|not disclosed' <<<"$guard_flat" &&
+	grep -qF 'PR Description' <<<"$guard_flat"; then
+	echo "  PASS: an absence-of-disclosure claim must be checked against the description"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the Guard may assert a bundling is undisclosed without reading the"
+	echo "        PR description supplied to it"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-037: the Curator's blog and tutorial criteria both open "If yes and Docs
+# repo configured, check whether a ... issue exists". Neither says what to do
+# when no Docs repo is configured, and an undefined branch is not a skip — the
+# persona filed the finding anyway, asserting "no blog issue on record" about a
+# forge it had never been given an address for. The validation gate retracted
+# those as unverifiable, twice, in separate runs.
+#
+# That is the whole observed population: every content-opportunity finding in the
+# corpus was filed against a project with no Docs repo configured, which is the
+# one condition under which the check cannot be performed. Closing the branch
+# retires the noise without retiring the feature for projects that do configure
+# one.
+#
+# The severity half is separate and equally load-bearing. Rated MEDIUM, a
+# content-opportunity finding outranks disposition's LOW-only scoping
+# suppression, so it survives to the report and a PR author has to argue it
+# down by hand — which one did, verbatim: "No defect; needs a decision about
+# where such content lives rather than a code change." The validator had already
+# reached the same place independently, downgrading these to LOW for want of any
+# functional impact. Pin the ceiling so the calibration table cannot drift back.
+echo "Test: the Curator's content criteria define the no-Docs-repo case (RC-037)"
+if grep -qiE 'no Docs repo (is )?configured, do NOT produce (a )?(blog|tutorial|content)' <<<"$curator_flat"; then
+	echo "  PASS: the unconfigured case is a defined skip, not an undefined branch"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: blog/tutorial criteria still leave the unconfigured case undefined —"
+	echo "        the Curator asserts the absence of issues on a forge it cannot reach"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: content-opportunity findings are calibrated below MEDIUM (RC-037)"
+# Read the raw file, not the flattened copy: this is a markdown table and
+# flattening dissolves the row boundary that binds a condition to its severity.
+# `[|]` rather than `\|` for the table pipes: under -E a backslash-escaped pipe
+# is a GNU extension that BSD grep reads as a literal backslash, and the
+# portability suite fails the whole file over it.
+rc037_overrated=$(grep -cE '^[|].*(blog|tutorial) issue filed.*[|][[:space:]]*(CRITICAL|HIGH|MEDIUM)[[:space:]]*[|]' "$CURATOR_MD" || true)
+if [[ "$rc037_overrated" -eq 0 ]]; then
+	echo "  PASS: no content-opportunity row is rated MEDIUM or above"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc037_overrated content-opportunity row(s) rated MEDIUM or above — these"
+	echo "        outrank disposition's LOW-only suppression and reach the report"
+	FAIL=$((FAIL + 1))
+fi
+
+# The criteria close the unconfigured case, but the same unverifiable claim
+# reaches the report by a second route. A project that DOES configure a Docs
+# repo, whose forge CLI is missing or erroring, or whose repo cannot be reached,
+# lands in Graceful Degradation — and "skip duplicate checking, still recommend
+# the issue" points at an Issue Filing Template covering `blog` and `tutorial`
+# alongside `docs`. The persona then asserts no blog issue exists on a tracker it
+# just failed to reach, which is the claim the criteria amendment retired.
+#
+# Two ends pinned, as with RC-036 and RC-038: the criteria close the branch where
+# there is no tracker to ask, the degradation table closes the branch where
+# asking failed.
+echo "Test: degradation keeps content out of a failed duplicate check (RC-037)"
+# Raw file, not the flattened copy: each degradation row binds one condition to
+# one behavior, and flattening dissolves that row boundary. `[|]` rather than
+# `\|` for the table pipes, which the portability suite rejects as a GNU
+# extension under -E.
+# shellcheck disable=SC2016 # literal markdown code spans, not substitutions.
+rc037_degraded=$(grep -cE '^[|][^|]*(Forge tool named in delegation prompt is not installed|Docs repo inaccessible)[^|]*[|].*`docs`.*[Dd]o NOT produce a `blog` or `tutorial` finding' "$CURATOR_MD" || true)
+if [[ "$rc037_degraded" -eq 2 ]]; then
+	echo "  PASS: a failed check still recommends the docs issue, and no content issue"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc037_degraded of 2 degradation rows carve content opportunities out — the"
+	echo "        Curator asserts no blog issue exists on a tracker it could not reach"
+	FAIL=$((FAIL + 1))
+fi
+
+# Those two rows are not the whole population, and an enumeration of the branches
+# that skip the search is the wrong thing to pin: the charter has at least six —
+# no Docs repo, a `Docs repo` failing the `owner/repo` gate, `Forge tooling:
+# none`, the named tool missing or erroring, an unreachable repo, and a keyword
+# that filters to empty — and the next one added would arrive uncovered. So the
+# rule is stated once and generally, and this guard pins that sentence rather
+# than the list of cases it subsumes.
+echo "Test: the no-check rule is stated for any cause, not a case list (RC-037)"
+# shellcheck disable=SC2016 # literal markdown code spans, not substitutions.
+if grep -qF 'If the check did not run, whatever prevented it, do NOT produce a `blog` or `tutorial` finding' <<<"$curator_flat"; then
+	echo "  PASS: any branch that skips the search withholds the content finding"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the rule is bounded to an enumerated set of causes — a branch outside"
+	echo "        it skips the search and still files the unverifiable finding"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-038: the Tester is the council's highest-yield persona and also the one the
+# validation gate corrects most — 11 corrections across the corpus, more than any
+# other, and 8 of them HIGH downgrades. They converge on one rule the calibration
+# table never stated. "Untested code paths in core functionality — HIGH" reads as
+# a property of the code, so the persona applied it to any uncovered path it
+# could reach, including paths the changeset never touched. The validator kept
+# supplying the missing qualifier from severity.md's own HIGH boundary, which is
+# about problems the change is likely to cause:
+#
+#   - a docs-only diff, HIGH assigned to coverage gaps in untouched code
+#     (20260811-143659, both findings downgraded)
+#   - magefile.go, where the file has a repo-wide no-unit-test convention and CI
+#     already covers the paths through a per-variant dist job (20260811-144931)
+#   - cmd/openvox-ca-ctl/main.go, twice, for code the PR under review does not
+#     modify
+#   - an untested branch that is observability-only rather than correctness- or
+#     security-critical
+#
+# Every one of those is a real gap and stays a finding. What changes is the
+# ceiling: a pre-existing gap the change did not create is not evidence the
+# change is likely to break something. Left unqualified the rule inflates a
+# persona that already files 43% of all findings and 74% of all HIGHs, which is
+# how a report stops being read.
+#
+# Two ends pinned: the qualifying rule in the prose, and the bare table row that
+# contradicted it.
+echo "Test: the Tester qualifies a HIGH coverage gap on the change (RC-038)"
+if grep -qiE 'newly reachable|newly made reachable|newly introduced' <<<"$testing_flat" &&
+	grep -qiE 'pre-existing' <<<"$testing_flat"; then
+	echo "  PASS: HIGH requires the changeset to have created or newly exposed the gap"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a coverage gap in code the changeset never touched still reaches HIGH"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: no unqualified untested-path row sits at HIGH (RC-038)"
+# Raw file, not the flattened copy: a markdown table row binds a condition to a
+# severity and flattening dissolves that boundary. `[|]` rather than `\|`, which
+# the portability suite rejects as a GNU extension under -E.
+rc038_bare=$(grep -cE '^[|][[:space:]]*Untested code paths in core functionality[[:space:]]*[|][[:space:]]*HIGH[[:space:]]*[|]' "$TESTING_MD" || true)
+if [[ "$rc038_bare" -eq 0 ]]; then
+	echo "  PASS: the untested-path row names the condition that earns HIGH"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the table still rates any untested path HIGH regardless of whether"
+	echo "        the change under review introduced it"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-039: council-comment identity is MARKER AND AUTHOR. The marker ships in
+# every verdict this tool has ever posted, so it is public by construction, and
+# GitHub's "Quote reply" copies it into a participant's reply without anybody
+# intending to. rc-post-comment-<forge>.sh has always required both before it
+# will update or hide a comment. prepare-context.sh, which feeds Disposition,
+# tested the marker alone -- so a maintainer who quoted the verdict to argue
+# with a finding had their reply silently dropped, and Disposition never saw the
+# one human most engaged with the findings.
+#
+# The key itself was three separate literals (rc-lib, rc-render-comment,
+# rc-post-comment-github) plus a hardcoded string in prepare-context. That is
+# how the two halves drifted: nothing made them one fact. Pin both properties --
+# one definition, and an author test on the exclusion.
+echo "Test: the council-comment marker has exactly one definition (RC-039)"
+rc039_defs=$(grep -rlF '"review-council:marker"' "$SKILLS/scripts" 2>/dev/null | wc -l | tr -d ' ')
+if [[ "$rc039_defs" -eq 1 ]] && grep -qF 'RC_MARKER_KEY="review-council:marker"' "$SKILLS/scripts/rc-lib.sh"; then
+	echo "  PASS: defined once, in rc-lib.sh, and read by everything else"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the marker literal appears in $rc039_defs file(s) -- copies drift apart,"
+	echo "        which is exactly how the poster and preparation stopped agreeing"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: the re-review filter excludes on marker AND author (RC-039)"
+rc039_ctx="$SKILLS/scripts/lib/prepare-context.sh"
+rc039_flat=$(tr '\n' ' ' <"$rc039_ctx" | tr -s ' ')
+# The exclusion must consult the comment's author, and the adapter capability
+# that names the council must be probed rather than assumed present.
+# Pin the comparison itself, not merely the words around it. An earlier draft
+# of this guard grepped for `rc_forge_current_user` / `.author` / `council_login`
+# anywhere in the file and stayed green when the author clause was deleted from
+# the jq program, because all three survive in the comments and in the
+# capability probe above it. `== $me` exists only inside the exclusion.
+# Hoisted out of the `if` chain: a shellcheck directive cannot sit between the
+# operands of a `&&` list, and this one is needed -- `$me` is the jq variable
+# being pinned, not a shell expansion, so expanding it would search for the
+# empty string and the guard would pass on anything.
+rc039_author_ok=0
+# shellcheck disable=SC2016
+if grep -qF '(.author // "") == $me' <<<"$rc039_flat"; then
+	rc039_author_ok=1
+fi
+if grep -qF 'rc_forge_current_user' <<<"$rc039_flat" &&
+	grep -qF -- '--arg me' <<<"$rc039_flat" &&
+	[[ "$rc039_author_ok" -eq 1 ]]; then
+	echo "  PASS: identity is marker AND author, with the capability probed"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the re-review filter still excludes on the marker alone -- a reply"
+	echo "        quoting the verdict is dropped before Disposition sees it"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-040: a pared comment always says it was pared.
+#
+# The paring ladder exists because a 30-finding review renders 58k of markdown
+# and GitHub rejects an issue comment over 65,536 characters. Trimming is the
+# right answer; trimming SILENTLY is not. A comment that has had the reviewer
+# analysis stripped from twenty-six findings still reads as a complete verdict,
+# and a maintainer has no way to tell it apart from a review that simply had
+# less to say -- so they act on a partial record believing it is the whole one.
+#
+# Two properties, pinned separately because they fail apart. The renderer must
+# emit the line, and the ladder must be wired to a limit at all: a renderer that
+# resolved no limit would never pare, never disclose, and pass a
+# does-the-string-exist check forever.
+#
+# `Trimmed to fit the` is the operative prefix and appears nowhere else in the
+# body. The counts are interpolated; the prefix is not.
+echo "Test: a trimmed comment discloses that it was trimmed (RC-040)"
+rc040_render="$SKILLS/scripts/rc-render-comment.sh"
+if grep -qF '_Trimmed to fit the ' "$rc040_render"; then
+	echo "  PASS: the renderer emits the disclosure literal"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the disclosure line is gone -- a pared comment now reads as a"
+	echo "        complete verdict, which is worse than refusing to post one"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: the ladder is driven by a resolved comment limit (RC-040)"
+# The limit reaches the renderer two ways and it needs both: the per-forge
+# rc_comment_limit hook when a post script sourced it, and the `Comment limit`
+# line in tracking.md when the router `exec`d it standalone, where a shell
+# function cannot follow. Losing either half silently disables paring on that
+# path -- the body is rendered whole and the forge rejects it after the entire
+# review has been paid for.
+rc040_flat=$(tr '\n' ' ' <"$rc040_render" | tr -s ' ')
+# Hoisted out of the `&&` list: a shellcheck directive cannot sit between its
+# operands, and one is needed -- `$session_dir` is the renderer's own variable
+# name being pinned, not an expansion for this suite to perform.
+rc040_recorded=0
+# shellcheck disable=SC2016
+if grep -qF 'rc_parse_kv "$session_dir/tracking.md" "Comment limit"' <<<"$rc040_flat"; then
+	rc040_recorded=1
+fi
+if grep -qF 'declare -F rc_comment_limit' <<<"$rc040_flat" &&
+	[[ "$rc040_recorded" -eq 1 ]]; then
+	echo "  PASS: the limit resolves from the forge hook and from tracking.md"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: one of the two limit sources is gone -- paring is now dead code"
+	echo "        on whichever path lost it"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: every forge post script declares its comment limit (RC-040)"
+# The limit is a fact about each forge's API, not a constant: GitHub caps a
+# comment at 65,536 characters and GitLab a note at 1,000,000. Hardcoding the
+# smaller one in the neutral renderer would pare GitLab bodies that would have
+# posted whole, which is the reason it is a hook.
+rc040_missing=""
+for rc040_post in "$SKILLS"/scripts/rc-post-comment-*.sh; do
+	grep -q '^rc_comment_limit()' "$rc040_post" || rc040_missing+=" ${rc040_post##*/}"
+done
+if [[ -z "$rc040_missing" ]]; then
+	echo "  PASS: every per-forge post script declares rc_comment_limit"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no comment limit declared by:${rc040_missing}"
+	echo "        that forge renders against no budget and overflows on a big review"
 	FAIL=$((FAIL + 1))
 fi
 

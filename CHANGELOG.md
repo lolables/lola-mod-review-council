@@ -437,6 +437,29 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- `--scope paths` could not name a file. It was a filter over a git diff and
+  nothing more, so it only ever surfaced a path that already had changes in it:
+  asking for a review of one file returned "No changes to review" whenever that
+  file was untracked, ignored, or simply committed and not touched since — which
+  is most of the files in any repository. An entry of `--scope-value` that
+  resolves to an existing FILE is now a target, read off disk whatever git makes
+  of it, while an entry that resolves to a DIRECTORY keeps its old meaning as a
+  filter over the changeset, because widening that would turn "review my changes
+  under `src/`" into a review of all of `src/`. Four defects at the same seam
+  close with it. The value was passed to git as ONE pathspec on this branch
+  though it is comma-separated everywhere else, so a two-target run matched no
+  file at all. The filter matched by prefix, so naming `src/auth.go` also
+  admitted `src/auth.go.bak`. Spec-mode discovery walked directories only, so a
+  single named `.md` reported "no spec artifacts found" for a document sitting
+  right there. And mode auto-detection classified the whole branch diff rather
+  than what was named, so one Go file named on a branch that had otherwise
+  touched only docs was handed to the spec council with every code convention
+  pack unloaded — a review that completes, and reads as normal. A named path
+  that is neither on disk nor anywhere in the changeset is now refused as `skip`
+  naming the path, rather than reported as an empty changeset: no widening of
+  scope will conjure up a path that is not there, and "nothing to review" reads
+  as a clean result. A path deleted on the branch under review stays reviewable,
+  being absent from disk and present in the diff
 - The GitHub poster read `part=` and `sha=` out of the whole comment body, and
   `jq`'s `capture` is `match` without the `g` flag, so it took the first hit in
   it. The marker is the LAST line of a comment; above it sits every finding's

@@ -180,7 +180,12 @@ Without `gh`, the Curator reports gaps as review findings instead.
 /review-council 42           # review PR #42
 /review-council main..feat   # review a ref range
 /review-council HEAD         # review only the latest commit
+/review-council src/auth.go  # review named files, tracked or not
 ```
+
+Naming a file reviews that file whatever git makes of it — untracked, ignored,
+or committed and unmodified. Naming a directory keeps its other meaning: it
+filters the changeset to what changed under it, rather than sweeping the tree.
 
 The full list of input forms — directory paths, URLs, ref ranges, effort words,
 review instructions, and the post-the-result phrasings — is the decision table
@@ -444,6 +449,10 @@ Two escape hatches when your layout differs:
 REVIEW_COUNCIL_SPEC_DIRS="architecture rfc"  # every run, space or comma separated
 REVIEW_COUNCIL_SPEC_EXTS="md typ"            # every run, extensions without the dot
 ```
+
+A named file needs neither: `/review-council specs docs/architecture/adr-7.md`
+reviews that document as it stands, extension list and directory list both
+beside the point.
 
 When nothing matches, the council tells you which directories it searched rather than only that it found nothing.
 

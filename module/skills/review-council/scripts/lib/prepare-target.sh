@@ -134,6 +134,33 @@ else
 		# Reuse the PR diff fetched in Section 6c
 		changeset_for_mode_detection=$(grep '^diff --git' "$pr_diff_cache" |
 			sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
+	elif [[ -n "${scope_dir:-}" ]]; then
+		# Classify what is actually under review, not the branch it sits on.
+		# Detection read the whole branch diff regardless of scope, so naming a
+		# single Go file on a branch that had otherwise touched only docs came
+		# back mode=spec: the spec council reviewing source, the code personas
+		# and every code convention pack never dispatched. The file the user
+		# named is the strongest statement of intent available here.
+		#
+		# A named file classifies as itself; a named directory contributes what
+		# changed under it, which is what that scope reviews. Both use the same
+		# comma-separated split the changeset builder does, so the two cannot
+		# disagree about what was named.
+		IFS=',' read -ra mode_scope_paths <<<"$scope_dir"
+		for mode_scope_path in "${mode_scope_paths[@]}"; do
+			if [[ -f "$mode_scope_path" ]]; then
+				changeset_for_mode_detection+="${mode_scope_path}"$'\n'
+			else
+				# Appended only when it found something. An unconditional
+				# `+=$(...)$'\n'` leaves a lone newline behind for a directory
+				# with no changes under it, which is not the empty string: the
+				# no-changes branch below is skipped, classification counts zero
+				# files of either kind, and the run silently resolves to spec
+				# mode.
+				mode_scope_diff=$(git diff --name-only "${base_branch}...HEAD" -- "$mode_scope_path" 2>/dev/null || echo "")
+				[[ -n "$mode_scope_diff" ]] && changeset_for_mode_detection+="${mode_scope_diff}"$'\n'
+			fi
+		done
 	else
 		# Use local git diff
 		changeset_for_mode_detection=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")

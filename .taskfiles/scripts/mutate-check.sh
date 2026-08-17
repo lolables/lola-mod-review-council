@@ -566,6 +566,98 @@ check_mutation "RC-042 marker captures accept a non-hex sha" \
 	's/capture(\\"\^\${RC_MARKER_OPEN}\[\^ \]+ part=/capture(\\"^${RC_MARKER_OPEN}[0-9a-fA-F]+ part=/' \
 	test-rc-post-comment-github.sh
 
+# --- RC-043: `--scope paths` could not name a file ---------------------------
+#
+# Six ways to lose the same capability. `--scope paths` was a filter over a git
+# diff and nothing more, so it could only ever surface a path that already had
+# changes in it: "review this one file" came back "No changes to review" for
+# every untracked, ignored, or committed-and-unmodified file in the repository.
+
+# The disk read itself. Without it the scope reverts to diff-only discovery,
+# which is the whole defect — every file target that is not already in the diff
+# vanishes and the run reports a clean tree.
+check_mutation "RC-043 a named file is taken from disk" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*\[\[ -f "\$scope_path" \]\] && changeset_files+=.*$/:/' \
+	test-rc-prepare-file-targets.sh
+
+# The split. scope_dir is comma-separated everywhere else; passing it to git as
+# one pathspec makes a two-target run match nothing at all — and, because each
+# entry is then tested for existence as one glued string, refuses it as a
+# missing path rather than reviewing either half.
+check_mutation "RC-043 targets split on commas" \
+	lib/prepare-changes.sh \
+	"s/^[[:space:]]*IFS=',' read -ra scope_paths <<<\"\$scope_dir\"\$/scope_paths=(\"\$scope_dir\")/" \
+	test-rc-prepare-file-targets.sh
+
+# The refusal. A path that is neither on disk nor in the changeset was never
+# reviewed, and reporting that as "no changes" makes a mistyped target read as a
+# clean result — including the subset case, where one good path fills the
+# changeset and the mistyped one beside it goes unmentioned.
+check_mutation "RC-043 a missing target is refused" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \[\[ ${#scope_missing.*$/if false; then/' \
+	test-rc-prepare-file-targets.sh
+
+# The filter's match. `$file == $fp*` is a prefix test, so a target of
+# `src/fresh.go` also admits `src/fresh.go.bak`: a review that quietly covers a
+# file nobody named. Distinct from the entries above — this one adds files
+# rather than losing them.
+check_mutation "RC-043 path filter matches a path, not a prefix" \
+	lib/prepare-changes.sh \
+	's/if \[\[ "\$file" == "\$fp" \]\]/if [[ "$file" == "$fp"* ]]/' \
+	test-rc-prepare-file-targets.sh
+
+# Spec mode's half. collect_specs_in walks directories, so a named spec FILE
+# falls straight through it and the run reports "no spec artifacts found" for a
+# document sitting right there on disk.
+check_mutation "RC-043 spec mode accepts a file target" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \[\[ -f "\$dir" \]\]; then$/if false; then/' \
+	test-rc-prepare-file-targets.sh
+
+# Mode detection. Classifying the whole branch diff instead of what was named
+# dispatches the wrong council at full confidence: one Go file named on a branch
+# that otherwise touched only docs is reviewed by the spec personas, with every
+# code convention pack unloaded. The review completes and reads as normal.
+check_mutation "RC-043 the named target decides the mode" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*elif \[\[ -n "\${scope_dir:-}" \]\]; then$/elif false; then/' \
+	test-rc-prepare-file-targets.sh
+
+# The same stage's empty case. Appending unconditionally leaves a lone newline
+# behind for a directory with no changes under it, and a newline is not the
+# empty string: the no-changes branch is skipped, classification counts zero
+# files of either kind, and the run resolves to spec mode by falling off the
+# end of a tally that never ran.
+check_mutation "RC-043 an empty target diff stays empty" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*\[\[ -n "\$mode_scope_diff" \]\] && \(changeset_for_mode_detection+=.*\)$/\1/' \
+	test-rc-prepare-file-targets.sh
+
+# The normalisation, which lives in the arg parser so that the changeset
+# builders and mode detection cannot disagree about what was named. `-e path/`
+# and `-f path/` are false for a regular file, so a target carrying a trailing
+# slash was refused as "Target not found: <path>" — naming as missing a path
+# that is plainly there — and, where only one stage normalised, sent a Go file
+# to the spec council.
+#
+# The loop CONDITION is what gets broken, not the strip inside it: replacing the
+# body leaves `while [[ $x == */ ]]; do : ; done` spinning forever, and a
+# mutation that hangs takes the whole run with it rather than reporting.
+check_mutation "RC-043 a trailing slash is dropped from a target" \
+	lib/prepare-args.sh \
+	's/^[[:space:]]*while \[\[ "\$scope_entry" == \*\/ \]\]; do$/while false; do/' \
+	test-rc-prepare-file-targets.sh
+
+# The blank. `read -ra` keeps an interior empty field, so a doubled comma in a
+# generated flag string becomes an entry that exists nowhere and refuses the
+# whole run — naming, in the message, nothing at all.
+check_mutation "RC-043 an empty entry is dropped, not refused" \
+	lib/prepare-args.sh \
+	's/^[[:space:]]*\[\[ -z "\$scope_entry" \]\] && continue$/:/' \
+	test-rc-prepare-file-targets.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

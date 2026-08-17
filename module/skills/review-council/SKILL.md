@@ -199,6 +199,8 @@ user input.
 | `HEAD`                           | `--scope range --scope-value "HEAD~1..HEAD"`                                                       |
 | `v1.2.3`                         | `--scope range --scope-value "v1.2.3~1..v1.2.3"`                                                   |
 | `module/`                        | `--scope changed --scope paths --scope-value "module/"`                                            |
+| `src/auth.go`                    | `--scope paths --scope-value "src/auth.go"`                                                        |
+| `src/auth.go docs/plan.md`       | `--scope paths --scope-value "src/auth.go,docs/plan.md"`                                           |
 | `everything`                     | `--scope all`                                                                                      |
 | `https://...pull/42`             | `--scope url --scope-value "https://...pull/42"`                                                   |
 | `code HEAD -> focus on security` | `--mode code --scope range --scope-value "HEAD~1..HEAD" --review-instructions "focus on security"` |
@@ -218,6 +220,10 @@ user input.
 1. **Scope** (what to review) vs **instructions** (how to review): separate them. *What files/commits* is scope. *What to look for* is instructions.
 2. **Git refs** resolve to range: `REF` becomes `--scope range --scope-value "REF~1..REF"`. Ref ranges pass through: `X..Y` becomes `--scope range --scope-value "X..Y"`.
 3. **Directory paths** become secondary filter: `--scope changed --scope paths --scope-value "dir/"`.
+   **File paths** are targets, not filters: `--scope paths --scope-value "a.go,b.go"`, comma-separated,
+   no `--scope changed`. A named file is reviewed whatever git makes of it — untracked, ignored, or
+   committed and unmodified — so do NOT reach for `--scope all` to review one file. Naming a path that
+   does not exist returns `skip`, not `empty`: report it and stop rather than retrying.
 4. **Defaults**: scope unclear, omit `--scope` (code defaults to `changed`, specs to `all`). Mode unclear, omit `--mode` (auto-detect).
 5. **Fallback**: input unclear on scope or mode, pass what you can, let defaults apply. Unrecognized text becomes `--review-instructions`.
 6. **Effort** words: `quick` becomes `--effort quick`, `deep` becomes `--effort deep`. Neither present, omit `--effort` (defaults to `standard`). Effort words can appear anywhere alongside scope and mode tokens.

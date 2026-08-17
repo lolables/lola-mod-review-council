@@ -31,6 +31,30 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 caught=0
 missed=0
 broken=0
+snapshot=""
+
+# Freeze module/ once, and hand every mutation a copy of that rather than of the
+# tree as it currently stands.
+#
+# Each mutation used to copy `$root/module` itself, so a run was 44 separate
+# reads of a directory anything else may be writing. Two mutations either side
+# of an edit ran against different source, and one that copied a file mid-write
+# mutated a half-written script. Neither announces itself: both come out as
+# MISSED or BROKEN against code that is in fact guarded, which reads as a hole
+# in a suite and sends whoever acts on the report looking for a defect that is
+# not there. It is not hypothetical — an edit landing during a run produced a
+# false MISSED and a mutation count that could not be reconciled against the
+# number of entries in this file.
+#
+# Taken on first use rather than at load so that the harness can be sourced,
+# pointed at a fixture tree and driven by test-mutate-check.sh. In a real run
+# first use is the first mutation, so the snapshot is still the tree as it stood
+# when the run began.
+module_snapshot() {
+	[[ -n "$snapshot" ]] && return 0
+	snapshot=$(mktemp -d)
+	cp -R "$root/module" "$snapshot/module"
+}
 
 # check_mutation <label> <script> <sed-expr> <suite>
 #
@@ -45,7 +69,8 @@ check_mutation() {
 	local label="$1" script="$2" expr="$3" suite="$4"
 	local work target before after detail
 	work=$(mktemp -d)
-	cp -R "$root/module" "$work/module"
+	module_snapshot
+	cp -R "$snapshot/module" "$work/module"
 	target="$work/module/skills/review-council/scripts/$script"
 
 	# cksum, not md5sum: the latter is GNU coreutils and absent on macOS. A
@@ -108,6 +133,17 @@ check_mutation() {
 	fi
 	rm -rf "$work"
 }
+
+# Sourced rather than executed: hand back the definitions above and run nothing.
+# test-mutate-check.sh drives check_mutation against a fixture tree of its own,
+# which it cannot do if loading this file runs every mutation below it first.
+if (return 0 2>/dev/null); then
+	return 0
+fi
+
+# Only when executed: a sourced copy leaves its snapshot to the caller, whose
+# own EXIT trap this would otherwise replace.
+trap '[[ -n "$snapshot" ]] && rm -rf "$snapshot"' EXIT
 
 # Consolidation deleted every finding except one cluster primary because a jq
 # `def` was evaluated against the wrong subject inside `any()`.

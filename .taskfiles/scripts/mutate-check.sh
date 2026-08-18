@@ -330,11 +330,16 @@ check_mutation "RC-23 phase state kept out of verdicts/" \
 
 # Verdict files were ingested in `find` order, which is the filesystem's
 # directory order, so the same session credited a different reviewer under "Also
-# flagged by" depending on the host it ran on. Test 30 writes its two verdict
-# files in reverse agent order to make that visible: a filesystem reporting
-# creation order hands them over backwards. One reporting hash order could
-# happen to agree with the sort for those two names and score this MISSED —
-# which is a weaker guard than the others here, not a broken one.
+# flagged by" depending on the host it ran on.
+#
+# Test 30 used to make that visible by writing its two verdict files in reverse
+# agent order, which only reads back adversely on a filesystem reporting
+# creation order. On one reporting hash order that happens to agree with the
+# sort for those two names, the unsorted read and the sorted read are the same
+# sequence and this scored MISSED — green on a developer's XFS box, MISSED on
+# both CI legs, over code that was never at fault. Test 30 now mocks `find` to
+# return the entries in descending order on any host, so what this mutation
+# reintroduces is observable everywhere and the entry is as strong as the rest.
 check_mutation "RC-24 deterministic verdict ingestion" \
 	rc-verify-evidence.sh \
 	's/ | LC_ALL=C sort -z//' \

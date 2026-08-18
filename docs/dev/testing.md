@@ -194,6 +194,18 @@ rm -rf "$scratch"
 On macOS that isolates the cache but not `mktemp`, for the reason above; only
 `task test` gets you both.
 
+**Leave a fixture before removing it.** `cd "$tmpdir"` followed by `rm -rf
+"$tmpdir"` unlinks the suite's own working directory, and the shell keeps that
+unresolvable directory until its next `cd` — every process started in the window
+inherits it. Call `discard_fixture "$tmpdir"` from `helpers.sh` instead; it
+leaves the directory first and takes as many paths as you have to remove. Under
+the wrapper the condition is loud, because `mktemp` is a shell shim there and
+the next fixture setup therefore starts a shell that cannot resolve its own
+working directory and says so. `run-unit-tests.sh` fails any suite whose output
+carries that message. Run a suite directly, against the real `mktemp` binary,
+and nothing announces it at all — which is how 26 of them accumulated in one
+suite.
+
 `test-rc-test-isolation.sh` pins the wrapper's contract: isolated paths, a
 scratch root per run, cleanup on both the passing and failing path, and the
 command's exit status propagated rather than swallowed. It runs one case against

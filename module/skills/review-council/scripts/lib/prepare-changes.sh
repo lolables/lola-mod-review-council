@@ -464,7 +464,7 @@ fi
 rc_config_section=""
 for config_file in AGENTS.md CLAUDE.md; do
 	[[ -f "$config_file" ]] || continue
-	rc_config_section+=$(sed -n '/^## Review Council Configuration$/,/^## /{/^## Review Council Configuration$/d;/^## /d;p}' "$config_file" 2>/dev/null)$'\n'
+	rc_config_section+=$(sed -n '/^## Review Council Configuration$/,/^## /{/^## Review Council Configuration$/d;/^## /d;p;}' "$config_file" 2>/dev/null)$'\n'
 done
 
 # First value for <key> in the collected block, trimmed. Anchored at the start

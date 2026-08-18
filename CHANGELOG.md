@@ -437,6 +437,22 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The `Review Council Configuration` block was never read on macOS, so every key
+  it carries fell back to its default there. The `sed` that lifts the block out
+  of `AGENTS.md` and `CLAUDE.md` closed its brace group with `p}`, and BSD sed —
+  the sed macOS ships — accepts only a `;` or the end of the script after a
+  command. It rejects the whole expression with `extra characters at the end of
+  p command` and prints nothing at all. Nor could that surface as a failure: the
+  error went to `/dev/null` and `rc-prepare.sh` runs without `-e`, so a block
+  that could not be parsed was indistinguishable from a file that had no block
+  in it. `Constitution` resolved to `none`, and reviewers skipped the
+  constitution checks on a repository that had configured one; `Comment limit`
+  deferred to the forge and `Max comments` to 1, so a verdict configured to
+  chain across three comments was pared down to fit one instead. The construct
+  is a GNU extension in practice rather than in name, which is how it survived —
+  it is accepted everywhere the suite had ever been run. The portability guard
+  now forbids it, so the next one is caught on Linux rather than on the macOS
+  leg of the CI matrix
 - `--scope paths` could not name a file. It was a filter over a git diff and
   nothing more, so it only ever surfaced a path that already had changes in it:
   asking for a review of one file returned "No changes to review" whenever that

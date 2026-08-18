@@ -194,7 +194,13 @@ echo "Test 9: fallback key lists match verdict-schema.json (drift guard)"
 # a property and the fallback is not updated, the two validation paths diverge
 # again — silently, and only on hosts without the real validator.
 SCHEMA_FILE="$SCRIPT_DIR/../skills/review-council/references/verdict-schema.json"
-for spec in "RC_TOP_KEYS:.properties|keys" "RC_FINDING_KEYS:.properties.findings.items.properties|keys"; do
+# RC_REQUIRED_FINDING_KEYS is the third copy: it is what the rejection message
+# calls a missing key, so drift here does not split the validation paths — it
+# misnames the defect to the one agent trying to fix it, which is the failure
+# this whole message exists to prevent.
+for spec in "RC_TOP_KEYS:.properties|keys" \
+	"RC_FINDING_KEYS:.properties.findings.items.properties|keys" \
+	"RC_REQUIRED_FINDING_KEYS:.properties.findings.items.required"; do
 	varname="${spec%%:*}"
 	filter="${spec#*:}"
 	schema_keys=$(jq -rc "$filter | sort" "$SCHEMA_FILE")
@@ -524,6 +530,102 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$s"
+
+# The `detail` is the only field that tells a rejected agent WHICH field it got
+# wrong; `remediation` is a constant. When the schema validator is absent the
+# whole gate runs on the jq fallback, and a detail that does not name the field
+# leaves the agent guessing — it burns its one re-dispatch re-emitting a block
+# it has no reason to think is wrong. These four tests mask `jsonschema` off
+# PATH so the fallback is exercised deterministically, on a host that has the
+# validator installed as much as on one that does not.
+maskdir=$(mktemp -d)
+fallback_path=$(path_without_command jsonschema "$maskdir")
+
+echo "Test: the fallback detail names an unknown top-level key"
+s=$(new_session)
+write_raw "$s" divisor-adversary-code \
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"APPROVE","summary":"one paragraph","findings":[]}'
+result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'summary' <<<"$detail"; then
+	echo "  PASS: detail names the offending key"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail does not name 'summary': $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: the fallback detail names an unknown key inside a finding"
+# additionalProperties is false at BOTH levels, so a per-finding extra is just
+# as fatal as a top-level one and just as invisible in a generic message.
+s=$(new_session)
+write_raw "$s" divisor-adversary-code \
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r","confidence":"high"}]}'
+result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'confidence' <<<"$detail"; then
+	echo "  PASS: detail names the offending finding key"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail does not name 'confidence': $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: the fallback detail names a missing required key"
+s=$(new_session)
+write_raw "$s" divisor-curator-code \
+	'{"agent":"divisor-curator-code","verdict":"APPROVE","findings":[]}'
+result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'files_read' <<<"$detail"; then
+	echo "  PASS: detail names the missing key"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail does not name 'files_read': $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: two different defects do not produce the same detail"
+# The regression this pins: both failure modes once emitted one constant string
+# that named three possible causes, none of which applied to the extra-key case.
+s=$(new_session)
+write_raw "$s" agent-extra \
+	'{"agent":"agent-extra","files_read":[],"verdict":"APPROVE","summary":"x","findings":[]}'
+write_raw "$s" agent-missing \
+	'{"agent":"agent-missing","verdict":"APPROVE","findings":[]}'
+result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
+d_extra=$(jq -r '.invalid[] | select(.agent=="agent-extra") | .detail' <<<"$result")
+d_missing=$(jq -r '.invalid[] | select(.agent=="agent-missing") | .detail' <<<"$result")
+if [[ -n "$d_extra" && "$d_extra" != "$d_missing" ]]; then
+	echo "  PASS: the two defects report differently"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: both defects reported as '$d_extra'"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: the remediation states that the key set is closed"
+# verdict-schema.json sets additionalProperties:false at both levels, but a
+# reviewer adding a `summary` or `confidence` field is following no stated rule
+# — the protocol never said the list was exhaustive. The remediation is the one
+# text every rejected agent reads, so the rule has to appear in it.
+s=$(new_session)
+write_raw "$s" divisor-adversary-code 'not json at all'
+result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
+rem=$(jq -r '.remediation' <<<"$result")
+if grep -qF 'additionalProperties' <<<"$rem" && grep -qiE 'reject|not permitted' <<<"$rem"; then
+	echo "  PASS: remediation states the key set is closed"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: remediation never says unknown keys are rejected"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+rm -rf "$maskdir"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

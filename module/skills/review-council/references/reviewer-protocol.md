@@ -87,6 +87,21 @@ else — no prose before or after it. The orchestrator extracts this block and
 validates it against `${REFERENCES_DIR}/verdict-schema.json`. A response the
 validator rejects is re-dispatched once; do not add commentary outside the block.
 
+Three rules govern the block, and they apply before you copy the shape below:
+
+- **The key set is closed.** The schema sets `"additionalProperties": false` at
+  both the top level and inside each finding, so any other key is rejected and
+  the whole verdict — every finding in it — is lost. A `summary`, `confidence`,
+  `category` or `references` key is the most common way to lose a review. There
+  is no key for extra context: put it in `description`.
+- **Required vs optional.** `agent`, `files_read`, `verdict` and `findings` are
+  all required. Inside a finding, `severity`, `file`, `evidence`, `description`
+  and `recommendation` are required; only `line`, `title` and `constraint` are
+  optional.
+- **`files_read` MUST list every file you opened** — it replaces the prose
+  attestation, and a verdict whose `files_read` omits a file you quote from is
+  not a verdict anyone can check.
+
 ```json
 {
   "agent": "divisor-adversary-code",
@@ -115,7 +130,6 @@ the headline the defect needs rather than trimming to a budget. Omit it and the
 first sentence of `description` is used instead, which is why that sentence
 should stand on its own.
 
-- `files_read` MUST list every file you opened (replaces the prose attestation).
 - `verdict` MUST be `APPROVE` or `REQUEST CHANGES` — see "## Verdict" above.
   `APPROVE WITH ADVISORIES` is a council-level aggregate the orchestrator
   derives from multiple reviewer verdicts (see `report.md`); no individual

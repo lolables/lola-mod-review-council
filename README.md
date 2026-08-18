@@ -180,7 +180,12 @@ Without `gh`, the Curator reports gaps as review findings instead.
 /review-council 42           # review PR #42
 /review-council main..feat   # review a ref range
 /review-council HEAD         # review only the latest commit
+/review-council src/auth.go  # review named files, tracked or not
 ```
+
+Naming a file reviews that file whatever git makes of it — untracked, ignored,
+or committed and unmodified. Naming a directory keeps its other meaning: it
+filters the changeset to what changed under it, rather than sweeping the tree.
 
 The full list of input forms — directory paths, URLs, ref ranges, effort words,
 review instructions, and the post-the-result phrasings — is the decision table
@@ -445,6 +450,10 @@ REVIEW_COUNCIL_SPEC_DIRS="architecture rfc"  # every run, space or comma separat
 REVIEW_COUNCIL_SPEC_EXTS="md typ"            # every run, extensions without the dot
 ```
 
+A named file needs neither: `/review-council specs docs/architecture/adr-7.md`
+reviews that document as it stands, extension list and directory list both
+beside the point.
+
 When nothing matches, the council tells you which directories it searched rather than only that it found nothing.
 
 ## Convention Packs
@@ -490,6 +499,8 @@ CLAUDE.md:
 - Docs repo: myorg/docs
 - Quality tool: my_quality_reporter
 - Batch size: 20
+- Max comments: 1
+- Comment limit: 65536
 ```
 
 | Extension Point | Purpose                              | Default                  |
@@ -499,9 +510,33 @@ CLAUDE.md:
 | Docs repo       | GitHub repo for documentation issues | Report gaps as findings  |
 | Quality tool    | Agent name for quality analysis      | Skip quality analysis    |
 | Batch size      | Max files per delegation batch       | 20                       |
+| Max comments    | Comments one verdict may be spread across | 1                   |
+| Comment limit   | Characters per comment, overriding the forge's own | The forge's limit |
 
 All extension points are optional. The review council works without any of them — agents gracefully skip checks that
 require unconfigured extensions.
+
+### Oversized verdicts
+
+A review with enough findings renders a comment the forge will not accept. GitHub caps an issue comment at 65,536
+characters, and a 30-finding review already reaches about 58,000 — so this is reached in practice, not in theory.
+
+Two settings control what happens then, and neither is normally needed:
+
+- **`Max comments`** raises the ceiling. At the default of 1 the verdict must fit one comment. Set it to 3 and a
+  verdict too large for one is split across up to three, at full fidelity, cross-linked from the first. Roughly a
+  hundred findings fit in three GitHub comments.
+- **`Comment limit`** lowers it. The per-forge value is already known (65,536 for GitHub, 1,000,000 for GitLab), so
+  configure this only when your effective limit is smaller — self-hosted GitLab, or GitHub Enterprise behind a proxy
+  that truncates bodies.
+
+When a verdict exceeds `Comment limit` x `Max comments`, the renderer trims rather than letting the API reject the
+whole review. It sheds the collapsed "Full reviewer analysis" blocks first and by rising severity, then collapses
+findings to a headline and permalink, and drops findings only as a last resort. Evidence outlives analysis prose,
+because evidence is what makes a finding checkable. Critical findings are the last thing to go.
+
+**A trimmed comment always says so**, in a line beginning `Trimmed to fit the`, naming what was omitted and how much.
+The complete verdict is always in the run artifacts and in the rendered report, whatever the comment had room for.
 
 ## Verification
 

@@ -31,6 +31,30 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 caught=0
 missed=0
 broken=0
+snapshot=""
+
+# Freeze module/ once, and hand every mutation a copy of that rather than of the
+# tree as it currently stands.
+#
+# Each mutation used to copy `$root/module` itself, so a run was 44 separate
+# reads of a directory anything else may be writing. Two mutations either side
+# of an edit ran against different source, and one that copied a file mid-write
+# mutated a half-written script. Neither announces itself: both come out as
+# MISSED or BROKEN against code that is in fact guarded, which reads as a hole
+# in a suite and sends whoever acts on the report looking for a defect that is
+# not there. It is not hypothetical — an edit landing during a run produced a
+# false MISSED and a mutation count that could not be reconciled against the
+# number of entries in this file.
+#
+# Taken on first use rather than at load so that the harness can be sourced,
+# pointed at a fixture tree and driven by test-mutate-check.sh. In a real run
+# first use is the first mutation, so the snapshot is still the tree as it stood
+# when the run began.
+module_snapshot() {
+	[[ -n "$snapshot" ]] && return 0
+	snapshot=$(mktemp -d)
+	cp -R "$root/module" "$snapshot/module"
+}
 
 # check_mutation <label> <script> <sed-expr> <suite>
 #
@@ -45,7 +69,8 @@ check_mutation() {
 	local label="$1" script="$2" expr="$3" suite="$4"
 	local work target before after detail
 	work=$(mktemp -d)
-	cp -R "$root/module" "$work/module"
+	module_snapshot
+	cp -R "$snapshot/module" "$work/module"
 	target="$work/module/skills/review-council/scripts/$script"
 
 	# cksum, not md5sum: the latter is GNU coreutils and absent on macOS. A
@@ -108,6 +133,17 @@ check_mutation() {
 	fi
 	rm -rf "$work"
 }
+
+# Sourced rather than executed: hand back the definitions above and run nothing.
+# test-mutate-check.sh drives check_mutation against a fixture tree of its own,
+# which it cannot do if loading this file runs every mutation below it first.
+if (return 0 2>/dev/null); then
+	return 0
+fi
+
+# Only when executed: a sourced copy leaves its snapshot to the caller, whose
+# own EXIT trap this would otherwise replace.
+trap '[[ -n "$snapshot" ]] && rm -rf "$snapshot"' EXIT
 
 # Consolidation deleted every finding except one cluster primary because a jq
 # `def` was evaluated against the wrong subject inside `any()`.
@@ -294,11 +330,16 @@ check_mutation "RC-23 phase state kept out of verdicts/" \
 
 # Verdict files were ingested in `find` order, which is the filesystem's
 # directory order, so the same session credited a different reviewer under "Also
-# flagged by" depending on the host it ran on. Test 30 writes its two verdict
-# files in reverse agent order to make that visible: a filesystem reporting
-# creation order hands them over backwards. One reporting hash order could
-# happen to agree with the sort for those two names and score this MISSED —
-# which is a weaker guard than the others here, not a broken one.
+# flagged by" depending on the host it ran on.
+#
+# Test 30 used to make that visible by writing its two verdict files in reverse
+# agent order, which only reads back adversely on a filesystem reporting
+# creation order. On one reporting hash order that happens to agree with the
+# sort for those two names, the unsorted read and the sorted read are the same
+# sequence and this scored MISSED — green on a developer's XFS box, MISSED on
+# both CI legs, over code that was never at fault. Test 30 now mocks `find` to
+# return the entries in descending order on any host, so what this mutation
+# reintroduces is observable everywhere and the entry is as strong as the rest.
 check_mutation "RC-24 deterministic verdict ingestion" \
 	rc-verify-evidence.sh \
 	's/ | LC_ALL=C sort -z//' \
@@ -362,6 +403,265 @@ check_mutation "RC-31 consolidation conserves findings" \
 	rc-consolidate.sh \
 	's/^if \[\[ \$removed -lt 0 || \$removed -gt \$sem \]\]; then$/if false; then/' \
 	test-rc-consolidate.sh
+
+# The format gate rejected a block and told the agent only that the block had
+# "a missing required key, bad enum, or non-array findings" — one constant
+# sentence for every defect. An extra key, the commonest defect of all, is none
+# of those three, so the agent was handed a diagnosis that ruled out its own
+# problem and spent its single re-dispatch re-emitting the same block. Dropping
+# the key name from the message is the shipped state before the fix: the
+# sentence still renders, still reads like a diagnosis, and still names nothing.
+check_mutation "RC-34 rejection detail names the offending key" \
+	rc-extract-verdict.sh \
+	's/^[[:space:]]*\["unrecognised top-level key(s): " + quote(\$extra)$/["unrecognised top-level key(s): " + ""/' \
+	test-rc-extract-verdict.sh
+
+# The council's own comment is identified by marker AND author. The marker is
+# public and GitHub's "Quote reply" copies the body it quotes wholesale, HTML
+# comment included, so any participant can post one. Dropping the author clause
+# is the shipped state before the fix, and it is the silent kind: the file is
+# still written, it is simply missing the reply that quotes a finding to argue
+# with it -- the most engaged human on the thread.
+#
+# Two entries, because the clause is tested in two jq programs that fail apart.
+# The exclusion decides WHICH comments are dropped; the anchor decides WHERE the
+# window opens. Since the marker is matched at the start of a line, quoting no
+# longer trips either one, so what the exclusion's clause now guards is a
+# participant putting a marker at column 0 deliberately -- and what the anchor's
+# guards is the window opening on someone else's comment. Neither mutation
+# reproduces the other's symptom.
+check_mutation "RC-039 re-review exclusion tests the author" \
+	lib/prepare-context.sh \
+	's#and (\$me == "" or (\.author // "") == \$me)) | not#and true) | not#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-039 re-review anchor tests the author" \
+	lib/prepare-context.sh \
+	's#and (\$me == "" or (\.author // "") == \$me))\] | last#and true)] | last#' \
+	test-rc-prepare-conversation.sh
+
+# The marker only counts at the START of a line. rc-render-comment.sh emits it
+# that way and GitHub's "Quote reply" indents what it copies, so column 0 is
+# what tells a verdict from a quote of one when there is no author to compare
+# against. Matching it anywhere in the body -- the shipped state before the fix
+# -- costs the whole artifact on that path: the anchor lands on the quote, the
+# exclusion then drops that same quote as ours, nothing is left to write, and
+# the disclosure that exists to say "your input may be short" goes with it.
+#
+# Two entries again, and again they fail apart: neutering the anchor closes the
+# window, neutering the exclusion drops the quoting reply out of a file that is
+# still written. `.*` spans the `split("\n")` rather than spelling it -- `\n` in
+# a POSIX BRE is a GNU escape that BSD sed reads as the letter `n`, the same
+# portability trap as `\t` described at the top of this file.
+check_mutation "RC-039 anchor matches a marker line, not the body" \
+	lib/prepare-context.sh \
+	's#^[[:space:]]*| select(((\.body // "") | split(.*any(startswith(\$open)))#| select(((.body // "") | contains($open))#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-039 exclusion matches a marker line, not the body" \
+	lib/prepare-context.sh \
+	's#^[[:space:]]*(((\.body // "") | split(.*any(startswith(\$open)))#(((.body // "") | contains($open))#' \
+	test-rc-prepare-conversation.sh
+
+# Testing the author is right; requiring it is not. The login names the account
+# this RUN holds a token for, and the verdict on the PR may have been posted by
+# another one — CI files it as a bot, a maintainer re-runs locally, the token
+# rotates. The author-filtered anchor then matches nothing, which reads as "no
+# prior verdict", so the whole block is skipped: no conversation file and no
+# disclosure, on a PR that is mid-argument. Deleting the fallback is the
+# quietest failure of the three, which is why it is guarded like the others.
+check_mutation "RC-039 anchor falls back when no comment matches" \
+	lib/prepare-context.sh \
+	's/^[[:space:]]*if \[\[ -n "\$council_login" \]\] && \[\[ -z "\$marker_created_at" \]\]; then$/if false; then/' \
+	test-rc-prepare-conversation.sh
+
+# The renderer's last resort keeps whole lines from the top until the limit is
+# reached, and the marker is the last line of the body — so the cut took it.
+# Dropping the re-append is the shipped state: the body is still written, still
+# fits, and still carries the verdict heading and the finding counts, but no
+# listing selects on it. The next run finds no part to update, posts a fresh
+# comment beside the orphan, and the pull request accumulates one more on every
+# run after that.
+check_mutation "RC-041 a cut body keeps its marker" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*_RC_PART_BODIES=("\${out}\${marker}")$/_RC_PART_BODIES=("$out")/' \
+	test-rc-render-comment.sh
+
+# The cut took the disclosure with it for the same reason, and that half is the
+# one the ladder's own doctrine calls worse than an overflow error: what is left
+# announces a finding count, shows no findings, and says nothing was trimmed, so
+# a maintainer cannot tell a cut review from a clean one. Neutering the
+# re-append leaves the reserve in place, so the body still fits — it is only
+# silent.
+check_mutation "RC-041 a cut body keeps its disclosure" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*out+="\$disc"$/:/' \
+	test-rc-render-comment.sh
+
+# Reserving the two before the fill rather than after is what keeps the result
+# inside the limit; filling to the whole limit and then appending overshoots by
+# their combined length every time. Guarded separately because the two entries
+# above pass with the reserve gone: the marker and the disclosure are both still
+# there, the body is simply too big.
+check_mutation "RC-041 the cut reserves what it re-appends" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*fill_budget=\$((limit - \$(_rc_bytes "\${disc}\${marker}")))$/fill_budget="$limit"/' \
+	test-rc-render-comment.sh
+
+# The GitHub poster decides which comments on a pull request are the council's
+# and which part of a chained verdict each one holds, and it decides both by
+# reading a marker out of the comment. A finding's evidence is a verbatim quote
+# of the source under review, so it is author-controlled text rendered into that
+# same comment, and the marker key is public — it ships in every verdict and
+# verbatim in references/forge-adapters.md. Every entry below reintroduces one
+# way of reading that marker loosely enough for the quote to answer instead.
+#
+# The failure is never an error. The run reports `posted`, and the pull request
+# quietly ends up with a duplicate verdict, an overwritten third-party comment,
+# or its fresh verdict folded away as outdated.
+
+# The subject. Matching over the whole body finds the counterfeit in the quoted
+# source, because jq's `capture` returns the FIRST match and the real marker is
+# the LAST line. Widest of the five: it takes the ordinary single-comment upsert
+# down with it, which is what Test 9 reports.
+check_mutation "RC-042 marker read from its own line" \
+	rc-post-comment-github.sh \
+	's/^RC_MARKER_LINE_JQ=.*$/RC_MARKER_LINE_JQ=".body"/' \
+	test-rc-post-comment-github.sh
+
+# The direction. Scanning back is what makes the real marker win: a counterfeit
+# lives in the evidence, and evidence renders ABOVE the marker the renderer
+# appends after the footer. Taking the first marker line instead reads the
+# forgery — with the subject and both patterns otherwise intact, which is why
+# this is guarded apart from the entry above.
+check_mutation "RC-042 the last marker line wins" \
+	rc-post-comment-github.sh \
+	's/^\(RC_MARKER_LINE_JQ=.*\)| last)/\1| first)/' \
+	test-rc-post-comment-github.sh
+
+# The selector. "Is this comment part of the verdict for the commit under
+# review?" answered by searching the body for `sha=<head>` adopts a PRIOR
+# commit's verdict that merely quotes this commit's sha: it is overwritten in
+# place with the new verdict instead of being banner-stamped and folded away.
+# Distinct symptom — the comment is claimed rather than misread.
+check_mutation "RC-042 sha selector tests the marker line" \
+	rc-post-comment-github.sh \
+	's/^[[:space:]]*| select(\\\$m | startswith.*$/| select(.body | contains(\\"sha=$4\\"))/' \
+	test-rc-post-comment-github.sh
+
+# The sweep's half of the same read. Searching the body for the sha makes the
+# supersede listing report a counterfeit sha for a comment it just posted, and
+# an edited prior verdict as one it has never seen — so the prior verdict is
+# never retired and the pull request carries two live verdicts for good. No
+# other entry here produces that: the others lose comments, this one keeps one
+# too many.
+check_mutation "RC-042 supersede sha read off the marker line" \
+	rc-post-comment-github.sh \
+	's/((\\\$m | capture(\\"\^\${RC_MARKER_OPEN}(?<s>/((.body | capture(\\"sha=(?<s>/' \
+	test-rc-post-comment-github.sh
+
+# The field's shape. `sha=` is one space-delimited token and NOT necessarily
+# hex: an unresolvable HEAD renders `sha=unknown`. A hex-only class reads
+# nothing out of those markers, so every part of a chain falls back to its
+# `part=1` default — parts 2..N are re-created as duplicates on every run while
+# part 1 is written over whichever comment last landed in that slot. Invisible
+# on a hex sha, which is every other test here.
+check_mutation "RC-042 marker captures accept a non-hex sha" \
+	rc-post-comment-github.sh \
+	's/capture(\\"\^\${RC_MARKER_OPEN}\[\^ \]+ part=/capture(\\"^${RC_MARKER_OPEN}[0-9a-fA-F]+ part=/' \
+	test-rc-post-comment-github.sh
+
+# --- RC-043: `--scope paths` could not name a file ---------------------------
+#
+# Six ways to lose the same capability. `--scope paths` was a filter over a git
+# diff and nothing more, so it could only ever surface a path that already had
+# changes in it: "review this one file" came back "No changes to review" for
+# every untracked, ignored, or committed-and-unmodified file in the repository.
+
+# The disk read itself. Without it the scope reverts to diff-only discovery,
+# which is the whole defect — every file target that is not already in the diff
+# vanishes and the run reports a clean tree.
+check_mutation "RC-043 a named file is taken from disk" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*\[\[ -f "\$scope_path" \]\] && changeset_files+=.*$/:/' \
+	test-rc-prepare-file-targets.sh
+
+# The split. scope_dir is comma-separated everywhere else; passing it to git as
+# one pathspec makes a two-target run match nothing at all — and, because each
+# entry is then tested for existence as one glued string, refuses it as a
+# missing path rather than reviewing either half.
+check_mutation "RC-043 targets split on commas" \
+	lib/prepare-changes.sh \
+	"s/^[[:space:]]*IFS=',' read -ra scope_paths <<<\"\$scope_dir\"\$/scope_paths=(\"\$scope_dir\")/" \
+	test-rc-prepare-file-targets.sh
+
+# The refusal. A path that is neither on disk nor in the changeset was never
+# reviewed, and reporting that as "no changes" makes a mistyped target read as a
+# clean result — including the subset case, where one good path fills the
+# changeset and the mistyped one beside it goes unmentioned.
+check_mutation "RC-043 a missing target is refused" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \[\[ ${#scope_missing.*$/if false; then/' \
+	test-rc-prepare-file-targets.sh
+
+# The filter's match. `$file == $fp*` is a prefix test, so a target of
+# `src/fresh.go` also admits `src/fresh.go.bak`: a review that quietly covers a
+# file nobody named. Distinct from the entries above — this one adds files
+# rather than losing them.
+check_mutation "RC-043 path filter matches a path, not a prefix" \
+	lib/prepare-changes.sh \
+	's/if \[\[ "\$file" == "\$fp" \]\]/if [[ "$file" == "$fp"* ]]/' \
+	test-rc-prepare-file-targets.sh
+
+# Spec mode's half. collect_specs_in walks directories, so a named spec FILE
+# falls straight through it and the run reports "no spec artifacts found" for a
+# document sitting right there on disk.
+check_mutation "RC-043 spec mode accepts a file target" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \[\[ -f "\$dir" \]\]; then$/if false; then/' \
+	test-rc-prepare-file-targets.sh
+
+# Mode detection. Classifying the whole branch diff instead of what was named
+# dispatches the wrong council at full confidence: one Go file named on a branch
+# that otherwise touched only docs is reviewed by the spec personas, with every
+# code convention pack unloaded. The review completes and reads as normal.
+check_mutation "RC-043 the named target decides the mode" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*elif \[\[ -n "\${scope_dir:-}" \]\]; then$/elif false; then/' \
+	test-rc-prepare-file-targets.sh
+
+# The same stage's empty case. Appending unconditionally leaves a lone newline
+# behind for a directory with no changes under it, and a newline is not the
+# empty string: the no-changes branch is skipped, classification counts zero
+# files of either kind, and the run resolves to spec mode by falling off the
+# end of a tally that never ran.
+check_mutation "RC-043 an empty target diff stays empty" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*\[\[ -n "\$mode_scope_diff" \]\] && \(changeset_for_mode_detection+=.*\)$/\1/' \
+	test-rc-prepare-file-targets.sh
+
+# The normalisation, which lives in the arg parser so that the changeset
+# builders and mode detection cannot disagree about what was named. `-e path/`
+# and `-f path/` are false for a regular file, so a target carrying a trailing
+# slash was refused as "Target not found: <path>" — naming as missing a path
+# that is plainly there — and, where only one stage normalised, sent a Go file
+# to the spec council.
+#
+# The loop CONDITION is what gets broken, not the strip inside it: replacing the
+# body leaves `while [[ $x == */ ]]; do : ; done` spinning forever, and a
+# mutation that hangs takes the whole run with it rather than reporting.
+check_mutation "RC-043 a trailing slash is dropped from a target" \
+	lib/prepare-args.sh \
+	's/^[[:space:]]*while \[\[ "\$scope_entry" == \*\/ \]\]; do$/while false; do/' \
+	test-rc-prepare-file-targets.sh
+
+# The blank. `read -ra` keeps an interior empty field, so a doubled comma in a
+# generated flag string becomes an entry that exists nowhere and refuses the
+# whole run — naming, in the message, nothing at all.
+check_mutation "RC-043 an empty entry is dropped, not refused" \
+	lib/prepare-args.sh \
+	's/^[[:space:]]*\[\[ -z "\$scope_entry" \]\] && continue$/:/' \
+	test-rc-prepare-file-targets.sh
 
 total=$((caught + missed + broken))
 echo ""

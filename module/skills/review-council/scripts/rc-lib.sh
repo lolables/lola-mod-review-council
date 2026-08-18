@@ -14,6 +14,32 @@
 [[ -n "${_RC_LIB_LOADED:-}" ]] && return 0
 _RC_LIB_LOADED=1
 
+# The tag that identifies a council-authored PR comment. It is written by
+# rc-render-comment.sh, matched by rc-post-comment-<forge>.sh to find the
+# comment to update or supersede, and matched by prepare-context.sh to locate
+# the previous verdict on a re-review. It lived as a separate literal in all
+# three, and the copy that drifted was the one that mattered: the poster
+# requires marker AND author, while preparation tested the marker alone.
+#
+# The marker is PUBLIC — it ships in every verdict this tool has ever posted,
+# so anyone can put one in a comment, and GitHub's "Quote reply" does it by
+# accident. Never treat a match on this alone as proof the council wrote it.
+# shellcheck disable=SC2034 # read by the scripts that source this file:
+# rc-render-comment.sh writes it, and both readers match it through
+# RC_MARKER_OPEN below rather than reaching for the bare key.
+RC_MARKER_KEY="review-council:marker"
+
+# The opening of a marker as rc-render-comment.sh emits it, which is always the
+# first thing on a line of its own. Both readers match on THIS rather than on
+# the key alone, and both anchor it to the start of a line: GitHub's "Quote
+# reply" copies the marker in behind a `> ` prefix, so column 0 is what
+# separates a verdict from a quote of one — the only test that works when there
+# is no author to compare against. One definition for the same reason the key
+# has one: the poster and preparation drifted apart once already.
+# shellcheck disable=SC2034 # read by rc-post-comment-github.sh (RC_MARKER_LINE_JQ)
+# and by prepare-context.sh (the re-review anchor and exclusion).
+RC_MARKER_OPEN="<!-- ${RC_MARKER_KEY} sha="
+
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 	echo '{"status":"skip","message":"Bash 4+ is required. macOS ships Bash 3 — install a modern version: brew install bash"}'
 	exit 0

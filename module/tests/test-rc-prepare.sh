@@ -478,6 +478,73 @@ else
 fi
 rm -rf "$tmpdir"
 
+# --- Review Council Configuration block --------------------------------------
+#
+# The block used to be read for exactly one key, by a loop that stopped at the
+# first file containing it. These assert that it now carries several keys out,
+# and that the per-file precedence the Constitution lookup had is unchanged.
+
+echo "Test: comment size policy is read from the configuration block"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+cat >"$tmpdir/AGENTS.md" <<'CFG'
+# Widgets
+
+## Review Council Configuration
+
+- Constitution: ./GOVERNANCE.md
+- Comment limit: 20000
+- Max comments: 3
+
+## Other Section
+
+- Comment limit: 99
+CFG
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Comment limit" "20000" "Comment limit reaches tracking.md"
+assert_track "$session_dir" "Max comments" "3" "Max comments reaches tracking.md"
+assert_track "$session_dir" "Constitution" "./GOVERNANCE.md (explicit)" \
+	"Constitution still resolves alongside the new keys"
+rm -rf "$tmpdir"
+
+echo "Test: an unset or malformed size policy falls back rather than clamping"
+# A limit that is not a positive integer is dropped, so the per-forge hook
+# decides. Silently reading a typo as 1 would change what gets posted while
+# looking like the configuration had been honoured.
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+cat >"$tmpdir/CLAUDE.md" <<'CFG'
+# Widgets
+
+## Review Council Configuration
+
+- Comment limit: sixty-five thousand
+- Max comments: 0
+CFG
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Comment limit" "forge default" \
+	"a non-numeric limit defers to the forge"
+assert_track "$session_dir" "Max comments" "1" \
+	"a max-comments floor below 1 falls back to the default"
+rm -rf "$tmpdir"
+
+echo "Test: AGENTS.md wins over CLAUDE.md key by key"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Max comments: 2\n' >"$tmpdir/AGENTS.md"
+printf '## Review Council Configuration\n\n- Max comments: 5\n- Comment limit: 30000\n' >"$tmpdir/CLAUDE.md"
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Max comments" "2" "AGENTS.md wins where both define a key"
+assert_track "$session_dir" "Comment limit" "30000" \
+	"a key only CLAUDE.md defines is still read"
+rm -rf "$tmpdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

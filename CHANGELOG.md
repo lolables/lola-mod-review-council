@@ -6,6 +6,76 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- A verdict too large for one comment is now chained across several instead of
+  being refused by the forge. GitHub caps an issue comment at 65,536 characters
+  and a 30-finding review already renders about 58,000, so a review only a
+  little larger than that crosses it — which is why the limit has to reach the
+  renderer before it assembles a body rather than after the forge refuses the
+  finished one. Chaining is tried first and at full fidelity, because a split
+  body loses nothing; the paring ladder only begins once the whole budget —
+  `Comment limit` x `Max comments` — is still exceeded. It then sheds one class
+  at a time, lowest severity first, and analysis prose before the evidence and
+  recommendation it sits under: LOW analysis goes at level 1 and HIGH analysis
+  at level 4, with CRITICAL analysis still intact. Level 6 starts dropping
+  whole findings, again lowest severity first and never a CRITICAL. Level 7 is
+  the terminal state, reached only once every other finding has already gone:
+  CRITICAL analysis yields, then the CRITICAL findings themselves, then the body
+  is cut at a line boundary. Every level that fires puts a `Trimmed to fit the
+  <forge> comment limit:` line near the top of every part, naming what went,
+  because a pared comment that reads as complete is worse than an overflow error
+  — the maintainer cannot tell the difference. Parts split on finding boundaries
+  and each re-opens its own severity groups, so a part is valid markdown
+  standing alone. The GitHub poster writes them tail first, head last: the head
+  carries the verdict, the TL;DR and the links to the other parts, so it must
+  not exist before the parts it points at, and a run that dies halfway leaves
+  orphan detail comments rather than a verdict summarising findings that were
+  never posted
+- `Max comments` and `Comment limit` configuration keys. `Max comments`
+  (default 1) is policy — how many comments the council may spend on one verdict
+  — while `Comment limit` is the forge's per-comment character cap, which the
+  per-forge hook already supplies. Configure it only where the effective cap is
+  smaller than the forge's own: self-hosted GitLab, or GHE behind a proxy that
+  truncates bodies. Both are validated during preparation and recorded in
+  `tracking.md`, because the hook is a shell function and cannot survive the
+  `exec` in `rc-post-comment.sh`, so the standalone render path has to read the
+  resolved numbers from somewhere. A value that is not a positive integer is
+  dropped rather than clamped, each falling back to its own default: a typo that
+  silently became 1 would change what gets posted while reading as though it had
+  been honoured. Zero fails that test at both ends, in preparation and again in
+  the renderer: nothing fits a zero-byte comment, so accepting it walks the
+  ladder to its terminal state and writes an empty file while the run reports
+  `status: rendered` over a verdict it deleted rather than trimmed
+- `rc_comment_limit`, a third per-forge hook beside the two URL builders,
+  returning the maximum characters one comment may carry. The cap is a property
+  of each forge's API rather than a policy, so the per-forge post script
+  declares it — 65,536 for GitHub, 1,000,000 for GitLab — and an **undefined**
+  hook means no limit, which keeps the standalone manual-paste fallback at full
+  fidelity instead of trimming it to satisfy an API it never reaches.
+  `references/forge-adapters.md` carries it with the other hooks
+- `rc-post-comment-gitlab.sh` — a per-forge script that defines GitLab's three
+  hooks, renders, and stops. It never writes upstream, with or without `--send`,
+  which is accepted and ignored: the upsert, supersede and identity policy in
+  `rc-post-comment-github.sh` has no `glab` equivalent yet, and a half-built
+  poster that creates a note but cannot find its own on the next run leaves
+  duplicate verdicts on the merge request. It exists rather than letting the
+  router fall through to the standalone renderer because the hooks live in
+  per-forge post scripts — without one, a GitLab review renders deep-link-free
+  bodies against no size budget at all, and "the limit is per-forge" stays a
+  comment rather than a testable claim
+- The council-comment marker carries `part=<n> of=<m>` beside its `sha=`; an
+  unsplit verdict is `part=1 of=1`. The GitHub poster matches per part within a
+  head SHA, so a re-run on the same commit updates each part in place rather
+  than posting it again; a new commit creates a fresh chain and retires the
+  old. A comment posted before this change carries no `part=` at all and is
+  read as part 1, so the marker change itself needs no migration. The two poster
+  defects fixed below are a separate question, and only for a repository that
+  already met them: a part whose marker the terminal cut removed carries no
+  marker line, so neither listing selects it and nothing ever retires it, and a
+  duplicate left by the misrouting bug is swept once the reviewed commit moves
+  on but not before. Either has to be deleted by hand. Both need conditions that
+  should not arise in ordinary use — level 7 is documented as unreachable in
+  practice, and misrouting needed a finding whose evidence carried the marker's
+  own tokens
 - `title` is an optional finding property reviewers can supply — a short
   headline naming the defect, non-empty but **unbounded in length**. Both
   renderers had always headlined a finding with `.title // <fallback>`, but the
@@ -207,6 +277,72 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- The Tester's HIGH boundary now depends on the changeset, not on the code. Its
+  calibration table read "Untested code paths in core functionality — HIGH",
+  which describes a property of the code, so the persona applied it to any
+  uncovered path it could reach including paths the change never touched. The
+  validation gate corrected this persona 11 times across 20 runs — more than any
+  other — and 8 were HIGH downgrades supplying the qualifier severity.md already
+  carries at its HIGH boundary, which is about problems the change is likely to
+  cause: a docs-only diff scored HIGH for gaps in untouched code, `magefile.go`
+  scored HIGH against a file with a repo-wide no-unit-test convention whose paths
+  CI already exercises through a per-variant `dist` job, and
+  `cmd/openvox-ca-ctl/main.go` scored HIGH twice for code the PR does not modify.
+  HIGH now requires the changeset to have introduced the untested path or newly
+  made it reachable, with three named checks that drop it to MEDIUM — the gap is
+  pre-existing, another layer already covers it, or the branch carries no
+  correctness/security/data-integrity weight (a missing metric or log line is a
+  real gap, at MEDIUM). None of this suppresses a finding; it sets a ceiling on
+  a persona that already files 43% of all findings and 74% of all HIGHs, which
+  is how a report stops being read. RC-038 pins the rule and the bare table row
+  that contradicted it
+- Code review delegation prompts now carry a **PR Description** section holding
+  the `--- BODY ---` block `rc-prepare.sh` already writes into
+  `pr-metadata.txt`, framed as untrusted data like every other forge-sourced
+  section. `prepare-context.sh` had been reading that block since it landed, but
+  only to harvest linked-issue references — the prose itself reached no
+  reviewer. The Guard is the persona that pays for it: "this bundles unrelated
+  work with no note explaining it" is a claim about the PR description
+  specifically, and across a 208-finding corpus four of the seven findings ever
+  stripped were exactly that claim, made against PR bodies that carried an
+  `[!IMPORTANT]` callout, a commit-provenance table and a merge-order paragraph.
+  Later dispatches in the same session reached for the forge CLI on their own
+  initiative and filed narrower, correct findings — which is the other half of
+  why this is wired through the prompt rather than left to the agent, since the
+  Guard's Tool Access states network access is not permitted and a persona that
+  must fetch the description to do its job is one that must break its own
+  contract to do it. `divisor-guard-code.md` gains the matching duty: read the
+  section before reporting an inclusion as undisclosed, quote the passage that
+  should have carried the disclosure and does not, and where no such section was
+  supplied, say so rather than asserting an absence with no document to check.
+  Both ends are pinned by RC-036
+- The Curator's blog and tutorial criteria now define the case where no Docs
+  repo is configured — do not produce the finding — and cap at LOW. Both
+  criteria opened "If yes and Docs repo configured, check whether a ... issue
+  exists" and neither said what to do otherwise; an undefined branch is not a
+  skip, so the persona filed anyway, asserting "no blog issue on record" about a
+  tracker it had never been given an address for. The validation gate retracted
+  those as unverifiable in two separate runs, and that is the whole observed
+  population: every content-opportunity finding in the corpus was filed against
+  a project with no Docs repo configured, the one condition under which the
+  check cannot be performed. The severity half is separate and equally
+  load-bearing — rated MEDIUM these outranked disposition's LOW-only scoping
+  suppression, reached the report, and had to be argued down by hand, which one
+  PR author did verbatim: "No defect; needs a decision about where such content
+  lives rather than a code change." A missing blog post describes work the
+  project has not done yet, not something the changeset broke; a stale README or
+  a broken cross-reference is still a defect and keeps its own severity. The
+  same unverifiable claim reached the report by a second route: Graceful
+  Degradation told the persona to recommend an issue per a template covering
+  blog and tutorial whenever the forge tool was missing or the Docs repo
+  unreachable, which asserts no such issue exists on a tracker it has just
+  failed to reach. Content types are carved out of those rows and the docs
+  recommendation stays. The rule is stated once for any cause — if the check did
+  not run, whatever prevented it, no `blog` or `tutorial` finding — rather than
+  as a list of failure shapes, because the charter has at least six branches
+  that skip the search and an enumeration would need extending every time one is
+  added. RC-037 pins the defined branch, the ceiling, the degradation rows and
+  that general rule
 - `rc-prepare.sh` split from 1,498 lines into a 48-line entry point plus six
   stages under `scripts/lib/`, sourced in execution order: `prepare-args.sh`
   (flags and scope), `prepare-repo.sh` (git, forge, tooling, base, session dir),
@@ -301,6 +437,155 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The `Review Council Configuration` block was never read on macOS, so every key
+  it carries fell back to its default there. The `sed` that lifts the block out
+  of `AGENTS.md` and `CLAUDE.md` closed its brace group with `p}`, and BSD sed —
+  the sed macOS ships — accepts only a `;` or the end of the script after a
+  command. It rejects the whole expression with `extra characters at the end of
+  p command` and prints nothing at all. Nor could that surface as a failure: the
+  error went to `/dev/null` and `rc-prepare.sh` runs without `-e`, so a block
+  that could not be parsed was indistinguishable from a file that had no block
+  in it. `Constitution` resolved to `none`, and reviewers skipped the
+  constitution checks on a repository that had configured one; `Comment limit`
+  deferred to the forge and `Max comments` to 1, so a verdict configured to
+  chain across three comments was pared down to fit one instead. The construct
+  is a GNU extension in practice rather than in name, which is how it survived —
+  it is accepted everywhere the suite had ever been run. The portability guard
+  now forbids it, so the next one is caught on Linux rather than on the macOS
+  leg of the CI matrix
+- `--scope paths` could not name a file. It was a filter over a git diff and
+  nothing more, so it only ever surfaced a path that already had changes in it:
+  asking for a review of one file returned "No changes to review" whenever that
+  file was untracked, ignored, or simply committed and not touched since — which
+  is most of the files in any repository. An entry of `--scope-value` that
+  resolves to an existing FILE is now a target, read off disk whatever git makes
+  of it, while an entry that resolves to a DIRECTORY keeps its old meaning as a
+  filter over the changeset, because widening that would turn "review my changes
+  under `src/`" into a review of all of `src/`. Four defects at the same seam
+  close with it. The value was passed to git as ONE pathspec on this branch
+  though it is comma-separated everywhere else, so a two-target run matched no
+  file at all. The filter matched by prefix, so naming `src/auth.go` also
+  admitted `src/auth.go.bak`. Spec-mode discovery walked directories only, so a
+  single named `.md` reported "no spec artifacts found" for a document sitting
+  right there. And mode auto-detection classified the whole branch diff rather
+  than what was named, so one Go file named on a branch that had otherwise
+  touched only docs was handed to the spec council with every code convention
+  pack unloaded — a review that completes, and reads as normal. A named path
+  that is neither on disk nor anywhere in the changeset is now refused as `skip`
+  naming the path, rather than reported as an empty changeset: no widening of
+  scope will conjure up a path that is not there, and "nothing to review" reads
+  as a clean result. A path deleted on the branch under review stays reviewable,
+  being absent from disk and present in the diff
+- The GitHub poster read `part=` and `sha=` out of the whole comment body, and
+  `jq`'s `capture` is `match` without the `g` flag, so it took the first hit in
+  it. The marker is the LAST line of a comment; above it sits every finding's
+  evidence, a verbatim quote of the source under review and therefore text the
+  pull request author controls. A finding whose evidence quoted `part=3` filed
+  that comment under a part it did not hold, so its own part was posted again
+  while the original stayed visible, and a quoted `sha=` defeated the guard that
+  keeps the supersede sweep off the verdict the run had just posted. Anchoring
+  the captures on the marker key is not enough on its own -- the key is public,
+  it ships in every comment this tool has posted and verbatim in
+  `references/forge-adapters.md`, so a quote can carry a whole counterfeit
+  marker. Both listings now bind the last line that opens a marker and spell the
+  fields out in the order the renderer emits them. Two narrower defects at the
+  same seam close with it: `sha=` is one space-delimited token and not
+  necessarily hex, since an unresolvable HEAD renders `sha=unknown`, and a
+  maintainer who appends a note to a posted verdict pushes the marker off the
+  final line, which orphaned that comment and left two live verdicts on the pull
+  request
+- The paring ladder's terminal cut kept whole lines from the top until the limit
+  was reached. The marker is the last line of every part, so the cut took it --
+  and the marker line is the only thing the poster's listings select on. A part
+  that lost it was invisible to the next run, which posted a fresh comment
+  beside the orphan and superseded nothing, once more on every run after that.
+  It is also the one case where a body carries no real marker, which would leave
+  the poster's scan-back free to reach a counterfeit quoted inside a finding's
+  evidence. The cut took the disclosure line with it for the same reason, and
+  that is the half the ladder's own doctrine calls worse than an overflow error:
+  what was left announced a finding count, showed no findings, and said nothing
+  had been trimmed, so a maintainer could not tell a cut review from a clean
+  one. Both are now reserved out of the fill budget and re-appended, the marker
+  last, because the listings take the last line that opens a marker and a
+  counterfeit quoted in evidence is harmless only while it sits above the real
+  one. The disclosure also sits near the top of the body being cut, so a cut
+  deep enough to keep it must not be handed a second copy; the containment check
+  matches the disclosure's text line rather than the whole reserved string,
+  because the fill can stop in the gap between that line and the blank line
+  under it, and matching the whole string disclosed twice on adjacent lines.
+  RC-041 pins all three: the marker survives and stays last, the disclosure
+  survives, and the reserve is taken before the fill rather than after, which is
+  what keeps the result inside the limit
+- `references/forge-adapters.md` still described the pre-chaining contract: one
+  comment upserted on the head SHA alone, and a re-review window anchored on
+  `last` of the comments carrying the council's marker. An adapter written to it
+  would write part 2 over part 1, leave orphaned parts behind, and reproduce the
+  marker-only anchor defect recorded below exactly. It now states per-part
+  matching within a SHA, the selector invariants an adapter must reproduce (last
+  marker line, non-hex `sha` token, an absent `part=` meaning part 1), a failed
+  listing as an error rather than an empty list, tail-first writes, the two
+  retirement sweeps, and the author test on the anchor with all three routes to
+  its marker-only fallback. In the GitHub preparation adapter
+  `scripts/lib/forge/github.sh`, the file adapter authors copy from,
+  `rc_forge_current_user` sat between `rc_forge_fetch_conversation`'s doc
+  comment and the function it documents -- so the oldest-first ordering
+  contract, which is what stops a newest-first adapter anchoring on the first
+  verdict ever posted, read as documentation for the identity capability, and
+  the fetcher carried none
+- The re-review filter that feeds Disposition excluded the council's own verdict
+  comment by **marker alone**. The marker is public by construction -- it ships
+  in every verdict this tool has ever posted -- and GitHub's "Quote reply"
+  copies the quoted body wholesale, HTML comment included. So a maintainer who
+  quoted the verdict to argue with a finding produced a reply carrying the
+  council's marker, and that reply was dropped before Disposition ever saw it:
+  the single human most engaged with the findings, silently removed, with the
+  file still written and merely short. `rc-post-comment-<forge>.sh` has always
+  required marker AND author before it will update or hide a comment, on exactly
+  this reasoning; preparation now applies the same test. The council account is
+  named by a new optional adapter capability, `rc_forge_current_user`,
+  implemented for both GitHub and GitLab. Three routes lead back to marker-only
+  matching -- the adapter does not implement the call, the call returns no login
+  (which on GitHub is what a token without `read:user` does), or the login it
+  returns authored none of the marker comments on this timeline, which is
+  ordinary operation when CI files the verdict as a bot and a maintainer re-runs
+  the council under their own token. All three cost the same thing, and differ
+  only in why they got there, so `pr-conversation.txt` reports the cause apart
+  from what it cost: implementing a function, fixing a token and a verdict filed
+  by another account are three different repairs. The anchor lookup that
+  locates the previous verdict runs under the same identity as the exclusion,
+  and it is the more damaging of the two to get wrong: a reply quoting the
+  verdict is posted AFTER the verdict it quotes, so a marker-only `last` lands
+  on the reply and walks the window forward past every comment filed in between.
+  `RC_MARKER_KEY` in `rc-lib.sh` is now the single
+  definition of the marker, which had been three separate literals across
+  `rc-lib.sh`, `rc-render-comment.sh`, `rc-post-comment-github.sh` and a
+  hardcoded string in `prepare-context.sh` -- nothing made them one fact, which
+  is how the poster and preparation drifted apart in the first place. RC-039
+  pins both the single definition and the author test
+
+- The format gate told a rejected reviewer only that its block had "a missing
+  required key, bad enum, or non-array findings" — one constant sentence for
+  every defect, on every host without `sourcemeta/jsonschema`. An unrecognised
+  key, which `additionalProperties: false` rejects at both levels, is none of
+  those three, so the agent holding the single re-dispatch was handed a
+  diagnosis that ruled out its own problem. `validate_error()` now mirrors
+  `validate()` field by field and names what is wrong — which key is
+  unrecognised, which required key is absent, which finding index carries it —
+  falling back to the old sentence only if the mirror somehow finds nothing.
+  `references/reviewer-protocol.md` states the rule the schema was enforcing in
+  silence: the key set is closed at both levels, extra context belongs in
+  `description`, and the field MUSTs now sit above the example rather than in a
+  bullet list 30 lines below the block reviewers copy
+- The one re-dispatch the format gate buys was a cold start. `phases/delegate.md`
+  named no way to reach the agent that had already read the files and judged the
+  findings, so the orchestrator spawned a fresh one that re-read its brief and
+  re-explored the tree to repair a serialization defect — and never saw the block
+  it was correcting, since the rejected text was never handed back. Recovery now
+  resumes the original agent wherever the host supports it, and where it does not,
+  re-dispatches with the rejected block inlined verbatim. Both routes carry the
+  same instruction: this is a formatting repair, not a new review, and a recovery
+  returning different findings has silently replaced the review that
+  `{agent}.raw.md` no longer holds
 - Linked issues were matched case-sensitively against a keyword list missing
   `fix` and `closed`, so GitHub's own conventional spelling — `Fixes #12` —
   linked nothing. On a PR whose body used any capitalised closing keyword,

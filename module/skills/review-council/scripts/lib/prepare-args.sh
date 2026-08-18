@@ -150,7 +150,10 @@ while [[ $# -gt 0 ]]; do
 			  changed     base...HEAD + uncommitted changes (code default)
 			  all         All non-ignored project files (specs default)
 			  range       git diff on --scope-value ref range (e.g., "HEAD~1..HEAD")
-			  paths       Filter changeset to directories in --scope-value (secondary only)
+			  paths       Comma-separated paths in --scope-value. A file is reviewed
+			              on its own, whatever git makes of it (untracked, ignored,
+			              or committed and unmodified); a directory filters the
+			              changeset to what changed under it.
 			  pr          Fetch PR by number in --scope-value
 			  url         Fetch PR by URL in --scope-value
 
@@ -223,3 +226,40 @@ for filter in "${scope_filters[@]}"; do
 		scope_dir="${filter#paths:}"
 	fi
 done
+
+# Normalise the path list once, here, where it is resolved — not in each of the
+# four places that read it. Every consumer (both changeset builders, mode
+# detection, the secondary filter) then sees the same entries, which is what
+# stops two stages disagreeing about what was named: normalising inside the
+# changeset builder alone left mode detection reading `src/app.go/` as a path
+# that is not a file, falling through to its no-changes branch, and dispatching
+# the spec council over a Go file the builder had resolved perfectly well.
+#
+# Trailing slashes go because `-e`/`-f` are false for a regular file named with
+# one, so `src/auth.go/` was refused as "Target not found: src/auth.go" — naming
+# as missing a path that is plainly there. They are stripped in a loop rather
+# than with one `%/` because `src/auth.go//` is the same path again.
+#
+# Empty entries go because `read -ra` keeps an interior empty field, so a
+# doubled comma in a generated flag string became an entry matching nothing and
+# took the whole run down with a refusal that named nothing at all.
+if [[ -n "$scope_dir" ]]; then
+	scope_dir_given="$scope_dir"
+	IFS=',' read -ra scope_entries <<<"$scope_dir"
+	scope_dir=""
+	for scope_entry in "${scope_entries[@]}"; do
+		while [[ "$scope_entry" == */ ]]; do
+			scope_entry="${scope_entry%/}"
+		done
+		[[ -z "$scope_entry" ]] && continue
+		scope_dir="${scope_dir:+${scope_dir},}${scope_entry}"
+	done
+	if [[ -z "$scope_dir" ]]; then
+		json_output "skip" "--scope paths was given no usable path in --scope-value '${scope_dir_given}'."
+		exit 0
+	fi
+	# input_value carries the same list on `--scope paths`, and spec-mode
+	# discovery falls back to it. Left unnormalised it is the raw string again,
+	# by a different route.
+	[[ "$input_type" == "dir_scope" ]] && input_value="$scope_dir"
+fi

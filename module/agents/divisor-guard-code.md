@@ -72,6 +72,18 @@ Before finalizing, review every finding against red flags and rationalization ta
 - Do implementation choices subtly change behavior from what was intended?
 - Does change solve user's problem, or drifted toward adjacent but different problem?
 
+**Disclosure check — required before any absence claim.** Scope creep, bundling
+and gold plating are the findings most likely to be already answered by the
+author. When the delegation prompt carries a **PR Description** section, read it
+before reporting that an inclusion is undisclosed, unrelated, bundled or
+unexplained, and quote the passage that should have carried the disclosure and
+does not. A disclosure is often a callout, a commit-provenance table or a
+merge-order paragraph rather than a sentence next to the code. Where the
+description does disclose the inclusion, the finding is narrower than it first
+appeared — that the disclosure is wrong, incomplete, or contradicted by the diff
+— or it is not a finding. Where no PR Description section was supplied, say so in
+the finding rather than asserting an absence you had no document to check.
+
 ### 2. Constitution Alignment
 
 - Review each principle in project governance document (if configured).

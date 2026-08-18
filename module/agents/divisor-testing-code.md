@@ -72,6 +72,23 @@ Structure, naming, arrange/act/assert phases, self-contained fixtures, table-dri
 - **Edge cases**: Boundary values, off-by-one, concurrency, resource exhaustion — examples, not mechanical checklist. Reason about what edge cases matter for specific code under review. What inputs would surprise this function? What state combinations are dangerous?
 - **Regression anchors**: Bug fixed? Regression test added? Tests lock down behavior spec defines as critical?
 
+**What earns HIGH.** A coverage gap is HIGH only when the changeset created it —
+the untested path is new, or the change newly made an existing path reachable.
+Before assigning HIGH, check three things and drop to MEDIUM if any holds:
+
+- **Pre-existing gap.** The change does not touch the uncovered code. An old gap
+  is not evidence this change is likely to break something; it is worth
+  reporting, not worth blocking on.
+- **Covered elsewhere.** Integration, end-to-end or CI coverage already exercises
+  the path, or the file follows a documented no-unit-test convention the rest of
+  the package shares. Say which layer covers it.
+- **Consequence.** The untested branch carries correctness, security or data
+  integrity weight. A branch whose only effect is a missing metric or log line
+  is a real gap at MEDIUM, not a HIGH.
+
+State which of the three you checked in the finding's description. This does not
+suppress the finding — it sets the ceiling.
+
 ### 3. Security Test Coverage
 
 Check security-relevant code paths have tests exercising them:
@@ -108,9 +125,10 @@ Do NOT evaluate whether production code is secure — Adversary's domain. Cross-
 |------------------------------------------------------------------------------------------------------------------------|----------|
 | Constitution-mandated coverage strategy absent from the changeset                                                      | CRITICAL |
 | Test conceals a wrong result (asserts buggy output as correct, swallows the failure, or stubs out the code under test) | CRITICAL |
-| Untested code paths in core functionality                                                                              | HIGH     |
-| Missing edge case coverage for boundary-sensitive code                                                                 | HIGH     |
+| Untested code path in core functionality the changeset introduced or newly made reachable                              | HIGH     |
+| Missing edge case coverage for boundary-sensitive code the changeset introduced                                        | HIGH     |
 | Missing regression test for bug fix                                                                                    | HIGH     |
+| Untested code path the changeset does not touch, or one already covered by an integration/CI layer                     | MEDIUM   |
 | Shallow assertions on critical behavior                                                                                | MEDIUM   |
 | Missing property/fuzz/contract tests for untrusted input or public API contract                                        | MEDIUM   |
 | Filler tests on non-critical behavior (can never fail, assert only obvious outcomes)                                   | LOW      |

@@ -42,16 +42,56 @@ stub that pretends to work.
 | `rc_forge_fetch_reviews <pr> <owner> <repo>`         | `[{author, state, submitted_at, body}]`  | `prior-reviews.txt`     |
 | `rc_forge_fetch_review_comments <pr> <owner> <repo>` | `[{file, line, author, body}]`           | `prior-reviews.txt`     |
 | `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, created_at, body}]`           | `pr-conversation.txt`   |
+| `rc_forge_current_user`                              | `<login>` (bare string, or empty)        | (no artifact; see below)|
 
 `prior-reviews.txt` needs both review functions and is skipped unless both
 exist, so a half-implemented adapter cannot report "no inline comments" for a
 call it never makes.
 
+`rc_forge_current_user` names the account the council posts as. It writes no
+artifact; it decides whether the council's own verdict comment can be told apart
+from a participant's reply that merely quotes it. Council identity is **marker
+AND author** — the marker ships in every verdict this tool has ever posted, so
+it is public by construction, and GitHub's "Quote reply" copies it into a
+reply without anyone intending to. `rc-post-comment-<forge>.sh` has always
+required both before it will update or hide a comment; the re-review filter in
+`prepare-context.sh` now does too.
+
+Three things send the filter back to marker-only, and an adapter author should
+expect all three: omitting the function, implementing it and having the call
+fail (on GitHub, a token without `read:user`), and returning a login that
+authored none of the marker comments on the PR. The last is ordinary operation
+rather than a fault — CI posts the verdict as a bot and a maintainer re-runs the
+council under their own token, or the token rotates between runs — so a login
+that matches nothing is treated as a wrong answer about identity, not as
+evidence that no verdict was ever posted. Each fallback is **disclosed in
+`pr-conversation.txt`**, naming which of the three it was, so the Disposition
+phase can see that its input may be short and a maintainer knows what to repair.
+
+The marker literal lives once, as `RC_MARKER_KEY` in `rc-lib.sh`, and the
+opening that is actually matched lives beside it as `RC_MARKER_OPEN`. Match a
+**line that starts with** that opening — never the key anywhere in the body.
+`rc-render-comment.sh` emits the marker as the first thing on its own line, and
+a quote of a verdict carries it behind a `> ` prefix, so column 0 is what
+separates the two when there is no author to compare against. The poster matches
+this way too (`RC_MARKER_LINE_JQ`); they are one contract, so they use one test.
+
 `rc_forge_fetch_conversation` **must** return the timeline oldest first. The
-re-review path takes `last` of the comments carrying the council's marker to
-locate the most recent posted verdict, then selects replies at or after that
-timestamp. Newest-first would pick the oldest verdict ever posted and sweep in
-every reply since.
+re-review path takes `last` of the comments carrying the council's marker **and
+authored by that login** to locate the most recent posted verdict, then selects
+replies at or after that timestamp. Newest-first would pick the oldest verdict
+ever posted and sweep in every reply since.
+
+Do not anchor on `last` of a body merely *containing* the marker. A quote of the
+verdict contains it and is posted *after* it, so such a `last` lands on the
+quote and moves the window past every comment filed in between — and on the
+fallback the exclusion then drops that same quote as the council's own, leaving
+nothing to write and taking the disclosure with it.
+
+Matching at column 0 leaves one genuinely ambiguous case: a body the council did
+not write that puts a marker at the start of a line, which takes deliberate
+effort rather than clicking "Quote reply". On the fallback that comment is read
+as the verdict; with a login to compare against it is not.
 
 ### Why normalized shapes
 
@@ -88,10 +128,15 @@ API mechanics — while everything else is shared.
     caller.
   - **standalone:** `rc-render-comment.sh <session_dir>` renders `comment-body.md`
     and prints `{"status":"rendered", ...}` — the render-only fallback.
-- **`rc-post-comment-<forge>.sh`** — a per-forge post script. It defines the two
-  URL hooks (below), sources the renderer, then owns the auth gate, the upsert
-  **policy**, and the forge API mechanics inline. GitHub is implemented
-  (`rc-post-comment-github.sh`). Other forges add a sibling.
+- **`rc-post-comment-<forge>.sh`** — a per-forge post script. It defines the
+  three hooks (below), sources the renderer, then owns the auth gate, the upsert
+  **policy**, and the forge API mechanics inline. GitHub is implemented in full
+  (`rc-post-comment-github.sh`). GitLab (`rc-post-comment-gitlab.sh`) declares
+  its hooks and renders, but does not post: the upsert, supersede and identity
+  policy has no `glab` equivalent yet, and a poster that creates a comment but
+  cannot find its own on the next run leaves duplicate verdicts on the merge
+  request. It exists anyway because the hooks live here — without a post script
+  a GitLab review would get no permalinks and no size budget at all.
 - **`rc-post-comment.sh`** — a thin router. Reads `Forge` and `PR` from
   `tracking.md`; skips when there is no PR; execs `rc-post-comment-<forge>.sh`
   (args passed through) when it exists, else execs the renderer standalone. It
@@ -99,30 +144,95 @@ API mechanics — while everything else is shared.
 - **`rc-clone-target.sh`** — a separate materialization script (GitHub-only
   today) invoked by `rc-prepare.sh`.
 
-## The two URL hooks
+## The three forge hooks
 
-The renderer delegates every forge-specific URL to two functions the per-forge
+The renderer delegates every forge-specific fact to functions the per-forge
 script defines before calling in:
 
-| Hook            | Inputs                    | Returns                      | GitHub                                |
-|-----------------|---------------------------|------------------------------|---------------------------------------|
-| `rc_url_file`   | `forge_web sha file line` | file deep-link URL, or empty | `${web}/blob/${sha}/${file}#L${line}` |
-| `rc_url_commit` | `forge_web sha`           | commit URL, or empty         | `${web}/commit/${sha}`                |
+| Hook               | Inputs                    | Returns                      | GitHub                                | GitLab                                    |
+|--------------------|---------------------------|------------------------------|---------------------------------------|-------------------------------------------|
+| `rc_url_file`      | `forge_web sha file line` | file deep-link URL, or empty | `${web}/blob/${sha}/${file}#L${line}` | `${web}/-/blob/${sha}/${file}#L${line}`   |
+| `rc_url_commit`    | `forge_web sha`           | commit URL, or empty         | `${web}/commit/${sha}`                | `${web}/-/commit/${sha}`                  |
+| `rc_comment_limit` | none                      | max characters per comment   | `65536`                               | `1000000`                                 |
 
-When a hook is undefined (standalone fallback) or returns empty (e.g. no head
-SHA), the renderer emits a plain `` `code span` `` / plain short-sha. A future
-GitLab script defines the hooks with `/-/blob/…` and `/-/commit/…`. That is the
-entire per-forge URL surface.
+When a URL hook is undefined (standalone fallback) or returns empty (e.g. no
+head SHA), the renderer emits a plain `` `code span` `` / plain short-sha. That
+is the entire per-forge URL surface.
+
+`rc_comment_limit` is a **fact about the API**, not a policy. GitHub rejects an
+issue comment over 65,536 characters, and a 30-finding review already renders
+58k of markdown — so the limit has to reach the renderer before it assembles a
+body, not after the forge refuses one. GitLab's note cap is roughly fifteen
+times larger, which is precisely why this is a hook: hardcoding the smaller
+number in the neutral renderer would trim GitLab bodies that would have posted
+whole.
+
+An **undefined** `rc_comment_limit` means no limit. That is the manual-paste
+fallback, which has no API to reject the body, so it stays full fidelity.
+
+Two configuration keys sit on top of the hook (see the README's Extension
+Points):
+
+- `Comment limit: N` overrides the hook. It is for an effective limit smaller
+  than the forge's own — self-hosted GitLab, or GHE behind a proxy that
+  truncates bodies.
+- `Max comments: N` (default 1) is **policy**: how many comments one verdict may
+  be spread across. The budget is `comment_limit x max_comments`.
+
+Both are resolved by `rc-prepare.sh` and written into `tracking.md`. That is not
+duplication of the hook — it is the only way the numbers reach the renderer when
+`rc-post-comment.sh` reaches it by `exec` rather than by `source`, because a
+shell function cannot cross a process boundary. A standalone render with no
+recorded limit does not pare.
+
+## Oversized bodies: chaining, then paring
+
+When a body exceeds the budget the renderer splits it across up to `Max
+comments` parts at full fidelity, because a split body loses nothing. Only when
+even the multiplied budget is exceeded does it start shedding detail, one class
+at a time, analysis prose first and evidence last. Every level that fires adds a
+disclosure line beginning `Trimmed to fit the` — a pared comment that reads as
+complete is worse than an overflow error, because the maintainer cannot tell the
+difference. That holds at the terminal case too: the cut reserves the disclosure
+and the marker before it fills, so both outlive it even when nothing else does.
+The ladder and its terminal case are documented at the top of
+`scripts/rc-render-comment.sh`.
 
 ## Marker and reviewed commit
 
 Every rendered body ends with a hidden tag carrying the reviewed commit SHA:
 
-    <!-- review-council:marker sha=<full-head-sha> -->
+    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> -->
 
-The `sha=` field identifies the exact commit reviewed. Both GitHub and GitLab
+The `sha=` field identifies the exact commit reviewed. `part`/`of` place the
+comment in a chain; an unsplit verdict carries `part=1 of=1`. Both GitHub and GitLab
 render HTML comments invisibly, so the marker is portable. The body also shows a
 visible `Reviewed at commit <short-sha>` line.
+
+A renderer writes the marker as the body's final line, alone. A reader scans back
+for the **last** line that opens one, and matches only against that line — never
+against the body at large.
+
+Both halves earn their keep:
+
+- **Reading a line, not the body.** A finding's evidence is a verbatim quote of
+  the source under review, so it can reproduce the line above exactly, key and
+  all. jq's `capture` returns the first match in its subject, so a selector that
+  searched the whole body would read the quote and never reach the marker. The
+  quote always sits above the marker, so the last marker line is the real one.
+- **Scanning back, not taking the final line.** A maintainer may edit the
+  comment and append a note, which pushes the marker off the end. A reader that
+  insisted on the final line would stop recognising its own comment: it would
+  post the verdict again beside the edited copy, and never retire that copy once
+  the commit moved on.
+
+`sha=` is one space-delimited token, not necessarily hex — an unresolvable HEAD
+renders `sha=unknown` — so patterns that read it must accept the whole token.
+The trimming ladder's terminal truncation cuts the body at a line boundary from
+the top, which would take the marker with the rest of the tail. It reserves the
+marker's length and re-appends it, so even a cut body stays identifiable to both
+listings — a part that lost it would be orphaned, and the next run would post a
+fresh comment beside it rather than supersede it.
 
 A council comment is one that carries the marker **and** was authored by the
 identity doing the posting. The marker on its own is not proof of authorship: it
@@ -139,19 +249,90 @@ nothing rather than fall back to marker-only selection.
 
 ## Re-review policy (owned by each per-forge post script)
 
-An upsert is only correct when the reviewed code is the same. The policy keys on
-the head SHA:
+An upsert is only correct when the reviewed code is the same, and a verdict now
+spans up to `Max comments` comments. So the policy keys on **the head SHA and
+the part within it**: this run's parts are matched against the last run's part by
+part. Keyed on the SHA alone, part 2 of the re-render is written over part 1.
 
-1. **A comment already exists for this SHA:**
-   - body identical to the freshly rendered one → **no-op** (`action: unchanged`).
-   - body differs → **update in place** (`action: updated`).
-2. **No comment for this SHA** (new commit, or first review):
-   - **create** a fresh comment (`action: created`), then **supersede** every
-     prior council comment on a different SHA: edit in an "Obsolete, superseded
-     by …" banner (tagged `review-council:obsolete`, idempotent) and hide it as
-     OUTDATED so the forge collapses it.
+**Finding what is already there.** The find-by-SHA listing returns one row per
+part — comment id, node id, part number — for the council comments carrying this
+SHA, ordered by part; `rc-post-comment-github.sh` is the worked example. Its
+selector reads the marker exactly as "Marker and reviewed commit" requires — the
+**last** body line that opens one, matched as a whole line, `sha=` taken as an
+opaque token rather than as hex, and the comment claimed as the council's only
+when the author matches too. Chaining adds one rule of its own: a marker with
+**no `part=`** is part 1, which is what it was, since comments posted before
+chaining existed carry none.
 
-This keeps one authoritative comment per commit, preserves a per-revision trail,
+Getting any of that wrong costs more here than in a lookup, because this listing
+has to come back complete. A capture insisting on hex reads nothing out of a
+`sha=unknown` marker, so every part of the chain falls back to part 1 — and the
+supersede sweep below then reads an empty sha for the comments this run has just
+posted, and retires them.
+
+A **find-by-SHA listing that fails is an error, not an empty list**. Read as
+"nothing posted yet" it posts the whole chain a second time, so the script
+reports `error` and writes nothing. The supersede listing under "Retiring" takes
+the opposite policy; the two are not interchangeable.
+
+**Writing the parts.** For each part of the freshly rendered verdict:
+
+1. **A comment exists for this SHA at this part:**
+   - body identical to the rendered part → **no-op** (counted `unchanged`).
+   - body differs → **update in place** (counted `updated`). A failed update ends
+     the run with `error`; a half-written chain that says so beats one that
+     reports success.
+2. **No comment for this SHA at this part** (new commit, first review, or a
+   verdict that grew a part) → **create** (counted `created`). A failed create
+   ends the run the same way a failed update does.
+
+Parts are written **tail first, head last**. The head carries the verdict, the
+TL;DR and the links to the other parts, so it must not exist before the parts it
+points at do — the links replace a placeholder line the renderer left for them
+(`RC_PART_LINKS_TOKEN`) once the tail comments exist and their URLs are known. A
+run that dies halfway then leaves detail comments with no verdict, which reads as
+incomplete, rather than a verdict summarising findings nobody can see.
+
+Substituting **grows a head the renderer already sized against the limit
+exactly**, so the grown body is measured again and the substitution is discarded
+whole if it no longer fits: the links go rather than the findings, since they are
+navigation and the parts sit adjacent in the thread regardless. An adapter that
+substitutes without re-measuring hands the forge an over-limit body and has it
+rejected — the outcome chaining exists to avoid, arrived at one step later.
+
+**Retiring.** Two disjoint sets, both swept **after** the new parts land;
+superseding first opens a window in which the PR carries no verdict at all.
+
+- **Surplus parts on this SHA.** A verdict needing fewer comments than the last
+  run leaves parts behind. They carry the current SHA, so the prior-SHA sweep
+  will not touch them — every part past the new total is retired explicitly, or
+  the PR keeps showing findings the verdict no longer contains.
+- **Every part of every prior SHA.** Selected on "not this SHA" rather than "not
+  the comment I just wrote", because there are now several of those.
+
+Retiring a comment is: edit an "Obsolete, superseded by …" banner above the
+original body (tagged `review-council:obsolete`, skipped when one is already
+there so a repeat run does not stack banners) and hide it as OUTDATED so the
+forge collapses it.
+
+Everything in this phase is **best-effort, and none of it is fatal** — the
+opposite of the find-by-SHA listing above, and for a reason an adapter has to
+keep: the current commit's verdict is already posted by the time any of it runs,
+so a failure here has nothing left to protect and refusing would report a failed
+run over a verdict that did post. Concretely, in `rc-post-comment-github.sh`: the
+supersede listing degrades to zero rows rather than aborting, so a query that
+fails retires nothing and the run still reports `posted`; a body it cannot read
+gets no banner; and the banner edit and the hide are swallowed separately, so a
+comment can end up unbannered, uncollapsed, or both, and the run says nothing
+about it. The `superseded` count is therefore comments swept, not writes
+confirmed.
+
+**What gets reported.** `action` is one word for the whole chain — `created` if
+any part was created, else `updated` if any was updated, else `unchanged` — so a
+single-comment run reads exactly as it always did. The per-part counts ride
+alongside: `parts`, `created`, `updated`, `unchanged` and `superseded`.
+
+This keeps one authoritative chain per commit, preserves a per-revision trail,
 and never swaps a review of commit X onto commit Y (which would also invalidate
 the SHA-pinned deep-links). The policy is duplicated per forge — the accepted,
 honest cost of not abstracting six API calls behind a plugin layer; it is small

@@ -119,10 +119,63 @@ if [[ "$mode" == "code" ]]; then
 	else
 		# Local repo: base...HEAD + uncommitted (input_type == "auto" with code mode)
 		if [[ -n "$scope_dir" ]]; then
-			changeset_files=$(git diff --name-only "${base_branch}...HEAD" -- "$scope_dir" 2>/dev/null || echo "")
-			changeset_files+=$'\n'$(git diff --name-only -- "$scope_dir" 2>/dev/null || echo "")
-			diff_content=$(git diff "${base_branch}...HEAD" -- "$scope_dir" 2>/dev/null || echo "")
-			diff_content+=$'\n'$(git diff -- "$scope_dir" 2>/dev/null || echo "")
+			# Comma-separated, as everywhere else scope_dir is read. The whole
+			# string used to go to git as ONE pathspec, so a two-target
+			# "a.go,b.go" matched no file at all and reported a clean review.
+			# The entries arrive normalised from prepare-args.sh — no empties,
+			# no trailing slashes — so every use below can trust the strings.
+			IFS=',' read -ra scope_paths <<<"$scope_dir"
+
+			changeset_files=$(git diff --name-only "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			changeset_files+=$'\n'$(git diff --name-only -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			diff_content=$(git diff "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git diff -- "${scope_paths[@]}" 2>/dev/null || echo "")
+
+			# An entry naming an existing FILE is a target in its own right,
+			# taken from disk whatever git makes of it — untracked, ignored, or
+			# committed and untouched for a year. Naming the path IS the intent,
+			# and the diff-only discovery above can only ever surface a file that
+			# already has changes in it: "review this one file" answered "no
+			# changes to review" for every other file in the repository.
+			#
+			# A DIRECTORY entry keeps its old meaning — a filter over the
+			# changeset — because that is what the routing table has always sent
+			# here. Reading it as a target too would turn "review my changes
+			# under src/" into a review of all of src/, a larger and differently
+			# scoped review than the one asked for.
+			for scope_path in "${scope_paths[@]}"; do
+				[[ -f "$scope_path" ]] && changeset_files+=$'\n'"$scope_path"
+			done
+
+			# A named target that is neither on disk nor anywhere in the
+			# changeset was not reviewed, and saying "no changes to review" for
+			# it makes a mistyped path read as a clean result — the one direction
+			# a review tool must never be wrong in. Refused below, terminally.
+			#
+			# Testing the changeset as well as the disk is what admits the
+			# legitimate absentee: a file deleted on this branch is gone from the
+			# working tree and present in the diff, and an existence test alone
+			# cannot tell it from a typo. Checking each entry rather than only
+			# the empty-changeset case is what catches the subset failure — two
+			# targets, one mistyped, a changeset filled by the other, and half
+			# the requested review silently missing.
+			scope_missing=()
+			for scope_path in "${scope_paths[@]}"; do
+				[[ -e "$scope_path" ]] && continue
+				scope_found=false
+				while IFS= read -r changed_file; do
+					[[ -z "$changed_file" ]] && continue
+					if [[ "$changed_file" == "$scope_path" ]] || [[ "$changed_file" == "$scope_path/"* ]]; then
+						scope_found=true
+						break
+					fi
+				done <<<"$changeset_files"
+				$scope_found || scope_missing+=("$scope_path")
+			done
+			if [[ ${#scope_missing[@]} -gt 0 ]]; then
+				json_output "skip" "Target not found: ${scope_missing[*]}. Paths are relative to the repository root; name a file to review that file, or a directory to filter the changeset to it."
+				exit 0
+			fi
 		else
 			changeset_files=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")
 			changeset_files+=$'\n'$(git diff --name-only 2>/dev/null || echo "")
@@ -141,7 +194,12 @@ if [[ "$mode" == "code" ]]; then
 			[[ -z "$file" ]] && continue
 			for fp in "${filter_paths[@]}"; do
 				fp="${fp%/}" # Remove trailing slash
-				if [[ "$file" == "$fp"* ]] || [[ "$file" == "$fp/"* ]]; then
+				# The path itself, or something under it — never merely
+				# something starting with it. `$file == $fp*` admitted
+				# `src/auth.go.bak` for a filter of `src/auth.go`, and
+				# `src/quiet.go` for a filter of `src/q`: a review that
+				# quietly covers files nobody named.
+				if [[ "$file" == "$fp" ]] || [[ "$file" == "$fp/"* ]]; then
 					filtered+="${file}"$'\n'
 					break
 				fi
@@ -236,9 +294,28 @@ else
 	if [[ -n "$scope_dir" ]] || [[ "$input_type" == "dir_scope" ]]; then
 		# Scan specified directories for spec files
 		IFS=',' read -ra spec_dirs <<<"${scope_dir:-$input_value}"
+		spec_missing=()
 		for dir in "${spec_dirs[@]}"; do
+			# An entry naming a file IS the target — extension list and all.
+			# collect_specs_in walks directories, so a single named spec file
+			# fell straight through it and reported "no spec artifacts found"
+			# for a document sitting right there on disk. The extension filter
+			# exists to guess which files in a TREE are specs; a path the user
+			# typed needs no guessing, and second-guessing it would make a
+			# project's own `.txt`-less convention unreviewable.
+			if [[ -f "$dir" ]]; then
+				changeset_files+="${dir}"$'\n'
+				continue
+			fi
+			# Same refusal as code mode, for the same reason: a mistyped path
+			# must not come back as "nothing to review", which reads as clean.
+			[[ -d "$dir" ]] || spec_missing+=("$dir")
 			collect_specs_in "$dir"
 		done
+		if [[ ${#spec_missing[@]} -gt 0 ]]; then
+			json_output "skip" "Target not found: ${spec_missing[*]}. Paths are relative to the repository root; name a file to review that file, or a directory to search it for spec artifacts."
+			exit 0
+		fi
 	elif [[ "$input_type" == "all" ]] || [[ -z "$scope_type" ]] || [[ "$scope_type" == "all" ]]; then
 		# Scan common spec locations
 		for dir in "${spec_default_dirs[@]}"; do
@@ -375,23 +452,53 @@ fi
 [[ "$framework" == "unknown" ]] && framework="none"
 
 # ============================================================================
-# SECTION 11: Resolve Constitution
+# SECTION 11: Read the Review Council Configuration block
 # ============================================================================
 
-constitution="none"
-constitution_source=""
-
-# Check AGENTS.md and CLAUDE.md for Review Council Configuration
+# Both AGENTS.md and CLAUDE.md may carry a "## Review Council Configuration"
+# section. They are concatenated in that order and then read key by key, so a
+# key defined in both resolves to the AGENTS.md value. That is the same
+# precedence the Constitution lookup had when it was the only key, expressed per
+# key instead of per file — which is what it takes to carry a second key out of
+# a loop that used to `break` on the first hit.
+rc_config_section=""
 for config_file in AGENTS.md CLAUDE.md; do
-	if [[ -f "$config_file" ]]; then
-		rc_config_section=$(sed -n '/^## Review Council Configuration$/,/^## /{/^## Review Council Configuration$/d;/^## /d;p}' "$config_file" 2>/dev/null)
-		if echo "$rc_config_section" | grep -q "Constitution:"; then
-			constitution=$(echo "$rc_config_section" | grep "Constitution:" | sed 's/.*Constitution: *//' | head -n1)
-			constitution_source="explicit"
-			break
-		fi
-	fi
+	[[ -f "$config_file" ]] || continue
+	rc_config_section+=$(sed -n '/^## Review Council Configuration$/,/^## /{/^## Review Council Configuration$/d;/^## /d;p;}' "$config_file" 2>/dev/null)$'\n'
 done
 
-# No fallback auto-discovery. If no explicit Constitution is configured,
-# constitution stays "none" and reviewers skip constitution-specific checks.
+# First value for <key> in the collected block, trimmed. Anchored at the start
+# of the line, matching rc_parse_kv, so prose that happens to mention a key name
+# mid-sentence cannot be read as configuration.
+rc_config_value() { # key
+	printf '%s\n' "$rc_config_section" |
+		grep -m1 -E "^[-[:space:]]*${1}:" 2>/dev/null |
+		sed -E "s/^[-[:space:]]*${1}:[[:space:]]*//" |
+		sed -E 's/[[:space:]]+$//' || true
+}
+
+constitution=$(rc_config_value "Constitution")
+constitution_source=""
+if [[ -n "$constitution" ]]; then
+	constitution_source="explicit"
+else
+	# No fallback auto-discovery. With no explicit Constitution configured,
+	# reviewers skip constitution-specific checks.
+	constitution="none"
+fi
+
+# --- Comment size policy ---
+#
+# `Comment limit` is the forge's per-comment character cap. It is normally
+# supplied by the per-forge post script and needs configuring only when the
+# effective limit is smaller than the forge's own — self-hosted GitLab, or GHE
+# behind a proxy that truncates bodies. `Max comments` is policy, not a fact
+# about the API: it is how many comments the council may spend on one verdict.
+#
+# Both are validated here rather than at the point of use. A value that is not a
+# positive integer is dropped, not clamped: a typo that silently became "1" would
+# change what gets posted while reading as if it had been honoured.
+comment_limit=$(rc_config_value "Comment limit")
+[[ "$comment_limit" =~ ^[1-9][0-9]*$ ]] || comment_limit=""
+max_comments=$(rc_config_value "Max comments")
+[[ "$max_comments" =~ ^[1-9][0-9]*$ ]] || max_comments=1

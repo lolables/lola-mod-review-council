@@ -134,6 +134,28 @@ for adapter in "$FORGE_DIR"/*.sh; do
 			FAIL=$((FAIL + 1))
 		fi
 	done
+
+	# `rc_forge_current_user` is OPTIONAL. prepare-context.sh asks `declare -F`
+	# before calling and degrades to marker-only matching when the answer is no,
+	# so an adapter that omits it is honoured, not failed. Ask the stage's own
+	# question — source the adapter and look the function up — rather than
+	# grepping, because the two answers can differ: a definition nested inside a
+	# conditional, or a name that only ever appears in prose, leaves the stage on
+	# the "absent" path while the file reads as though the capability ships.
+	if (
+		# shellcheck source=/dev/null
+		source "$adapter" >/dev/null 2>&1
+		declare -F rc_forge_current_user >/dev/null
+	); then
+		echo "  PASS: $name defines rc_forge_current_user"
+		PASS=$((PASS + 1))
+	elif grep -qF 'rc_forge_current_user()' "$adapter"; then
+		echo "  FAIL: $name names rc_forge_current_user but sourcing defines no such function"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: $name omits rc_forge_current_user (marker-only fallback, by design)"
+		PASS=$((PASS + 1))
+	fi
 done
 
 # --------------------------------------------------------------------------
@@ -279,6 +301,95 @@ for fn in rc_forge_fetch_reviews rc_forge_fetch_review_comments rc_forge_fetch_c
 	len=$(jq -r 'length' <<<"$actual" 2>/dev/null || echo "MALFORMED")
 	assert_equals "$len" "0" "$fn degrades to an empty array"
 done
+
+# --------------------------------------------------------------------------
+# The GitLab adapter's identity capability.
+#
+# `rc_forge_current_user` is what lets the re-review filter tell the council's
+# own verdict apart from a reply that quotes it. Get it wrong on GitLab and the
+# author test never matches, so the council re-ingests its own verdict into
+# pr-conversation.txt as participant input to the Disposition phase. GitHub's
+# implementation is exercised end to end by test-rc-prepare-conversation.sh;
+# GitLab's had no caller at all, only a doc guard grepping for the name.
+# --------------------------------------------------------------------------
+
+# Call one capability from the gitlab adapter against a canned `glab api`
+# payload and print what it returns. Mirrors github_context_call; the optional
+# third argument makes the fake CLI exit non-zero, which is how an
+# unauthenticated or rate-limited forge presents itself.
+# Usage: login=$(gitlab_context_call rc_forge_current_user '<glab api payload>' [cli_exit])
+gitlab_context_call() {
+	local fn="$1" payload="$2" cli_exit="${3:-0}" bindir status
+	# Without this an "empty on failure" case passes when the adapter is missing
+	# entirely — a deleted implementation and a correctly empty result look the
+	# same from outside.
+	[[ -f "$FORGE_DIR/gitlab.sh" ]] || {
+		echo "ERROR: adapter not found: $FORGE_DIR/gitlab.sh" >&2
+		exit 1
+	}
+	bindir=$(mktemp -d)
+	cat >"$bindir/glab" <<GLAB
+#!/usr/bin/env bash
+case "\$1" in
+"api")
+	cat <<'JSON'
+${payload}
+JSON
+	exit ${cli_exit}
+	;;
+*) exit 0 ;;
+esac
+GLAB
+	chmod +x "$bindir/glab"
+	status=0
+	# shellcheck disable=SC2310 # Capturing the exit status is what this helper is
+	# for, and capturing it costs errexit inside the subshell. That is the trade.
+	(
+		PATH="$bindir:$PATH"
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/gitlab.sh
+		source "$FORGE_DIR/gitlab.sh"
+		"$fn"
+	) || status=$?
+	rm -rf "$bindir"
+	return "$status"
+}
+
+echo "Test 14: the GitLab adapter returns the bare username"
+# GitLab's user payload carries both `.username` (the handle that authors a
+# comment, which is what the author test compares against) and `.name` (the
+# display name, which never appears as an author). Reading the wrong one yields
+# a plausible non-empty string that matches nothing.
+actual=$(gitlab_context_call rc_forge_current_user \
+	'{"id":42,"username":"review-council-bot","name":"Review Council","state":"active"}')
+assert_equals "$actual" "review-council-bot" "current user read off .username, not .name"
+
+echo "Test 15: a GitLab user payload carrying no username yields nothing"
+# Without the `// empty` guard jq prints the literal string `null` — a non-empty
+# login that authored nothing, so the filter falls back to marker-only matching
+# and discloses `null` as the account it tried, sending a maintainer looking for
+# a user that never existed.
+actual=$(gitlab_context_call rc_forge_current_user '{"id":42,"name":"Review Council"}')
+assert_equals "$actual" "" "a payload without .username yields no login, not 'null'"
+
+echo "Test 16: a malformed GitLab user payload yields empty output and exit 0"
+rc=0
+# shellcheck disable=SC2310 # The exit status is half of what this case asserts.
+actual=$(gitlab_context_call rc_forge_current_user 'not json at all') || rc=$?
+assert_equals "$actual" "" "unparseable user payload yields no login"
+assert_equals "$rc" "0" "unparseable user payload does not abort preparation"
+
+echo "Test 17: a failing GitLab user call yields empty output and exit 0"
+# The other empty-on-failure branch: `glab api user` itself refusing, which is
+# what a missing or expired token looks like. Preparation must read this as "no
+# login" and fall back to marker-only matching, not as a reason to stop.
+rc=0
+# shellcheck disable=SC2310 # The exit status is half of what this case asserts.
+actual=$(gitlab_context_call rc_forge_current_user '' 1) || rc=$?
+assert_equals "$actual" "" "a failing user call yields no login"
+assert_equals "$rc" "0" "a failing user call does not abort preparation"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

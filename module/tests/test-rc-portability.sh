@@ -67,6 +67,10 @@ forbid 'sed[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-i([[:space:]]|$)' \
 	"no in-place 'sed -i'" \
 	"BSD sed requires '-i EXTENSION' as a separate argument; filter on write instead"
 
+forbid 'sed[^|]*[^$\\]\{[^{}]*[^;[:space:]\\]\}' \
+	"no unterminated last command in a sed '{}' block" \
+	"BSD sed accepts only ';' or end-of-script after a command, so '{...;p}' aborts the whole script with \"extra characters at the end of p command\" and prints nothing; terminate the last command too, as in '{...;p;}'"
+
 forbid '(grep|sed)[^#]*\\[|swdb+<>]' \
 	"no GNU regex escapes in grep/sed patterns" \
 	"BSD regex reads \\| \\s \\w \\+ as literals; use -E with POSIX [[:class:]]"

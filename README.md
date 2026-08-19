@@ -278,14 +278,15 @@ watch a run.
 
 ## How It Works
 
-The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates nine phases
+The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates ten phases
 using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work). Not every phase runs on
-every review — Decompose, Quality Gates, Disposition and Post are each conditional:
+every review — Decompose, Cost Estimate, Quality Gates, Disposition and Post are each conditional:
 
 | Phase             | Implementation                                              | Purpose                                                   |
 |-------------------|-------------------------------------------------------------|-----------------------------------------------------------|
 | **Prepare**       | `rc-prepare.sh`                                             | Mode detection, discovery, session setup                  |
 | **Decompose**     | `phases/decompose.md` (deep effort only)                    | Split the changeset into subsystems (`subsystems.json`)   |
+| **Cost Estimate** | `rc-cost-estimate.sh` (deep effort only)                    | Price the fan-out before dispatch; record acknowledgement |
 | **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh`           | Forge CI status checks (code review with a PR only)       |
 | **Delegate**      | `phases/delegate.md`                                        | Prompt construction, dispatch                             |
 | **Extract**       | `rc-extract-verdict.sh`                                     | Schema-validate each reviewer's JSON verdict              |
@@ -324,6 +325,7 @@ flowchart TD
   prep["Prepare: detect mode, discover agents, capture changeset"]
   decgate{"Deep effort?"}
   dec["Decompose: split changeset into subsystems"]
+  cost["Cost estimate: price the fan-out, record the acknowledgement"]
   qg{"PR CI data available?"}
   qgrun["Quality Gates: run CI checks"]
   del["Delegate: construct prompts, dispatch agents in parallel"]
@@ -339,7 +341,8 @@ flowchart TD
 
   prep --> decgate
   decgate -->|yes| dec
-  dec --> qg
+  dec --> cost
+  cost --> qg
   decgate -->|no| qg
   qg -->|yes| qgrun
   qgrun --> del
@@ -368,7 +371,7 @@ flowchart TD
   class qgrun sysB
   class ver,disp sysC
   class report sysD
-  class dec,ext,post sysE
+  class dec,cost,ext,post sysE
   class qg,iter,dispgate,decgate,postgate sysF
 ```
 
@@ -377,29 +380,37 @@ flowchart TD
 2. **Decompose** (deep effort only) — split the changeset into subsystems and write `subsystems.json`, so reviewers
    are dispatched per subsystem rather than over the whole diff. A changeset that turns out to be cohesive falls back
    to standard delegation and no `subsystems.json` is written
-3. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
-4. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
+3. **Cost Estimate** (deep effort only) — before anything is dispatched, print what the fan-out will cost: personas
+   x subsystems x the iteration cap, input tokens estimated from the prompt bytes on disk, and a dollar band. An
+   interactive session is asked to acknowledge it; a non-interactive one records `not acknowledged
+   (non-interactive)` and proceeds, because a blocking question ends a headless run outright. The band is read at
+   run time from the Cost Per Review table in `references/model-guidance.md`, divided by the council size stated
+   beside it: set `REVIEW_COUNCIL_MODEL_CLASS` to price another row (`sonnet` by default; `opus` and `haiku` also
+   ship) or set `REVIEW_COUNCIL_COST_LOW` and `REVIEW_COUNCIL_COST_HIGH` in USD per reviewer dispatch, which
+   outrank the class
+4. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
+5. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
    tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
    fenced ` ```json ` verdict block — no markdown prose.
-5. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
+6. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
    `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
    extraction failure rather than a silently dropped finding.
-6. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
+7. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
    apply severity calibration, strip fabricated findings, deduplicate. Writes the canonical
    `verdicts/findings.json`.
-7. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
+8. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
    effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
    findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
    claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
    never the verdict itself). Comments are treated as data, never instructions. See `phases/disposition.md` for the
    full contract.
-8. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
+9. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
    runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
    behind
-9. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
-   to fix them and re-review. Accepting returns to Delegate and overwrites the report on the next pass. The ceiling
-   depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
-10. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
+10. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
+    to fix them and re-review. Accepting returns to Delegate and overwrites the report on the next pass. The ceiling
+    depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
+11. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
     in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
     the report can never disagree
 

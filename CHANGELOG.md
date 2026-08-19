@@ -277,6 +277,22 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- Finding rendering now reads a finding's fields in one `jq` call instead of
+  eight. `rc_finding_block` spawned one `jq -r` per field, and the comment
+  renderer's paring ladder re-renders the same finding set several times over
+  looking for a level that fits, so a 30-finding review paid that cost
+  repeatedly — 9,354 `jq` invocations in one test suite, 28 of its 64 seconds.
+  The fields now arrive NUL-framed from a single call, and the persona helpers
+  do their prefix and suffix stripping with parameter expansion rather than two
+  `sed` processes per finding. Output is unchanged, byte for byte.
+
+  NUL rather than the obvious tab or newline because evidence is verbatim source
+  code and carries both, and a separator that occurs inside a value splices two
+  fields together — which surfaces as one finding's prose under another's label
+  rather than as an error. NUL is the one byte that cannot appear, since bash
+  discards it from a variable outright, so the per-field form this replaces
+  could not have carried one either.
+
 - The Tester's HIGH boundary now depends on the changeset, not on the code. Its
   calibration table read "Untested code paths in core functionality — HIGH",
   which describes a property of the code, so the persona applied it to any

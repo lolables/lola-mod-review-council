@@ -15,17 +15,29 @@ concurrency:
 
 jobs:
   test:
+    # The four layers are independent — each starts from a clean checkout and
+    # shares no state with the others — so running them in one job only made
+    # the leg's wall clock their sum. Serially they reached 24m48s on macOS
+    # against a 25m limit, and the next commit tipped it over. As separate jobs
+    # the leg costs the slowest single layer instead, and a layer that grows
+    # can no longer push an unrelated one past the limit.
+    #
+    # `degraded` and `mutate` are re-runs of the unit suites (three PATH
+    # configurations, and one targeted suite per mutation), so they are the two
+    # long poles; `unit` and `e2e` finish in a few minutes.
     strategy:
-      # Always run both legs to completion: a failure on one OS should not
-      # cancel the other and hide whether it was platform-specific.
+      # Always run every leg to completion: a failure in one layer or on one OS
+      # should not cancel the others and hide whether it was platform-specific.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        layer: [unit, e2e, degraded, mutate]
+    name: ${{ matrix.layer }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # The full matrix is four layers, not one: unit, Venom e2e, three degraded
-    # PATH configurations (each a complete unit re-run), and the mutation set
-    # (each a further re-run). Ten minutes covered `task test:unit` alone.
-    timeout-minutes: 25
+    # Per layer, not per leg. The slowest layer runs well under half of this;
+    # the margin is for runner variance, not for growth. A layer that starts
+    # timing out is a signal to split it, not to raise the number.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -41,14 +53,21 @@ jobs:
         # records why each formula is needed — coreutils supplies GNU timeout,
         # which macOS lacks entirely, installed prefixed as `gtimeout` — and why
         # its libexec/gnubin must stay off PATH.
+        #
+        # Every layer needs it: the module scripts under test call `timeout`
+        # via rc-lib.sh, not just the e2e pipeline.
         run: brew bundle install --file=Brewfile
 
       - name: Install Venom
-        # `task test:e2e` has a hard precondition on venom, so the e2e layer is
-        # skipped-by-failure without it. Pinned by tag AND by the SHA-256 of
-        # each published asset: ovh/venom publishes no checksum file, and an
-        # unverified binary download is an unreviewed dependency running with
-        # the workspace mounted. Bump the tag and all three digests together.
+        # Only the e2e layer runs venom, and it is the one layer that hard-fails
+        # without it (`task test:e2e` has it as a precondition). The other three
+        # never invoke it, so they skip a download and a checksum.
+        #
+        # Pinned by tag AND by the SHA-256 of each published asset: ovh/venom
+        # publishes no checksum file, and an unverified binary download is an
+        # unreviewed dependency running with the workspace mounted. Bump the tag
+        # and all three digests together.
+        if: matrix.layer == 'e2e'
         env:
           VENOM_VERSION: v1.3.0
           SHA_LINUX_AMD64: 89832ec25e820c605cf0d3c09122e60bad43d13c1724aa6d375ef7109fbfe201
@@ -75,10 +94,40 @@ jobs:
           sudo mv venom /usr/local/bin/venom
           venom version
 
-      - name: Run tests
-        # `task test` is an alias for the unit layer alone. The e2e, degraded
-        # and mutation layers are the ones that catch platform divergence — the
-        # mutation harness is why the GNU-only sed constructs were fixed — so
-        # running only `task test` here left that fix unverified on macOS.
+      - name: Run test layer
+        # The layer name reaches the shell through the environment rather than
+        # through a `${{ }}` splice into the script body. These values are
+        # literals from the matrix above and cannot be attacker-controlled
+        # today, but a run: block that interpolates an expression into its own
+        # source is one edit away from being injectable, and the env form costs
+        # nothing.
+        #
         # Lint is not run here; the megalinter workflow owns it.
-        run: task test:all
+        env:
+          LAYER: ${{ matrix.layer }}
+        run: task "test:${LAYER}"
+
+  # A single stable check name that summarises the matrix, so branch protection
+  # has one thing to require and does not have to enumerate eight job names that
+  # change whenever a layer or an OS is added.
+  test-result:
+    name: test
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check matrix result
+        # `needs.test.result` is 'success' only when every matrix leg succeeded;
+        # it collapses to 'failure'/'cancelled'/'skipped' otherwise. Comparing
+        # against 'success' rather than against 'failure' means a cancelled or
+        # skipped matrix fails the gate instead of passing it by omission.
+        env:
+          MATRIX_RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          if [[ "${MATRIX_RESULT}" != "success" ]]; then
+            echo "Test matrix did not succeed: ${MATRIX_RESULT}" >&2
+            exit 1
+          fi
+          echo "All test layers passed on every OS."

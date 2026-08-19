@@ -59,6 +59,34 @@ copy_fixture() {
 	printf '%s' "$dest"
 }
 
+# Resolved at source time, while the working directory is still known to exist:
+# a shell standing in a removed directory cannot resolve a relative path, which
+# is the one situation the anchor below is for.
+_TEST_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Remove one or more fixture directories, leaving any the caller is standing in
+# first.
+#
+# A test that runs `cd "$tmpdir"` and then `rm -rf "$tmpdir"` unlinks its own
+# working directory, and the shell keeps that unresolvable directory until its
+# next `cd`. Every process started in the window inherits it: `getcwd` fails for
+# all of them, and only the shells among them say so. Under the scratch wrapper
+# there is always at least one, because `mktemp` is a shell shim there
+# (.taskfiles/scripts/with-scratch.sh) — so the next test's fixture setup opened
+# with `shell-init: error retrieving current directory` on stderr, 26 times in a
+# run of test-rc-prepare.sh alone. That message was the visible edge of it. What
+# it points at is a script under test being handed a working directory that does
+# not resolve, which surfaces as whatever that script does next and not as
+# anything a reader would connect back to the test that caused it.
+# Usage: discard_fixture "$tmpdir" ["$agentdir" ...]
+discard_fixture() { # dir...
+	cd "$_TEST_HELPERS_DIR" || {
+		echo "ERROR: cannot leave a removed fixture: $_TEST_HELPERS_DIR is gone" >&2
+		exit 1
+	}
+	rm -rf "$@"
+}
+
 # Assert that a finding-dropping transform removed exactly the expected number
 # of items and nothing else.
 #

@@ -17,8 +17,20 @@ Two workflows split the work, and neither runs `task check` under that name:
 
 | Workflow | Runs | On |
 |----------|------|-----|
-| `.github/workflows/test.yml` | `task test:all` — all four test layers | `ubuntu-latest` and `macos-latest` |
+| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` and `macos-latest` |
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
+
+`test.yml` is a two-dimensional matrix — four layers by two operating systems,
+eight jobs — plus a `test` job that gates on all of them. The layers used to run
+as one serial `task test:all` per OS, which made a leg's wall clock their sum:
+macOS reached 24m48s against a 25m limit and the next commit was killed at
+25m22s. They share no state, so as separate jobs a leg costs the slowest single
+layer instead, and a layer that grows can no longer push an unrelated one over
+the limit.
+
+Gate on the `test` job, not on the eight matrix jobs. It is one stable check
+name that does not change when a layer or an OS is added, and it fails on a
+matrix that was cancelled or skipped as well as one that failed.
 
 Every test layer runs on both operating systems. None is gated by OS. That is
 deliberate: the mutation harness is the layer that caught GNU-only `sed`
@@ -27,11 +39,12 @@ having a macOS leg at all. If a layer ever genuinely cannot run on macOS, gate
 it with an explicit `if:` condition and record the reason here — do not quietly
 narrow what the workflow invokes.
 
-`test.yml` installs Venom itself, pinned to a tag and to the SHA-256 of each
-published asset. Venom publishes no checksum file, so the digests are recorded
-in the workflow; bump the tag and all three together. Both legs also get `bash`
+`test.yml` installs Venom on the `e2e` jobs only — it is the one layer with a
+hard precondition on it — pinned to a tag and to the SHA-256 of each published
+asset. Venom publishes no checksum file, so the digests are recorded in the
+workflow; bump the tag and all three together. Every macOS job gets `bash`
 (macOS ships bash 3.2, and the suites need 4+), `jq`, and GNU `coreutils` for
-`timeout`, which macOS lacks.
+`timeout`, which macOS lacks — every layer needs those, not just the e2e one.
 
 `jsonschema` is deliberately *not* installed. Its absence is the default
 condition for most users, and `task test:degraded` exercises that fallback
@@ -49,6 +62,14 @@ automatically; the list used to be hand-maintained in `Taskfile.yml`, where a
 suite nobody remembered to register silently never ran. Shared code lives in
 `helpers.sh` — deliberately *not* named `test-helpers.sh`, so the discovery
 glob means exactly "a suite".
+
+`run-unit-tests.sh` also takes suite paths as arguments and runs exactly those,
+which is how the degraded layer runs its narrowed selection. Discovery is what
+happens with no arguments, so `task test:unit` is unaffected. A named path it
+cannot read fails the run rather than being skipped — a caller whose selection
+has gone wrong would otherwise run a smaller set than it asked for and still be
+told everything passed — and the `Suites run:` line counts what actually ran, not
+what the directory holds.
 
 A suite with no `SCRIPT=` covers something that spans scripts: a documented rule
 (`test-rc-doc-guards.sh`), a shared library (`test-rc-lib.sh`), a contract
@@ -80,8 +101,32 @@ have caught it. This layer runs the real scripts in the real order.
 only executes on a host that lacks the tool, so on any given machine it is
 always taken or never taken, and never deliberately exercised. That is how the jq fallback
 validator shipped accepting `"HIG"` as a severity. Each optional tool
-(`jsonschema`, `gh`, `glab`) is hidden from `PATH` in turn and the whole suite
-must produce identical results.
+(`jsonschema`, `gh`, `glab`) is hidden from `PATH` in turn and the suites that
+can reach a call to it must produce identical results.
+
+Which suites those are is derived from the tree by
+`.taskfiles/scripts/degraded-suites.sh`, not hand-listed — the same reason the
+unit layer discovers its suites. It seeds on the files that actually *use* the
+tool (a `command -v` probe, the tool in command position, or an assignment for
+later indirect invocation) and closes over `source`/`bash` references from
+there, ignoring mentions in full-line comments. Running all 40 suites for each
+of the three tools was three complete unit passes and the single largest block
+of CI wall clock; the derived selection is 47 suite-runs instead of 120, and
+cut the layer from about 474s to 121s.
+
+Two rules keep the narrowing from becoming a silent hole, which is the failure
+this layer exists to prevent:
+
+- **Ambiguity includes.** A trailing-comment mention counts as an invocation,
+  because telling `foo # gh` from `foo "#gh"` is not something grep can decide,
+  and a wrong guess in the other direction drops a suite without saying so.
+- **An empty selection is an error.** A tool that matches nothing means either
+  the name is wrong or the walk is broken. Both would otherwise report green
+  having run no suite at all, so the run fails instead.
+
+`module/tests/test-degraded-selection.sh` pins both, along with the cases that
+have already gone wrong once — see the SIGPIPE note under "Writing a test that
+actually tests something".
 
 **Mutation** (`.taskfiles/scripts/mutate-check.sh`). A green suite proves
 nothing on its own. Two regression tests written for these defects passed on
@@ -94,6 +139,21 @@ caught is a hole, and fails the run.
 
 **Watch it fail first.** If a new test passes against unfixed code, it is
 measuring the wrong thing. Reshape the fixture until it fails, then fix.
+
+**Size the fixture to the failure, not to readability.** A test that reproduces
+a defect only sometimes is worse than no test, because a flaky red gets re-run
+until it is green. `test-degraded-selection.sh` guards a defect that only
+appears once a reader's output outgrows the 64KiB pipe buffer: reading a file as
+`sed … | grep -q` under `set -o pipefail` reports a match as a miss, because
+grep exits on the match, sed is left writing into a closed pipe and dies of
+SIGPIPE, and `pipefail` returns 141 for the pipeline. Its fixture is 2000 lines
+for that reason and misses 20 times out of 20 against the defective form; at 400
+lines it passed against the same defect and tested nothing. Where a fixture's
+*size* is what makes it bite, say so in the fixture, or someone will tidy it
+back under the threshold.
+
+Prefer `cmd <<<"$var"` or `cmd < <(…)` to `producer | grep -q`. Anything that
+exits early on the left of a pipe under `pipefail` turns a success into a 141.
 
 **Assert on what must survive, not on what changed.** Every consolidation
 fixture used to consist entirely of cluster members, so `assert length == 1`
@@ -193,6 +253,18 @@ rm -rf "$scratch"
 
 On macOS that isolates the cache but not `mktemp`, for the reason above; only
 `task test` gets you both.
+
+**Leave a fixture before removing it.** `cd "$tmpdir"` followed by `rm -rf
+"$tmpdir"` unlinks the suite's own working directory, and the shell keeps that
+unresolvable directory until its next `cd` — every process started in the window
+inherits it. Call `discard_fixture "$tmpdir"` from `helpers.sh` instead; it
+leaves the directory first and takes as many paths as you have to remove. Under
+the wrapper the condition is loud, because `mktemp` is a shell shim there and
+the next fixture setup therefore starts a shell that cannot resolve its own
+working directory and says so. `run-unit-tests.sh` fails any suite whose output
+carries that message. Run a suite directly, against the real `mktemp` binary,
+and nothing announces it at all — which is how 26 of them accumulated in one
+suite.
 
 `test-rc-test-isolation.sh` pins the wrapper's contract: isolated paths, a
 scratch root per run, cleanup on both the passing and failing path, and the

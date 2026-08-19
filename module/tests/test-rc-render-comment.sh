@@ -286,6 +286,52 @@ else
 fi
 rm -rf "$sess"
 
+echo "Test 6b: tabs and newlines in several fields at once stay in their own field"
+# rc_finding_block reads all of a finding's fields out of jq in one call, framed
+# on NUL, rather than spawning one jq per field. Framing is the risk that buys:
+# a separator that can occur inside a value splices two fields together, and the
+# damage shows up as prose appearing under the wrong label rather than as an
+# error. Tabs and newlines are exactly what the fields carry — evidence is
+# source code — so they are the separators that must not be used, and this puts
+# them in four fields at once. NUL is safe because bash cannot hold one in a
+# variable at all: `$(...)` discards it, so the per-field form could not carry
+# one either.
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified[0].evidence = "if a\t< b {\n\tpanic()\n}" |
+    .verified[0].description = "Tab\there.\nNewline there." |
+    .verified[0].recommendation = "Use\t<= instead.\nSecond line." |
+    .verified[0].title = "Tabbed\ttitle" |
+    .verified[0].constraint = "STYLE-9:\tno raw tabs"' \
+	"$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# Each field is checked for a fragment that only it carries. A framing slip
+# concatenates neighbours, so the victim field loses its own opening text.
+for probe in \
+	"Tabbed	title" \
+	"Newline there." \
+	"Use	<= instead." \
+	"STYLE-9:	no raw tabs"; do
+	if grep -qF "$probe" <<<"$body"; then
+		echo "  PASS: field kept its own content ('${probe%%$'\t'*}…')"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: field lost or merged ('${probe%%$'\t'*}…')"
+		FAIL=$((FAIL + 1))
+	fi
+done
+# The recommendation label must be followed by the recommendation, not by
+# whatever a slipped separator dragged in front of it.
+if grep -qF 'Recommendation:** Use' <<<"$body"; then
+	echo "  PASS: recommendation label is followed by the recommendation"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: recommendation label is followed by another field's text"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
 # Test 7: optional constraint field - rendered when present and non-empty,
 # omitted entirely (no empty line) when absent.
 echo "Test 7: constraint field rendered only when present"

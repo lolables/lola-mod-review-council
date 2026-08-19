@@ -135,6 +135,26 @@ assert_equals "$_h_detected" "1" "a missing state path counts exactly one failur
 assert_equals "$_h_status" "0" "the missing-state path returns 0 too"
 rm -rf "$_h_gone"
 
+echo "Test: discard_fixture leaves the directory it is removing"
+# The assertion is made against a freshly started shell rather than against
+# `pwd`, which answers out of the shell's own cached value and so reports a
+# directory that no longer exists. A new process has to ask the kernel, which is
+# also what every script under test does — and what it gets is the whole point
+# of the helper.
+_h_fixture=$(mktemp -d)
+_h_second=$(mktemp -d)
+cd "$_h_fixture"
+discard_fixture "$_h_fixture" "$_h_second"
+_h_noise=$(bash -c ':' 2>&1)
+assert_equals "$_h_noise" "" "a process started afterwards resolves its working directory"
+if [[ -d "$_h_fixture" || -d "$_h_second" ]]; then
+	echo "  FAIL: discard_fixture removed every path it was given"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: discard_fixture removed every path it was given"
+	PASS=$((PASS + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

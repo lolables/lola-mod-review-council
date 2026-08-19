@@ -54,7 +54,7 @@ else
 	echo "  FAIL: message doesn't mention git"
 	FAIL=$((FAIL + 1))
 fi
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 2: Git repo with no changes (empty changeset)
 echo "Test 2: Empty changeset"
@@ -65,7 +65,7 @@ git checkout -q -b main
 git commit --allow-empty -qm init
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_status "$result" "empty" "status is empty"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 3: Git repo with changes
 echo "Test 3: Normal git repo with changes"
@@ -84,7 +84,7 @@ assert_file_exists "$session_dir/diff.patch" "diff.patch created"
 assert_file_exists "$session_dir/tracking.md" "tracking.md created"
 assert_file_exists "$session_dir/session.txt" "session.txt created"
 assert_json_field "$result" "language" "go" "detected Go language"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 4: Explicit mode override
 echo "Test 4: Explicit mode override"
@@ -97,7 +97,7 @@ mkdir -p specs && echo "# Spec" >specs/feature.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode specs 2>/dev/null)
 assert_json_status "$result" "ok" "status is ok"
 assert_json_field "$result" "mode" "spec" "mode is spec"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 5: Agent discovery
 echo "Test 5: Agent discovery"
@@ -117,7 +117,7 @@ else
 	echo "  FAIL: no agents discovered"
 	FAIL=$((FAIL + 1))
 fi
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 6: Impossible session directory (mkdir failure)
 echo "Test 6: Impossible session directory"
@@ -137,7 +137,7 @@ else
 	echo "  FAIL: message doesn't mention directory"
 	FAIL=$((FAIL + 1))
 fi
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 7: Verify stderr is clean on successful runs
 echo "Test 7: Verify stderr is clean"
@@ -159,7 +159,7 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -f "$stderr_file"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 8: Spec mode auto-detection
 echo "Test 8: Spec mode auto-detection"
@@ -172,7 +172,7 @@ git checkout -b feature -q
 mkdir -p specs && echo "# Feature spec" >specs/feature.md && git add specs/feature.md && git commit -m "add spec" -q
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_field "$result" "mode" "spec" "auto-detected spec mode"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 9: --effort flag with valid values
 echo "Test 9: --effort flag (valid values)"
@@ -189,7 +189,7 @@ result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort standard 2>/
 assert_json_field "$result" "effort" "standard" "effort=standard in JSON"
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort deep 2>/dev/null)
 assert_json_field "$result" "effort" "deep" "effort=deep in JSON"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 10: --effort flag with invalid value
 echo "Test 10: --effort flag (invalid value)"
@@ -202,7 +202,7 @@ git checkout -b feature -q
 echo "x" >file.go && git add file.go && git commit -m "add" -q
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --effort banana 2>/dev/null)
 assert_json_status "$result" "skip" "invalid effort value returns skip"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 11: --effort defaults to standard when omitted
 echo "Test 11: --effort default"
@@ -215,7 +215,7 @@ git checkout -b feature -q
 echo "x" >file.go && git add file.go && git commit -m "add" -q
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" 2>/dev/null)
 assert_json_field "$result" "effort" "standard" "effort defaults to standard"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 12: --effort value appears in session.txt
 echo "Test 12: --effort in session.txt"
@@ -235,7 +235,7 @@ else
 	echo "  FAIL: effort=deep not found in session.txt"
 	FAIL=$((FAIL + 1))
 fi
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 13: --effort value appears in tracking.md
 echo "Test 13: --effort in tracking.md"
@@ -255,7 +255,7 @@ else
 	echo "  FAIL: effort=quick not found in tracking.md"
 	FAIL=$((FAIL + 1))
 fi
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 14: --scope all selects by rejecting binaries, not by allow-listing text
 echo "Test 14: --scope all file selection"
@@ -321,7 +321,7 @@ assert_changeset "$session_dir/changeset.txt" "node_modules/pkg/index.js" "absen
 	"excluded directory is excluded"
 assert_changeset "$session_dir/changeset.txt" "package-lock.json" "absent" \
 	"excluded filename is excluded"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # Test 15: --scope all on a host with no file(1)
 # `file` is optional, so a host without it must still review the changeset.
@@ -345,7 +345,7 @@ if [[ -n "$session_dir" ]]; then
 	assert_changeset "$session_dir/changeset.txt" "schema.json" "present" \
 		"candidate admitted when the type cannot be checked"
 fi
-rm -rf "$tmpdir" "$maskdir"
+discard_fixture "$tmpdir" "$maskdir"
 
 # Build an agents directory holding only the named personas, for the chosen
 # suffix, so a partial install can be simulated without touching the shipped
@@ -401,7 +401,7 @@ assert_tracking_line "$session_dir/tracking.md" "- Agents absent: none" \
 	"full roster reports absent: none"
 assert_tracking_line "$session_dir/tracking.md" "- Agents discovered: 5" \
 	"all five personas discovered"
-rm -rf "$tmpdir" "$agentdir"
+discard_fixture "$tmpdir" "$agentdir"
 
 echo "Test 22: a partial install names the personas that are missing"
 tmpdir=$(mktemp -d)
@@ -415,7 +415,7 @@ session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_tracking_line "$session_dir/tracking.md" \
 	"- Agents absent: divisor-curator-code, divisor-sre-code" \
 	"partial roster names both missing personas in roster order"
-rm -rf "$tmpdir" "$agentdir"
+discard_fixture "$tmpdir" "$agentdir"
 
 echo "Test 23: absence is reported against the spec suffix in spec mode"
 # The roster is suffix-agnostic; absence is not. A host carrying every -code
@@ -435,7 +435,7 @@ assert_json_status "$result" "ok" "status is ok in spec mode"
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_tracking_line "$session_dir/tracking.md" "- Agents absent: divisor-testing-spec" \
 	"spec mode names the -spec persona"
-rm -rf "$tmpdir" "$agentdir"
+discard_fixture "$tmpdir" "$agentdir"
 
 echo "Test 24: the session manifest records the council that was dispatched"
 # Discovery happens once, in this script, and every later phase has had to
@@ -458,7 +458,7 @@ assert_jq "$session_dir/session-manifest.json" '[.agents[]] | join(",")' \
 	"agents are named in full, in discovery order"
 assert_jq "$session_dir/session-manifest.json" '[.absent[]] | join(",")' \
 	"divisor-curator-code,divisor-sre-code" "manifest lists the absent personas"
-rm -rf "$tmpdir" "$agentdir"
+discard_fixture "$tmpdir" "$agentdir"
 
 echo "Test 25: the session directory carries the verdicts/_meta split"
 # Pipeline state the orchestrator writes between phases belongs in _meta/, away
@@ -476,7 +476,7 @@ else
 	echo "  FAIL: verdicts/_meta not created"
 	FAIL=$((FAIL + 1))
 fi
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 # --- Review Council Configuration block --------------------------------------
 #
@@ -507,7 +507,7 @@ assert_track "$session_dir" "Comment limit" "20000" "Comment limit reaches track
 assert_track "$session_dir" "Max comments" "3" "Max comments reaches tracking.md"
 assert_track "$session_dir" "Constitution" "./GOVERNANCE.md (explicit)" \
 	"Constitution still resolves alongside the new keys"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 echo "Test: an unset or malformed size policy falls back rather than clamping"
 # A limit that is not a positive integer is dropped, so the per-forge hook
@@ -530,7 +530,7 @@ assert_track "$session_dir" "Comment limit" "forge default" \
 	"a non-numeric limit defers to the forge"
 assert_track "$session_dir" "Max comments" "1" \
 	"a max-comments floor below 1 falls back to the default"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 echo "Test: AGENTS.md wins over CLAUDE.md key by key"
 tmpdir=$(mktemp -d)
@@ -543,7 +543,7 @@ session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Max comments" "2" "AGENTS.md wins where both define a key"
 assert_track "$session_dir" "Comment limit" "30000" \
 	"a key only CLAUDE.md defines is still read"
-rm -rf "$tmpdir"
+discard_fixture "$tmpdir"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

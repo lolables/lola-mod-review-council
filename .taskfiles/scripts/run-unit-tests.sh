@@ -1,13 +1,48 @@
 #!/usr/bin/env bash
-# Discover and run every module unit suite, reporting a combined total.
+# Run module unit suites and report a combined total.
 #
-# The suite list used to be hand-maintained in Taskfile.yml. A new test file
-# that nobody remembered to add to that list simply never ran — silently, and
-# indistinguishably from passing. Discovery removes the failure mode.
+# Usage: run-unit-tests.sh [suite.sh ...]
+#
+# With no arguments every suite is discovered from module/tests. The list used
+# to be hand-maintained in Taskfile.yml, and a new test file that nobody
+# remembered to add simply never ran — silently, and indistinguishably from
+# passing. Discovery removes that failure mode and is what `task test:unit`
+# uses.
+#
+# With arguments, exactly the named suites run. The degraded layer uses this to
+# run the narrowed selection from degraded-suites.sh rather than all 40 suites
+# per hidden tool. A named suite that cannot be read is an error rather than a
+# skip: a caller whose selection has gone wrong would otherwise run a smaller
+# set than it asked for and still be told everything passed.
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 test_dir="$root/module/tests"
+
+suites=()
+if [[ $# -gt 0 ]]; then
+	for suite in "$@"; do
+		if [[ ! -f "$suite" ]]; then
+			echo "ERROR: no such suite: $suite" >&2
+			exit 1
+		fi
+		suites+=("$suite")
+	done
+else
+	# Glob-sorted for a stable, reproducible order across filesystems: the
+	# readdir order a local disk returns is not the one CI returns.
+	for suite in "$test_dir"/test-*.sh; do
+		[[ -f "$suite" ]] || continue
+		suites+=("$suite")
+	done
+	if [[ ${#suites[@]} -eq 0 ]]; then
+		# Discovery finding nothing means the tree moved or the glob broke, not
+		# that there is nothing to test. Reporting "0 failed" would be true and
+		# entirely misleading.
+		echo "ERROR: no suites discovered under $test_dir." >&2
+		exit 1
+	fi
+fi
 
 failed_suites=()
 assertion_failures=()
@@ -15,9 +50,7 @@ deleted_cwd=()
 total_pass=0
 total_fail=0
 
-# Sorted for a stable, reproducible order across filesystems.
-for suite in "$test_dir"/test-*.sh; do
-	[[ -f "$suite" ]] || continue
+for suite in "${suites[@]}"; do
 	name="$(basename "$suite")"
 	output=$(bash "$suite" 2>&1)
 	status=$?
@@ -54,8 +87,10 @@ for suite in "$test_dir"/test-*.sh; do
 	[[ $status -eq 0 ]] || failed_suites+=("$name")
 done
 
-suite_count=$(find "$test_dir" -maxdepth 1 -name 'test-*.sh' | wc -l)
-suite_count="${suite_count//[[:space:]]/}"
+# Counted from what actually ran, not from what the directory holds. Taken from
+# the tree it would report 40 for a nine-suite degraded selection, which reads
+# as full coverage.
+suite_count=${#suites[@]}
 
 echo ""
 echo "========================================"

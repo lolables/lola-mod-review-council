@@ -31,11 +31,42 @@ Scores averaged across multiple CLI hosts.
 
 ## Cost Per Review
 
+<!-- READ BY CODE — this table is data, not just prose.
+     scripts/rc-cost-estimate.sh (cost_rows) parses the rows below and the
+     `Council size:` line beneath them to price a deep run before it dispatches.
+
+     The contract, all three parts required:
+       * each row stays `| <Class> | $<low>-$<high> |`
+       * column 1 is the name `REVIEW_COUNCIL_MODEL_CLASS` matches, lowercased
+       * `Council size: <n>` stays a bare `Key: value` line (read by rc_parse_kv)
+
+     Re-measuring the models is expected and welcome: edit the numbers here and
+     module/tests/test-rc-cost-estimate.sh goes red naming the new band, which
+     is your cue to update the fallback constants in the script to match. That
+     red is the feature — it stops the shipped table and the quoted figure
+     drifting apart.
+
+     Changing the SHAPE is the dangerous edit. The suite catches it, but at
+     runtime a table the estimator cannot parse degrades quietly to a built-in
+     Sonnet band, and operators are quoted Sonnet prices for an Opus council. -->
+
 | Model Class | Cost Range  |
 |-------------|-------------|
 | Opus        | $1.30-$8.80 |
 | Sonnet      | $1.00-$2.80 |
 | Haiku       | $0.07-$0.72 |
+
+<!-- READ BY CODE — not a stray line. rc_parse_kv reads it as `Key: value`;
+     rewriting it as prose ("The council is five personas") breaks the parse. -->
+
+Council size: 5
+
+Each range above is one whole review — a single council pass of five reviewer
+dispatches, the roster the eval suite ran. Divide by the council size for a
+per-dispatch figure, and multiply back up by the roster a given session
+actually discovered. `rc-cost-estimate.sh` does exactly that, so re-measuring
+the models updates this document and the figure operators are quoted in one
+edit.
 
 Cost varies with codebase size and finding count. Pricing as of 2026-06-30.
 

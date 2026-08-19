@@ -6,6 +6,37 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- A deep review now prices itself before it dispatches anything. Deep multiplies
+  the persona roster by the subsystem count and repeats that product once per
+  iteration up to five, and nothing surfaced the multiplication until the bill
+  had already landed. `rc-cost-estimate.sh` reads the roster from the session
+  manifest and the subsystems from `subsystems.json`, measures the prompt
+  material as it stands on disk — convention packs, persona files, diff and
+  changeset — estimates input tokens at four bytes each, and converts dispatches
+  to a dollar band by reading the Cost Per Review table in
+  `references/model-guidance.md` at run time rather than carrying a copy of its
+  figures: the row `REVIEW_COUNCIL_MODEL_CLASS` names — `sonnet` by default,
+  with `opus` and `haiku` also measured — over the council size stated beside
+  the table, so re-measuring the models reprices every estimate in the same
+  edit that updates the documentation. The published ranges are per review, one
+  full council pass, which is why the divisor is the council the eval ran and
+  not the roster a session happened to discover: dividing by the discovered
+  roster would price a three-reviewer council and a five-reviewer one
+  identically. A class the table does not list is reported on stderr alongside
+  the ones it does and priced as sonnet, and `REVIEW_COUNCIL_COST_LOW` and
+  `REVIEW_COUNCIL_COST_HIGH` still set the band outright and outrank the class.
+  Each subsystem
+  dispatch is charged its own share of the changeset rather than a copy of all
+  of it, so a six-way decomposition does not read as six whole-diff reviews.
+  The table is printed before the first dispatch and recorded in `tracking.md`
+  beside `cost-estimate.json`, and an interactive operator is asked to
+  acknowledge it. The gate is deliberately fail-open: a non-interactive run
+  records `not acknowledged (non-interactive)` and proceeds, because a blocking
+  question has twice ended headless runs that had work to show for themselves —
+  Step 2.5 and Step 5 each carry that scar, and
+  `scripts/review-open-prs.sh --effort deep` drives deep runs headlessly today.
+  An estimate that cannot be produced prints one line saying so and holds up
+  nothing
 - A verdict too large for one comment is now chained across several instead of
   being refused by the forge. GitHub caps an issue comment at 65,536 characters
   and a 30-finding review already renders about 58,000, so a review only a

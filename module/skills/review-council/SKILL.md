@@ -340,7 +340,47 @@ fall back to standard-mode delegation — do not create `subsystems.json`.
 
 **Update tracking:** Record subsystem count and names.
 
-Proceed to Step 2.5 (Quality Gates).
+Proceed to Step 2.2 (Cost Estimate).
+
+### Step 2.2: COST ESTIMATE (deep mode only)
+
+**Skip unless effort is `deep`.** Deep is the mode that multiplies: every
+persona reviews every subsystem, and that product repeats once per iteration up
+to the cap in Step 5. Nothing else in the pipeline shows the multiplication
+until the dispatches have already been paid for.
+
+```bash
+AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-cost-estimate.sh" "${session_dir}"
+```
+
+The script owns every figure and the table around them. It measures the prompt
+material on disk, writes `${session_dir}/cost-estimate.json`, and records a
+`## Phase: Cost Estimate` block in `tracking.md`. Relay its stdout to the user
+**verbatim** — do not restate, re-round or re-format a number, and never supply
+one of your own. A figure the orchestrator invents is one the operator cannot
+check against the artifact.
+
+**This step never blocks a run that has nobody to answer it.** Ask only when the
+session is interactive, for the same reason Step 2.5 and Step 5 stop short of a
+blocking question: a piped or scheduled run ends at the prompt having produced
+nothing, and `scripts/review-open-prs.sh --effort deep` is exactly such a run.
+Spending money the operator did not see is the lesser failure; the estimate is
+in `tracking.md` either way.
+
+1. **Interactive** — after relaying the table, ask: "Proceed with this deep
+   review?"
+   - Yes: append `- Acknowledgement: acknowledged` to
+     `${session_dir}/tracking.md` and continue to Step 2.5.
+   - No: append `- Acknowledgement: declined`, dispatch nothing, and stop.
+     Tell the user the prepared session is at `${session_dir}` and that
+     re-invoking the skill resumes it (Step 2 re-entry).
+2. **Non-interactive, or no answer arrives** — append
+   `- Acknowledgement: not acknowledged (non-interactive)` and continue to
+   Step 2.5.
+
+If the script prints `**Cost estimate unavailable:** ...` in place of the table,
+relay that line and continue to Step 2.5. An estimate that could not be produced
+is not grounds to withhold a review.
 
 ### Step 2.5: QUALITY GATES (code review with PR only)
 
@@ -809,6 +849,18 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Names: {comma-separated}
 - Cross-cutting files: {count}
 - Fallback to standard: {yes|no}
+
+## Phase: Cost Estimate (deep mode only)
+
+- Personas: {count}
+- Subsystems: {count}
+- Iteration cap: {5}
+- Dispatches (first pass): {count}
+- Dispatches (worst case): {count}
+- Input tokens (first pass): {count}
+- Estimated cost (first pass): ${low} - ${high}
+- Estimated cost (worst case): ${low} - ${high}
+- Acknowledgement: {acknowledged | declined | not acknowledged (non-interactive)}
 
 ## Phase: Quality Gates
 

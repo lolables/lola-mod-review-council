@@ -39,7 +39,41 @@ auth\ status*) exit 0 ;;
 pr\ list*) printf '2\tbbbbbbb\n1\taaaaaaa\n' ;;
 # Single-PR target: `gh pr view <n> ... --json number,headRefOid`.
 *--json\ number,headRefOid*) printf '%s\tccccccc\n' "$3" ;;
-*--json\ comments*) : ;; # no prior council comment => both PRs are unreviewed
+# Comment timeline, as gh returns it: raw JSON, no --jq. The driver runs its own
+# jq over the payload, so these tests exercise the driver's real program rather
+# than a re-implementation of it here — which is the point, since the anchoring
+# that tells a verdict from a forgery lives in that program. A PR with no
+# fixture has no comments, the pre-existing "never reviewed" case.
+*--json\ comments*)
+	if [[ -n "${MOCK_COMMENTS_DIR:-}" ]] && [[ -f "${MOCK_COMMENTS_DIR}/pr-$3.json" ]]; then
+		cat "${MOCK_COMMENTS_DIR}/pr-$3.json"
+	else
+		echo '{"comments":[]}'
+	fi
+	;;
+# Collaborator permission, already reduced by --jq to the bare value. Silent
+# unless the test declared one, so an undeclared login reads as a lookup that
+# answered nothing — the path that must fail closed.
+*api\ repos/*/collaborators/*/permission*)
+	if [[ -n "${MOCK_PERMS_FILE:-}" ]] && [[ -f "${MOCK_PERMS_FILE}" ]]; then
+		who="${args#*collaborators/}"
+		who="${who%%/permission*}"
+		awk -F'\t' -v want="$who" '$1 == want { print $2 }' "${MOCK_PERMS_FILE}"
+	fi
+	;;
+# The driver's own write. Record it instead of posting; its absence is how
+# "posted nothing" is asserted.
+pr\ comment*)
+	{
+		printf '%s\n' "$args"
+		# Record the body too, not just the path: what lands on the PR is the
+		# thing worth asserting on, and the temp file is gone by the time a
+		# test could look at it.
+		bf="${args#*--body-file }"
+		bf="${bf%% *}"
+		[[ -f "$bf" ]] && cat "$bf"
+	} >>"${MOCK_GH_COMMENTS_LOG:-/dev/null}"
+	;;
 # Commit authorship, already reduced by --jq to one email per line. Silence
 # unless the test declared some via MOCK_EMAILS, so the default is the
 # lookup-returned-nothing case every pre-existing test relies on.
@@ -100,14 +134,30 @@ run_case() {
 	local emails_file="$work/emails.tsv"
 	printf '%s' "$MOCK_EMAILS" >"$emails_file"
 
+	# Comment timelines and collaborator permissions the mock gh will serve,
+	# plus the log its `gh pr comment` writes to. Staged per case so one test's
+	# fixtures cannot leak into the next.
+	local comments_dir="$work/comments"
+	mkdir -p "$comments_dir"
+	if [[ -n "$MOCK_COMMENTS" ]]; then
+		cp "$MOCK_COMMENTS"/* "$comments_dir/" 2>/dev/null || true
+	fi
+	local perms_file="$work/perms.tsv"
+	printf '%s' "$MOCK_PERMS" >"$perms_file"
+	local posted_log="$work/gh-comments.log"
+	: >"$posted_log"
+
 	set +e
 	if [[ "$input" == "__eof__" ]]; then
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_GH_COMMENTS_LOG="$posted_log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
 	else
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_GH_COMMENTS_LOG="$posted_log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
 	fi
 	RC=$?
 	set -e
+
+	POSTED=""
+	[[ -f "$posted_log" ]] && POSTED=$(cat "$posted_log")
 
 	CALLS=0
 	CMDS=""
@@ -125,6 +175,35 @@ RUN_ENV=()
 # lines. Empty by default: a PR whose authorship cannot be determined must be
 # reviewed, so every test that does not set this exercises the unfiltered path.
 MOCK_EMAILS=""
+
+# Directory of `pr-<n>.json` comment timelines the next run_case's mock gh will
+# serve. Empty by default: a PR with no council comment has never been
+# reviewed, which is what every pre-existing test in this file assumes.
+MOCK_COMMENTS=""
+
+# Collaborator permissions the next run_case's mock gh will report, as
+# "<login><TAB><permission>" lines. Empty by default, so an unlisted requester
+# gets the lookup-answered-nothing path — which must fail closed.
+MOCK_PERMS=""
+
+# write_comments <pr> <<'JSON' ... JSON
+# Stage one PR's comment timeline for the next run_case. Each test writes its
+# own timeline inline rather than carrying a fixtures tree, because the shape
+# under test IS the fixture: which line the marker sits on, who authored it,
+# whether it is collapsed.
+write_comments() {
+	local pr="$1"
+	[[ -n "$MOCK_COMMENTS" ]] || MOCK_COMMENTS=$(mktemp -d)
+	cat >"$MOCK_COMMENTS/pr-${pr}.json"
+}
+
+# Drop staged timelines and permissions. Call between cases: a leftover verdict
+# silently turns the next test's "unreviewed" PR into a skipped one.
+reset_comments() {
+	[[ -z "$MOCK_COMMENTS" ]] || rm -rf "$MOCK_COMMENTS"
+	MOCK_COMMENTS=""
+	MOCK_PERMS=""
+}
 
 assert_contains() {
 	local haystack="$1" needle="$2" label="$3"
@@ -473,6 +552,341 @@ run_case "__eof__" --help
 assert_contains "$OUT" "--ignore-email" "usage lists --ignore-email"
 assert_contains "$OUT" "--no-ignore-emails" "usage lists --no-ignore-emails"
 assert_contains "$OUT" "IGNORE_EMAILS" "usage documents the environment override"
+
+# ---- Verdict detection ------------------------------------------------------
+# The mock's `pr list` reports PR 2 at head bbbbbbb and PR 1 at aaaaaaa, so a
+# marker carrying sha=bbbbbbb is "at head" for PR 2 and sha=0000000 is not.
+#
+# Every case below is a way the old lookup — contains("review-council:marker")
+# over the whole body, then the first sha= anywhere in it — could be talked
+# into reporting a PR as already reviewed at its current head, and so into
+# never reviewing it again.
+
+echo ""
+echo "Test: a verdict at the current head is not re-reviewed"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "a verdict at head skips the PR"
+assert_not_contains "$OUT" "Re-review (new commits): 2" "and does not queue it as stale"
+
+echo ""
+echo "Test: a verdict at an older commit comes back for re-review"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=0000000 part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Re-review (new commits): 2" "a moved head queues a re-review"
+
+echo ""
+echo "Test: a quoted marker cannot suppress a review"
+# GitHub's Quote reply copies the HTML marker verbatim, behind a "> " prefix.
+# Matching the key anywhere in the body reads a stranger's quote as our verdict.
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"mallory"},"authorAssociation":"NONE","createdAt":"2026-08-17T09:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"> <!-- review-council:marker sha=bbbbbbb part=1 of=1 -->\r\n\r\nas you said"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Unreviewed: 2" "a quoted marker is not a verdict"
+
+echo ""
+echo "Test: a forged marker from another account cannot suppress a review"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"mallory"},"authorAssociation":"NONE","createdAt":"2026-08-17T09:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Unreviewed: 2" "a marker we did not author is not a verdict"
+assert_contains "$OUT" "2:mallory" "and the caller is told whose marker was ignored"
+
+echo ""
+echo "Test: a verdict from a rotated token is disclosed, not trusted"
+# Same payload as the forgery above — a marker-bearing comment we did not
+# author — because the two are indistinguishable from the timeline. Both are
+# reviewed. An attacker gains nothing; a rotated token costs one round of
+# re-reviews, and the caller is told before paying for it.
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"ci-bot"},"authorAssociation":"COLLABORATOR","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Unreviewed: 2" "another account's verdict does not suppress the review"
+assert_contains "$OUT" "2:ci-bot" "the account that posted it is named"
+
+echo ""
+echo "Test: a sha= in finding evidence does not shift the parse"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"Evidence: `GET /compare?sha=bbbbbbb`\r\n\r\n<!-- review-council:marker sha=0000000 part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Re-review (new commits): 2" "the sha comes from the marker line, not the body"
+
+echo ""
+echo "Test: collapsing a verdict on GitHub forces a fresh review"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":true,"minimizedReason":"OUTDATED","viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Unreviewed: 2" "a minimized verdict does not count as current"
+reset_comments
+
+# ---- Re-review requests -----------------------------------------------------
+# A verdict at head means "nothing new to review". Someone with write access
+# can say otherwise by commenting the command, which is how a maintainer who
+# has argued a finding down gets the council to answer them.
+
+echo ""
+echo "Test: a request from a write-access account re-reviews an unchanged PR"
+reset_comments
+MOCK_PERMS=$'bootc\twrite'
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"2026-08-18T10:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"Addressed all of these.\r\n\r\n/review-council review\r\n"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Requested re-review: 2" "an authorised request queues the PR"
+assert_not_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "and takes it out of the skip list"
+
+echo ""
+echo "Test: a quoted request does not fire"
+reset_comments
+MOCK_PERMS=$'bootc\twrite'
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"2026-08-18T10:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"> /review-council review\r\n\r\nI would not do that yet"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "quoting a request is not making one"
+
+echo ""
+echo "Test: a request older than the verdict does not fire"
+# The verdict already answered it. Without the window, one comment would
+# re-trigger a paid review on every run, forever.
+reset_comments
+MOCK_PERMS=$'bootc\twrite'
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"2026-08-10T10:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"},
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "a request the verdict already answered does not re-fire"
+
+echo ""
+echo "Test: a request from an account without write access is ignored"
+reset_comments
+MOCK_PERMS=$'eve\tread'
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"author":{"login":"eve"},"authorAssociation":"CONTRIBUTOR","createdAt":"2026-08-18T10:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "a read-only account cannot spend the budget"
+
+echo ""
+echo "Test: an unreadable permission answer refuses the request"
+# Every other lookup here fails open to reviewing. This one fails closed: a
+# duplicate review costs one review, an unbounded stranger-triggered spend does
+# not have a ceiling.
+reset_comments
+MOCK_PERMS=""
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"2026-08-18T10:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"},
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "an unreadable permission fails closed"
+reset_comments
+
+# Timestamps inside the trailing hour, named once. Computed here rather than
+# substituted inline in each fixture: a command substitution inside a heredoc
+# discards its exit status, and "10 minutes ago" reads better than the jq that
+# produces it. jq rather than `date -d`, which is a GNU extension the macOS leg
+# does not have.
+AGO_600="$(jq -rn '(now - 600) | todate')"
+AGO_300="$(jq -rn '(now - 300) | todate')"
+AGO_60="$(jq -rn '(now - 60) | todate')"
+AGO_30="$(jq -rn '(now - 30) | todate')"
+
+# ---- Hourly cap -------------------------------------------------------------
+# The ledger is the council's own verdict comments: timestamped, attributable,
+# already fetched during classification. A state file would be per-machine and
+# per-CWD, and would hand a second checkout a fresh budget.
+
+echo ""
+echo "Test: the hourly cap admits the oldest request and defers the rest"
+reset_comments
+MOCK_PERMS=$'bootc\twrite'
+# PR 1 carries a verdict posted 10 minutes ago, so one of the two slots is
+# already spent. Both PRs then carry a request, and only one can be admitted.
+write_comments 1 <<JSON
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"${AGO_600}",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=aaaaaaa part=1 of=1 -->"},
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"${AGO_300}",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"}
+]}
+JSON
+write_comments 2 <<JSON
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-01-01T00:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"${AGO_60}",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets --requests-per-hour 2
+assert_contains "$OUT" "Requested re-review: 1" "the older request is admitted"
+assert_contains "$OUT" "Deferred (hourly cap): 2" "the newer one waits"
+assert_contains "$OUT" "1/2 used this hour" "usage is reported against the cap"
+
+echo ""
+echo "Test: usage is reported even with no cap set"
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "used this hour" "the ledger is always visible"
+assert_contains "$OUT" "Requested re-review: 1 2" "with no cap, every request is admitted"
+
+echo ""
+echo "Test: --requests-per-hour rejects a non-number"
+run_case "__eof__" --repo acme/widgets --requests-per-hour later
+assert_contains "$OUT" "non-negative integer" "the error says what was wanted"
+assert_equals "$RC" "2" "usage errors exit 2"
+
+echo ""
+echo "Test: a cap of zero admits nothing"
+run_case "__eof__" --repo acme/widgets --requests-per-hour 0
+assert_contains "$OUT" "Deferred (hourly cap): 1 2" "both requests wait"
+assert_contains "$OUT" "Requested re-review: (none)" "and none is queued"
+reset_comments
+
+# ---- Decline replies --------------------------------------------------------
+# Whoever asked deserves to know why nothing happened. Once per PR per window,
+# not once per request: a reply per request would let anyone with write access
+# make this account post repeatedly on a public thread.
+
+echo ""
+echo "Test: a deferred request draws one reply, and a dry run posts nothing"
+reset_comments
+MOCK_PERMS=$'bootc\twrite'
+write_comments 2 <<JSON
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"${AGO_600}",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"${AGO_60}",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets --requests-per-hour 1
+assert_contains "$OUT" "Deferred (hourly cap): 2" "the request is deferred"
+assert_equals "$POSTED" "" "a dry run declines nothing out loud"
+
+run_case "__eof__" --repo acme/widgets --requests-per-hour 1 --run --yes
+assert_contains "$POSTED" "pr comment 2" "a --run declines on the PR"
+assert_contains "$POSTED" "bootc" "the reply names who asked"
+
+echo ""
+echo "Test: a second run inside the window does not reply again"
+reset_comments
+MOCK_PERMS=$'bootc\twrite'
+write_comments 2 <<JSON
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"${AGO_600}",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"author":{"login":"bootc"},"authorAssociation":"MEMBER","createdAt":"${AGO_60}",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"/review-council review"},
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"${AGO_30}",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"Rate limited.\r\n\r\n<!-- review-council:rate-limited until=2099-01-01T00:00:00Z -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets --requests-per-hour 1 --run --yes
+assert_equals "$POSTED" "" "one decline per window, not one per run"
+
+echo ""
+echo "Test: the rate-limit reply is not mistaken for a verdict"
+# It carries a review-council: key of its own. If the verdict lookup matched on
+# the family rather than the exact marker, this comment would read as a review.
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-18T10:00:00Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"Rate limited.\r\n\r\n<!-- review-council:rate-limited until=2099-01-01T00:00:00Z -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Unreviewed: 2" "a decline reply is not a verdict"
+reset_comments
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

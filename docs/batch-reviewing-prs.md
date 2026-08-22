@@ -38,12 +38,17 @@ PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/9
 
 ## How a PR reaches the queue
 
-Five gates decide each PR's fate, and the two overrides cross rather than nest:
+Seven gates decide each PR's fate, and the two overrides cross rather than nest:
 naming a PR by number or URL jumps the **ignore list** but still respects the
 already-reviewed check, while `--force` jumps the **already-reviewed** check but
 never rescues an ignored bot PR. So a named, unchanged, already-reviewed PR
 needs `--force` as well. A failed authorship lookup fails open — the PR carries
 on to the reviewed check rather than dropping out.
+
+A PR already reviewed at its head has one more way through: someone with write
+access can comment `/review-council review` and ask for another look. That path
+has its own gate, an hourly cap, because it is the one route by which somebody
+other than you can spend the API budget.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -69,6 +74,9 @@ flowchart TD
   bots{"Every commit author on the ignore list?"}
   ignored["Ignored - listed on the Ignored line"]
   seen{"Already reviewed at current head?"}
+  asked{"Re-review requested since that verdict, by write access?"}
+  cap{"Within the hourly cap?"}
+  deferred["Deferred - told so on the PR"]
   forced{"--force given?"}
   skipped["Skipped - unchanged since last review"]
   tier["Classify effort tier from PR metadata"]
@@ -81,8 +89,12 @@ flowchart TD
   lookup -->|ok| bots
   bots -->|yes| ignored
   bots -->|no| seen
-  seen -->|yes| forced
+  seen -->|yes| asked
   seen -->|no| tier
+  asked -->|yes| cap
+  asked -->|no - or unauthorised| forced
+  cap -->|yes| tier
+  cap -->|no| deferred
   forced -->|yes| tier
   forced -->|no| skipped
   tier --> queued
@@ -93,16 +105,32 @@ flowchart TD
   classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
   class pr,tier sysA
   class queued sysB
-  class ignored,skipped sysD
-  class named,lookup,bots,seen,forced sysF
+  class ignored,skipped,deferred sysD
+  class named,lookup,bots,seen,asked,cap,forced sysF
 ```
 
 **Queue order.** PRs with no prior council comment go first, then PRs whose last
-review was for an older commit. A PR already reviewed at its current head is
-skipped; `--force` queues it anyway. Both facts come from the hidden marker the
-council embeds in every comment it posts (see "Posting the verdict to a PR" in
-the README). A failed lookup queues the PR rather than skipping it, so a flaky
-API call costs you a redundant review instead of a silently missed one.
+review was for an older commit, then PRs someone asked to have re-reviewed. A PR
+in none of those groups is skipped; `--force` queues it anyway. All of it comes
+from the hidden marker the council embeds in every comment it posts (see
+"Posting the verdict to a PR" in the README). A failed lookup queues the PR
+rather than skipping it, so a flaky API call costs you a redundant review
+instead of a silently missed one.
+
+**What counts as our verdict.** The marker is public — it sits in the body of
+every verdict, and anyone reading the thread can copy it. Three things must hold
+before a comment is treated as a prior review:
+
+- the marker starts a **line**, at column 0. GitHub's "Quote reply" copies it
+  behind a `> ` prefix, so a quoted verdict is not a verdict.
+- the comment was **authored by the account `gh` is authenticated as**.
+- the comment is **not collapsed**. Collapsing a verdict on GitHub is a way to
+  force a fresh review of that PR by hand.
+
+A marker posted by any other account is named in the plan output and the PR is
+reviewed anyway. A token that rotated between runs and a forged marker look
+identical from the timeline, and reviewing is the safe answer to both — the
+worst a forgery achieves is a review that was going to happen regardless.
 
 **The word in brackets** is the effort tier, classified from each PR's GitHub
 metadata so a lockfile bump does not pay for a full deep review. In the run
@@ -122,6 +150,7 @@ PRs come back as `quick` rather than as full reviews.
 | `QUICK_FILES`     | 2       | bot PRs at or below this many files get `quick`         |
 | `SECURITY_PATHS`  | see `--help` | extended-regex; any matching changed path forces `deep` |
 | `IGNORE_EMAILS`   | Dependabot + Renovate | **replaces** the ignored-author list; empty means ignore nobody |
+| `REREVIEW_PER_HOUR` | unset | default for `--requests-per-hour`; empty means no cap |
 | `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
 | `EXTRA_CLAUDE_ARGS` | unset | appended to every `claude` invocation, e.g. `--model opus` |
 | `EXTRA_OPENCODE_ARGS` | unset | appended to every `opencode` invocation                |
@@ -130,6 +159,62 @@ PRs come back as `quick` rather than as full reviews.
 both it and an opencode run is an error. Ignoring the cap would run the whole
 batch uncapped on the strength of a setting asking for the opposite, and you
 would find out on the invoice.
+
+## Asking for a re-review in a comment
+
+New commits are not the only reason to look again. A maintainer who has answered
+the findings — or argued one down — wants the council to read the thread and
+respond to it, and nothing has been pushed. Left to the head-sha check alone,
+that PR looks exactly like one nobody has touched.
+
+Commenting this on the PR queues it:
+
+```text
+/review-council review
+```
+
+The line has to stand alone, at column 0. Quoting someone else's request does
+not make one, and the command named mid-sentence is a mention. Trailing words
+are not accepted — the effort tier decides what a review costs, and the person
+asking does not choose it.
+
+**Only admin or write permission counts.** The requester's permission is checked
+against the repository, and an unreadable answer refuses the request. This is
+the one lookup in the driver that fails closed. Everywhere else, an unanswered
+question means "review it", because a duplicate review costs one review; here it
+would mean "let a stranger start reviews", and that has no ceiling.
+
+The request must also be **newer than the verdict it asks to replace**, so a
+single comment cannot re-trigger a paid review on every run forever.
+
+### Capping what other people can spend
+
+```console
+$ ./scripts/review-open-prs.sh --repo voxpupuli/openvox-ca --requests-per-hour 3
+Unreviewed: 236 235 234
+Re-review (new commits): 189 168
+Requested re-review: 166
+Deferred (hourly cap): (none)
+Skipped (already reviewed at head, unchanged): 167 165
+Requested re-reviews: 2/3 used this hour, next slot 2026-08-22T16:42:00Z
+```
+
+The count is every verdict this account posted in the trailing hour, not only
+the requested ones: the budget being protected is the API bill. Only requests
+are gated by it, so a genuine code change is never held back by a busy
+afternoon. Requests are admitted oldest-first, capped or not.
+
+There is no state file. The count comes from the verdict comments themselves,
+which are timestamped and attributable and already fetched during
+classification, so it survives running the driver from another machine or a
+different directory. The trade-off is visible in the output rather than hidden:
+a run naming a single PR reads only that PR's history, so it sees a narrower
+window than a batch does.
+
+A request that does not fit the cap is deferred and told so on its own pull
+request, at most once per PR per hour. Replying to every request instead would
+hand anyone with write access a way to make your account post repeatedly on a
+public thread.
 
 ## Ignoring dependency bots
 
@@ -202,9 +287,18 @@ and a prompt telling the council to post its verdict without asking. Expect a
 public review comment on every PR in the queue above, authored by the account
 gh is authenticated with, plus the API spend of each review.
 
+A re-review request the hourly cap could not admit also draws a short reply on
+its own pull request explaining the limit — at most one per pull request per
+hour, and only for requests that were authorised in the first place.
+
 Re-run without --run to see the plan alone, or with --yes to skip this prompt.
 Type "yes" to proceed:
 ```
+
+The verdicts are not the only writes, which is why the prompt names the other
+one: a deferred request gets a short reply telling whoever asked when the next
+slot opens. It is the only comment the driver posts in its own voice rather than
+through the council.
 
 Anything but `yes` aborts, and so does having no answer to give — under `cron`,
 with `</dev/null`, or on a closed pipe. `--yes` (alias `--no-confirm`) gives that
@@ -240,6 +334,7 @@ that replaces the streaming default and the progress rendering along with it.
 ./scripts/review-open-prs.sh --run                  # current repo, every PR that needs it
 ./scripts/review-open-prs.sh 123 --run              # one PR
 ./scripts/review-open-prs.sh --run --yes            # unattended, no confirmation
+./scripts/review-open-prs.sh --requests-per-hour 3 --run  # cap comment-requested re-reviews
 ./scripts/review-open-prs.sh --cli opencode --run   # review through opencode
 ./scripts/review-open-prs.sh --no-ignore-emails --run              # bot PRs too
 ./scripts/review-open-prs.sh --ignore-email ci@corp.example --run  # skip one more

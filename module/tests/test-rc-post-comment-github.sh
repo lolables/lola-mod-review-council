@@ -332,6 +332,37 @@ result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 assert_json_field "$result" "action" "unchanged" "real filter finds the sha-matched comment"
 rm -rf "$sess" "$bin"
 
+# Test 9b: same fixture as Test 9 — one prior verdict of ours carrying THIS head
+# sha — plus a non-empty pr-conversation.txt. prepare-context.sh writes that file
+# only when replies landed at or after our last verdict, so its presence means
+# this run is answering them. The same-sha upsert would edit the prior comment in
+# place, and GitHub does not notify on an edit, so the answer to a maintainer's
+# objection would reach nobody. Expect a fresh comment, and the old one retired.
+echo "Test 9b: a verdict answering a conversation supersedes rather than edits"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the body, whose marker carries the head sha
+rbody=$(cat "$sess/comment-body.md")
+jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
+printf 'reply from @bootc: finding 3 is wrong, the guard is two lines up.\n' >"$sess/pr-conversation.txt"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "action" "created" "answering a conversation posts a new comment"
+# superseded=1 is also how "it did not retire what it just posted" gets checked:
+# the new comment carries this sha too, so a sweep that failed to exclude it
+# would report 2.
+assert_json_field "$result" "superseded" "1" "the prior verdict is retired, the new one is not"
+if grep -q 'issues/comments/900' "$bin/log" && grep -q 'NODE900' "$bin/log"; then
+	echo "  PASS: the prior same-sha verdict was retired and minimized"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the prior same-sha verdict was left live"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$bin"
+
 # Test 10: REAL list-council filter supersedes ONLY marker comments on other
 # SHAs, excluding a non-council comment. Exercises the capture("sha=...") regex
 # and the marker filter, plus find-by-sha returning empty for an absent SHA.

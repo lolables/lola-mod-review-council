@@ -55,8 +55,9 @@
 #   1. PRs with NO prior Review Council comment (unreviewed) go first.
 #   2. PRs whose prior review was for an older commit (new commits since)
 #      go next — a re-review.
-#   3. PRs already reviewed at their current head commit are SKIPPED
-#      (no changes to re-review). Pass --force to review them anyway.
+#   3. PRs already reviewed at head where someone asked for another look
+#      go last — a requested re-review (see below).
+#   4. Everything else is SKIPPED. Pass --force to review those anyway.
 #
 # Prior reviews and the reviewed commit are detected from the hidden marker
 # the council embeds in every comment it posts:
@@ -64,8 +65,45 @@
 #   <!-- review-council:marker sha=<full-head-sha> -->
 #
 # A PR is "already reviewed at head" when that marker's sha equals the PR's
-# current headRefOid. If a lookup fails, the PR is treated as needing review
-# (fail-open) rather than skipped.
+# current headRefOid. Three things have to hold before a comment counts as that
+# review, because the marker above is public and anyone can type one:
+#
+#   * the marker starts a LINE, at column 0. GitHub's "Quote reply" copies it
+#     behind a "> " prefix, and a finding's evidence can quote a sha= of its own.
+#   * the comment was authored by the account gh is authenticated as.
+#   * the comment is not collapsed. Collapsing a verdict on GitHub is therefore
+#     a way to force a fresh review of that PR by hand.
+#
+# A marker posted by any other account is named in the plan output and the PR is
+# reviewed anyway: a token that rotated between runs and a forged marker look
+# identical from the timeline, and reviewing is the safe answer to both. If a
+# lookup fails outright, the PR is likewise treated as needing review.
+#
+# Asking for a re-review in a comment:
+#
+# Sometimes nothing has been pushed and the PR still needs another look — the
+# maintainer has answered the findings, or argued one down, and wants the
+# council to take the conversation into account. A comment whose line reads
+#
+#   /review-council review
+#
+# queues the PR for exactly that. The line must stand alone at column 0, so
+# quoting someone else's request is not making one, and the comment must be
+# newer than the verdict it asks to replace, so one request cannot re-fire on
+# every run. Trailing words are not accepted: the effort tier decides what a
+# review costs, and a requester does not choose it.
+#
+# A request is honoured only from an account with admin or write permission on
+# the repository. Requests are money, and an unreadable permission answer is
+# refused rather than assumed — the one lookup in this script that fails closed.
+#
+# --requests-per-hour <n> caps how many requested re-reviews a run will admit,
+# counting every verdict this account posted in the trailing hour. Requests are
+# admitted oldest-first; the rest are deferred and told so on their own PR, at
+# most once per pull request per hour. Usage is printed either way. The count
+# comes from the verdict comments themselves rather than from a state file, so
+# it survives running from another machine — and so a single-PR run sees a
+# narrower window than a batch, since it reads only that PR's history.
 #
 # Ignoring dependency bots:
 #
@@ -112,6 +150,7 @@
 #   ./review-open-prs.sh --cli opencode --run   # review through opencode, not claude
 #   ./review-open-prs.sh --ignore-email ci@corp.example --run  # also skip CI's PRs
 #   ./review-open-prs.sh --no-ignore-emails --run              # review bot PRs too
+#   ./review-open-prs.sh --requests-per-hour 3 --run  # admit at most 3 requests/hour
 #
 # Target selection:
 #   * A positional argument may be a PR number (123) or a GitHub PR URL. Either
@@ -161,6 +200,10 @@
 #   SECURITY_PATHS      Extended-regex; any changed path matching it (case-
 #                       insensitive) forces deep effort. Default covers
 #                       ca/crl/cert/key/auth/crypto/tls/token/rbac/sign/... .
+#   REREVIEW_PER_HOUR   Default for --requests-per-hour. Unset or empty means
+#                       no cap. A non-numeric value is an error rather than a
+#                       silent "unlimited" — that misconfiguration is the one
+#                       this setting exists to prevent.
 #   IGNORE_EMAILS       Comma- or whitespace-separated commit-author addresses
 #                       whose PRs are skipped. REPLACES the built-in Dependabot
 #                       and Renovate list rather than extending it; set it to
@@ -196,6 +239,11 @@ FORCE_EFFORT=""
 FORCE_CLI="" # --cli; empty => detect, preferring claude
 LOG_DIR="./.review-council-logs"
 
+# Cap on comment-requested re-reviews per hour; empty means no cap. `-` rather
+# than `:-`, as with IGNORE_EMAILS below: REREVIEW_PER_HOUR="" has to mean
+# "unlimited", not "fall back to the default". --requests-per-hour overrides it.
+REQUESTS_PER_HOUR="${REREVIEW_PER_HOUR-}"
+
 # Renders claude's stream-json events into one progress line per step, so the
 # terminal shows a run advancing while the log keeps the events themselves.
 # Reads with -R rather than as JSON: stderr is merged into the same stream and
@@ -230,6 +278,13 @@ QUICK_FILES="${QUICK_FILES:-2}"
 }
 [[ "$QUICK_FILES" =~ ^[0-9]+$ ]] || {
 	echo "QUICK_FILES must be a non-negative integer, got: '${QUICK_FILES}'" >&2
+	exit 2
+}
+# Checked here rather than at the flag, so REREVIEW_PER_HOUR gets the same
+# rejection the flag gives: a cap that silently reads as "unlimited" is the one
+# misconfiguration this setting exists to prevent.
+[[ -z "$REQUESTS_PER_HOUR" || "$REQUESTS_PER_HOUR" =~ ^[0-9]+$ ]] || {
+	echo "REREVIEW_PER_HOUR must be a non-negative integer, got: '${REQUESTS_PER_HOUR}'" >&2
 	exit 2
 }
 # Any changed path matching this extended-regex (case-insensitive) forces deep.
@@ -319,6 +374,18 @@ while [[ "$#" -gt 0 ]]; do
 		;;
 	--no-ignore-emails)
 		IGNORE_EMAIL_LIST=()
+		;;
+	--requests-per-hour)
+		[[ "$#" -ge 2 ]] || {
+			echo "--requests-per-hour requires an argument (a non-negative integer)" >&2
+			exit 2
+		}
+		[[ "$2" =~ ^[0-9]+$ ]] || {
+			echo "--requests-per-hour must be a non-negative integer, got: '$2'" >&2
+			exit 2
+		}
+		REQUESTS_PER_HOUR="$2"
+		shift
 		;;
 	--repo)
 		[[ "$#" -ge 2 ]] || {
@@ -447,16 +514,189 @@ else
 fi
 
 # ---- Classify each PR against its prior Review Council comment --------------
-# reviewed_sha_for <pr> -> the sha= from the most recent review-council marker
-# comment, or empty if none (or on lookup failure -> fail-open to "needs review").
-reviewed_sha_for() {
-	local pr="$1" body
-	body="$(gh pr view "$pr" --repo "$REPO" --json comments \
-		--jq '[.comments[] | select(.body | contains("review-council:marker")) | .body] | last // ""' \
-		2>/dev/null || true)"
-	if [[ "$body" =~ sha=([0-9a-fA-F]+) ]]; then
-		printf '%s' "${BASH_REMATCH[1]}"
-	fi
+# A verdict is a comment carrying a LINE that starts, at column 0, with this.
+# The council's own scripts test the same way — rc-lib.sh defines it as
+# RC_MARKER_OPEN, rc-post-comment-github.sh applies it as RC_MARKER_LINE_JQ,
+# prepare-context.sh anchors its conversation window on it — for a reason worth
+# restating here: the marker is public. GitHub's "Quote reply" copies it
+# verbatim behind a "> " prefix, anyone who can comment can type one, and a
+# finding's evidence can quote a sha= of its own. Column 0 separates a verdict
+# from a quote of one; viewerDidAuthor separates ours from a forgery. Matching
+# the bare key anywhere in the body accepts all three, and each of them can pin
+# a PR at its current head and suppress every later review.
+#
+# Restated rather than sourced: this driver points at whichever council the
+# host has installed, and must not depend on that skill's file layout.
+MARKER_OPEN='<!-- review-council:marker sha='
+
+# This driver's own marker, for the reply it posts when a request is deferred.
+# Deliberately a different key from the verdict marker rather than a variant of
+# it: a decline must never be readable as a verdict — not by the lookup above,
+# not by the council, not by the next person to read the thread.
+RATE_MARKER_OPEN='<!-- review-council:rate-limited until='
+
+# comments_for <pr> -> the PR's comment timeline as gh returns it, or empty on
+# failure. Fetched once per PR and handed to each reader below, so one request
+# answers the verdict, the re-review requests and the rate-limit ledger.
+comments_for() {
+	gh pr view "$1" --repo "$REPO" --json comments 2>/dev/null || true
+}
+
+# council_verdict_for <comments-json> -> "<sha>\t<createdAt>" of the newest
+# verdict THIS account posted, or empty when there is none.
+#
+# Empty output means "needs review": a gh failure, an unparseable body and a
+# genuinely unreviewed PR are one answer here, and it is the safe one.
+#
+# gsub("\r"; "") is not decoration. GitHub stores web-authored bodies with CRLF,
+# and a trailing \r defeats both startswith() on a marker and the anchored
+# request match in rereview_requests_for.
+council_verdict_for() {
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" '
+		[ .comments[]?
+		  | select(.viewerDidAuthor // false)
+		  | select((.isMinimized // false) | not)
+		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
+		] | sort_by(.createdAt) | last as $v
+		| if $v == null then "" else
+		    (($v.body | gsub("\r"; "") | split("\n") | map(select(startswith($open))) | last
+		      | ltrimstr($open) | split(" ")[0] | split("-->")[0])) as $sha
+		    | [$sha, $v.createdAt] | @tsv
+		  end
+	' 2>/dev/null || true
+}
+
+# foreign_verdict_login <comments-json> -> the author of the newest marker-line
+# comment this account did NOT post, or empty when there is none.
+#
+# Two very different things produce that comment and the payload cannot tell
+# them apart: a token rotated between runs (or CI filing verdicts under a bot
+# account), and a forged marker from anyone who can type one.
+#
+# So do not choose. Both are reported as unreviewed and get reviewed, which is
+# this script's answer to every unanswered question — an attacker gains
+# nothing, because the review they tried to suppress happens anyway, and a
+# rotated token costs one round of re-reviews that the caller is told about
+# before it pays for them. Trusting the marker instead would keep the rotated
+# token working at the price of letting a stranger switch reviewing off.
+#
+# prepare-context.sh:281 makes the opposite call on its own lookup, and is
+# right to: what it loses by refusing is a maintainer's reply that Disposition
+# never reads. Losing data is not the same as suppressing a review.
+foreign_verdict_login() {
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" '
+		[ .comments[]?
+		  | select((.viewerDidAuthor // false) | not)
+		  | select((.isMinimized // false) | not)
+		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
+		] | sort_by(.createdAt) | last | (.author.login // "") // ""
+	' 2>/dev/null || true
+}
+
+# verdicts_since <comments-json> <iso> -> how many verdicts this account posted
+# at or after <iso>. The verdict comments ARE the hourly ledger: timestamped,
+# attributable, and already fetched, so the window needs no state file that a
+# second checkout or a cron wrapper with a different CWD would silently reset.
+#
+# Every review posted in the hour spends the window, not only the requested
+# ones — the budget being protected is the API bill. What the cap gates is the
+# admission of requests: a genuine code change is never held back by it.
+#
+# Counted across the PRs this run examined, so a single-PR run sees a narrower
+# window than a batch. Said plainly in --help rather than papered over.
+verdicts_since() {
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --arg since "$2" '
+		[ .comments[]?
+		  | select(.viewerDidAuthor // false)
+		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
+		  | select(.createdAt >= $since)
+		] | length
+	' 2>/dev/null || echo 0
+}
+
+# declined_in_window <comments-json> <window-start-iso> -> success when we have
+# already replied to a deferred request on this PR inside the current window.
+# Same stateless trick as the ledger: the reply is its own record.
+declined_in_window() {
+	local n
+	n="$(printf '%s' "$1" | jq -r --arg open "$RATE_MARKER_OPEN" --arg since "$2" '
+		[ .comments[]?
+		  | select(.viewerDidAuthor // false)
+		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
+		  | select(.createdAt >= $since)
+		] | length
+	' 2>/dev/null || echo 0)"
+	[[ "$n" =~ ^[0-9]+$ ]] && [[ "$n" -gt 0 ]]
+}
+
+# rereview_requests_for <comments-json> <since-iso> -> "<login>\t<createdAt>\t<association>"
+# lines. A request is a comment newer than the verdict it asks to replace, not
+# ours, not collapsed, carrying a line that is exactly the command.
+#
+# Anchored at column 0 and to end-of-line for the same reason the marker is:
+# "> /review-council review" is someone quoting a request, not making one, and
+# the command named mid-sentence is a mention. Trailing arguments are
+# deliberately not accepted — the effort tier decides what a review costs, and
+# a requester does not get to pick it.
+rereview_requests_for() {
+	printf '%s' "$1" | jq -r --arg since "$2" '
+		.comments[]?
+		| select((.isMinimized // false) | not)
+		| select((.viewerDidAuthor // false) | not)
+		| select($since == "" or .createdAt > $since)
+		| select(((.body // "") | gsub("\r"; "") | split("\n")
+		          | any(test("^/review-council[ \t]+review[ \t]*$"))))
+		| [ (.author.login // ""), .createdAt, (.authorAssociation // "") ] | @tsv
+	' 2>/dev/null || true
+}
+
+# requester_authorised <login> <association> -> success when this account may
+# spend a review. Two gates, cheap one first: authorAssociation arrives with the
+# comment payload and rules out everyone with no standing in the repo, so the
+# API call happens only for a plausible requester.
+#
+# THIS IS THE ONE LOOKUP IN THIS SCRIPT THAT FAILS CLOSED. Everywhere else an
+# unanswered gh call means "review it", because a duplicate review costs one
+# review. Here it would mean "let a stranger start reviews", and that cost has
+# no ceiling. An unreadable answer is not permission.
+#
+# `.permission` is the legacy four-value field (admin|write|read|none) and it
+# folds the finer roles the way this wants them folded: maintain reports as
+# write, triage reports as read. Triage can label and close but cannot push,
+# and should not be able to spend the API budget either.
+requester_authorised() {
+	local login="$1" assoc="$2" perm
+	case "$assoc" in
+	OWNER | MEMBER | COLLABORATOR) ;;
+	*) return 1 ;;
+	esac
+	# The login is interpolated into an API path. GitHub logins are alphanumeric
+	# with hyphens; anything else is refused rather than sent.
+	[[ "$login" =~ ^[A-Za-z0-9-]+$ ]] || return 1
+	perm="$(gh api "repos/${REPO}/collaborators/${login}/permission" \
+		--jq '.permission' 2>/dev/null || true)"
+	[[ "$perm" = "admin" || "$perm" = "write" ]]
+}
+
+# requested_rereview <pr> <comments-json> <since> -> success when an authorised
+# request is outstanding on this PR. Records the requester, which the rate
+# limiter and the decline reply both read.
+requested_rereview() {
+	local pr="$1" json="$2" since="$3" login at assoc requests
+	requests="$(rereview_requests_for "$json" "$since")"
+	while IFS=$'\t' read -r login at assoc; do
+		[[ -n "$login" ]] || continue
+		# shellcheck disable=SC2310 # A non-zero return is "not authorised" —
+		# the expected answer, not an error — and the one call inside that can
+		# genuinely fail absorbs its own failure to reach it.
+		if requester_authorised "$login" "$assoc"; then
+			REQ_PR+=("$pr")
+			REQ_LOGIN+=("$login")
+			REQ_AT+=("$at")
+			return 0
+		fi
+	done <<<"$requests"
+	return 1
 }
 
 # ignored_author <pr> -> success when the PR was written entirely by addresses
@@ -529,6 +769,31 @@ STALE=()      # reviewed, but at an older commit (new changes since)
 SKIPPED=()    # reviewed at current head, nothing changed
 IGNORED=()    # written entirely by a denied address (batch runs only)
 
+REQUESTED=() # an authorised re-review request landed after the last verdict
+FOREIGN=()   # "<pr>:<login>" — a marker we did not author, so the PR is reviewed
+
+# The outstanding authorised requests, as parallel arrays: which PR, who asked,
+# and when. Read by the hourly cap and by the reply it posts when it defers one.
+REQ_PR=()
+REQ_LOGIN=()
+REQ_AT=()
+
+# All date arithmetic goes through jq. `date -u -d` is a GNU extension and
+# test-rc-portability.sh fails the macOS leg for it; jq is already required.
+WINDOW_START="$(jq -rn '(now - 3600) | todate')"
+SPENT=0
+OLDEST_IN_WINDOW="" # earliest verdict still inside the window; sets the next slot
+
+# Each PR's comment timeline, kept past the classify loop so the decline reply
+# below can ask whether it has already replied without fetching them again.
+declare -A COMMENTS_JSON
+
+comments_json=""
+verdict_tsv=""
+reviewed=""
+reviewed_at=""
+foreign=""
+spent_here=""
 while IFS=$'\t' read -r pr head; do
 	[[ -n "$pr" ]] || continue
 	# The deny-list is batch triage. Naming one PR by number or URL says which
@@ -543,19 +808,78 @@ while IFS=$'\t' read -r pr head; do
 		IGNORED+=("$pr")
 		continue
 	fi
-	reviewed="$(reviewed_sha_for "$pr")"
+	comments_json="$(comments_for "$pr")"
+	COMMENTS_JSON["$pr"]="$comments_json"
+	spent_here="$(verdicts_since "$comments_json" "$WINDOW_START")"
+	[[ "$spent_here" =~ ^[0-9]+$ ]] || spent_here=0
+	SPENT=$((SPENT + spent_here))
+	verdict_tsv="$(council_verdict_for "$comments_json")"
+	IFS=$'\t' read -r reviewed reviewed_at <<<"$verdict_tsv"
+	if [[ -n "$reviewed_at" ]] && [[ "$reviewed_at" > "$WINDOW_START" ]]; then
+		if [[ -z "$OLDEST_IN_WINDOW" ]] || [[ "$reviewed_at" < "$OLDEST_IN_WINDOW" ]]; then
+			OLDEST_IN_WINDOW="$reviewed_at"
+		fi
+	fi
+	# A sha that is not a sha is not a verdict. Fails open, as everywhere here.
+	[[ "$reviewed" =~ ^[0-9a-fA-F]{7,40}$ ]] || reviewed=""
+	if [[ -z "$reviewed" ]]; then
+		foreign="$(foreign_verdict_login "$comments_json")"
+		[[ -z "$foreign" ]] || FOREIGN+=("${pr}:${foreign}")
+	fi
 	if [[ -z "$reviewed" ]]; then
 		UNREVIEWED+=("$pr")
 	elif [[ "$reviewed" = "$head" ]]; then
-		SKIPPED+=("$pr")
+		# Nothing new to review — unless someone with write access asked.
+		#
+		# shellcheck disable=SC2310 # as ignored_author above: a non-zero return
+		# is this predicate's "no request" answer, not a failure.
+		if requested_rereview "$pr" "$comments_json" "$reviewed_at"; then
+			REQUESTED+=("$pr")
+		else
+			SKIPPED+=("$pr")
+		fi
 	else
 		STALE+=("$pr")
 	fi
 done <<<"$prs_raw"
 
+DEFERRED=() # an authorised request the hourly cap could not admit
+# Admit the oldest request first, so a cap resolves in the order people asked.
+# --force queues every PR anyway, so under it nothing is deferred and nothing is
+# declined — which is why the queue below needs no DEFERRED branch.
+if [[ "$FORCE" -eq 0 ]] && [[ "${#REQ_PR[@]}" -gt 0 ]]; then
+	# Requests queue oldest-first whether or not a cap is set, so the cap
+	# changes how many are admitted and never what order they run in.
+	capped=0
+	remaining=0
+	if [[ -n "$REQUESTS_PER_HOUR" ]]; then
+		capped=1
+		remaining=$((REQUESTS_PER_HOUR - SPENT))
+		[[ "$remaining" -ge 0 ]] || remaining=0
+	fi
+	request_lines=""
+	for i in "${!REQ_PR[@]}"; do
+		request_lines+="${REQ_AT[$i]}"$'\t'"${REQ_PR[$i]}"$'\n'
+	done
+	# ISO-8601 UTC sorts lexically, so a plain sort puts the earliest request
+	# first. Built into a variable and sorted separately rather than piping the
+	# loop, which would discard the sort's exit status.
+	sorted_requests="$(printf '%s' "$request_lines" | sort)"
+	admitted=()
+	while IFS=$'\t' read -r _ req_pr; do
+		[[ -n "$req_pr" ]] || continue
+		if [[ "$capped" -eq 0 ]] || [[ "${#admitted[@]}" -lt "$remaining" ]]; then
+			admitted+=("$req_pr")
+		else
+			DEFERRED+=("$req_pr")
+		fi
+	done <<<"$sorted_requests"
+	REQUESTED=("${admitted[@]}")
+fi
+
 # Build the work queue: unreviewed first, then stale re-reviews. With --force,
 # append the otherwise-skipped (unchanged) PRs to the end and clear the skip list.
-QUEUE=("${UNREVIEWED[@]}" "${STALE[@]}")
+QUEUE=("${UNREVIEWED[@]}" "${STALE[@]}" "${REQUESTED[@]}")
 if [[ "$FORCE" -eq 1 ]] && [[ "${#SKIPPED[@]}" -gt 0 ]]; then
 	QUEUE+=("${SKIPPED[@]}")
 	SKIPPED=()
@@ -575,6 +899,16 @@ echo "Repository: ${REPO}"
 echo "Agent CLI: ${AGENT_CLI}"
 echo "Unreviewed: ${UNREVIEWED[*]:-(none)}"
 echo "Re-review (new commits): ${STALE[*]:-(none)}"
+echo "Requested re-review: ${REQUESTED[*]:-(none)}"
+if [[ "${#DEFERRED[@]}" -gt 0 ]]; then
+	echo "Deferred (hourly cap): ${DEFERRED[*]}"
+fi
+# The window slides far enough to free a slot one hour after its oldest verdict.
+NEXT_SLOT="(now)"
+if [[ -n "$OLDEST_IN_WINDOW" ]]; then
+	NEXT_SLOT="$(jq -rn --arg t "$OLDEST_IN_WINDOW" '($t | fromdateiso8601 + 3600) | todate')"
+fi
+echo "Requested re-reviews: ${SPENT}/${REQUESTS_PER_HOUR:-unlimited} used this hour, next slot ${NEXT_SLOT}"
 if [[ "$FORCE" -eq 1 ]]; then
 	echo "Forced re-review of unchanged PRs enabled (--force)."
 else
@@ -582,6 +916,12 @@ else
 fi
 if [[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] && [[ -z "$TARGET_PR" ]]; then
 	echo "Ignored (author email): ${IGNORED[*]:-(none)}"
+fi
+if [[ "${#FOREIGN[@]}" -gt 0 ]]; then
+	echo "Council marker from another account (queued anyway): ${FOREIGN[*]}"
+	echo "      A token rotated between runs reads this way, and so does a forged"
+	echo "      marker. Both are reviewed rather than trusted. If these are your own"
+	echo "      earlier verdicts, expect to pay for them again."
 fi
 if [[ -n "$FORCE_EFFORT" ]]; then
 	echo "Effort: forced to '${FORCE_EFFORT}' for every PR (--effort)."
@@ -628,6 +968,10 @@ and a prompt telling the council to post its verdict without asking. Expect a
 public review comment on every PR in the queue above, authored by the account
 gh is authenticated with, plus the API spend of each review.
 
+A re-review request the hourly cap could not admit also draws a short reply on
+its own pull request explaining the limit — at most one per pull request per
+hour, and only for requests that were authorised in the first place.
+
 Re-run without --run to see the plan alone, or with --yes to skip this prompt.
 CONFIRM
 	printf 'Type "yes" to proceed: ' >&2
@@ -639,6 +983,36 @@ CONFIRM
 		exit 1
 	fi
 	echo >&2
+fi
+
+# ---- Tell deferred requesters why nothing happened -------------------------
+# Once per PR per window. A reply per request would hand anyone with write
+# access a way to make this account post repeatedly on a public thread; a reply
+# per window tells them what they need once. Only authorised requests reach
+# here, so an unauthorised one is answered with silence rather than with a
+# comment it could have provoked.
+if [[ "$RUN" -eq 1 ]] && [[ "${#DEFERRED[@]}" -gt 0 ]]; then
+	for pr in "${DEFERRED[@]}"; do
+		# shellcheck disable=SC2310 # a non-zero return is "not yet declined",
+		# which is the answer being asked for, not a failure.
+		if declined_in_window "${COMMENTS_JSON[$pr]:-}" "$WINDOW_START"; then
+			continue
+		fi
+		who=""
+		for i in "${!REQ_PR[@]}"; do
+			[[ "${REQ_PR[$i]}" = "$pr" ]] && who="${REQ_LOGIN[$i]}"
+		done
+		decline_body="$(mktemp)"
+		{
+			printf 'Re-review requested by @%s is rate limited: %s of %s already used this hour.\n\n' \
+				"$who" "$SPENT" "$REQUESTS_PER_HOUR"
+			printf 'The next slot opens at %s. Nothing to do — ask again after then.\n\n' "$NEXT_SLOT"
+			printf '%s%s -->\n' "$RATE_MARKER_OPEN" "$NEXT_SLOT"
+		} >"$decline_body"
+		gh pr comment "$pr" --repo "$REPO" --body-file "$decline_body" >/dev/null 2>&1 ||
+			echo "PR #${pr}: could not post the rate-limit reply; continuing." >&2
+		rm -f "$decline_body"
+	done
 fi
 
 # ---- Process each queued PR sequentially -----------------------------------

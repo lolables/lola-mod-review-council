@@ -313,12 +313,32 @@ if ! existing_tsv=$(gh_list_sha_parts "$owner" "$repo" "$pr" "$sha_key" "$RC_ACT
 		"$body_payload"
 	exit 0
 fi
-declare -A existing_id=() existing_node=() part_url=()
-while IFS=$'\t' read -r e_id e_node e_part; do
-	[[ -n "$e_id" ]] || continue
-	existing_id["$e_part"]="$e_id"
-	existing_node["$e_part"]="$e_node"
-done <<<"$existing_tsv"
+# Is this verdict answering new discussion? prepare-context.sh writes
+# pr-conversation.txt only when replies landed at or after our last verdict, so
+# a non-empty file means this run has something to say back to someone.
+#
+# Such a run often sits at the SAME head sha as the verdict it replaces — that
+# is the ordinary shape of a re-review asked for in a comment, where the
+# argument moved and the code did not. The same-sha upsert below would then edit
+# the old comment in place, and GitHub sends no notification for an edit: the
+# answer to a maintainer's objection would land where nobody is looking.
+#
+# So supersede instead. Post fresh, retire the old, and let the thread show a
+# reply where a reply belongs. Absent the file this is a plain re-run, and the
+# idempotent path is what it should get.
+supersede_all=0
+if [[ -s "${session_dir}/pr-conversation.txt" ]]; then
+	supersede_all=1
+fi
+
+declare -A existing_id=() existing_node=() part_url=() created_ids=()
+if [[ "$supersede_all" -eq 0 ]]; then
+	while IFS=$'\t' read -r e_id e_node e_part; do
+		[[ -n "$e_id" ]] || continue
+		existing_id["$e_part"]="$e_id"
+		existing_node["$e_part"]="$e_node"
+	done <<<"$existing_tsv"
+fi
 
 created=0
 updated=0
@@ -359,6 +379,7 @@ for ((n = total; n >= 1; n--)); do
 			exit 0
 		fi
 		created=$((created + 1))
+		created_ids["$new_id"]=1
 	fi
 	part_url["$n"]="${RC_FORGE_WEB}/pull/${pr}#issuecomment-${new_id}"
 done
@@ -380,7 +401,14 @@ done
 # Run AFTER the new parts land, never before: superseding first would open a
 # window in which the pull request carries no verdict at all.
 while IFS=$'\t' read -r id node sha; do
-	[[ -z "$id" || "$sha" == "$sha_key" ]] && continue
+	[[ -z "$id" ]] && continue
+	# Never retire what this run just posted. Those carry this sha too, so
+	# without the exclusion a superseding run would fold away its own verdict
+	# and leave the pull request with nothing but obsolete comments.
+	[[ -n "${created_ids[$id]:-}" ]] && continue
+	# Same sha is normally this run's own work and is left alone. When the
+	# verdict is answering a conversation it is the comment being replaced.
+	[[ "$sha" == "$sha_key" && "$supersede_all" -eq 0 ]] && continue
 	gh_retire "$id" "$node" "$new_url"
 	superseded=$((superseded + 1))
 done < <(gh_list_council "$owner" "$repo" "$pr" "$RC_ACTOR" 2>/dev/null || true)

@@ -545,6 +545,171 @@ assert_track "$session_dir" "Comment limit" "30000" \
 	"a key only CLAUDE.md defines is still read"
 discard_fixture "$tmpdir"
 
+# --- Council selection inputs (issue #20) ------------------------------------
+#
+# Preparation does not decide the council — rc-select-council.sh does, as a
+# later stage in its own process. What preparation owes it is the three inputs
+# it cannot read for itself, and a manifest whose council already holds the
+# whole roster so that a host which never runs that stage still dispatches
+# everyone.
+
+echo "Test: council selection defaults reach tracking.md"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Persona selection" "on" "selection is on unless configured off"
+assert_track "$session_dir" "Pin personas" "none" "no pins by default"
+assert_track "$session_dir" "Review instructions" "none" "no instructions by default"
+discard_fixture "$tmpdir"
+
+echo "Test: the manifest seeds the council with the full discovered roster"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+manifest="$session_dir/session-manifest.json"
+# Read into variables first: a command substitution nested inside another
+# command has its exit status discarded, so a jq that failed on a truncated
+# manifest would compare two empty strings and pass.
+seed_council=$(jq -c '.council' "$manifest")
+seed_agents=$(jq -c '.agents' "$manifest")
+seed_deselected=$(jq -r '.deselected | length' "$manifest")
+seed_applied=$(jq -r '.selection.applied' "$manifest")
+seed_shape=$(jq -r '.selection.shape' "$manifest")
+if [[ "$seed_council" == "$seed_agents" ]] &&
+	[[ "$seed_deselected" == "0" ]] &&
+	[[ "$seed_applied" == "false" ]] &&
+	[[ "$seed_shape" == "unevaluated" ]]; then
+	echo "  PASS: council seeded to the discovered roster, selection marked unevaluated"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: manifest does not fail open to the full council"
+	jq -c '{agents, council, deselected, selection}' "$manifest"
+	FAIL=$((FAIL + 1))
+fi
+discard_fixture "$tmpdir"
+
+echo "Test: review instructions are recorded as a boolean, never as their text"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code \
+	--review-instructions "focus on the auth path" 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Review instructions" "present" \
+	"supplied instructions record as present"
+if grep -q 'focus on the auth path' "$session_dir/tracking.md"; then
+	echo "  FAIL: instruction text leaked into tracking.md"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: instruction text stays out of tracking.md"
+	PASS=$((PASS + 1))
+fi
+discard_fixture "$tmpdir"
+
+echo "Test: selection policy is read and normalised from the configuration block"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+cat >"$tmpdir/AGENTS.md" <<'CFG'
+## Review Council Configuration
+
+- Persona selection: OFF
+- Pin personas: Adversary,  guard
+CFG
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Persona selection" "off" "an uppercase off is honoured"
+assert_track "$session_dir" "Pin personas" "adversary,guard" \
+	"pins are lowercased and comma-joined"
+discard_fixture "$tmpdir"
+
+echo "Test: an unrecognised selection value falls back to on"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Persona selection: maybe\n- Pin personas: !!!\n' \
+	>"$tmpdir/AGENTS.md"
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Persona selection" "on" \
+	"only an explicit off disables selection"
+assert_track "$session_dir" "Pin personas" "none" \
+	"a pin list holding no usable name reads as none"
+discard_fixture "$tmpdir"
+
+# --- Council switch precedence: CLI > env > config > default ------------------
+#
+# Two switches, one resolver. Each layer is asserted where it must win and where
+# it must yield, because a precedence chain that is wrong in one direction reads
+# exactly like one that is wrong in the other: the value just looks configured.
+
+echo "Test: built-in defaults apply when nobody has said anything"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Persona selection" "on" "shape selection is on by default"
+assert_track "$session_dir" "Subsystem triage" "off" \
+	"triage is off by default — it has no measured recall yet"
+discard_fixture "$tmpdir"
+
+echo "Test: the environment outranks the configuration block"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Persona selection: off\n- Subsystem triage: off\n' \
+	>"$tmpdir/AGENTS.md"
+result=$(REVIEW_COUNCIL_PERSONA_SELECTION=on REVIEW_COUNCIL_TRIAGE=on \
+	AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Persona selection" "on" "env beats a configured off"
+assert_track "$session_dir" "Subsystem triage" "on" "env beats a configured off"
+discard_fixture "$tmpdir"
+
+echo "Test: the flag outranks both"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Persona selection: on\n- Subsystem triage: on\n' \
+	>"$tmpdir/AGENTS.md"
+result=$(REVIEW_COUNCIL_PERSONA_SELECTION=on REVIEW_COUNCIL_TRIAGE=on \
+	AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code \
+	--no-persona-selection --no-triage 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Persona selection" "off" "--no-persona-selection wins"
+assert_track "$session_dir" "Subsystem triage" "off" "--no-triage wins"
+discard_fixture "$tmpdir"
+
+echo "Test: the flag can also turn a switch on against every other layer"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Subsystem triage: off\n' >"$tmpdir/AGENTS.md"
+result=$(REVIEW_COUNCIL_TRIAGE=off AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode code --triage 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Subsystem triage" "on" "--triage wins over env and config"
+discard_fixture "$tmpdir"
+
+echo "Test: an unusable value at one layer defers to the next, never to off"
+# A typo that silently disabled selection would change what gets reviewed while
+# reading as though the configuration had been honoured.
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Subsystem triage: on\n' >"$tmpdir/AGENTS.md"
+result=$(REVIEW_COUNCIL_TRIAGE=yes AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Subsystem triage" "on" \
+	"a malformed env value falls through to the configured value"
+discard_fixture "$tmpdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

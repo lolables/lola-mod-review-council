@@ -37,6 +37,17 @@ dispatched. In particular, an un-suffixed legacy `divisor-*` file
 an older install is stale: discovery skips it by design, and dispatching it
 runs an unknown-version persona. When the array is empty, dispatch nothing.
 
+**Who actually runs is the `council` array** in
+`${session_dir}/session-manifest.json`, written by `rc-select-council.sh`
+(SKILL.md Step 2.2). It is always a subset of `agents`, and equal to it unless
+the changeset shape licensed dropping a reviewer — a lockfile-only diff has no
+prose to curate, a prose-only diff has no runtime surface. Dispatch that array
+and no other set: do not add back an agent listed under `deselected`, and do
+not drop one that is not. Where the two arrays differ, the manifest also
+carries the reason for each skip, and the report and PR comment publish it.
+Preparation seeds `council` equal to `agents`, so a host that skipped Step 2.2
+dispatches the full council without any special case here.
+
 Use discovered agent filename **minus `.md` extension** as subagent identifier (e.g., dispatch to `divisor-adversary-code`, not generic agent type). Ensures host loads persona definition — calibration rules, severity thresholds, grounding requirements — as system context.
 
 **Do NOT dispatch reviewers as generic agents with inline prompt.** Persona files contain critical calibration not reliably reproduced inline.
@@ -290,7 +301,14 @@ round per subsystem:
    b. Filter `diff.patch` to only the hunks for the subsystem's files.
    c. Replace the scope framing sentence with:
       > "The following files belong to the **{subsystem name}** subsystem ({subsystem description}):"
-   d. Dispatch all 5 personas for this subsystem in parallel.
+   d. Dispatch **that subsystem's own council** in parallel — the `council`
+      array of its entry in the manifest's `subsystems[]`, matched by `name`.
+      Councils differ across subsystems within one run, because one subsystem
+      may be prose while its sibling is code, and because subsystem triage
+      (SKILL.md Step 2.3) may have narrowed them further. That array is the
+      final answer from both steps; nothing here re-derives it. Where the
+      manifest carries no entry for a subsystem (Step 2.2 was skipped),
+      dispatch the top-level `council`.
    e. Write each agent's raw output to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md`.
       Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
 3. After all subsystems complete, proceed to verification.

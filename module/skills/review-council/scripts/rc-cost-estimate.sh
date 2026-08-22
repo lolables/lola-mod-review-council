@@ -55,15 +55,21 @@ deep) iteration_cap=5 ;;
 *) iteration_cap=3 ;;
 esac
 
-# The roster is read from the manifest rather than counted from the agents
-# directory: the manifest records the agents preparation actually discovered,
-# which is the set that will be dispatched.
-personas=$(jq -r '(.agents // []) | length' "$manifest" 2>/dev/null || echo 0)
+# The council is read from the manifest rather than counted from the agents
+# directory, and from `council` rather than `agents`: `agents` is who
+# preparation DISCOVERED, `council` is who will actually be DISPATCHED after
+# rc-select-council.sh has had its say. Pricing the roster would quote a bill
+# for reviewers this run is not going to pay for — and an estimate that
+# over-states is one operators learn to dismiss. `// .agents` covers a manifest
+# written before the key existed, where the two were the same set.
+personas=$(jq -r '((.council // .agents) // []) | length' "$manifest" 2>/dev/null || echo 0)
+discovered=$(jq -r '(.agents // []) | length' "$manifest" 2>/dev/null || echo 0)
+selection_applied=$(jq -r '.selection.applied // false' "$manifest" 2>/dev/null || echo false)
 
-# Deep mode dispatches every persona against every subsystem. Decomposition
-# writes subsystems.json only when it splits the changeset (phases/decompose.md
-# deletes it and falls back to whole-changeset delegation on a single group), so
-# its absence means one subsystem, not zero.
+# Deep mode dispatches a council against every subsystem. Decomposition writes
+# subsystems.json only when it splits the changeset (phases/decompose.md deletes
+# it and falls back to whole-changeset delegation on a single group), so its
+# absence means one subsystem, not zero.
 subsystems_file="$session_dir/subsystems.json"
 subsystems=1
 if [[ -f "$subsystems_file" ]]; then
@@ -71,7 +77,37 @@ if [[ -f "$subsystems_file" ]]; then
 	[[ "$subsystems" -lt 1 ]] && subsystems=1
 fi
 
-dispatches_first=$((personas * subsystems))
+# `grep -c` prints 0 and exits 1 on a file with no matching lines, and prints
+# nothing at all when the file is absent, so the count is range-checked rather
+# than trusted — an empty string reaching the division below would abort the
+# estimate.
+changeset_files=$(grep -c . "$session_dir/changeset.txt" 2>/dev/null || true)
+[[ "$changeset_files" =~ ^[0-9]+$ ]] || changeset_files=0
+
+# One row per dispatch round: the share of the changeset it carries, and the
+# council that reviews it. Shares are measured by file count, the only
+# proportion subsystems.json states; a file listed under two subsystems is sent
+# twice, and the shares sum above 1 accordingly.
+#
+# Selection can give each subsystem a DIFFERENT council — one may be docs-only
+# while its sibling is code — so the dispatch count is a sum over these rows,
+# not a product. The product survives only as the sentence below, and only when
+# every row happens to be the same size.
+default_council=$(jq -c '(.council // .agents) // []' "$manifest" 2>/dev/null || echo '[]')
+if [[ -f "$subsystems_file" ]] && jq -e 'length > 0' "$subsystems_file" >/dev/null 2>&1; then
+	rounds_json=$(jq -c -n \
+		--slurpfile subs "$subsystems_file" --slurpfile man "$manifest" \
+		--argjson total "$changeset_files" --argjson default "$default_council" '
+		(($man[0].subsystems // []) | map({key: .name, value: .council}) | from_entries) as $picked
+		| $subs[0] | map({
+			share: (if $total > 0 then ((.files // []) | length) / $total else 1 end),
+			council: ($picked[.name] // $default)})' 2>/dev/null) || rounds_json=""
+fi
+if [[ -z "${rounds_json:-}" ]]; then
+	rounds_json=$(jq -c -n --argjson council "$default_council" '[{share: 1, council: $council}]')
+fi
+
+dispatches_first=$(jq -r '[.[].council | length] | add // 0' <<<"$rounds_json")
 dispatches_worst=$((dispatches_first * iteration_cap))
 
 # Sizes come from `wc -c`, never from `stat`, whose size flag is `-c %s` on GNU
@@ -111,52 +147,45 @@ fi
 # Without it the estimate is short by one agent file per dispatch, which is the
 # smallest of the three terms — a reason to state a lower figure, not to refuse
 # one.
-persona_bytes=0
+#
+# Measured per agent rather than as one total, because two rounds of the same
+# deep run can now carry different councils and a total cannot be apportioned
+# between them. An agent with no readable file contributes nothing.
+persona_bytes_json='{}'
 if [[ -n "${AGENTS_DIR:-}" ]] && [[ -d "${AGENTS_DIR}" ]]; then
 	while IFS= read -r agent; do
 		[[ -n "$agent" ]] || continue
-		persona_bytes=$((persona_bytes + $(bytes_of "${AGENTS_DIR}/${agent}.md")))
+		# Sized into a variable first: a command substitution nested in another
+		# command has its exit status discarded, so a failing measurement would
+		# reach jq as an empty --argjson and abort the whole estimate.
+		agent_size=$(bytes_of "${AGENTS_DIR}/${agent}.md")
+		persona_bytes_json=$(jq -c --arg a "$agent" --argjson b "$agent_size" \
+			'. + {($a): $b}' <<<"$persona_bytes_json")
 	done < <(jq -r '(.agents // [])[]' "$manifest" 2>/dev/null || true)
 fi
 
 context_bytes=$(bytes_of "$session_dir/diff.patch" "$session_dir/changeset.txt")
-
-# `grep -c` prints 0 and exits 1 on a file with no matching lines, and prints
-# nothing at all when the file is absent, so the count is range-checked rather
-# than trusted — an empty string reaching the division below would abort the
-# estimate.
-changeset_files=$(grep -c . "$session_dir/changeset.txt" 2>/dev/null || true)
-[[ "$changeset_files" =~ ^[0-9]+$ ]] || changeset_files=0
-
-# Each subsystem dispatch carries its own share of the changeset, not a copy of
-# all of it — the property that keeps a 6-subsystem deep run from reading as six
-# whole-diff reviews. Shares are measured by file count, the only proportion
-# subsystems.json states; a file listed under two subsystems is sent twice, and
-# the shares sum above 1 accordingly.
-shares_json='[1]'
-if [[ -f "$subsystems_file" ]] && [[ "$changeset_files" -gt 0 ]]; then
-	shares_json=$(jq -c --argjson total "$changeset_files" \
-		'[.[] | ((.files // []) | length) / $total]' "$subsystems_file" 2>/dev/null || echo '[1]')
-fi
 
 # Four bytes per token: the rough industry rule, and the only estimator
 # available without shipping a tokenizer. Every figure this script prints is
 # labelled an estimate for that reason.
 #
 # The sum is computed in jq — already a hard prerequisite — rather than in awk
-# or bc, which are not. Apportioned context is charged once per persona; pack
-# and persona prompt bytes are charged once per dispatch, so a decomposition
-# that halves each dispatch's context still pays its own overhead twice.
+# or bc, which are not. Each round charges its apportioned share of the
+# changeset once per reviewer in ITS council, plus the convention packs once per
+# reviewer and that reviewer's own persona prompt. A decomposition that halves
+# each round's context therefore still pays its own overhead per round, and a
+# round whose council was narrowed pays proportionally less of all three terms.
 input_tokens_first=$(jq -n \
-	--argjson shares "$shares_json" \
-	--argjson personas "$personas" \
-	--argjson subsystems "$subsystems" \
+	--argjson rounds "$rounds_json" \
 	--argjson pack "$pack_bytes" \
-	--argjson persona_total "$persona_bytes" \
+	--argjson pbytes "$persona_bytes_json" \
 	--argjson context "$context_bytes" \
-	'($shares | map(. * $context) | add // 0) as $ctx
-	 | ($subsystems * ($pack * $personas + $persona_total)) as $overhead
-	 | (($ctx * $personas + $overhead) / 4) | floor')
+	'[$rounds[]
+	  | (.council | length) as $n
+	  | (.share * $context * $n) + ($pack * $n)
+	    + ([.council[] | $pbytes[.] // 0] | add // 0)]
+	 | (add // 0) / 4 | floor')
 input_tokens_worst=$((input_tokens_first * iteration_cap))
 
 # Last-resort per-dispatch band, for an install where references/ cannot be
@@ -296,6 +325,8 @@ jq -n \
 	--arg model_class "$model_class" \
 	--arg rate_source "$rate_source" \
 	--argjson personas "$personas" \
+	--argjson discovered "$discovered" \
+	--argjson selection_applied "$selection_applied" \
 	--argjson subsystems "$subsystems" \
 	--argjson iteration_cap "$iteration_cap" \
 	--argjson dispatches_first_pass "$dispatches_first" \
@@ -307,6 +338,8 @@ jq -n \
 	 | ($rate_high | tonumber + 0) as $high
 	 | {effort: $effort,
 	    personas: $personas,
+	    discovered: $discovered,
+	    selection_applied: $selection_applied,
 	    subsystems: $subsystems,
 	    iteration_cap: $iteration_cap,
 	    dispatches_first_pass: $dispatches_first_pass,
@@ -371,10 +404,52 @@ plural() { # count singular plural -> "1 singular" / "N plural"
 # Resolved into variables here rather than called from inside the heredoc: a
 # command substitution expanded there reports its status to nobody, so a broken
 # helper would silently drop a phrase out of the sentence it renders.
-personas_phrase=$(plural "$personas" persona personas)
 subsystems_phrase=$(plural "$subsystems" subsystem subsystems)
 dispatches_phrase=$(plural "$dispatches_first" "reviewer dispatch" "reviewer dispatches")
 iterations_phrase=$(plural "$iteration_cap" iteration iterations)
+
+# `personas x subsystems` is only arithmetic when every round carries the same
+# council, and since contextual persona selection it may not: one subsystem can
+# be docs-only while its sibling is code. Printing a product that does not equal
+# the dispatch count beside it is worse than printing no product — the whole
+# point of the table is that an operator can check it.
+round_sizes=$(jq -r '[.[].council | length] | unique | if length == 1 then .[0] else -1 end' \
+	<<<"$rounds_json")
+if [[ "$round_sizes" -ge 0 ]]; then
+	fanout_sentence="Before dispatch: **$(plural "$round_sizes" persona personas) x ${subsystems_phrase}** =
+${dispatches_phrase} per iteration,
+up to **${iterations_phrase}**."
+else
+	fanout_sentence="Before dispatch: **${dispatches_phrase}** per iteration across
+${subsystems_phrase} — councils differ by subsystem — up to
+**${iterations_phrase}**."
+fi
+
+# Named only when it actually happened, and phrased as what it cost rather than
+# what it saved: the reviewers that did not run are a coverage fact first and an
+# economy second, and `tracking.md` is where the reasons are.
+selection_note=""
+if [[ "$selection_applied" == "true" ]] && [[ "$discovered" -gt 0 ]]; then
+	selection_note="
+Change shape narrowed the council: ${personas} of ${discovered} discovered reviewers
+are dispatched. See \`## Phase: Council Selection\` in \`tracking.md\` for who was
+skipped and why."
+fi
+
+# Triage runs BEFORE this estimate, so its dispatch is already spent by the time
+# anyone reads the table. Disclosing that is the price of the table describing
+# the grid that will actually run: pricing the untriaged grid would over-state
+# every triaged review, and an estimate operators learn to discount is worse
+# than one that admits a cent has already gone.
+triage_note=""
+triage_excluded=$(jq -r '.triage.excluded // 0' "$manifest" 2>/dev/null || echo 0)
+[[ "$triage_excluded" =~ ^[0-9]+$ ]] || triage_excluded=0
+if [[ "$triage_excluded" -gt 0 ]]; then
+	triage_note="
+Subsystem triage removed ${triage_excluded} further dispatch(es) and has already spent one
+cheap dispatch of its own to do so. See \`## Phase: Subsystem Triage\` in
+\`tracking.md\` for each cell and for what its invariants refused."
+fi
 
 # The reference is credited only for a band that actually came out of it. An
 # operator's own numbers presented as the module's measurement is a claim about
@@ -405,9 +480,8 @@ esac
 cat <<EOF
 ## Cost estimate — ${effort} review
 
-Before dispatch: **${personas_phrase} x ${subsystems_phrase}** =
-${dispatches_phrase} per iteration,
-up to **${iterations_phrase}**.
+${fanout_sentence}
+${selection_note}${triage_note}
 
 | | Dispatches | Est. input tokens | Est. cost |
 |---|---:|---:|---:|
@@ -441,6 +515,9 @@ fi
 	echo "## Phase: Cost Estimate"
 	echo ""
 	echo "- Personas: ${personas}"
+	echo "- Personas discovered: ${discovered}"
+	echo "- Selection applied: ${selection_applied}"
+	echo "- Triage exclusions: ${triage_excluded}"
 	echo "- Subsystems: ${subsystems}"
 	echo "- Iteration cap: ${iteration_cap}"
 	echo "- Dispatches (first pass): ${dispatches_first}"

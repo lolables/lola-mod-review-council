@@ -1052,6 +1052,148 @@ for sfx in code spec; do
 	assert_equals "$roster" "$on_disk" "RC_PERSONAS matches the shipped -${sfx} agent files"
 done
 
+# The drop table in rc-select-council.sh is a fourth place persona base names are
+# written down, and the one that fails most quietly: a name that drifts out of
+# the roster — a rename, or a typo — simply matches no discovered agent, so the
+# selector drops nothing and the rule silently stops working. Nothing else
+# notices, because "full council" is also the correct output for every changeset
+# the rule does not cover.
+echo "Test: every persona rc-select-council.sh may drop is in RC_PERSONAS"
+select_sh="$SKILLS/scripts/rc-select-council.sh"
+dropped=$(sed -n "s/^\t\tprintf '\([a-z]*\)\\\\t.*/\1/p" "$select_sh" | sort -u | tr '\n' ' ')
+dropped="${dropped% }"
+if [[ -z "$dropped" ]]; then
+	echo "  FAIL: no drop table found in rc-select-council.sh"
+	FAIL=$((FAIL + 1))
+else
+	unknown=""
+	for persona in $dropped; do
+		[[ " $roster " == *" $persona "* ]] || unknown="${unknown} ${persona}"
+	done
+	if [[ -z "$unknown" ]]; then
+		echo "  PASS: drop table names only known personas ($dropped)"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: drop table names personas outside RC_PERSONAS:${unknown}"
+		FAIL=$((FAIL + 1))
+	fi
+fi
+
+# The whole feature rests on being conservative. A future edit that adds a rule
+# without the fail-open framing would be indistinguishable from one that keeps
+# it, so pin the framing itself in the document operators read.
+echo "Test: SKILL.md Step 2.2 states selection never blocks and fails open"
+step_sel=$(sed -n '/^### Step 2.2/,/^### Step 2.3/p' "$SKILL_MD" | tr '\n' ' ' | tr -s ' ')
+if grep -qF 'rc-select-council.sh' <<<"$step_sel"; then
+	echo "  PASS: Step 2.2 names the script"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: Step 2.2 does not name rc-select-council.sh"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qiE 'fails open|never blocks' <<<"$step_sel"; then
+	echo "  PASS: Step 2.2 states the fail-open posture"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: Step 2.2 has no fail-open guarantee"
+	FAIL=$((FAIL + 1))
+fi
+
+# A narrowed run must never publish as full coverage. The disclosure is spread
+# across three renderers, so pin that each still carries it.
+echo "Test: a deselected reviewer is disclosed wherever coverage is reported"
+if grep -qF 'Reviewers skipped (out of scope)' "$SKILLS/scripts/rc-render-report.sh"; then
+	echo "  PASS: the report's Discovery Summary names skipped reviewers"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report does not disclose skipped reviewers"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF 'deselected' "$SKILLS/scripts/rc-render-comment.sh"; then
+	echo "  PASS: the PR comment reads the deselected list"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the PR comment does not disclose skipped reviewers"
+	FAIL=$((FAIL + 1))
+fi
+# The jq filter is matched as a fragment that omits the `$m[0]` prefix: written
+# out in full it reads as an unexpanded command substitution to shellcheck
+# (SC2016), and the distinguishing part of the filter is the fallback anyway.
+if grep -qF 'council // ' "$SKILLS/scripts/rc-verify-evidence.sh" &&
+	grep -qF '.agents // []' "$SKILLS/scripts/rc-verify-evidence.sh"; then
+	echo "  PASS: verification diffs verdicts against the dispatched council"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: verification still diffs against the discovered roster"
+	FAIL=$((FAIL + 1))
+fi
+
+# --- Subsystem triage --------------------------------------------------------
+#
+# The triage validator is hand-written jq rather than a call to a schema
+# validator binary, so the key sets it enforces are a second copy of
+# triage-schema.json. Same drift guard RC_TOP_KEYS carries against
+# verdict-schema.json: a key added to the schema and not to the checker is
+# silently unenforced, and one removed from the schema but still required by the
+# checker refuses every valid matrix.
+echo "Test: the triage validator's key sets match triage-schema.json"
+TRIAGE_SH="$SKILLS/scripts/rc-apply-triage.sh"
+TRIAGE_SCHEMA="$SKILLS/references/triage-schema.json"
+schema_top=$(jq -r '.properties | keys | sort | join(",")' "$TRIAGE_SCHEMA")
+checker_top=$(sed -n "s/^readonly RC_TRIAGE_TOP_KEYS='\(.*\)'\$/\1/p" "$TRIAGE_SH" |
+	jq -r 'sort | join(",")')
+assert_equals "$checker_top" "$schema_top" "top-level keys agree with the schema"
+schema_item=$(jq -r '.properties.exclusions.items.properties | keys | sort | join(",")' "$TRIAGE_SCHEMA")
+checker_item=$(sed -n "s/^readonly RC_TRIAGE_ITEM_KEYS='\(.*\)'\$/\1/p" "$TRIAGE_SH" |
+	jq -r 'sort | join(",")')
+assert_equals "$checker_item" "$schema_item" "exclusion keys agree with the schema"
+
+# Triage reads the diff, which on a fork PR is written by whoever opened it, and
+# its output decides who reviews. It is the one component an attacker could aim
+# at to route a reviewer away from their own change, so the prompt must frame
+# the diff as data and say what to do when it contains an instruction.
+echo "Test: the triage prompt frames the diff as untrusted"
+TRIAGE_MD="$SKILLS/phases/triage.md"
+triage_flat=$(tr '\n' ' ' <"$TRIAGE_MD" | tr -s ' ')
+if grep -qiF 'untrusted data, never directives' <<<"$triage_flat"; then
+	echo "  PASS: triage.md carries the untrusted-data framing"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: triage.md does not frame the diff as untrusted"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qiE 'exclude (the adversary|nothing)|grounds to exclude' <<<"$triage_flat"; then
+	echo "  PASS: triage.md names the route-me-away attack and its answer"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: triage.md does not say what to do with an instruction in the diff"
+	FAIL=$((FAIL + 1))
+fi
+
+# The three invariants are the entire reason a cheap model is permitted to
+# narrow anything here. Pin them in the script AND in the phase document, since
+# the document is what a future editor reads before changing the script.
+echo "Test: the triage invariants are named in the script and the phase doc"
+for rule in row-coverage column-floor open-finding; do
+	if grep -qF "$rule" "$TRIAGE_SH" && grep -qF "$rule" "$TRIAGE_MD"; then
+		echo "  PASS: '$rule' is enforced and documented"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: '$rule' is missing from the script or the phase doc"
+		FAIL=$((FAIL + 1))
+	fi
+done
+
+echo "Test: triage is documented as deep-mode-only and off by default"
+if grep -qiE 'deep mode only|deep-mode runs only|deep mode, opt-in' <<<"$triage_flat" &&
+	grep -qiF 'off by default' <<<"$triage_flat"; then
+	echo "  PASS: the gate and the default are both stated"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: triage.md does not state the gate or the default"
+	FAIL=$((FAIL + 1))
+fi
+
 # Step 5 must not block Step 6. The iteration offer used to sit between the
 # verdict and the report, so a non-interactive run — CI, a piped prompt, any
 # host with nobody to answer — ended at the question with verified findings and

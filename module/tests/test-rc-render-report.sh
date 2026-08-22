@@ -1135,5 +1135,77 @@ else
 fi
 rm -rf "$s"
 
+# --- A narrowed council is disclosed, never implied (issue #20) --------------
+#
+# The Discovery Summary is where a reader learns how much of the council ran.
+# Left at "Agents discovered / Agents absent" alone, a run that deliberately
+# skipped two reviewers reads exactly like one where all five found nothing.
+echo "Test: the Discovery Summary reports deliberately skipped reviewers"
+s=$(mktemp -d)
+mkdir -p "$s/verdicts"
+write_verification_log "$s"
+cat >"$s/tracking.md" <<'TRACKING'
+# Review Council Session Tracking
+
+## Phase: Preparation
+
+- Mode: code (code files changed)
+- Branch: feature/docs
+- Base: main
+- Agents discovered: 5
+- Agents absent: none
+- Changeset size: 2 files
+
+## Phase: Council Selection
+
+- Selection: applied
+- Changeset shape: docs-only
+- Reason: every changed file is prose documentation
+- Council: divisor-adversary-code, divisor-curator-code, divisor-guard-code
+- Skipped reviewers: divisor-sre-code, divisor-testing-code
+- Pinned: none
+TRACKING
+printf '{"verified":[],"correctable":[],"stripped":[],"total_findings":0,"duplicates_consolidated":0,"verdicts":{}}\n' \
+	>"$s/verdicts/findings.json"
+echo "APPROVE" >"$s/verdict.txt"
+rep=$(bash "$SCRIPT" "$s" 2>/dev/null)
+if grep -qF '**Reviewers skipped (out of scope)**: divisor-sre-code, divisor-testing-code' <<<"$rep"; then
+	echo "  PASS: skipped reviewers are named in the Discovery Summary"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a narrowed council renders as full coverage"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF '**Changeset shape**: docs-only' <<<"$rep"; then
+	echo "  PASS: the shape that licensed the narrowing is named"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report does not say why the council was narrowed"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a session that never ran selection claims no skips"
+# Every session written before this feature, and every run where selection did
+# not apply, must render a Discovery Summary that asserts nothing new.
+s=$(mktemp -d)
+mkdir -p "$s/verdicts"
+write_verification_log "$s"
+printf '# Review Council Session Tracking\n\n## Phase: Preparation\n\n- Mode: code (x)\n- Agents discovered: 5\n- Agents absent: none\n- Changeset size: 2 files\n' \
+	>"$s/tracking.md"
+printf '{"verified":[],"correctable":[],"stripped":[],"total_findings":0,"duplicates_consolidated":0,"verdicts":{}}\n' \
+	>"$s/verdicts/findings.json"
+echo "APPROVE" >"$s/verdict.txt"
+rep=$(bash "$SCRIPT" "$s" 2>/dev/null)
+if grep -qF '**Reviewers skipped (out of scope)**: none' <<<"$rep" &&
+	grep -qF '**Changeset shape**: not evaluated' <<<"$rep"; then
+	echo "  PASS: an unevaluated session reports none, not a fabricated skip"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a session without a selection block renders wrong defaults"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

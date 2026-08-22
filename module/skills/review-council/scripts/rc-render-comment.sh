@@ -342,6 +342,32 @@ rc_render_comment_body() { # session_dir body_file
 		done <<<"$verdict_agents"
 	fi
 
+	# Reviewers the council deliberately did not dispatch, as their own rows.
+	# The table above is built from verdicts, so a skipped persona is simply not
+	# in it — and a three-row table on a five-persona council reads as a full
+	# council that happened to be small. This is the artifact a maintainer
+	# actually sees on the PR, so it is the one that most needs to distinguish
+	# "found nothing" from "was not asked". The reason travels with the row; a
+	# reader who disagrees with the narrowing can turn it off (README, "Council
+	# selection") and re-run.
+	# The reason goes in the Verdict cell, where "why this outcome" belongs, and
+	# the Findings cell stays a dash: a count column holding prose is a column
+	# that has stopped meaning anything. Pipes are re-encoded for the same reason
+	# the inline-comment table re-encodes them — one would open a column.
+	if [[ -f "$session_dir/session-manifest.json" ]]; then
+		local skipped_rows reason
+		skipped_rows=$(jq -r '(.deselected // [])[]
+			| "\(.agent)\t\(.reason // "out of scope" | gsub("\\|"; "&#124;") | gsub("\r?\n"; " "))"' \
+			"$session_dir/session-manifest.json" 2>/dev/null || true)
+		while IFS=$'\t' read -r name reason; do
+			[[ "$name" == divisor-* ]] || continue
+			# ASCII hyphen and plain colon: the assembled body carries no em or en
+			# dash (the house-style pass strips them everywhere else, and it does
+			# not run over this table).
+			agent_rows+="| $(persona_label "$name") | ⏭️ Skipped: ${reason} | - |"$'\n'
+		done <<<"$skipped_rows"
+	fi
+
 	# --- Fixed regions of a part body -------------------------------------
 	#
 	# Split at the point the disclosure line goes, so the ladder can re-assemble

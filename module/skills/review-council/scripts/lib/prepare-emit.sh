@@ -108,6 +108,22 @@ fi
 	echo "- Max comments: ${max_comments}"
 	echo "- Agents discovered: ${#agents[@]}"
 	echo "- Agents absent: ${agents_absent_line}"
+	# Council-selection inputs, carried here for rc-select-council.sh, which runs
+	# as a later stage in its own process and reads them back with rc_parse_kv.
+	#
+	# The instructions are recorded as a BOOLEAN, never as their text. Any focus
+	# the user supplied widens the council back to full coverage, so `present` is
+	# the whole signal — and the text may span lines, which rc_parse_kv (one
+	# line, first match) cannot read back without truncating it into a different
+	# instruction than the one that was given.
+	if [[ -n "$review_instructions" ]]; then
+		echo "- Review instructions: present"
+	else
+		echo "- Review instructions: none"
+	fi
+	echo "- Persona selection: ${persona_selection}"
+	echo "- Pin personas: ${pin_personas}"
+	echo "- Subsystem triage: ${subsystem_triage}"
 	changeset_line_count=$(wc -l <"${session_dir}/changeset.txt")
 	echo "- Changeset size: ${changeset_line_count} files"
 	echo ""
@@ -244,6 +260,14 @@ rm -f "$agents_temp"
 #
 # `absent` is the same roster diff tracking.md carries in prose, recorded here
 # in a form a script can use without parsing markdown.
+#
+# `agents` keeps meaning DISCOVERED. `council` means WILL BE DISPATCHED, and is
+# seeded equal to it: rc-select-council.sh may narrow the council later, and
+# every consumer reads `.council`, so a host that never runs that stage — or a
+# stage that declines to narrow — dispatches everyone by construction. Selection
+# can only ever subtract from a set that already holds the whole roster, which is
+# what makes "fail open" a property of the data rather than of remembering to
+# handle a missing key in four scripts.
 absent_json='[]'
 if [[ ${#agents_absent[@]} -gt 0 ]]; then
 	absent_json=$(printf '%s\n' "${agents_absent[@]}" | jq -R . | jq -s . 2>/dev/null) || absent_json='[]'
@@ -253,7 +277,10 @@ jq -n \
 	--arg suffix "$suffix" \
 	--argjson agents "$agents_json" \
 	--argjson absent "$absent_json" \
-	'{mode: $mode, suffix: $suffix, agents: $agents, absent: $absent}' \
+	'{mode: $mode, suffix: $suffix, agents: $agents, absent: $absent,
+	  council: $agents, deselected: [], subsystems: [],
+	  selection: {applied: false, shape: "unevaluated",
+	              reason: "council selection has not run", pinned: []}}' \
 	>"${session_dir}/session-manifest.json"
 
 # Build the result JSON

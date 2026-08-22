@@ -6,6 +6,86 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Deep mode can now route each persona to only the subsystems that hold
+  something for it. Change-shape selection answers everything a filename can
+  answer; it cannot answer whether a Go subsystem holds anything for the
+  *Adversary*. `rc-apply-triage.sh` (SKILL.md Step 2.3) applies a matrix from
+  one cheapest-tier subagent that reads the diff and names (persona, subsystem)
+  pairs holding nothing for that lens. The agent emits **exclusions only**, so a
+  truncated, empty or malformed reply can only ever mean more review — fail-open
+  is a property of the message shape rather than of remembering to handle each
+  failure. One triage dispatch costs $0.014-$0.144 and clears its own cost once
+  it removes roughly one $0.20-$0.56 reviewer dispatch, on a grid of 10 to 30
+  that repeats per iteration.
+- Triage decides **where** a persona looks, never **whether** its lens runs, and
+  that is enforced rather than assumed. Three invariants refuse any matrix that
+  would remove a lens from the review entirely (`row-coverage`), leave a
+  subsystem fewer than two reviewers (`column-floor`), or route away the
+  reviewer holding an unresolved finding in that subsystem (`open-finding` — on
+  a re-review that reviewer has to be present to judge the fix). Every refusal
+  is recorded beside every applied exclusion in `tracking.md`. The worst
+  outcome available to a wrong or manipulated triage is one lens missing one
+  subsystem it still reviews elsewhere, which is what makes a cheap model's
+  judgement admissible here where a whole-changeset "does this need the
+  Curator?" would not be. The triage prompt frames the diff as untrusted data:
+  it is the one component whose output decides who reviews, so an instruction
+  in the diff asking it to route a reviewer away is grounds to exclude nothing
+  from that subsystem.
+- Triage ships **off by default** — it narrows on a cheap model's judgement and
+  has no measured recall yet. `.lola-eval/tests/case-022-triage-recall/` is the
+  case that would justify flipping it: five subsystems, one planted defect each,
+  every defect placed in the subsystem where a naive triage is most likely to
+  route its lens away, and a rubric that fails the run if any is lost. That case
+  ships complete and has not been run.
+- Both council switches now resolve across four layers — CLI flag, environment,
+  the project's configuration block, then the built-in default. `--triage` /
+  `--no-triage` and `REVIEW_COUNCIL_TRIAGE` join `Subsystem triage:`, and
+  `--persona-selection` / `--no-persona-selection` and
+  `REVIEW_COUNCIL_PERSONA_SELECTION` join `Persona selection:`, which previously
+  had no way to be flipped for one run. A value that is neither `on` nor `off`
+  at any layer is reported on stderr and skipped rather than read as `off`: a
+  typo that silently disabled a reviewer-selection policy would change what gets
+  reviewed while reading as though the configuration had been honoured.
+- The council is now narrowed to the reviewers whose lens the changeset actually
+  touches. A `go.sum` bump has no documentation to curate and no test logic to
+  read; a README edit has no runtime surface. Each such reviewer still cost a
+  full dispatch, multiplied by every subsystem in deep mode and by every
+  re-review iteration. `rc-select-council.sh` runs between decomposition and
+  the cost estimate, classifies each changed path from its name alone, and
+  drops a persona only when every file in the changeset falls in one class:
+  prose documentation drops the Tester and the Operator, a test-only changeset
+  drops the Curator, and a generated lockfile drops the Guard, the Curator and
+  the Tester — 40%, 20% and 60% of a first pass respectively. The rules are a
+  shell pass over a file list, so the same changeset always yields the same
+  council and no model round-trip is added. Deep mode evaluates each subsystem
+  separately, because a prose subsystem and a code subsystem in one review do
+  not need the same reviewers, and the cost estimate now sums the per-subsystem
+  councils instead of multiplying a roster it no longer dispatches.
+  Configure with `Persona selection: off` to always dispatch everyone, or
+  `Pin personas:` to exempt individual reviewers.
+- Council selection fails open on everything short of a conclusive signal, and
+  the asymmetry is deliberate: a redundant dispatch costs the per-dispatch rate,
+  while a false skip costs a finding that nothing downstream can tell is
+  missing. A mixed changeset narrows nothing, and neither does `go.mod` beside
+  its `go.sum` — a manifest is authored, and its intent is what the Guard reads.
+  Prose sitting under a prompt or instruction surface (`agents/`, `skills/`,
+  `prompts/`, `.claude/`, `AGENTS.md`) narrows nothing either, because in a
+  prompt-driven repository markdown IS the behaviour and "no code changed" is
+  false about it — this module is such a repository, so the carve-out protects
+  its own reviews first. Spec mode, supplied `--review-instructions`, a pinned
+  persona, a partial install whose council would empty, and a session that
+  cannot be read all leave the full council standing. Preparation seeds the
+  manifest's `council` equal to the discovered roster, so a host that never runs
+  the step is unaffected by construction rather than by a special case.
+- A deliberately skipped reviewer is now a third coverage state, distinct from
+  both "ran and found nothing" and "was dispatched and returned nothing". The
+  session manifest keeps `agents` (discovered) apart from `council`
+  (dispatched) and records each skip in `deselected` with the reason;
+  `rc-verify-evidence.sh` diffs arriving verdicts against the council, so a
+  skip is expected-absent rather than a `missing_verdicts` entry; and the
+  reason is published in `tracking.md`, in the report's Discovery Summary and
+  as its own row in the PR comment's reviewer table. A narrowed review can
+  never present as full coverage.
 - A deep review now prices itself before it dispatches anything. Deep multiplies
   the persona roster by the subsystem count and repeats that product once per
   iteration up to five, and nothing surfaced the multiplication until the bill
@@ -305,6 +385,28 @@ All notable changes to the Review Council module are documented here.
   Disposition contract (prompt injection ignored, false-fix claims survive,
   true-fix claims resolve only on independent re-verification, scoping
   hints bounded to LOW), run via `task lola-eval:test-disposition`
+- `task lola-eval:*` now installs the eval harness itself instead of
+  reporting that it is missing. Every target runs
+  `.taskfiles/scripts/ensure-lola-eval.sh` first, which builds `.venv` with
+  `uv` and installs `lola-eval` from the `LOLA_EVAL_SPEC` declared in
+  `.taskfiles/lola-eval.yml`. The old guard could not have grown into this:
+  Task resolves a global `sh:` var while parsing the file, before any `deps:`
+  entry runs, so a lookup that answered "not installed" answered it for the
+  whole invocation and nothing a dependency did afterwards could change it.
+  The var names a fixed path now and the bootstrap makes that path real. A
+  `lola-eval` already on `PATH` still wins, and a venv already matching the
+  spec costs two stat calls and no subprocess
+- `task lola-eval:update` — reinstalls the harness from the current tip of
+  `LOLA_EVAL_SPEC`. The spec floats on upstream `main`, and a branch name does
+  not change when the branch moves, so a checkout that has already
+  bootstrapped would otherwise stay on the commit it first installed with no
+  way forward short of deleting `.venv`. Editing the spec instead — to pin a
+  SHA — re-installs everywhere automatically, because the bootstrap compares
+  the spec string against the one it stamped inside the venv
+- `uv` joins the prerequisite set: it is in the `Brewfile`, checked by
+  `task doctor`, and named with an install remedy when the bootstrap cannot
+  find it. It is the one prerequisite no part of a review touches — only the
+  eval harness needs it
 
 ### Changed
 

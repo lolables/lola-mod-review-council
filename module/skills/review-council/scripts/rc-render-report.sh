@@ -125,12 +125,23 @@ pr_line=$(rc_parse_kv "$tracking_file" "PR")
 agents_discovered=$(rc_parse_kv "$tracking_file" "Agents discovered")
 agents_absent=$(rc_parse_kv "$tracking_file" "Agents absent")
 changeset=$(rc_parse_kv "$tracking_file" "Changeset size")
+# The third coverage state. "Absent" is a persona this host does not have
+# installed; "skipped" is one it has and deliberately did not dispatch, because
+# the changeset holds nothing for that persona to review. Neither is a verdict
+# that went missing, and a report that showed only the first two would read as
+# full coverage on every narrowed run — the one thing contextual persona
+# selection must never publish. A session that never ran selection has no such
+# line, and the default below says so.
+agents_skipped=$(rc_parse_kv "$tracking_file" "Skipped reviewers")
+selection_shape=$(rc_parse_kv "$tracking_file" "Changeset shape")
 mode="${mode:-Unknown}"
 branch="${branch:-unknown}"
 base="${base:-main}"
 pr_line="${pr_line:-none}"
 agents_discovered="${agents_discovered:-0}"
 agents_absent="${agents_absent:-none}"
+agents_skipped="${agents_skipped:-none}"
+selection_shape="${selection_shape:-not evaluated}"
 changeset="${changeset:-unknown}"
 
 # Parse findings.json if exists
@@ -231,6 +242,8 @@ $council_verdict_line
 ## Discovery Summary
 - **Agents discovered**: $agents_discovered
 - **Agents absent**: $agents_absent
+- **Reviewers skipped (out of scope)**: $agents_skipped
+- **Changeset shape**: $selection_shape
 - **Changeset**: $changeset
 
 EOF

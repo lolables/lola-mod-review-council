@@ -1403,6 +1403,65 @@ else
 fi
 rm -rf "$sess"
 
+# --- Deselected reviewers are disclosed on the PR (issue #20) ----------------
+#
+# The reviewer table is built from arriving verdicts, so a persona the council
+# never dispatched is simply not in it — and a short table reads as a full
+# council. The PR comment is the artifact a maintainer actually sees, so it is
+# the one that most needs to tell "found nothing" from "was not asked".
+echo "Test: a deselected reviewer gets its own row with the reason"
+sess=$(mktemp -d)
+make_review_session "$sess"
+cat >"$sess/session-manifest.json" <<'MJ'
+{"mode":"code","suffix":"code",
+ "agents":["divisor-adversary-code","divisor-sre-code","divisor-testing-code"],
+ "absent":[],
+ "council":["divisor-adversary-code"],
+ "deselected":[{"agent":"divisor-sre-code","persona":"sre",
+                "reason":"docs-only changeset: no runtime, deployment or permission surface"},
+               {"agent":"divisor-testing-code","persona":"testing",
+                "reason":"docs-only changeset: no code or test surface to review"}],
+ "selection":{"applied":true,"shape":"docs-only","reason":"prose only","pinned":[]}}
+MJ
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "renders with a narrowed council"
+body=$(cat "$sess/comment-body.md")
+for needle in "⏭️ Skipped: docs-only changeset: no runtime" "⏭️ Skipped: docs-only changeset: no code or test surface"; do
+	if grep -qF "$needle" <<<"$body"; then
+		echo "  PASS: discloses '$needle'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$needle'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+# The house rule the whole body obeys: no em or en dashes. A skipped row is
+# assembled after the dash pass has run, so it has to be clean on its own.
+if [[ "$body" != *—* && "$body" != *–* ]]; then
+	echo "  PASS: skipped rows carry no em/en dash"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a skipped row introduced an em/en dash"
+	FAIL=$((FAIL + 1))
+fi
+# Three columns per row, so the skipped rows do not break the table.
+bad_rows=$(grep -c '^| .* | ⏭️ Skipped: [^|]* | - |$' <<<"$body" || true)
+assert_equals "$bad_rows" "2" "both skipped rows are well-formed three-column rows"
+rm -rf "$sess"
+
+echo "Test: a session with no deselections renders no skipped row"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF "Skipped:" "$sess/comment-body.md"; then
+	echo "  FAIL: a full-council run claims a skip"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: a full-council run claims no skip"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

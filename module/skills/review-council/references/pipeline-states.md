@@ -5,12 +5,30 @@ these tokens. This is the machine-readable spine of the state diagram in SKILL.m
 
 | State            | Script                  | Emits (`status`)                                     | On status -> next                                                                                                                                           |
 |------------------|-------------------------|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Prepare          | `rc-prepare.sh`         | `ok` \| `skip` \| `empty`                            | `ok`->Delegate; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
+| Prepare          | `rc-prepare.sh`         | `ok` \| `skip` \| `empty`                            | `ok`->Select; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
+| Select           | `rc-select-council.sh`  | `ok` \| `nothing_to_do`                              | Both ->Triage. `ok` narrows or confirms the council in `session-manifest.json`; `nothing_to_do` (session unreadable) leaves preparation's full council in place. Never `skip` — an unevaluatable session still gets every reviewer |
+| Triage           | `rc-apply-triage.sh`    | `ok` \| `nothing_to_do` \| `triage_error`            | All three ->Delegate. `ok` applies the surviving exclusions to the per-subsystem councils; `nothing_to_do` (not deep, no subsystems, disabled, or no reply) and `triage_error` (no fenced json block, or schema-invalid) both leave every council as Select wrote it. No status stops the run |
 | Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure)                                                       |
 | Verify           | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do`                              | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty)                                                          |
 | Consolidate      | `rc-consolidate.sh`     | `ok` \| `consolidate_error` \| `nothing_to_do`       | `ok`->Validate; `consolidate_error`->stop; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`              |
 | Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip`                                 | ->post/Report                                                                                                                                               |
 | Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report                                                                                                                                                    |
+
+Select and Triage are the two stages that can change WHO reviews, and they
+write into the same three coverage states in `session-manifest.json`: `agents`
+(discovered), `council` (dispatched), and `deselected` (discovered,
+deliberately skipped, with the reason and a `source` naming which stage
+skipped it). `rc-verify-evidence.sh` diffs arriving verdicts against `council`,
+so a deselected persona is expected-absent rather than a `missing_verdicts`
+entry.
+
+They differ in what they may claim. Select decides from filenames alone and may
+remove a persona from the whole review. Triage decides from a cheap model's
+reading of the diff and may only move a persona between subsystems: its
+invariants refuse any matrix that would empty a lens (`row-coverage`), leave a
+subsystem fewer than two reviewers (`column-floor`), or remove the reviewer
+holding an unresolved finding there (`open-finding`). That asymmetry is why one
+is on by default and the other is not.
 
 Effort gates (quick skips Correction/Calibrate/Consolidate/Validate/Narrative)
 and the orchestrator-run states (Correction, Calibrate, Validate, Report) are

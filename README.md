@@ -68,24 +68,47 @@ covering security flaws (Go), architecture issues (TypeScript/React), multi-conc
 resistance (clean Go), per-persona coverage (Python), and convention pack detection (TypeScript). Each case has a rubric
 with weighted dimensions and a pass threshold.
 
-Results from the latest eval run (30 cells, 6 cases x 5 CLI/model combinations):
+**The numbers below come from the last run of the full two-CLI matrix** — 30
+cells, 6 cases x 5 CLI/model combinations — and the same data, averaged across
+the two CLIs, is what `references/model-guidance.md` ships (last updated
+2026-06-30). `.lola-eval/config.yaml` now pins a **single cell**,
+`claude-code` + `claude-sonnet-4-6`: the `opencode` leg is commented out, as
+are the Opus and Haiku rows.
 
-| Model    | CLI         | Avg Score | Cases Passed | Cost/Review |
-|----------|-------------|-----------|--------------|-------------|
-| Sonnet 4 | OpenCode    | **0.94**  | 6/6          | ~$1.30      |
-| Sonnet 4 | Claude Code | 0.90      | 6/6          | ~$2.20      |
-| Opus 4   | Claude Code | 0.89      | 6/6          | ~$5.35      |
-| Opus 4   | OpenCode    | 0.88      | 6/6          | ~$2.50      |
-| Haiku 4  | Claude Code | 0.72      | 4/6          | ~$0.34      |
+Two caveats on reading the table:
 
-**Sonnet 4 is the recommended model.** It achieves the highest average score across all test cases, passes every case
-on both CLIs, and costs roughly half of what Opus does per review. Opus matches Sonnet on detection quality but does not
-meaningfully outperform it on any dimension while costing 2-4x more.
+- **The Sonnet rows still describe the model that runs today.** Every scored
+  row in `.lola-eval/ledger.jsonl` was measured on `claude-sonnet-4-6`, and its
+  recorded cost per review — $2.15 on Claude Code, $1.41 on OpenCode — matches
+  the Cost/Review column below. What no longer runs on each pass is the
+  OpenCode leg, not the model.
+- **The Opus rows have no local provenance.** `ledger.jsonl` contains no Opus
+  rows at all, so those two lines cannot be reproduced from anything in this
+  repository. Treat them as unverified until someone re-measures.
+
+Model names are given as **classes** — the values `REVIEW_COUNCIL_MODEL_CLASS`
+accepts — not as specific model versions.
+
+Averages across all six cases, per CLI/model cell:
+
+| Model class | CLI         | Avg Score | Cases Passed | Cost/Review |
+|-------------|-------------|-----------|--------------|-------------|
+| Sonnet      | OpenCode    | **0.94**  | 6/6          | ~$1.30      |
+| Sonnet      | Claude Code | 0.90      | 6/6          | ~$2.20      |
+| Opus        | Claude Code | 0.89      | 6/6          | ~$5.35      |
+| Opus        | OpenCode    | 0.88      | 6/6          | ~$2.50      |
+| Haiku       | Claude Code | 0.72      | 4/6          | ~$0.34      |
+
+**Sonnet-class is the recommended model.** It achieves the highest average score across all test cases, passes every
+case on both CLIs, and costs roughly half of what Opus does per review. Opus matches Sonnet on detection quality but
+does not meaningfully outperform it on any dimension while costing 2-4x more.
 
 Haiku passes the majority of cases but struggles with false-positive suppression on clean codebases and convention pack
 attribution. It is suitable for quick scans where cost matters more than precision.
 
-Per-case scores:
+Per-case scores, **one column per CLI/model cell** — `CC` is Claude Code, `OC` is OpenCode. The per-case table in
+`references/model-guidance.md` reports the same run **averaged across both CLIs**, so its figures are the row-wise
+means of the pairs below, not different measurements:
 
 | Case                              | CC/Opus | CC/Sonnet | CC/Haiku | OC/Opus | OC/Sonnet |
 |-----------------------------------|---------|-----------|----------|---------|-----------|
@@ -104,33 +127,57 @@ The eval harness lives in `.lola-eval/` and uses `lola-eval` with custom provide
 
 ### Prerequisites
 
-Every script needs Bash 4+ and [`jq`](https://jqlang.github.io/jq/). If either
-is missing the scripts report it and skip rather than misbehave.
+Throughout this README, **forge** means the code-hosting platform a repository
+lives on — GitHub or GitLab. Anything described as going "through the forge" is
+a `gh` or `git` call to that platform, not something the council does locally.
 
-GNU `timeout` (from coreutils) is needed only by the three scripts that call a
-forge — session preparation, target cloning, and comment posting — where it
-bounds every call so a hung `gh` or `git` cannot stall a review. The rest of the
-pipeline, including evidence verification and report rendering, runs without it.
-Install it anyway if you review pull requests; skip it only if you never leave
-the local-diff path.
+**1. Bash 4+ and [`jq`](https://jqlang.github.io/jq/) — always.**
 
-macOS ships none of the three: its Bash is 3.2, and there is no `timeout` at
-all. Homebrew installs GNU tools under a `g` prefix, so `coreutils` provides
-`gtimeout` — the scripts accept either name, and no `PATH` changes are needed.
+Every script needs both. If either is missing the scripts report it and skip
+rather than misbehave.
 
-[`uv`](https://docs.astral.sh/uv/) is different: no part of a review touches
-it. It is listed below because `task lola-eval:*` builds the eval harness's
-virtualenv with it, which concerns you only if you cloned this repository to
-reproduce the scores above. Installing the module through lola, skip it. It
-stays in the macOS line so a laptop and the CI leg install the same set. On
-Linux there is no distribution package — use
-`curl -LsSf https://astral.sh/uv/install.sh | sh`.
+**2. GNU `timeout`, from coreutils — if you review pull requests.**
+
+Only the three scripts that call a forge use it — session preparation, target
+cloning and comment posting — where it bounds every call so a hung `gh` or
+`git` cannot stall a review. The rest of the pipeline, evidence verification
+and report rendering included, runs without it. Skip it only if you never
+leave the local-diff path.
+
+**3. On macOS, expect all three to be missing.**
+
+Its Bash is 3.2, and it has no `timeout` at all. Homebrew installs GNU tools
+under a `g` prefix, so `coreutils` provides `gtimeout` — the scripts accept
+either name, and no `PATH` changes are needed.
 
 ```bash
 brew install bash jq coreutils uv  # macOS
 sudo apt-get install jq coreutils  # Debian/Ubuntu
 sudo dnf install jq coreutils      # Fedora/RHEL
 ```
+
+**4. The `lola` CLI — for the recommended install path only.**
+
+`lola mod add` and `lola install` below are that tool. It is not packaged with
+this module; install it from [the lola project](https://github.com/LobsterTrap/lola).
+The manual install path needs nothing but `git` and `cp`.
+
+**5. [`uv`](https://docs.astral.sh/uv/) — only to reproduce the eval scores.**
+
+No part of a review touches it. It appears in the macOS line above because
+`task lola-eval:*` builds the eval harness's virtualenv with it, and keeping
+one list means a laptop and the CI leg install the same set. Installing the
+module through lola, skip it. On Linux there is no distribution package:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**6. [`task`](https://taskfile.dev) — only if you clone this repository.**
+
+Every check, test and eval target in this repo runs through it (`task check`,
+`task test`, `task lola-eval:test`). Users installing the module never need it.
+Install it per [the go-task instructions](https://taskfile.dev/installation/).
 
 ### Via Lola (recommended)
 
@@ -170,6 +217,16 @@ you use another tool, substitute its config directory (`.cursor/`, `.gemini/`, e
    cp -r /tmp/review-council/module/skills/review-council/ .claude/skills/review-council/
    ```
 
+5. Optional — copy the maintainer diagnostic skill. `review-council-debug`
+   exercises the review-council scripts against the current repository and
+   judges whether their output is clear enough for an orchestrator to act on.
+   Nothing in a review calls it; skip it unless you are debugging the module
+   itself:
+
+   ```bash
+   cp -r /tmp/review-council/module/skills/review-council-debug/ .claude/skills/review-council-debug/
+   ```
+
 The convention packs ship in the skill's `references/` directory, so step 4 installs them — including
 `reviewer-protocol.md`, which every reviewer agent depends on. To override a shipped pack or add your own, see
 Customization under Convention Packs.
@@ -190,11 +247,27 @@ Without `gh`, the Curator reports gaps as review findings instead.
 /review-council main..feat   # review a ref range
 /review-council HEAD         # review only the latest commit
 /review-council src/auth.go  # review named files, tracked or not
+/review-council deep 42      # review PR #42 at the deep effort tier
 ```
 
 Naming a file reviews that file whatever git makes of it — untracked, ignored,
 or committed and unmodified. Naming a directory keeps its other meaning: it
 filters the changeset to what changed under it, rather than sweeping the tree.
+
+### Effort tiers
+
+An **effort tier** sets how much work a review is allowed to do. Say the word
+anywhere in the command; leave it out and you get `standard`.
+
+| Tier       | What it does                                                                        |
+|------------|-------------------------------------------------------------------------------------|
+| `quick`    | One pass over the whole changeset. Skips the correction round, severity calibration, consolidation and the narrative; never offers to iterate |
+| `standard` | The default. Full verification and report; up to 3 fix-and-re-review iterations      |
+| `deep`     | Splits the changeset into subsystems and dispatches reviewers per subsystem, after pricing the fan-out; up to 5 iterations |
+
+Deep is the only tier that runs Decompose, Subsystem Triage and the Cost
+Estimate. What each of those does is in [the pipeline
+reference](docs/dev/pipeline.md).
 
 The full list of input forms — directory paths, URLs, ref ranges, effort words,
 review instructions, and the post-the-result phrasings — is the decision table
@@ -261,8 +334,9 @@ sent silently.
 On a re-review, that same marker also tells Prepare where the council's prior
 verdict landed: it fetches PR conversation replies posted since then so the
 Disposition step (below) can triage maintainer follow-up against the surviving
-findings. GitHub only today, behind the forge seam — see "Pipeline" for what
-Disposition does with that conversation.
+findings. GitHub only today, behind the forge seam — see [the pipeline
+reference](docs/dev/pipeline.md) for what Disposition does with that
+conversation.
 
 ### Reviewing PRs you haven't checked out
 
@@ -287,197 +361,15 @@ watch a run.
 
 ## How It Works
 
-The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates ten phases
-using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work). Not every phase runs on
-every review — Decompose, Cost Estimate, Quality Gates, Disposition and Post are each conditional:
+The `/review-council` command is a re-entrant state machine: thirteen phases,
+implemented as a hybrid of bash scripts for the deterministic work and LLM
+phase files for the judgment work, each loaded only when the pipeline reaches
+it. Not every phase runs on every review — Decompose, Subsystem Triage, Cost
+Estimate, Quality Gates, Disposition, Iterate and Post are conditional.
 
-| Phase             | Implementation                                              | Purpose                                                   |
-|-------------------|-------------------------------------------------------------|-----------------------------------------------------------|
-| **Prepare**       | `rc-prepare.sh`                                             | Mode detection, discovery, session setup                  |
-| **Decompose**     | `phases/decompose.md` (deep effort only)                    | Split the changeset into subsystems (`subsystems.json`)   |
-| **Cost Estimate** | `rc-cost-estimate.sh` (deep effort only)                    | Price the fan-out before dispatch; record acknowledgement |
-| **Quality Gates** | `SKILL.md` Step 2.5, CI data from `rc-prepare.sh`           | Forge CI status checks (code review with a PR only)       |
-| **Delegate**      | `phases/delegate.md`                                        | Prompt construction, dispatch                             |
-| **Extract**       | `rc-extract-verdict.sh`                                     | Schema-validate each reviewer's JSON verdict              |
-| **Verify**        | `rc-verify-evidence.sh` + `rc-consolidate.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup           |
-| **Disposition**   | `phases/disposition.md` (re-review only)                    | Triage untrusted PR-conversation replies against findings |
-| **Report**        | `rc-render-report.sh` + `phases/report.md`                  | Final report, learnings feedback                          |
-| **Post**          | `rc-post-comment.sh` (opt-in, PR only)                      | Publish or update the verdict comment on the PR           |
-
-The paths in that table are relative to the installed skill root (`.claude/skills/review-council/`, or
-`module/skills/review-council/` in this repository): `rc-*.sh` scripts live in `scripts/`, phase files in `phases/`.
-Each phase
-loads only when reached — the orchestrating LLM never needs to hold the full pipeline in context. The full
-state-by-state status vocabulary (including the extraction re-dispatch and the verify sub-states) is documented in
-`references/pipeline-states.md`, alongside a `stateDiagram-v2` in `SKILL.md`.
-
-### Pipeline
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {
-  'primaryColor': '#2f6dab',
-  'primaryTextColor': '#1e1e1e',
-  'primaryBorderColor': '#7c8ba1',
-  'lineColor': '#7c8ba1',
-  'edgeLabelBackground': '#eef2f8',
-  'tertiaryColor': 'transparent',
-  'tertiaryTextColor': '#7c8ba1',
-  'tertiaryBorderColor': '#7c8ba1',
-  'clusterBkg': 'transparent',
-  'clusterBorder': '#7c8ba1',
-  'titleColor': '#7c8ba1',
-  'noteBkgColor': '#eef2f8',
-  'noteTextColor': '#1e1e1e',
-  'fontFamily': 'system-ui, sans-serif'
-}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
-flowchart TD
-  prep["Prepare: detect mode, discover agents, capture changeset"]
-  decgate{"Deep effort?"}
-  dec["Decompose: split changeset into subsystems"]
-  sel["Select council: drop reviewers the change shape leaves nothing for"]
-  cost["Cost estimate: price the fan-out, record the acknowledgement"]
-  qg{"PR CI data available?"}
-  qgrun["Quality Gates: run CI checks"]
-  del["Delegate: construct prompts, dispatch agents in parallel"]
-  ext["Extract: schema-validate each reviewer's JSON verdict"]
-  ver["Verify: attestation, evidence, correction, calibration, consolidation"]
-  dispgate{"Re-review conversation to triage? (not quick effort)"}
-  disp["Disposition: triage untrusted PR conversation (GitHub only)"]
-  report["Report: determine verdict, render artifacts, record learnings"]
-  iter{"Findings remain, effort limit not reached, session interactive?"}
-  postgate{"Post intent recorded?"}
-  post["Post: publish or update the PR comment"]
-  done["Done"]
-
-  prep --> decgate
-  decgate -->|yes| dec
-  dec --> sel
-  decgate -->|no| sel
-  sel -->|deep| cost
-  cost --> qg
-  sel -->|quick, standard| qg
-  qg -->|yes| qgrun
-  qgrun --> del
-  qg -->|no| del
-  del --> ext
-  ext -->|extract_error - re-dispatch once| del
-  ext -->|ok| ver
-  ver --> dispgate
-  dispgate -->|yes| disp
-  dispgate -->|no| report
-  disp --> report
-  report --> iter
-  iter -->|user accepts fix and re-review| del
-  iter -->|no| postgate
-  postgate -->|yes| post
-  postgate -->|no| done
-  post --> done
-
-  classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
-  classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
-  classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
-  classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
-  classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
-  classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
-  class prep,del sysA
-  class qgrun sysB
-  class ver,disp sysC
-  class report sysD
-  class dec,sel,cost,ext,post sysE
-  class qg,iter,dispgate,decgate,postgate sysF
-```
-
-1. **Prepare** — detect mode, discover agents, set up session cache at `$XDG_CACHE_HOME/review-council/`, capture
-   changeset and diff
-2. **Decompose** (deep effort only) — split the changeset into subsystems and write `subsystems.json`, so reviewers
-   are dispatched per subsystem rather than over the whole diff. A changeset that turns out to be cohesive falls back
-   to standard delegation and no `subsystems.json` is written
-3. **Cost Estimate** (deep effort only) — before anything is dispatched, print what the fan-out will cost: personas
-   x subsystems x the iteration cap, input tokens estimated from the prompt bytes on disk, and a dollar band. An
-   interactive session is asked to acknowledge it; a non-interactive one records `not acknowledged
-   (non-interactive)` and proceeds, because a blocking question ends a headless run outright. The band is read at
-   run time from the Cost Per Review table in `references/model-guidance.md`, divided by the council size stated
-   beside it: set `REVIEW_COUNCIL_MODEL_CLASS` to price another row (`sonnet` by default; `opus` and `haiku` also
-   ship) or set `REVIEW_COUNCIL_COST_LOW` and `REVIEW_COUNCIL_COST_HIGH` in USD per reviewer dispatch, which
-   outrank the class
-4. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
-5. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
-   tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
-   fenced ` ```json ` verdict block — no markdown prose.
-6. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
-   `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
-   extraction failure rather than a silently dropped finding.
-7. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
-   apply severity calibration, strip fabricated findings, deduplicate. Writes the canonical
-   `verdicts/findings.json`.
-8. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
-   effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
-   findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
-   claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
-   never the verdict itself). Comments are treated as data, never instructions. See `phases/disposition.md` for the
-   full contract.
-9. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
-   runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
-   behind
-10. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
-    to fix them and re-review. Accepting returns to Delegate and overwrites the report on the next pass. The ceiling
-    depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
-11. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
-    in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
-    the report can never disagree
-
-### Session Cache
-
-Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>/` containing:
-
-- `session.txt` — human-readable run metadata
-- `tracking.md` — structured phase-by-phase state
-- `changeset.txt` — reviewed file list
-- `diff.patch` — full patch (code review)
-- `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
-  canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
-- `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
-  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), and, on a re-review,
-  `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render
-  without `verification.txt`
-- `learnings.txt` — false positives and validated patterns
-
-The newest `REVIEW_COUNCIL_SESSION_CACHE_MAX` sessions per project are kept (default 20); older ones are evicted on
-the next run, the same way clones are capped. Runs that produce nothing are capped too — the session directory is
-created before the changeset scan decides whether there is anything to review, so a no-op review still leaves one
-behind. The session a run is currently using is never evicted, whatever the cap.
-
-When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
-and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
-is added too — untrusted replies posted since that marker, GitHub only for now.
-
-### What spec mode reviews
-
-`/review-council specs` scans a fixed set of directories for spec files rather than sweeping the whole tree:
-
-```
-specs/  docs/specs/  docs/specification/  docs/design/  docs/superpowers/
-docs/rfcs/  docs/adr/  rfcs/  adr/  design/
-```
-
-Files count as specs when they end in `.md`, `.mdx`, `.markdown`, `.txt`, `.rst` or `.adoc`.
-
-Bare `docs/` is deliberately not on the list — most projects keep tutorials, blog posts and release notes there
-alongside anything spec-shaped, and scanning all of it turns a spec review into a review of the whole site.
-
-Two escape hatches when your layout differs:
-
-```bash
-/review-council specs docs/architecture/     # one run, explicit path
-REVIEW_COUNCIL_SPEC_DIRS="architecture rfc"  # every run, space or comma separated
-REVIEW_COUNCIL_SPEC_EXTS="md typ"            # every run, extensions without the dot
-```
-
-A named file needs neither: `/review-council specs docs/architecture/adr-7.md`
-reviews that document as it stands, extension list and directory list both
-beside the point.
-
-When nothing matches, the council tells you which directories it searched rather than only that it found nothing.
+See **[the pipeline reference](docs/dev/pipeline.md)** for the full phase
+table, the pipeline flowchart, what each phase does, the session cache each run
+writes, and which directories spec mode scans.
 
 ## Convention Packs
 
@@ -494,6 +386,12 @@ these packs:
 | `fw-react.md`          | React      | React framework conventions (additive)             |
 | `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format       |
 | `model-guidance.md`    | Any        | Model selection guidance and eval data             |
+| `forge-adapters.md`    | Any        | Forge adapter contract for cloning and comment posting |
+| `pipeline-states.md`   | Any        | Phase status vocabulary and transitions            |
+
+The `references/` directory also holds the JSON schemas the scripts validate
+against — `verdict-schema.json`, `consolidation-schema.json` and
+`triage-schema.json`. Those are machine contracts, not packs.
 
 Pack filenames encode their type: `lang-{language}.md` for standalone language packs, `fw-{framework}.md` for
 additive framework packs that load alongside the language pack.
@@ -526,6 +424,7 @@ CLAUDE.md:
 - Comment limit: 65536
 - Persona selection: on
 - Pin personas: adversary, guard
+- Subsystem triage: on
 ```
 
 | Extension Point | Purpose                              | Default                  |
@@ -608,16 +507,17 @@ Every refusal is recorded alongside every applied exclusion, in `tracking.md`.
 The worst a wrong triage can do is make one lens miss one subsystem it still
 reviews elsewhere.
 
-**Off by default.** Unlike change-shape selection, this narrows on a cheap
+**Off by default.** Unlike council selection, this narrows on a cheap
 model's judgement and has no measured recall behind it yet;
 `.lola-eval/tests/case-022-triage-recall/` is the case that would justify
-flipping it, and it has not been run. Turn it on where you want it:
+flipping it, and it has not been run. Turn it on where you want it — the four
+forms below are notation, not one runnable script:
 
-```bash
-/review-council deep 42            # triage off, the default
-REVIEW_COUNCIL_TRIAGE=on ...       # on for this shell or CI job
---triage / --no-triage             # on or off for one run
-- Subsystem triage: on             # on for this project
+```text
+/review-council deep 42              # triage off, the default
+--triage / --no-triage               # on or off for one run
+export REVIEW_COUNCIL_TRIAGE=on      # on for this shell or CI job
+- Subsystem triage: on               # on for this project, in the configuration block
 ```
 
 Precedence is flag, then environment, then the configuration block, then the
@@ -632,6 +532,63 @@ estimate then prices the grid that will actually run, and it names the triage
 dispatch as already spent.
 
 ### Oversized verdicts
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#2f6dab',
+  'primaryTextColor': '#1e1e1e',
+  'primaryBorderColor': '#7c8ba1',
+  'lineColor': '#7c8ba1',
+  'edgeLabelBackground': '#eef2f8',
+  'tertiaryColor': 'transparent',
+  'tertiaryTextColor': '#7c8ba1',
+  'tertiaryBorderColor': '#7c8ba1',
+  'clusterBkg': 'transparent',
+  'clusterBorder': '#7c8ba1',
+  'titleColor': '#7c8ba1',
+  'noteBkgColor': '#eef2f8',
+  'noteTextColor': '#1e1e1e',
+  'fontFamily': 'system-ui, sans-serif'
+}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
+flowchart TD
+  body["Rendered verdict body"]
+  budget["Budget = Comment limit x Max comments"]
+  fit{"Body within the budget?"}
+  chain["Fit one comment, or split across up to Max comments at full fidelity, cross-linked from the first"]
+  t1["Shed the collapsed Full reviewer analysis blocks, by rising severity"]
+  t2["Collapse findings to a headline and permalink"]
+  t3["Drop whole findings, lowest severity first"]
+  t4["Terminal: CRITICAL analysis yields, then CRITICAL findings"]
+  says["Add the disclosure line beginning Trimmed to fit the, naming what was omitted and how much"]
+  post["Comment the forge accepts"]
+  full["Complete verdict stays in the run artifacts and the rendered report"]
+
+  body --> budget
+  budget --> fit
+  fit -->|"yes, nothing is trimmed"| chain
+  chain --> post
+  fit -->|"no, trimming starts"| t1
+  t1 -->|"still over"| t2
+  t2 -->|"still over"| t3
+  t3 -->|"still over"| t4
+  t1 -->|fits| says
+  t2 -->|fits| says
+  t3 -->|fits| says
+  t4 -->|fits| says
+  says --> post
+  post --> full
+
+  classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
+  classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
+  classDef sysC fill:#7457b8,color:#ffffff,stroke:#7c8ba1
+  classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
+  classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
+  class body,budget sysA
+  class chain,post sysB
+  class t1,t2,t3,t4 sysC
+  class says,full sysD
+  class fit sysF
+```
 
 A review with enough findings renders a comment the forge will not accept. GitHub caps an issue comment at 65,536
 characters, and a 30-finding review already reaches about 58,000 — so this is reached in practice, not in theory.
@@ -721,7 +678,7 @@ prerequisite set, and the macOS CI leg installs from that same file — so a
 laptop and a CI run get identical formulae.
 
 ```bash
-brew bundle   # bash, jq, coreutils
+brew bundle   # bash, jq, coreutils, uv
 task doctor   # confirm each one is what PATH actually resolves to
 ```
 

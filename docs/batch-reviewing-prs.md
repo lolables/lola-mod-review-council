@@ -3,47 +3,171 @@
 `scripts/review-open-prs.sh` points the council at every open PR in a repository
 rather than one at a time. It is an operator tool you run yourself — the module
 does not ship it and no phase of the pipeline calls it, so `lola install` does
-not put it on your disk. Clone this repository to get it, and run it from the
-clone:
+not put it on your disk.
 
-```bash
-git clone https://github.com/lolables/lola-mod-review-council.git
-cd lola-mod-review-council
-./scripts/review-open-prs.sh --help
-```
+## Setting up a first run
 
-It needs Bash 4+ (it uses associative arrays), `gh` (authenticated), `jq`, and
-one of the two agent CLIs the council is installed for: `claude` or `opencode`.
-macOS ships Bash 3.2, so install a current one — `brew install bash jq` — as the
-README's Prerequisites section describes. The council itself must already be
-installed in whatever repository you point it at.
+1. Clone this repository. The script ships nowhere else.
 
-Nothing runs and nothing is posted until you pass `--run`, so start by reading
-the plan:
+   ```bash
+   git clone https://github.com/lolables/lola-mod-review-council.git
+   ```
 
-```
-$ ./scripts/review-open-prs.sh --repo ovh/venom
-Repository: ovh/venom
-Agent CLI: claude
-Unreviewed: 929 927 917 914
-Re-review (new commits): (none)
-Skipped (already reviewed at head, unchanged): (none)
-Ignored (author email): 924 920
-Queue (4): 929[quick] 927[quick] 917[standard] 914[standard]
+2. Work from the clone. Every command below runs there, and it is also the
+   directory the agent CLI is launched in.
 
-DRY RUN — nothing will be executed or posted. Re-run with --run to execute.
+   ```bash
+   cd lola-mod-review-council
+   ```
 
-PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/929\ ...
-```
+3. Read the reference — it is the authoritative list of flags and environment
+   variables, and this page is the tour.
+
+   ```bash
+   ./scripts/review-open-prs.sh --help
+   ```
+
+4. Install the dependencies: Bash 4+ (the script uses associative arrays), `gh`,
+   `jq`, and one of the two agent CLIs the council is installed for — `claude`
+   or `opencode`. macOS ships Bash 3.2, so install a current one, as the
+   README's [Prerequisites](../README.md#prerequisites) section describes.
+
+   ```bash
+   brew install bash jq
+   ```
+
+5. Authenticate `gh`. The script refuses to start otherwise.
+
+   ```bash
+   gh auth status
+   ```
+
+6. Install the council itself where the agent CLI will find it *from this
+   directory*:
+
+   - Either a user-scope install, or a project-scope one inside the clone.
+     Follow the README's [Install](../README.md#install) section.
+   - Nothing checks this up front, so a missing council surfaces as a failed
+     review on the first PR, after you have already confirmed the run.
+   - The repository you review does not have to be checked out anywhere: given
+     a PR number or URL, the council materializes the PR head into its own
+     cache — see [Reviewing PRs you haven't checked
+     out](../README.md#reviewing-prs-you-havent-checked-out) in the README.
+
+7. Read the plan. Nothing runs and nothing is posted until you pass `--run`. The
+   repository is taken from a PR URL argument first, then `--repo owner/name`,
+   then the GitHub remote of the current directory — which, from the clone, is
+   this module's own repository. Name the one you mean:
+
+   ```
+   $ ./scripts/review-open-prs.sh --repo ovh/venom
+   Repository: ovh/venom
+   Agent CLI: claude
+   Unreviewed: 929 927 917 914
+   Re-review (new commits): (none)
+   Requested re-review: (none)
+   Requested re-reviews: 0/unlimited used this hour, next slot (now)
+   Skipped (already reviewed at head, unchanged): (none)
+   Ignored (author email): 924 920
+   Queue (4): 929[quick] 927[quick] 917[standard] 914[standard]
+
+   DRY RUN — nothing will be executed or posted. Re-run with --run to execute.
+
+   PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/929\ ...
+   ```
+
+The bracketed word on the `Queue` line is the PR's effort tier — how expensive a
+review it is about to be given. See "The word in brackets" below.
+
+Most of that plan prints on every run. Five lines are conditional:
+
+- `Deferred (hourly cap):` — only when the cap held a request back.
+- `Skipped (already reviewed at head, unchanged):` — replaced by
+  `Forced re-review of unchanged PRs enabled (--force).` under `--force`.
+- `Ignored (author email):` — only on a batch run with a non-empty ignore list.
+- `Council marker from another account (queued anyway):` — only when there is one.
+- `Effort: forced to '<tier>' for every PR (--effort).` — only under `--effort`.
 
 ## How a PR reaches the queue
 
-Five gates decide each PR's fate, and the two overrides cross rather than nest:
-naming a PR by number or URL jumps the **ignore list** but still respects the
-already-reviewed check, while `--force` jumps the **already-reviewed** check but
-never rescues an ignored bot PR. So a named, unchanged, already-reviewed PR
-needs `--force` as well. A failed authorship lookup fails open — the PR carries
-on to the reviewed check rather than dropping out.
+PRs with no prior council comment are queued first, then PRs whose last review
+was for an older commit, then PRs someone asked to have re-reviewed; a PR
+already reviewed at its current head is skipped. `--force` jumps that
+already-reviewed check — and the hourly cap on comment-requested re-reviews
+behind it — while naming a PR by number or URL jumps the **ignore list**
+instead, so a named PR that is unchanged and already reviewed needs `--force`
+too. Collapsing a verdict comment on GitHub forces a fresh review of that PR by
+hand.
+
+The gate-by-gate reasoning, the flowchart, and what the driver accepts as a
+prior verdict of its own are in
+[How a PR reaches the queue](dev/pr-queue-gates.md).
+
+## Effort tiers
+
+**The word in brackets** is the effort tier, classified from each PR's GitHub
+metadata so a lockfile bump does not pay for a full deep review. In the run
+above, two small bot PRs earned `quick` and two PRs did not. `deep` is forced by
+size or by a changed path that looks security-sensitive; `standard` passes no
+effort word at all, leaving the council on its own default. `--effort <tier>`
+overrides the classifier for the whole batch.
+
+`quick` needs a bot author, so with the default ignore list (below) it applies
+to automation *other than* Dependabot and Renovate — whose PRs are dropped
+before they ever reach the classifier. Clear the list with `--no-ignore-emails`
+and they are costed like anything else: `quick` only when the PR touches at most
+`QUICK_FILES` files, `standard` above that, and `deep` if it crosses
+`DEEP_FILES` or a security-sensitive path. A four-file Renovate PR is a
+`standard` review, not a `quick` one.
+
+| Variable          | Default | Effect                                                  |
+|-------------------|---------|---------------------------------------------------------|
+| `DEEP_FILES`      | 10      | changed files at or above this force `deep`             |
+| `QUICK_FILES`     | 2       | bot PRs at or below this many files get `quick`         |
+| `SECURITY_PATHS`  | see `--help` | extended-regex; any matching changed path forces `deep` |
+| `IGNORE_EMAILS`   | Dependabot + Renovate | **replaces** the ignored-author list; empty means ignore nobody |
+| `REREVIEW_PER_HOUR` | unset | default for `--requests-per-hour`; unset or empty means no cap, and a non-numeric value exits 2 rather than reading as unlimited |
+| `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
+| `EXTRA_CLAUDE_ARGS` | unset | appended to every `claude` invocation, e.g. `--model opus` |
+| `EXTRA_OPENCODE_ARGS` | unset | appended to every `opencode` invocation                |
+
+`opencode run` has no budget flag to translate `MAX_BUDGET_USD` into, so setting
+both it and an opencode run is an error. Ignoring the cap would run the whole
+batch uncapped on the strength of a setting asking for the opposite, and you
+would find out on the invoice.
+
+## Asking for a re-review in a comment
+
+New commits are not the only reason to look again. A maintainer who has answered
+the findings — or argued one down — wants the council to read the thread and
+respond to it, and nothing has been pushed. Left to the head-sha check alone,
+that PR looks exactly like one nobody has touched.
+
+Commenting this on the PR queues it:
+
+```text
+/review-council review
+```
+
+The line has to stand alone, at column 0. Quoting someone else's request does
+not make one, and the command named mid-sentence is a mention. Trailing words
+are not accepted — the effort tier decides what a review costs, and the person
+asking does not choose it.
+
+**Only admin or write permission counts.** The requester's permission is checked
+against the repository, and an unreadable answer refuses the request. This is
+the one lookup in the driver that fails closed. Everywhere else, an unanswered
+question means "review it", because a duplicate review costs one review; here it
+would mean "let a stranger start reviews", and that has no ceiling.
+
+The request must also be **newer than the verdict it asks to replace**, so a
+single comment cannot re-trigger a paid review on every run forever.
+
+### Capping what other people can spend
+
+The budget is spent by every verdict this account posts, but only
+comment-requested re-reviews are gated by it — so the thing draining the window
+is not the thing being held back:
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -63,73 +187,72 @@ on to the reviewed check rather than dropping out.
   'fontFamily': 'system-ui, sans-serif'
 }, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
 flowchart TD
-  pr["Open PR discovered"]
-  named{"Named explicitly by number or URL?"}
-  lookup{"Commit-author lookup succeeded?"}
-  bots{"Every commit author on the ignore list?"}
-  ignored["Ignored - listed on the Ignored line"]
-  seen{"Already reviewed at current head?"}
-  forced{"--force given?"}
-  skipped["Skipped - unchanged since last review"]
-  tier["Classify effort tier from PR metadata"]
-  queued["Queued with its effort tier"]
+  scan["Scan each open PR, read its comments"]
+  spent["SPENT: every council verdict this account posted in the trailing hour"]
+  cls{"How does the PR classify?"}
+  unrev["No prior verdict"]
+  stale["New commits since the last verdict"]
+  skip["Already reviewed at head, nobody asked"]
+  req["Re-review asked for in a comment"]
+  force{"--force?"}
+  capset{"Cap set?"}
+  remaining["remaining = cap - SPENT, floored at 0"]
+  order["Sort the requests oldest-first"]
+  admit{"Slot left?"}
+  queued["Queued for review"]
+  defer["Deferred"]
+  told{"--run, and not already told this window?"}
+  reply["Reply on the PR, at most once per PR per hour"]
+  silent["Deferred with no reply"]
 
-  pr --> named
-  named -->|yes - ignore list does not apply| seen
-  named -->|no| lookup
-  lookup -->|failed - fail open| seen
-  lookup -->|ok| bots
-  bots -->|yes| ignored
-  bots -->|no| seen
-  seen -->|yes| forced
-  seen -->|no| tier
-  forced -->|yes| tier
-  forced -->|no| skipped
-  tier --> queued
-
-  classDef sysA fill:#2f6dab,color:#ffffff,stroke:#7c8ba1
-  classDef sysB fill:#1d7848,color:#ffffff,stroke:#7c8ba1
-  classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
-  classDef sysF fill:#5c6a82,color:#ffffff,stroke:#7c8ba1
-  class pr,tier sysA
-  class queued sysB
-  class ignored,skipped sysD
-  class named,lookup,bots,seen,forced sysF
+  scan --> spent
+  scan --> cls
+  cls --> unrev --> queued
+  cls --> stale --> queued
+  cls --> skip
+  cls --> req --> force
+  force -->|yes| queued
+  force -->|no| capset
+  capset -->|no| queued
+  capset -->|yes| remaining
+  spent --> remaining
+  remaining --> order --> admit
+  admit -->|yes| queued
+  admit -->|no| defer --> told
+  told -->|yes| reply
+  told -->|no| silent
 ```
 
-**Queue order.** PRs with no prior council comment go first, then PRs whose last
-review was for an older commit. A PR already reviewed at its current head is
-skipped; `--force` queues it anyway. Both facts come from the hidden marker the
-council embeds in every comment it posts (see "Posting the verdict to a PR" in
-the README). A failed lookup queues the PR rather than skipping it, so a flaky
-API call costs you a redundant review instead of a silently missed one.
+```console
+$ ./scripts/review-open-prs.sh --repo voxpupuli/openvox-ca --requests-per-hour 3
+Unreviewed: 236 235 234
+Re-review (new commits): 189 168
+Requested re-review: 166
+Deferred (hourly cap): 164
+Requested re-reviews: 2/3 used this hour, next slot 2026-08-22T16:42:00Z
+Skipped (already reviewed at head, unchanged): 167 165
+```
 
-**The word in brackets** is the effort tier, classified from each PR's GitHub
-metadata so a lockfile bump does not pay for a full deep review. In the run
-above, two small bot PRs earned `quick` and two PRs did not. `deep` is forced by
-size or by a changed path that looks security-sensitive; `standard` passes no
-effort word at all, leaving the council on its own default. `--effort <tier>`
-overrides the classifier for the whole batch.
+Two people asked; one slot was left, so the older request (#166) took it and
+#164 was deferred.
 
-`quick` needs a bot author, so with the default ignore list (below) it applies
-to automation *other than* Dependabot and Renovate — whose PRs are dropped
-before they are ever costed. Clear the list with `--no-ignore-emails` and those
-PRs come back as `quick` rather than as full reviews.
+Read `2/3` wider than its label: the numerator is every verdict this account
+posted in the trailing hour, not only the requested ones, because the budget
+being protected is the API bill. Only requests are *gated* by it, so a genuine
+code change is never held back by a busy afternoon. Requests are admitted
+oldest-first, capped or not.
 
-| Variable          | Default | Effect                                                  |
-|-------------------|---------|---------------------------------------------------------|
-| `DEEP_FILES`      | 10      | changed files at or above this force `deep`             |
-| `QUICK_FILES`     | 2       | bot PRs at or below this many files get `quick`         |
-| `SECURITY_PATHS`  | see `--help` | extended-regex; any matching changed path forces `deep` |
-| `IGNORE_EMAILS`   | Dependabot + Renovate | **replaces** the ignored-author list; empty means ignore nobody |
-| `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
-| `EXTRA_CLAUDE_ARGS` | unset | appended to every `claude` invocation, e.g. `--model opus` |
-| `EXTRA_OPENCODE_ARGS` | unset | appended to every `opencode` invocation                |
+There is no state file. The count comes from the verdict comments themselves,
+which are timestamped and attributable and already fetched during
+classification, so it survives running the driver from another machine or a
+different directory. The trade-off is visible in the output rather than hidden:
+a run naming a single PR reads only that PR's history, so it sees a narrower
+window than a batch does.
 
-`opencode run` has no budget flag to translate `MAX_BUDGET_USD` into, so setting
-both it and an opencode run is an error. Ignoring the cap would run the whole
-batch uncapped on the strength of a setting asking for the opposite, and you
-would find out on the invoice.
+A request that does not fit the cap is deferred and told so on its own pull
+request, at most once per PR per hour. Replying to every request instead would
+hand anyone with write access a way to make your account post repeatedly on a
+public thread.
 
 ## Ignoring dependency bots
 
@@ -155,7 +278,8 @@ and a failed lookup costs you a redundant review rather than a silent miss.
 Three ways to change the list, and one case where it does not apply:
 
 - `--ignore-email <addr>` adds an address, and may be repeated.
-- `--no-ignore-emails` clears the list, queueing every PR.
+- `--no-ignore-emails` clears the list, so every PR is *considered*. Considered,
+  not queued: one already reviewed at its current head is still skipped.
 - `IGNORE_EMAILS` **replaces** the built-in list rather than extending it, as a
   comma- or whitespace-separated string. `IGNORE_EMAILS=` (empty) ignores
   nobody. `--ignore-email` then appends to whatever is in effect.
@@ -163,17 +287,20 @@ Three ways to change the list, and one case where it does not apply:
   for a PR by number or URL says which PR you want, so it is never filtered out
   from under you; the list is triage for batch runs.
 
-It is deliberately separate from `--force`, which decides only whether *already
-reviewed* PRs get queued. `--force` will not re-review an ignored bot PR.
+It is deliberately separate from `--force`, which decides whether *already
+reviewed* PRs get queued — and admits every outstanding re-review request with
+them, hourly cap or no. `--force` will not re-review an ignored bot PR.
 
 ## Which CLI runs the council
 
 `claude` is preferred when both are installed; otherwise whichever is on `PATH`
 is used, and `--cli claude|opencode` picks one explicitly. A `--cli` that is not
 installed is an error rather than a silent fallback — the two hosts do not reach
-the same models or cost the same. They take the command by the route each
-provides for it, so the argument string is identical and only the wrapper
-differs:
+the same models or cost the same. Each host is told which command the arguments
+belong to by the route it provides — `claude` expands a leading `/review-council`
+inside the prompt it is given, `opencode` selects the command with `--command`
+and hands the rest to it — so everything *after* the command name is identical
+and only that routing differs:
 
 ```
 PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/929\ ...
@@ -202,15 +329,25 @@ and a prompt telling the council to post its verdict without asking. Expect a
 public review comment on every PR in the queue above, authored by the account
 gh is authenticated with, plus the API spend of each review.
 
+A re-review request the hourly cap could not admit also draws a short reply on
+its own pull request explaining the limit — at most one per pull request per
+hour, and only for requests that were authorised in the first place.
+
 Re-run without --run to see the plan alone, or with --yes to skip this prompt.
 Type "yes" to proceed:
 ```
 
+The verdicts are not the only writes, which is why the prompt names the other
+one: a deferred request gets a short reply telling whoever asked when the next
+slot opens. It is the only comment the driver posts in its own voice rather than
+through the council.
+
 Anything but `yes` aborts, and so does having no answer to give — under `cron`,
 with `</dev/null`, or on a closed pipe. `--yes` (alias `--no-confirm`) gives that
 consent up front for an unattended run. It is deliberately separate from
-`--force`, which only decides whether unchanged PRs get queued: forcing a
-re-review is not the same act as agreeing to publish one.
+`--force`, which only decides which PRs get queued — unchanged ones, and the
+requests the hourly cap would otherwise defer: forcing a re-review is not the
+same act as agreeing to publish one.
 
 ## Watching a batch run
 
@@ -237,9 +374,11 @@ that replaces the streaming default and the progress rendering along with it.
 
 ```
 ./scripts/review-open-prs.sh --help                 # full reference
-./scripts/review-open-prs.sh --run                  # current repo, every PR that needs it
+./scripts/review-open-prs.sh --run                  # the repo of the current directory
+./scripts/review-open-prs.sh --repo owner/name --run  # a different repository
 ./scripts/review-open-prs.sh 123 --run              # one PR
 ./scripts/review-open-prs.sh --run --yes            # unattended, no confirmation
+./scripts/review-open-prs.sh --requests-per-hour 3 --run  # cap comment-requested re-reviews
 ./scripts/review-open-prs.sh --cli opencode --run   # review through opencode
 ./scripts/review-open-prs.sh --no-ignore-emails --run              # bot PRs too
 ./scripts/review-open-prs.sh --ignore-email ci@corp.example --run  # skip one more

@@ -13,7 +13,11 @@ Every finding MUST be grounded in file content you directly read.
 
 - **Read file first.** Never rely on expectations from name, project type, or common patterns.
 - **Verify existence.** Before claiming package, function, type, or interface exists, read file and confirm.
-- **Verify absence.** Before claiming something missing, read the file and search the repo — "I did not find it" is not evidence. Record what you searched for and where in `description`, NOT in `evidence`: evidence is matched against the cited file as a contiguous byte sequence, so a search transcript can never verify and the finding is stripped. Anchor the finding to a verbatim quote of the thing whose counterpart is missing — the function that has no test, the table row where the missing column would sit, the config block that omits the key. When the absence is repo-level and has no local counterpart (no LICENSE anywhere, no CI configuration at all), anchor to the nearest file that *should* have referenced it — the README section listing project metadata, the Taskfile that would invoke the missing target — and quote that. There is always such a file, and anchoring to it keeps the finding inside what the pipeline can verify: `file` must exist or the finding is stripped as `FILE_NOT_FOUND`, and `evidence` must occur in it, so a finding with no anchor file cannot be reported at all.
+- **Verify absence.** Before claiming something missing, read the file and search the repo — "I did not find it" is not evidence.
+  - Record what you searched for and where in `description`, NOT in `evidence`: evidence is matched against the cited file as a contiguous byte sequence, so a search transcript can never verify and the finding is stripped.
+  - Anchor the finding to a verbatim quote of the thing whose counterpart is missing — the function that has no test, the table row where the missing column would sit, the config block that omits the key.
+  - When the absence is repo-level and has no local counterpart (no LICENSE anywhere, no CI configuration at all), anchor to the nearest file that *should* have referenced it — the README section listing project metadata, the Taskfile that would invoke the missing target — and quote that.
+  - There is always such a file, and anchoring to it keeps the finding inside what the pipeline can verify: `file` must exist or the finding is stripped as `FILE_NOT_FOUND`, and `evidence` must occur in it, so a finding with no anchor file cannot be reported at all.
 - **Verify line references.** Confirm line numbers by reading file with line numbers. Never compute from diff offsets.
 - **Ground every identifier.** Only reference identifiers directly observed in file you read during this review.
 
@@ -139,15 +143,17 @@ should stand on its own.
   (integer) or `null` when no single line applies. Put ranges and
   cross-references in `description`, never in `file`.
 - `evidence` MUST be a byte-for-byte contiguous quote copied out of the file
-  named in `file`. The verifier searches the file for it as a single block, so
-  anything not literally present there fails: no `...` elisions joining two
-  passages, no `path/to/file.md:12-18 —` location prefix, no reflowed
-  whitespace, no paraphrase. Quote a shorter span rather than a stitched one.
-  Use normal JSON string escaping for control characters (a literal tab is
-  `\t`); do not double-escape them as `\\t`. For an absence finding, quote the
-  present code whose counterpart is missing and put the search you ran in
-  `description` — for a repo-level absence with no local counterpart, quote
-  the nearest file that should have referenced it (see "Verify absence" above).
+  named in `file`.
+  - The verifier searches the file for it as a single block, so anything not
+    literally present there fails: no `...` elisions joining two passages, no
+    `path/to/file.md:12-18 —` location prefix, no reflowed whitespace, no
+    paraphrase. Quote a shorter span rather than a stitched one.
+  - Use normal JSON string escaping for control characters (a literal tab is
+    `\t`); do not double-escape them as `\\t`.
+  - For an absence finding, quote the present code whose counterpart is
+    missing and put the search you ran in `description` — for a repo-level
+    absence with no local counterpart, quote the nearest file that should
+    have referenced it (see "Verify absence" above).
 
 A clean review returns an empty `findings` array — do not manufacture findings:
 

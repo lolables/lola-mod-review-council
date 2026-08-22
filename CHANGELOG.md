@@ -410,6 +410,17 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- The eval matrix is pinned back to `claude-sonnet-4-6`, reverting the
+  `claude-sonnet-5` pin taken on 2026-08-21. Per-review cost on `sonnet-5` ran
+  well above `4-6` without a matching score gain, and the harness never
+  snapshotted a `sonnet-5` result, so nothing measured is lost by reverting.
+  `4-6` is also the model behind every scored row in `.lola-eval/ledger.jsonl`
+  ($2.15 per review on Claude Code, $1.41 on OpenCode), so the published tables
+  in the README and `references/model-guidance.md` describe the model that
+  actually runs again. The judge is pinned to the same model to keep drift
+  comparable. Cost estimation is unaffected: `rc-cost-estimate.sh` prices by
+  model *class* from the `Cost Per Review` table, never by a versioned id.
+
 - Finding rendering now reads a finding's fields in one `jq` call instead of
   eight. `rc_finding_block` spawned one `jq -r` per field, and the comment
   renderer's paring ladder re-renders the same finding set several times over

@@ -85,7 +85,7 @@ Disclosure") names it. Format: a JSON array of
 `{"role": "{agent-name}", "id": "{model}"}` objects.
 
 - Prefer concrete model ID the host exposes (e.g.,
-  `{"role": "divisor-adversary-code", "id": "claude-sonnet-5"}`).
+  `{"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"}`).
 - No concrete ID: record tier from table above instead (e.g.,
   `{"role": "divisor-adversary-code", "id": "Capable tier"}`).
   Guarantees at least tier always disclosed.
@@ -141,11 +141,13 @@ This is the only place a reviewer learns which forge CLI it may invoke. The
 Curator's mandate to search the documentation repository for an existing issue
 before recommending a new one is conditioned on it, and the Curator's contract
 defines only what to do when the field *says* `gh`, `glab` or `none` — not what
-to do when it is absent. Omit the field and the mandate names no tool against an
-undefined case: the agent may skip the search as though the answer were `none`,
-or try a CLI it was never told it has. Either way the outcome stops being a
-property of the pipeline. That is the same escape hatch that naming one forge's
-CLI directly used to open on every other forge.
+to do when it is absent.
+
+Omit the field and the mandate names no tool against an undefined case: the
+agent may skip the search as though the answer were `none`, or try a CLI it was
+never told it has. Either way the outcome stops being a property of the
+pipeline. That is the same escape hatch that naming one forge's CLI directly
+used to open on every other forge.
 
 Include it in the code-review prompt only. The field states which CLI is
 *available*, not that its holder may run it — each persona's own contract still
@@ -297,20 +299,20 @@ round per subsystem:
 
 1. Read `${session_dir}/subsystems.json`.
 2. For each subsystem:
-   a. Filter `changeset.txt` to only the subsystem's files.
-   b. Filter `diff.patch` to only the hunks for the subsystem's files.
-   c. Replace the scope framing sentence with:
-      > "The following files belong to the **{subsystem name}** subsystem ({subsystem description}):"
-   d. Dispatch **that subsystem's own council** in parallel — the `council`
-      array of its entry in the manifest's `subsystems[]`, matched by `name`.
-      Councils differ across subsystems within one run, because one subsystem
-      may be prose while its sibling is code, and because subsystem triage
-      (SKILL.md Step 2.3) may have narrowed them further. That array is the
-      final answer from both steps; nothing here re-derives it. Where the
-      manifest carries no entry for a subsystem (Step 2.2 was skipped),
-      dispatch the top-level `council`.
-   e. Write each agent's raw output to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md`.
-      Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
+   - a. Filter `changeset.txt` to only the subsystem's files.
+   - b. Filter `diff.patch` to only the hunks for the subsystem's files.
+   - c. Replace the scope framing sentence with:
+     > "The following files belong to the **{subsystem name}** subsystem ({subsystem description}):"
+   - d. Dispatch **that subsystem's own council** in parallel — the `council`
+     array of its entry in the manifest's `subsystems[]`, matched by `name`.
+     Councils differ across subsystems within one run, because one subsystem
+     may be prose while its sibling is code, and because subsystem triage
+     (SKILL.md Step 2.3) may have narrowed them further. That array is the
+     final answer from both steps; nothing here re-derives it. Where the
+     manifest carries no entry for a subsystem (Step 2.2 was skipped),
+     dispatch the top-level `council`.
+   - e. Write each agent's raw output to `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md`.
+     Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
 3. After all subsystems complete, proceed to verification.
 
 **Batching within subsystems:** If subsystem's file count exceeds
@@ -402,48 +404,47 @@ schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.js
 
 - On `status: "ok"`, proceed to Verification.
 - On `status: "extract_error"`, re-dispatch each `invalid[]` entry ONCE, keyed
-  on its **(agent, path) pair** — not on agent name alone. In deep mode the
-  same agent runs per subsystem, so the same agent name can appear multiple
-  times in `invalid[]` with different `path` values (e.g.
-  `verdicts/auth/divisor-adversary-code.raw.md` vs.
-  `verdicts/api/divisor-adversary-code.raw.md`); each is a distinct failure
-  in a distinct subsystem and must be recovered separately. Use `path` to
-  identify which `{agent}.raw.md` to correct.
+  on its **(agent, path) pair** — not on agent name alone.
+  - In deep mode the same agent runs per subsystem, so the same agent name can
+    appear multiple times in `invalid[]` with different `path` values (e.g.
+    `verdicts/auth/divisor-adversary-code.raw.md` vs.
+    `verdicts/api/divisor-adversary-code.raw.md`); each is a distinct failure
+    in a distinct subsystem and must be recovered separately. Use `path` to
+    identify which `{agent}.raw.md` to correct.
+  - **Resume the agent that produced the block wherever the host can.** It
+    still holds the files it read and the findings it judged, so what is in
+    front of it is a reformat, not a re-review — a fresh dispatch discards all
+    of that and pays for the whole review a second time to fix a serialization
+    defect. A resumed agent needs no context re-supplied; it already has its
+    own.
+  - Where the host cannot resume a prior agent, dispatch a new one, re-supply
+    that entry's subsystem context as the original dispatch did, and inline
+    the rejected block read from `path` **verbatim**, so the replacement
+    corrects a specific text instead of reviewing from nothing:
 
-  **Resume the agent that produced the block wherever the host can.** It still
-  holds the files it read and the findings it judged, so what is in front of it
-  is a reformat, not a re-review — a fresh dispatch discards all of that and
-  pays for the whole review a second time to fix a serialization defect. A
-  resumed agent needs no context re-supplied; it already has its own.
+    > Your previous verdict block was rejected by the validator. It is quoted
+    > below. Correct only the defect named in the error and re-emit the same
+    > findings — same severities, same evidence, same files.
 
-  Where the host cannot resume a prior agent, dispatch a new one, re-supply that
-  entry's subsystem context as the original dispatch did, and inline the
-  rejected block read from `path` **verbatim**, so the replacement corrects a
-  specific text instead of reviewing from nothing:
-
-  > Your previous verdict block was rejected by the validator. It is quoted
-  > below. Correct only the defect named in the error and re-emit the same
-  > findings — same severities, same evidence, same files.
-
-  Either route carries the same instruction: this is a formatting repair, and
-  the corrected block must carry the findings the rejected one carried. A
-  recovery that returns a *different* set of findings has silently replaced the
-  review, and because it overwrites `{agent}.raw.md` there is nothing left to
-  compare it against.
-
-  For each entry, supply the `remediation` text verbatim,
-  plus, when present, that entry's `invalid[].detail` (set for
-  `SCHEMA_INVALID` — the validator's precise error, so the agent can fix the
-  exact field — and for `VERDICT_INCOHERENT`, where the block is schema-valid
-  but declares APPROVE over a CRITICAL or HIGH finding, and the detail names
-  the remedies). For `NO_JSON_BLOCK` entries (no `detail`), tell the agent it
-  emitted no fenced ```json block at all. Instruct it to re-emit only the JSON
-  block, then re-run the extractor. If an entry still fails, log it loudly in
-  `verification.txt` (including its `path`) and surface it in the report —
-  never a silent zero. A `VERDICT_INCOHERENT` entry is logged either way, pass
-  or fail — see `phases/verify.md` — "Step 0 — Format Gate": the re-dispatch
-  overwrites `{agent}.raw.md`, so an agent that resolves the gate by withdrawing
-  its own CRITICAL leaves no other trace.
+  - Either route carries the same instruction: this is a formatting repair,
+    and the corrected block must carry the findings the rejected one carried.
+    A recovery that returns a *different* set of findings has silently
+    replaced the review, and because it overwrites `{agent}.raw.md` there is
+    nothing left to compare it against.
+  - For each entry, supply the `remediation` text verbatim, plus, when
+    present, that entry's `invalid[].detail` (set for `SCHEMA_INVALID` — the
+    validator's precise error, so the agent can fix the exact field — and for
+    `VERDICT_INCOHERENT`, where the block is schema-valid but declares APPROVE
+    over a CRITICAL or HIGH finding, and the detail names the remedies).
+  - For `NO_JSON_BLOCK` entries (no `detail`), tell the agent it emitted no
+    fenced ```json block at all. Instruct it to re-emit only the JSON block,
+    then re-run the extractor.
+  - If an entry still fails, log it loudly in `verification.txt` (including
+    its `path`) and surface it in the report — never a silent zero.
+  - A `VERDICT_INCOHERENT` entry is logged either way, pass or fail — see
+    `phases/verify.md` — "Step 0 — Format Gate": the re-dispatch overwrites
+    `{agent}.raw.md`, so an agent that resolves the gate by withdrawing its
+    own CRITICAL leaves no other trace.
 - On `status: "nothing_to_do"`, the whole session produced zero verdict blocks
   (no agent wrote a `.raw.md` at all) — this is the "all agents fail" case
   below, not a per-agent signal: stop and report a configuration issue.

@@ -1,19 +1,20 @@
 # Testing
 
 Four layers, each catching a class the others structurally cannot. Run
-everything with `task check`.
+everything locally with `task check`.
 
 | Command | What it runs |
 |---------|--------------|
-| `task test` | Unit suites — one script each |
+| `task test` (alias for `task test:unit`) | Unit suites — one script each |
 | `task test:e2e` | Venom pipeline suite — the scripts in sequence, black box |
-| `task test:degraded` | Unit suites once per optional tool missing from `PATH` |
+| `task test:degraded` | Re-runs the unit suites once per optional tool hidden from `PATH`, narrowed to the suites that can reach that tool |
 | `task test:mutate` | Reintroduces each fixed defect, asserts a suite catches it |
 | `task check` | Lint plus all of the above |
 
 ## What CI runs
 
-Two workflows split the work, and neither runs `task check` under that name:
+Two workflows split the work. Neither invokes `task check`: CI reproduces it
+layer by layer, as separate jobs, rather than calling that target.
 
 | Workflow | Runs | On |
 |----------|------|-----|
@@ -21,16 +22,23 @@ Two workflows split the work, and neither runs `task check` under that name:
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
 
 `test.yml` is a two-dimensional matrix — four layers by two operating systems,
-eight jobs — plus a `test` job that gates on all of them. The layers used to run
-as one serial `task test:all` per OS, which made a leg's wall clock their sum:
-macOS reached 24m48s against a 25m limit and the next commit was killed at
-25m22s. They share no state, so as separate jobs a leg costs the slowest single
+eight jobs — plus a gating job that depends on all of them. The two are easy to
+confuse: the matrix job has the id `test` and displays per leg as
+`<layer> (<os>)`, while the gating job has the id `test-result` and displays as
+`test`.
+
+The layers used to run as one serial `task test:all` per OS, which made a leg's
+wall clock their sum: macOS reached 24m48s against a 25m limit and the next
+commit was killed at 25m22s.
+
+They share no state, so as separate jobs a leg costs the slowest single
 layer instead, and a layer that grows can no longer push an unrelated one over
 the limit.
 
-Gate on the `test` job, not on the eight matrix jobs. It is one stable check
-name that does not change when a layer or an OS is added, and it fails on a
-matrix that was cancelled or skipped as well as one that failed.
+Gate on the `test-result` job — the check that appears as `test` — not on the
+eight matrix jobs. It is one stable check name that does not change when a layer
+or an OS is added, and it fails on a matrix that was cancelled or skipped as
+well as one that failed.
 
 Every test layer runs on both operating systems. None is gated by OS. That is
 deliberate: the mutation harness is the layer that caught GNU-only `sed`
@@ -42,9 +50,17 @@ narrow what the workflow invokes.
 `test.yml` installs Venom on the `e2e` jobs only — it is the one layer with a
 hard precondition on it — pinned to a tag and to the SHA-256 of each published
 asset. Venom publishes no checksum file, so the digests are recorded in the
-workflow; bump the tag and all three together. Every macOS job gets `bash`
-(macOS ships bash 3.2, and the suites need 4+), `jq`, and GNU `coreutils` for
-`timeout`, which macOS lacks — every layer needs those, not just the e2e one.
+workflow; bump the tag and all three digests together — one per published
+asset, for `linux-amd64`, `darwin-arm64` and `darwin-amd64`.
+
+Every macOS job runs `brew bundle` against the repo-root `Brewfile`, which
+declares itself the single source of truth for that set, so a contributor's
+`brew bundle` and this step cannot drift apart. It installs `bash` (macOS ships
+bash 3.2, and the suites need 4+), `jq`, GNU `coreutils` for `timeout`, which
+macOS lacks, and `uv`, which builds the `.venv` the `task lola-eval:*` harness
+runs from. Every layer needs the first three, not just the e2e one; `uv` is the
+one entry a plain `task test` never touches. Add a macOS prerequisite to the
+`Brewfile`, not to the workflow.
 
 `jsonschema` is deliberately *not* installed. Its absence is the default
 condition for most users, and `task test:degraded` exercises that fallback
@@ -56,8 +72,8 @@ The suite was once a single layer — one unit suite per script — and a live r
 found six defects in an afternoon. Each layer below exists because of a defect
 that got past everything else.
 
-**Unit** (`module/tests/test-*.sh`). Most files pin one script with `SCRIPT=`
-and exercise it in isolation. Every file matching `test-*.sh` runs
+**Unit** (`module/tests/test-*.sh`). Of the 45 files, 23 pin one script with
+`SCRIPT=` and exercise it in isolation. Every file matching `test-*.sh` runs
 automatically; the list used to be hand-maintained in `Taskfile.yml`, where a
 suite nobody remembered to register silently never ran. Shared code lives in
 `helpers.sh` — deliberately *not* named `test-helpers.sh`, so the discovery
@@ -80,20 +96,31 @@ stops doing its job does not fail. It weakens whatever depends on it, which is
 how a PATH-masking helper went on reporting that three scripts were tested
 without their dependency while the binary was still on the PATH it handed them.
 
+A *phase script* is one of the `rc-*.sh` scripts under
+`module/skills/review-council/scripts/` that a phase document in
+`module/skills/review-council/phases/` invokes against a session directory —
+`rc-consolidate.sh`, `rc-verify-evidence.sh`, `rc-extract-verdict.sh`,
+`rc-render-report.sh` and `rc-render-comment.sh` today.
+
 `test-rc-idempotency.sh` covers a property across *every* phase script: re-run
-it against a live session and its state must not change. SKILL.md Step 6 offers
-to fix findings and return to Step 3, and verify.md re-dispatches an agent and
-runs the extractor again, so re-running is part of the contract rather than an
-edge case. **Adding a phase script means adding it here** — the per-script
-suites cover the specific defects they were written for, and a script absent
-from this sweep is a script whose re-run behaviour nobody checks.
+it against a live session and its state must not change.
+`module/skills/review-council/SKILL.md` Step 6 offers to fix findings and return
+to Step 3, and `module/skills/review-council/phases/verify.md` re-dispatches an
+agent and runs the extractor again, so re-running is part of the contract rather
+than an edge case. **Adding a phase script means adding it here** — the
+per-script suites cover the specific defects they were written for, and a
+script absent from this sweep is a script whose re-run behaviour nobody checks.
 `rc-prepare.sh` is the one deliberate omission: a session *is* a run, so
 re-running must produce a new one, and its growth is bounded by the session LRU
-instead.
+instead — the prune in
+`module/skills/review-council/scripts/lib/prepare-repo.sh` that keeps the newest
+`REVIEW_COUNCIL_SESSION_CACHE_MAX` session directories per project (default 20,
+by directory mtime) and removes the rest.
 
 **End-to-end** (`module/tests/e2e/pipeline.venom.yml`). Unit tests cannot see
-seams. Verification Step 3c tells the orchestrator to write `clusters.json`
-into `verdicts/`, and `rc-verify-evidence.sh` globbed `verdicts/` — neither
+seams. `module/skills/review-council/phases/verify.md` Step 3c tells the
+orchestrator to write `clusters.json` into `verdicts/`, and
+`rc-verify-evidence.sh` globbed `verdicts/` — neither
 script wrong alone, the contract between them broken, and no unit test could
 have caught it. This layer runs the real scripts in the real order.
 
@@ -109,10 +136,11 @@ Which suites those are is derived from the tree by
 unit layer discovers its suites. It seeds on the files that actually *use* the
 tool (a `command -v` probe, the tool in command position, or an assignment for
 later indirect invocation) and closes over `source`/`bash` references from
-there, ignoring mentions in full-line comments. Running all 40 suites for each
+there, ignoring mentions in full-line comments. Running all 45 suites for each
 of the three tools was three complete unit passes and the single largest block
-of CI wall clock; the derived selection is 47 suite-runs instead of 120, and
-cut the layer from about 474s to 121s.
+of CI wall clock; the derived selection is 47 suite-runs — 9 for `jsonschema`,
+20 for `gh`, 18 for `glab` — instead of 135, and cut the layer from about 474s
+to 121s.
 
 Two rules keep the narrowing from becoming a silent hole, which is the failure
 this layer exists to prevent:
@@ -125,8 +153,8 @@ this layer exists to prevent:
   having run no suite at all, so the run fails instead.
 
 `module/tests/test-degraded-selection.sh` pins both, along with the cases that
-have already gone wrong once — see the SIGPIPE note under "Writing a test that
-actually tests something".
+have already gone wrong once — see the SIGPIPE note in
+[writing-tests.md](writing-tests.md).
 
 **Mutation** (`.taskfiles/scripts/mutate-check.sh`). A green suite proves
 nothing on its own. Two regression tests written for these defects passed on
@@ -137,59 +165,14 @@ caught is a hole, and fails the run.
 
 ## Writing a test that actually tests something
 
-**Watch it fail first.** If a new test passes against unfixed code, it is
-measuring the wrong thing. Reshape the fixture until it fails, then fix.
-
-**Size the fixture to the failure, not to readability.** A test that reproduces
-a defect only sometimes is worse than no test, because a flaky red gets re-run
-until it is green. `test-degraded-selection.sh` guards a defect that only
-appears once a reader's output outgrows the 64KiB pipe buffer: reading a file as
-`sed … | grep -q` under `set -o pipefail` reports a match as a miss, because
-grep exits on the match, sed is left writing into a closed pipe and dies of
-SIGPIPE, and `pipefail` returns 141 for the pipeline. Its fixture is 2000 lines
-for that reason and misses 20 times out of 20 against the defective form; at 400
-lines it passed against the same defect and tested nothing. Where a fixture's
-*size* is what makes it bite, say so in the fixture, or someone will tidy it
-back under the threshold.
-
-Prefer `cmd <<<"$var"` or `cmd < <(…)` to `producer | grep -q`. Anything that
-exits early on the left of a pipe under `pipefail` turns a success into a 141.
-
-**Assert on what must survive, not on what changed.** Every consolidation
-fixture used to consist entirely of cluster members, so `assert length == 1`
-held whether the reducer merged correctly or deleted the array — which is how a
-bug that destroyed unrelated HIGH findings passed for months. Use
-`assert_conserved` and put bystanders in the fixture; it refuses to run without
-them.
-
-**Assert the fixture reached the code you claim to test.** A renderer refusing
-its precondition still writes a file, and a test comparing two refusals passes
-without the section under test ever executing. `test-rc-idempotency.sh` Test 5
-did exactly that for as long as its fixture lacked the verification log
-`rc-render-report.sh` refuses to render without. Grep the output for something
-only the real path produces — a finding's own location — before asserting
-anything about how it behaves.
-
-**Assert re-runs with `assert_idempotent`,** which runs a command twice and
-diffs a named state path. Two things about it are load-bearing. The snapshot is
-taken *after* run 1, not before: the first run is the one legitimately allowed
-to do work, and idempotence is the claim about every run after it. And the state
-path is an argument rather than "the session", so a subtree required to grow can
-be excluded from the claim — `rc-extract-verdict.sh` is asserted on `verdicts/`
-precisely because `gate-firings.jsonl` beside it must keep appending. All three
-of its exits report through `FAIL` and return 0; a helper that returned non-zero
-would take a `set -e` suite down at the exact moment it had a regression to
-report, before the suite could print its `Results:` line.
-
-**Match precisely.** `! grep -q '700'` over a log that also contains timestamps
-and generated ids fails at random — a run at 07:00 was enough. Anchor to
-`issues/comments/700`.
-
-**Do not encode the host.** A traversal fixture built as `"../.." + $TMPDIR`
-only works when temp directories sit two levels below `/`. Build paths relative
-to the fixture, never to an absolute system path.
-
-**Add a mutation** when you fix a defect, so the guard is itself guarded.
+The rules for that — watch it fail first, size the fixture to the failure,
+assert on what must survive, assert re-runs, match precisely, do not encode the
+host, add a mutation — are a checklist you work through at the keyboard rather
+than part of this document's argument, so they live in
+[writing-tests.md](writing-tests.md). That document also gives the location of
+the assertion helpers `assert_conserved`, `assert_jq`, `assert_idempotent` and
+`discard_fixture` (`module/tests/helpers.sh`) and of the `check_mutation`
+entries (`.taskfiles/scripts/mutate-check.sh`).
 
 ## Fixtures
 
@@ -201,10 +184,19 @@ It exists because no fixture in the suite had ever contained a newline in an
 [README](../../module/tests/fixtures/session-golden/README.md) for what each
 finding pins.
 
-Fixture repos are built through `git_init_sandbox`, which stubs identity and
-disables commit and tag signing. Without that, a contributor with
+Fixture repos are built through `git_init_sandbox` in `module/tests/helpers.sh`,
+which disables commit and tag signing per repo — the one setting with no
+environment equivalent to fall back on. Without that, a contributor with
 `commit.gpgsign = true` gets every fixture commit rejected, surfacing as an
 unrelated assertion failing much later against a repo with no commits in it.
+
+Identity and config isolation come from the environment instead, so they live in
+one place rather than per repo. `helpers.sh` exports `GIT_CONFIG_NOSYSTEM`,
+`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`,
+`GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL` at source time, so a suite run
+directly is hermetic on its own; `.taskfiles/test.yml` sets the same values on
+the tasks, which covers the harness itself and anything it runs before a suite
+is sourced.
 
 ## Where test state goes
 
@@ -221,10 +213,10 @@ Both variables matter, for different reasons:
   left 44 review sessions there, shaped exactly like the real ones. Over time
   20,021 of them accumulated.
 - **`TMPDIR`** covers the interrupted run. The suites do remove their own
-  `mktemp -d` directories — 228 `rm -rf` calls — but none of that cleanup is on a
+  `mktemp -d` directories — 349 `rm -rf` calls — but none of that cleanup is on a
   `trap`, so a run that is killed abandons whatever it had open.
 
-Redirecting the two variables fixes all 239 `mktemp` call sites at once,
+Redirecting the two variables fixes all 400 `mktemp` call sites at once,
 including any added later, which is why this lives in one wrapper rather than in
 the suites.
 
@@ -243,7 +235,10 @@ outside the scratch tree, depending on the platform. No call site uses them.
 
 **Running a suite directly bypasses it.** `bash module/tests/test-rc-prepare.sh`
 gets no scratch directory and will write into your real cache. Either go through
-`task test`, or set both variables yourself:
+`task test`, or set both variables yourself. Run the commands below from the
+repository root — the `module/tests/...` paths in them are relative to it — and
+be aware that on macOS this isolates the cache but not `mktemp`, for the reason
+above:
 
 ```bash
 scratch=$(mktemp -d)
@@ -251,8 +246,7 @@ TMPDIR="$scratch" XDG_CACHE_HOME="$scratch" bash module/tests/test-rc-prepare.sh
 rm -rf "$scratch"
 ```
 
-On macOS that isolates the cache but not `mktemp`, for the reason above; only
-`task test` gets you both.
+Only `task test` gets you both.
 
 **Leave a fixture before removing it.** `cd "$tmpdir"` followed by `rm -rf
 "$tmpdir"` unlinks the suite's own working directory, and the shell keeps that
@@ -289,6 +283,7 @@ before you hit them:
 - **SC2310** — a function called in `if`, `!` or `||` runs with `set -e`
   suspended. Where that is the intent, say so in a `# shellcheck disable=SC2310`
   comment naming why the status is handled; do not disable it blindly.
+
 Optional: `sourcemeta/jsonschema` — absent, the validator falls back to a jq
 check that `task test:degraded` pins to the same behaviour.
 

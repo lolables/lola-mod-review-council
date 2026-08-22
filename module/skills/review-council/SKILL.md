@@ -17,16 +17,20 @@ Applies to ALL iterations, ALL severity levels, both code and spec
 review modes. Write operations permitted without user consent: session bookkeeping
 (tracking files, verdict files, learnings) inside session directory.
 
-One external write is permitted, and ONLY under all of these conditions:
-posting the council verdict as a PR comment (Step 7) when (a) the user's
-request explicitly asked to post/comment, and (b) the exact rendered body was
-shown and the user confirmed — or the user gave standing authorization to post
-without asking. That permission covers ONLY comments the council itself
-authored: the post script refuses to update or hide a comment written by anyone
-else, even one carrying the council marker, since the marker is public and any
-PR participant can post one. Cloning a target repo for review (Step 1) reads
-source only and never executes cloned code. No other external writes, code
-edits, or command execution are permitted.
+One external write is permitted: posting the council verdict as a PR comment
+(Step 7). It requires (a) that the user's request explicitly asked to
+post/comment, and (b) that the exact rendered body was shown and the user
+confirmed — or that the user gave standing authorization to post without
+asking.
+
+That permission covers ONLY comments the council itself authored. The post
+script refuses to update or hide a comment written by anyone else, even one
+carrying the council marker, since the marker is public and any PR participant
+can post one.
+
+Cloning a target repo for review (Step 1) reads source only and never executes
+cloned code. No other external writes, code edits, or command execution are
+permitted.
 
 Do NOT run local builds, tests, linters, or CI commands. Review Council
 analyzes source code statically — never executes project code. Reading
@@ -49,23 +53,25 @@ these steps by hand, even in non-interactive / headless runs:
   `verification.txt`, `disposition.txt` — under `${session_dir}/verdicts/_meta/`,
   never in `verdicts/` itself. `verdicts/` holds per-agent verdict artifacts and
   the derived `findings.json`; everything that discovers verdicts globs it, and
-  a phase artifact landing there gets parsed as a verdict (RC-4).
+  a phase artifact landing there gets parsed as a verdict.
   `rc-prepare.sh` creates `_meta/` with the session, so it always exists.
 - Do NOT clone the target repo yourself. `rc-prepare.sh` invokes
   `rc-clone-target.sh` and returns `review_root`; read changeset files there.
 - Do NOT hand-write the report. Run `rc-render-report.sh`, then fill only the
-  markers it leaves: `<!-- TLDR -->`, `<!-- SUBSYSTEM-ANALYSIS -->`,
-  `<!-- MERGE-ADVISORIES -->`, `<!-- ACCEPTANCE-CRITERIA -->`,
-  `<!-- DISPOSITION-OUTCOMES -->`, `<!-- CI-COMMENTARY -->`,
-  `<!-- NARRATIVE -->`, `<!-- LEARNINGS -->`.
-  Each is replaced by literal string substitution; when the phase that produces
-  the section did not run, delete the marker line **and its trailing blank
-  line** so the gap it leaves does not stack up. `<!-- TLDR -->` is the sole
-  exception — every report has a TL;DR, so it is always filled, never deleted;
-  when its source file is absent or empty, fill it with the fallback line
-  rather than dropping it. No raw marker may survive into the rendered
-  report. Never append a section the renderer did not anchor; a section you
-  think is missing is a renderer bug, not something to hand-write.
+  markers it leaves:
+  - The eight markers are `<!-- TLDR -->`, `<!-- SUBSYSTEM-ANALYSIS -->`,
+    `<!-- MERGE-ADVISORIES -->`, `<!-- ACCEPTANCE-CRITERIA -->`,
+    `<!-- DISPOSITION-OUTCOMES -->`, `<!-- CI-COMMENTARY -->`,
+    `<!-- NARRATIVE -->`, `<!-- LEARNINGS -->`.
+  - Each is replaced by literal string substitution.
+  - When the phase that produces a section did not run, delete the marker line
+    **and its trailing blank line** so the gap it leaves does not stack up.
+  - `<!-- TLDR -->` is the sole exception: every report has a TL;DR, so it is
+    always filled, never deleted. When its source file is absent or empty,
+    fill it with the fallback line rather than dropping it.
+  - No raw marker may survive into the rendered report.
+  - Never append a section the renderer did not anchor; a section you think is
+    missing is a renderer bug, not something to hand-write.
 - Do NOT hand-write the PR comment or invent a marker/verdict tag. The PR
   comment is rendered and posted ONLY by `rc-post-comment.sh`. Never build a
   comment body or a `gh api .../issues/comments` call yourself.
@@ -78,43 +84,58 @@ arrows.
 
 ## Path Anchoring
 
-Set `SKILL_DIR` to directory containing this file. Derive
-`SCRIPTS_DIR`, `PHASES_DIR`, and `REFERENCES_DIR` from `SKILL_DIR` —
-they ship inside the skill directory on every install layout:
+You are running these commands in a shell tool, not sourcing a script, so
+there is no `BASH_SOURCE` to resolve. Anchor on the absolute path this
+`SKILL.md` was loaded from and substitute it literally.
 
-```bash
-SKILL_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
-SCRIPTS_DIR="${SKILL_DIR}/scripts"
-PHASES_DIR="${SKILL_DIR}/phases"
-REFERENCES_DIR="${SKILL_DIR}/references"
-```
+1. **Set `SKILL_DIR` to the directory holding this file**, written out in
+   full. Replace the placeholder below with the real path — do not paste the
+   placeholder, and do not search for the file by name.
 
-`AGENTS_DIR` is NOT assumed to be a sibling of `SKILL_DIR` — it
-lives under the module root, not the skill directory. This holds on
-both a co-located install (`.../module/skills/review-council` →
-`.../module/agents`) and a split install (`~/.claude/skills/review-council/`
-→ `~/.claude/agents`):
+   ```bash
+   SKILL_DIR=/absolute/path/to/skills/review-council
+   ```
 
-```bash
-MODULE_DIR=$(dirname "$(dirname "${SKILL_DIR}")")
-AGENTS_DIR="${MODULE_DIR}/agents"
-```
+   Two install layouts are common: co-located
+   (`/path/to/module/skills/review-council`) and split
+   (`~/.claude/skills/review-council`). Confirm you picked the right one
+   before continuing — `test -d "${SKILL_DIR}/scripts"` must succeed.
 
-All script and phase references below use these paths.
-Construct full paths — never search by filename.
+2. **Derive the three in-skill directories.** They ship inside the skill
+   directory on every install layout:
 
-**When invoking scripts**, export as environment variables:
+   ```bash
+   SCRIPTS_DIR="${SKILL_DIR}/scripts"
+   PHASES_DIR="${SKILL_DIR}/phases"
+   REFERENCES_DIR="${SKILL_DIR}/references"
+   ```
 
-```bash
-export AGENTS_DIR SCRIPTS_DIR PHASES_DIR REFERENCES_DIR
-```
+3. **Derive `AGENTS_DIR` from the module root, not from `SKILL_DIR`.** The
+   agents are NOT a sibling of the skill directory. Going up two levels holds
+   for both layouts (`.../module/skills/review-council` → `.../module/agents`;
+   `~/.claude/skills/review-council` → `~/.claude/agents`):
 
-Scripts need `AGENTS_DIR` to discover reviewer agents. Pass when
-calling `rc-prepare.sh`:
+   ```bash
+   MODULE_DIR=$(dirname "$(dirname "${SKILL_DIR}")")
+   AGENTS_DIR="${MODULE_DIR}/agents"
+   ```
 
-```bash
-AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [user args]
-```
+4. **Export all four before invoking any script**, since each script runs in
+   its own process:
+
+   ```bash
+   export AGENTS_DIR SCRIPTS_DIR PHASES_DIR REFERENCES_DIR
+   ```
+
+5. **Pass `AGENTS_DIR` explicitly to `rc-prepare.sh`**, which needs it to
+   discover reviewer agents:
+
+   ```bash
+   AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare.sh" [user args]
+   ```
+
+All script and phase references below use these paths. Construct full
+paths — never search by filename.
 
 ## Quick Reference
 
@@ -141,10 +162,23 @@ delegates review to each persona in parallel, verifies findings
 against actual file content, strips fabricated evidence, produces
 council verdict (APPROVE or REQUEST CHANGES).
 
-Five personas run in parallel: Guard (intent drift, governance,
-structural coherence), Adversary (security, resilience), Tester
-(test quality, coverage), Operator (deployment, dependencies),
-Curator (documentation gaps).
+Five personas run in parallel. Each has a role name (what the agent calls
+itself), an agent identifier (what you dispatch), and a persona token (what
+`Pin personas` and `tracking.md` use). They are not interchangeable — the
+token is the one to write in configuration:
+
+| Role     | Agent                    | Persona token | Lens                                       |
+|----------|--------------------------|---------------|--------------------------------------------|
+| Guard    | `divisor-guard-code`     | `guard`       | intent drift, governance, structural coherence |
+| Adversary| `divisor-adversary-code` | `adversary`   | security, resilience                       |
+| Tester   | `divisor-testing-code`   | `testing`     | test quality, coverage                     |
+| Operator | `divisor-sre-code`       | `sre`         | deployment, dependencies                   |
+| Curator  | `divisor-curator-code`   | `curator`     | documentation gaps                         |
+
+Spec mode dispatches the same five personas from `divisor-*-spec.md`. Note
+that Tester and Operator do NOT pin as `tester` / `operator`: the tokens are
+`testing` and `sre`, and a pin that matches no discovered reviewer is reported
+on stderr and otherwise ignored.
 
 ## Pipeline (state machine)
 
@@ -152,6 +186,22 @@ The orchestrator is a status-dispatcher over stage scripts. Full status
 vocabulary and transitions: `references/pipeline-states.md`.
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'primaryColor': '#2f6dab',
+  'primaryTextColor': '#1e1e1e',
+  'primaryBorderColor': '#7c8ba1',
+  'lineColor': '#7c8ba1',
+  'edgeLabelBackground': '#eef2f8',
+  'tertiaryColor': 'transparent',
+  'tertiaryTextColor': '#7c8ba1',
+  'tertiaryBorderColor': '#7c8ba1',
+  'clusterBkg': 'transparent',
+  'clusterBorder': '#7c8ba1',
+  'titleColor': '#7c8ba1',
+  'noteBkgColor': '#eef2f8',
+  'noteTextColor': '#1e1e1e',
+  'fontFamily': 'system-ui, sans-serif'
+}, 'themeCSS': '.node .nodeLabel{color:#ffffff!important;fill:#ffffff!important;}'}}%%
 stateDiagram-v2
     [*] --> Prepare
     Prepare --> Select: ok
@@ -269,7 +319,7 @@ user, since grounding is weaker.
   "status": "ok | skip | empty",
   "message": "human-readable status or instruction",
   "session_dir": "/absolute/path/to/session",
-  "mode": "code | specs",
+  "mode": "code | spec",
   "agents": ["divisor-guard-code", "divisor-adversary-code", ...],
   "language": "Go",
   "framework": "none",
@@ -277,9 +327,17 @@ user, since grounding is weaker.
   "scope_type": "changed | all | range | paths | pr | url",
   "scope_value": "",
   "scope_dir": "",
-  "effort": "standard"
+  "effort": "standard",
+  "review_root": ". | /absolute/path/to/checkout",
+  "post_comment": "yes | no",
+  "post_auto_send": "yes | no"
 }
 ```
+
+Note the `mode` value: the spec mode is `spec`, singular, in this JSON field
+and in every `divisor-*-spec.md` filename. Only the CLI flag token is plural
+(`--mode specs`); `rc-prepare.sh` refuses `--mode spec` rather than aliasing
+it. Branch on `spec`, pass `specs`.
 
 **If status is `skip`:** Read message field, report to user, stop.
 Do not proceed to delegation.
@@ -325,7 +383,11 @@ Read `${session_dir}/tracking.md` (created by rc-prepare.sh).
 Determine current state from tracking file:
 - All phases complete and verdict recorded: report existing verdict, stop.
 - Delegation or Verification in progress: resume from next incomplete phase.
-- Starting fresh: proceed to Step 3.
+- Starting fresh: proceed to Step 2.1, and run Steps 2.1 through 2.5 in
+  order before Step 3. Each carries its own skip condition — 2.1 and 2.4 are
+  deep-mode only, 2.3 is opt-in, 2.5 needs `ci-status.txt` — but 2.2 (Council
+  Selection) runs at every effort level and decides who is dispatched, so
+  jumping straight to Step 3 is never correct.
 
 Enables re-entry: if skill invoked mid-run, resumes without
 repeating completed work.
@@ -372,6 +434,7 @@ that they are not a per-run opinion.
   "message": "Council narrowed to 3 of 5 reviewers: every changed file is prose documentation.",
   "applied": true,
   "shape": "docs-only",
+  "reason": "every changed file is prose documentation",
   "council": ["divisor-adversary-code", "divisor-curator-code", "divisor-guard-code"],
   "deselected": [{"agent": "divisor-sre-code", "persona": "sre", "reason": "..."}],
   "subsystems": []
@@ -386,7 +449,9 @@ that they are not a per-run opinion.
   everyone.
 
 **Tell the user when the council was narrowed**, naming who was skipped and
-why, in one line. A reduced review that is not disclosed is a review that reads
+why, in one line — `reason` carries the script's own justification, and the
+per-agent `reason` inside `deselected` names why each individual reviewer was
+dropped. A reduced review that is not disclosed is a review that reads
 as full coverage. Selection can be turned off entirely, or a persona pinned, in
 the project's "Review Council Configuration" block.
 
@@ -457,7 +522,9 @@ check against the artifact.
 **This step never blocks a run that has nobody to answer it.** Ask only when the
 session is interactive, for the same reason Step 2.5 and Step 5 stop short of a
 blocking question: a piped or scheduled run ends at the prompt having produced
-nothing, and `scripts/review-open-prs.sh --effort deep` is exactly such a run.
+nothing, and this repository's own batch driver (`scripts/review-open-prs.sh
+--effort deep`, at the repo root — not under `${SCRIPTS_DIR}`) is exactly such
+a run.
 Spending money the operator did not see is the lesser failure; the estimate is
 in `tracking.md` either way.
 
@@ -521,15 +588,19 @@ guidance and dispatch instructions.
 <DISPATCH-ALLOWLIST>
 Dispatch only the agent identifiers in the `agents` array `rc-prepare.sh`
 returned in Step 1. That array is the sole source of truth for who MAY
-review. Do NOT dispatch a reviewer that is absent from it, even when a
-similarly named agent is registered and dispatchable in the host — for
-example an un-suffixed legacy `divisor-*` file (`divisor-guard`, not
+review.
+
+Do NOT dispatch a reviewer that is absent from it, even when a similarly
+named agent is registered and dispatchable in the host — for example an
+un-suffixed legacy `divisor-*` file (`divisor-guard`, not
 `divisor-guard-code`) left in a host agents directory by an older install.
 Those files are not discovered by `rc-prepare.sh` (it globs only
 `divisor-*-code.md` / `divisor-*-spec.md`) and are stale; using them runs
-unknown-version personas and yields a verdict you cannot trust. If Step 1
-returned `skip` (or an empty `agents` array), dispatch NO reviewers: report
-the skip message and stop, never a hand-picked substitute from the host.
+unknown-version personas and yields a verdict you cannot trust.
+
+If Step 1 returned `skip` (or an empty `agents` array), dispatch NO
+reviewers: report the skip message and stop, never a hand-picked substitute
+from the host.
 
 Of that allowed set, dispatch exactly the `council` array
 `rc-select-council.sh` wrote to `${session_dir}/session-manifest.json` in
@@ -542,7 +613,10 @@ reads a `council` equal to the full roster, so this rule collapses to the
 one above.
 </DISPATCH-ALLOWLIST>
 
-For each reviewer agent in agents array from Step 1:
+For each reviewer agent in the `council` array that
+`rc-select-council.sh` wrote to `${session_dir}/session-manifest.json` in
+Step 2.2 (read it from the manifest, per the allowlist above — never from
+Step 1's `agents` array):
 - Construct prompt using changeset from `changeset.txt`, diff from
   `diff.patch`, convention packs from `${REFERENCES_DIR}`, project
   configuration
@@ -612,9 +686,15 @@ map) and prints a summary to stdout.
   "message": "Evidence verification complete. 3 verified, 1 correctable, 0 stripped.",
   "verified": 3,
   "correctable": 1,
-  "stripped": 0
+  "stripped": 0,
+  "missing_verdicts": ["divisor-curator-code"]
 }
 ```
+
+`missing_verdicts` lists every agent `session-manifest.json` records as
+dispatched that produced no verdict JSON — the coverage gap the
+EXECUTION-CONTRACT relies on. Disclose it per `${PHASES_DIR}/verify.md`
+whenever it is non-empty.
 
 **Branch on `status` before reading any file:**
 
@@ -654,25 +734,38 @@ map) and prints a summary to stdout.
 **Everything below is the `ok` path.** The `nothing_to_do` arm has already
 left Step 4 for Step 6 — do not fall through into what follows.
 
-**Then, read `${PHASES_DIR}/verify.md`** for severity calibration,
-cross-agent consolidation, and validation gate procedures. Run these in
-this order:
+**Then, read `${PHASES_DIR}/verify.md`** for the correction round, severity
+calibration, cross-agent consolidation, and validation gate procedures. Run
+these in this order:
 
+- **Run the correction round (verify.md Step 1) whenever `correctable` is
+  greater than 0** — skipped entirely on `quick` effort.
+  - Give each originating agent ONE chance to fix its evidence, using
+    verify.md's correction prompt verbatim.
+  - Batch all of one agent's correctable findings into a single dispatch;
+    do not dispatch a round per finding.
+  - Corrected evidence that matches the file is upgraded to **verified**; a
+    withdrawal removes the finding; evidence that still does not match, or no
+    reply at all, is **stripped**. There is no second attempt.
+  - Skip only when there are zero correctable findings — never because *all*
+    of an agent's findings are correctable (verify.md "When to skip").
 - Apply severity calibration (LLM judgment on findings severity)
 - **Consolidate cross-agent duplicates (verify.md Step 3c) — SCRIPT-OWNED,
-  you MUST run it (standard and deep only).** When 2+ verified findings
-  share a file, judge which describe the same underlying defect, write
-  `${session_dir}/verdicts/_meta/clusters.json` (a members-only manifest per
-  `${REFERENCES_DIR}/consolidation-schema.json`), then run:
-  `bash ${SCRIPTS_DIR}/rc-consolidate.sh ${session_dir}`
-  It folds each cluster into one primary finding and is a safe no-op when
-  nothing qualifies. Run it **before** the validation gate so the validator
-  sees the consolidated set.
-  On `status: "consolidate_error"` the fold would have removed more findings
-  than it declared merged, so it was refused and `findings.json` is unchanged.
-  Stop the review and report the message verbatim. Do not re-run it and do not
-  proceed to the validation gate: the manifest is not what failed, so rewriting
-  it changes nothing, and every later stage reads the same document.
+  you MUST run it (standard and deep only).**
+  - When 2+ verified findings share a file, judge which describe the same
+    underlying defect and write
+    `${session_dir}/verdicts/_meta/clusters.json` — a members-only manifest
+    per `${REFERENCES_DIR}/consolidation-schema.json`.
+  - Then run: `bash ${SCRIPTS_DIR}/rc-consolidate.sh ${session_dir}`
+  - It folds each cluster into one primary finding and is a safe no-op when
+    nothing qualifies. Run it **before** the validation gate so the validator
+    sees the consolidated set.
+  - On `status: "consolidate_error"` the fold would have removed more findings
+    than it declared merged, so it was refused and `findings.json` is
+    unchanged. Stop the review and report the message verbatim.
+  - Do not re-run it and do not proceed to the validation gate: the manifest
+    is not what failed, so rewriting it changes nothing, and every later stage
+    reads the same document.
 - Run validation gate — dispatch fresh-context validator agent
   to check findings against actual code
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
@@ -871,13 +964,16 @@ there is nothing to post to and stop.
 
    Read the rendered `${session_dir}/comment-body.md` and show it to the user.
 
-   The result carries `parts`, `pare_level` and `findings_dropped`. When
-   `parts` is greater than 1 the verdict did not fit one comment and was
-   split: `part_files` lists every file, in order, and the user must be shown
-   that there are several — not just the first. When `pare_level` is greater
-   than 0 the body was trimmed to fit; say so, and say that the full verdict
-   is in the report and the run artifacts. Do NOT present a trimmed body as
-   the complete review.
+   The result carries `parts`, `pare_level` and `findings_dropped`. Read both
+   counters before you describe the comment to the user:
+
+   - `parts` greater than 1 — the verdict did not fit one comment and was
+     split. `part_files` lists every file, in order; show the user that there
+     are several, not just the first.
+   - `pare_level` greater than 0 — the body was trimmed to fit. Say so, and
+     say that the full verdict is in the report and the run artifacts.
+   - Either way, do NOT present a trimmed or partial body as the complete
+     review.
 
 4. **Confirm and send**:
    - Read `Post auto-send:` from tracking.md.
@@ -943,6 +1039,8 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Review root: {. | path}
 - Post intent: {yes | no}
 - Post auto-send: {yes | no}
+- Comment limit: {forge default | character count}
+- Max comments: {count}
 - Agents discovered: {count}
 - Agents absent: none
 - Review instructions: {present | none}

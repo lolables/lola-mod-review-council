@@ -130,13 +130,14 @@ API mechanics — while everything else is shared.
     and prints `{"status":"rendered", ...}` — the render-only fallback.
 - **`rc-post-comment-<forge>.sh`** — a per-forge post script. It defines the
   three hooks (below), sources the renderer, then owns the auth gate, the upsert
-  **policy**, and the forge API mechanics inline. GitHub is implemented in full
-  (`rc-post-comment-github.sh`). GitLab (`rc-post-comment-gitlab.sh`) declares
-  its hooks and renders, but does not post: the upsert, supersede and identity
-  policy has no `glab` equivalent yet, and a poster that creates a comment but
-  cannot find its own on the next run leaves duplicate verdicts on the merge
-  request. It exists anyway because the hooks live here — without a post script
-  a GitLab review would get no permalinks and no size budget at all.
+  **policy**, and the forge API mechanics inline.
+  - GitHub is implemented in full (`rc-post-comment-github.sh`).
+  - GitLab (`rc-post-comment-gitlab.sh`) declares its hooks and renders, but
+    does not post: the upsert, supersede and identity policy has no `glab`
+    equivalent yet, and a poster that creates a comment but cannot find its
+    own on the next run leaves duplicate verdicts on the merge request.
+  - It exists anyway because the hooks live here — without a post script a
+    GitLab review would get no permalinks and no size budget at all.
 - **`rc-post-comment.sh`** — a thin router. Reads `Forge` and `PR` from
   `tracking.md`; skips when there is no PR; execs `rc-post-comment-<forge>.sh`
   (args passed through) when it exists, else execs the renderer standalone. It

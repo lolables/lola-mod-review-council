@@ -27,7 +27,10 @@ targets:
   - cli: claude-code
     models:
       # - claude-opus-5            # Opus results not better than Sonnet to warrant ~4x cost
-      - claude-sonnet-5
+      - claude-sonnet-4-6          # Reverted from claude-sonnet-5 (2026-08-22): per-review
+                                   #   cost was far above 4-6 without a matching score gain.
+                                   #   4-6 is also what every scored row in ledger.jsonl was
+                                   #   measured on, so the published tables stay comparable.
       # - claude-haiku-4-5           # Haiku not viable for review-council: fabricates findings
                                      #   (nil panics, concurrent access bugs) that don't exist.
                                      #   case-004 scores across 3 runs: bare 0.28/0.00/0.12,
@@ -40,7 +43,7 @@ targets:
   # - cli: opencode
   #   models:
   #     # - claude-opus-5          # Opus results not better than Sonnet to warrant ~4x cost
-  #     - claude-sonnet-5
+  #     - claude-sonnet-4-6
 
 calculate_baseline: false               # OFF by default: the bare-model "none"
                                         # pass doubles run cost and its lift signal
@@ -63,7 +66,7 @@ timeouts:
   agent_seconds: 1800               # 30 min per agent (matches task.yaml timeout_seconds)
 
 judges:
-  - {cli: claude-code, model: claude-sonnet-5}  # single judge keeps drift comparable
+  - {cli: claude-code, model: claude-sonnet-4-6}  # single judge keeps drift comparable
 
 aggregation: mean
 # disagreement_threshold only applies with 2+ judges — vestigial under the
@@ -87,9 +90,9 @@ ci:
 #                                               #   <file>.sha256 sidecar verified
 #                                               #   when present
 #   rates:                           # USD per million tokens (matches models.dev shape)
-#     claude-sonnet-5: {input: 3.00, output: 15.00}
+#     claude-sonnet-4-6: {input: 3.00, output: 15.00}
 #   tokens_per_call:                 # per-call token budget (tighter than context window)
-#     claude-sonnet-5: {input: 80000, output: 8000}
+#     claude-sonnet-4-6: {input: 80000, output: 8000}
 #
 # Calibration: empirical token/cost data shipped with lola-eval and
 # refreshed via `task calibration:update`. The estimator consults this

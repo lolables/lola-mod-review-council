@@ -12,14 +12,15 @@ string substitution, and it has exactly two moves:
 
 - **The section applies** — replace the marker line with the section text.
 - **The phase that produces it did not run** — delete the marker line **and
-  its trailing blank line**. The renderer emits every marker as
-  `blank / marker / blank`, so deleting the marker alone leaves the two blank
-  lines touching. On the common path — a first-time review at standard effort
-  with no CI — five of the eight markers are dropped. Four of those five sit
-  together in the findings-context slot, so deleting only their marker lines
-  leaves a five-line blank gap ahead of `## Council Synthesis`. Rendered HTML
-  hides it; the `report.md` artifact a maintainer reads, and any MD012 linter,
-  do not.
+  its trailing blank line**.
+  - The renderer emits every marker as `blank / marker / blank`, so deleting
+    the marker alone leaves the two blank lines touching.
+  - On the common path — a first-time review at standard effort with no CI —
+    five of the eight markers are dropped. Four of those five sit together in
+    the findings-context slot, so deleting only their marker lines leaves a
+    five-line blank gap ahead of `## Council Synthesis`.
+  - Rendered HTML hides it; the `report.md` artifact a maintainer reads, and
+    any MD012 linter, do not.
 
 `<!-- TLDR -->` is the one marker the second move never applies to. Every
 report has an outcome, so every report has a TL;DR — there is no run in which
@@ -110,8 +111,8 @@ Example `models.json`:
 ```json
 [
   {"role": "coordinator", "id": "claude-opus-4-8"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"},
-  {"role": "divisor-guard-code", "id": "claude-sonnet-5"},
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
+  {"role": "divisor-guard-code", "id": "claude-sonnet-4-6"},
   {"role": "validator", "id": "claude-opus-4-8"}
 ]
 ```
@@ -174,23 +175,25 @@ is prose only — it never touches structure.
    single `<!-- NARRATIVE -->` line in `${session_dir}/report.md` with the
    verbatim contents of `${session_dir}/narrative.md`.
 
-4. **Splice the TL;DR.** Replace the single `<!-- TLDR -->` line in
-   `${session_dir}/report.md` with the verbatim contents of
-   `${session_dir}/comment-summary.md`. It sits directly under
-   `## Council Verdict` at the top of the report, so the maintainer has the
-   outcome and a plain-language summary of it before any table. Do not reword
-   it for the report — the PR comment renders the same file.
+4. **Splice the TL;DR.**
 
-   **Fallback — whenever `${session_dir}/comment-summary.md` is absent or
-   empty**, replace the marker with the literal line
-   `Automated review complete.`, the same fallback `rc-render-comment.sh`
-   uses when the file is missing. This is not a `quick`-mode special case.
-   The file is missing in `quick` mode because the subagent is never
-   dispatched, and it can be missing in any mode because a dispatched
-   subagent failed, was interrupted, or returned prose without writing it.
-   The marker is never deleted instead: unlike every other marker it is not
-   conditional on a phase having run, so an empty source is a fallback, not a
-   reason to drop the section.
+   - Replace the single `<!-- TLDR -->` line in `${session_dir}/report.md`
+     with the verbatim contents of `${session_dir}/comment-summary.md`.
+   - It sits directly under `## Council Verdict` at the top of the report, so
+     the maintainer has the outcome and a plain-language summary of it before
+     any table. Do not reword it for the report — the PR comment renders the
+     same file.
+   - **Fallback — whenever `${session_dir}/comment-summary.md` is absent or
+     empty**, replace the marker with the literal line
+     `Automated review complete.`, the same fallback `rc-render-comment.sh`
+     uses when the file is missing.
+   - This is not a `quick`-mode special case. The file is missing in `quick`
+     mode because the subagent is never dispatched, and it can be missing in
+     any mode because a dispatched subagent failed, was interrupted, or
+     returned prose without writing it.
+   - The marker is never deleted instead: unlike every other marker it is not
+     conditional on a phase having run, so an empty source is a fallback, not
+     a reason to drop the section.
 
 ---
 

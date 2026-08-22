@@ -233,24 +233,25 @@ that round has already run. Your job here is to interpret its outcome:
   and surface it in the report — never let a dropped finding pass silently as a
   clean zero.
 - A `VERDICT_INCOHERENT` entry gets logged **even when the re-dispatch
-  succeeds**, which no other reason requires. The agent picks its own remedy —
-  raise the verdict to `REQUEST CHANGES`, or drop the finding / lower it to
-  MEDIUM or LOW — and the re-dispatch overwrites `{agent}.raw.md`, so the second
-  branch destroys the only record that a CRITICAL or HIGH was ever claimed. An
-  unlogged gate firing is therefore a silent drop wearing a green verdict.
-  Record one line per entry in `verification.txt`, next to the still-invalid
-  agents above:
-  > "Verdict gate: `{agent}` filed APPROVE over {severity} `{file}` —
-  > after re-dispatch: {verdict raised to REQUEST CHANGES | severity lowered to
-  > {level} | finding withdrawn}."
-  Read the corrected block to fill the outcome; do not assume the agent took the
-  branch you would have. A withdrawal that the agent does not justify is the
-  silent drop this gate exists to expose — surface it in the report the same way
-  a still-invalid agent is surfaced. You are not the only record of this:
-  `rc-extract-verdict.sh` appends every firing to
-  `${session_dir}/gate-firings.jsonl`, which Step 6 — Gate-Firing Disclosure
-  reads back, so a firing you never saw — a resumed session, a compacted
-  context — still reaches the report.
+  succeeds**, which no other reason requires.
+  - The agent picks its own remedy — raise the verdict to `REQUEST CHANGES`, or
+    drop the finding / lower it to MEDIUM or LOW — and the re-dispatch
+    overwrites `{agent}.raw.md`, so the second branch destroys the only record
+    that a CRITICAL or HIGH was ever claimed. An unlogged gate firing is
+    therefore a silent drop wearing a green verdict.
+  - Record one line per entry in `verification.txt`, next to the still-invalid
+    agents above:
+    > "Verdict gate: `{agent}` filed APPROVE over {severity} `{file}` —
+    > after re-dispatch: {verdict raised to REQUEST CHANGES | severity lowered to
+    > {level} | finding withdrawn}."
+  - Read the corrected block to fill the outcome; do not assume the agent took
+    the branch you would have. A withdrawal that the agent does not justify is
+    the silent drop this gate exists to expose — surface it in the report the
+    same way a still-invalid agent is surfaced.
+  - You are not the only record of this: `rc-extract-verdict.sh` appends every
+    firing to `${session_dir}/gate-firings.jsonl`, which Step 6 — Gate-Firing
+    Disclosure reads back, so a firing you never saw — a resumed session, a
+    compacted context — still reaches the report.
 - `status: "nothing_to_do"` means the whole session produced zero verdict
   blocks (e.g., no `.raw.md` files exist at all) — a delegation failure, NOT
   a per-agent "no findings" signal. Treat it as the "all agents fail" case in
@@ -649,14 +650,17 @@ claimed at. Disclosure is the entire job of this section.
 
 Disclose every collapsed record, and disclose the withdrawal branch loudest.
 Every distinct claim gets a line; repeats of one claim were already folded into
-that line, with their count, by the collapse rule above. When no
-finding in `findings.json` matches the record, the agent resolved the gate by
-deleting its own CRITICAL or HIGH, and the review carries no other trace of it
-— a maintainer reading a clean APPROVE has no way to know a reviewer once
-claimed otherwise. Say so in the report, quoting the record's `description`
-and stating that the agent withdrew it. A withdrawal the agent did not justify
-in prose is the silent drop this gate exists to expose; surface it the way a
-still-invalid agent is surfaced (Step 0).
+that line, with their count, by the collapse rule above.
+
+When no finding in `findings.json` matches the record, the agent resolved the
+gate by deleting its own CRITICAL or HIGH, and the review carries no other
+trace of it — a maintainer reading a clean APPROVE has no way to know a
+reviewer once claimed otherwise.
+
+Say so in the report, quoting the record's `description` and stating that the
+agent withdrew it. A withdrawal the agent did not justify in prose is the
+silent drop this gate exists to expose; surface it the way a still-invalid
+agent is surfaced (Step 0).
 
 The report seam is the Council Synthesis narrative. `phases/report.md` — "How
 Sections Reach the Report" — permits filling only the markers

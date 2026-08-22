@@ -164,12 +164,12 @@ TRACKING
 cat >"$session/models.json" <<'MODELS'
 [
   {"role": "coordinator", "id": "claude-opus-4-8"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"}
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"}
 ]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-if echo "$result" | grep -q "claude-opus-4-8" && echo "$result" | grep -q "divisor-adversary-code: claude-sonnet-5"; then
+if echo "$result" | grep -q "claude-opus-4-8" && echo "$result" | grep -q "divisor-adversary-code: claude-sonnet-4-6"; then
 	echo "  PASS: recorded models appear in report"
 	PASS=$((PASS + 1))
 else
@@ -211,14 +211,14 @@ cat >"$session/tracking.md" <<'TRACKING'
 TRACKING
 cat >"$session/models.json" <<'MODELS'
 [
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-5"},
-  {"role": "divisor-guard-code", "id": "claude-sonnet-5"}
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
+  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
+  {"role": "divisor-guard-code", "id": "claude-sonnet-4-6"}
 ]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-dup_count=$(echo "$result" | grep -c "^- divisor-adversary-code: claude-sonnet-5$")
+dup_count=$(echo "$result" | grep -c "^- divisor-adversary-code: claude-sonnet-4-6$")
 if [[ "$dup_count" -eq 1 ]]; then
 	echo "  PASS: duplicate model line collapsed to one"
 	PASS=$((PASS + 1))

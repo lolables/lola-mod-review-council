@@ -502,3 +502,69 @@ comment_limit=$(rc_config_value "Comment limit")
 [[ "$comment_limit" =~ ^[1-9][0-9]*$ ]] || comment_limit=""
 max_comments=$(rc_config_value "Max comments")
 [[ "$max_comments" =~ ^[1-9][0-9]*$ ]] || max_comments=1
+
+# --- Council-shaping policy ---
+#
+# Read here and carried into tracking.md, because rc-select-council.sh and
+# rc-apply-triage.sh run as later stages in different processes and this block
+# is the only place the project's configuration is parsed. Same route
+# `Comment limit` takes to rc-render-comment.sh.
+#
+# Values are resolved but not interpreted: what a change shape licenses
+# dropping, and what a triage matrix may narrow, belong to those two scripts,
+# and duplicating any part of either rule here would give it two homes.
+
+# An on/off switch across four layers, in this order:
+#
+#   1. the CLI flag      — this run, stated explicitly, outranks everything
+#   2. the environment   — this shell or this CI job
+#   3. the config block  — this project's standing preference
+#   4. the built-in      — what the module does when nobody has said anything
+#
+# An unusable value at any layer is reported and skipped rather than treated as
+# "off": a typo that silently disabled a reviewer-selection policy would change
+# what gets reviewed while reading as though the configuration had been
+# honoured, which is the same failure `Max comments` guards against by dropping
+# a non-numeric value instead of clamping it.
+rc_resolve_switch() { # cli_value env_name config_key default
+	local cli="$1" env_name="$2" key="$3" default="$4"
+	local env_value="${!env_name:-}" config_value candidate
+	config_value=$(rc_config_value "$key")
+	for candidate in "$cli" "$env_value" "$config_value"; do
+		candidate="${candidate,,}"
+		case "$candidate" in
+		on | off)
+			printf '%s' "$candidate"
+			return 0
+			;;
+		"") ;;
+		*)
+			echo "rc-prepare: ignoring '${candidate}' for ${key} (expected on or off)" >&2
+			;;
+		esac
+	done
+	printf '%s' "$default"
+}
+
+persona_selection=$(rc_resolve_switch "${persona_selection_cli:-}" \
+	REVIEW_COUNCIL_PERSONA_SELECTION "Persona selection" "on")
+
+# Triage defaults OFF. It trades recall for cost on the strength of a cheap
+# model's judgement, and unlike change-shape selection it has no measured recall
+# behind it yet — `.lola-eval/tests/case-022-triage-recall/` is the case that
+# would justify flipping this, and it has not been run. Shipping it on by
+# default would put an unmeasured recall risk in the default path of the one
+# mode people reach for when they most want thoroughness.
+subsystem_triage=$(rc_resolve_switch "${triage_cli:-}" \
+	REVIEW_COUNCIL_TRIAGE "Subsystem triage" "off")
+
+# Persona base names that must never be deselected, comma- or space-separated.
+# Normalised to a comma-joined lowercase list, with anything that cannot be a
+# persona base name dropped — the selector reports a name that matches no
+# discovered reviewer, which it can do and this cannot, having no roster yet.
+pin_personas=$(rc_config_value "Pin personas")
+if [[ -n "$pin_personas" ]]; then
+	pin_personas=$(printf '%s' "${pin_personas,,}" | tr ',' ' ' | tr -s '[:space:]' '\n' |
+		grep -E '^[a-z][a-z0-9-]*$' | paste -sd ',' - || true)
+fi
+[[ -n "$pin_personas" ]] || pin_personas="none"

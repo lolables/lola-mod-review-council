@@ -443,7 +443,7 @@ SKILL_MD="$SCRIPT_DIR/../skills/review-council/SKILL.md"
 # "non-interactive" in Step 5, so a file-wide grep would report the gate present
 # on a SKILL.md that never gained one — a guard that cannot fail protects
 # nothing.
-step_22=$(sed -n '/^### Step 2.2/,/^### Step 2.5/p' "$SKILL_MD" | tr '\n' ' ' | tr -s ' ')
+step_22=$(sed -n '/^### Step 2.4/,/^### Step 2.5/p' "$SKILL_MD" | tr '\n' ' ' | tr -s ' ')
 if grep -qF 'rc-cost-estimate.sh' <<<"$step_22"; then
 	echo "  PASS: SKILL.md runs the estimator"
 	PASS=$((PASS + 1))
@@ -474,6 +474,95 @@ for outcome in "Acknowledgement: acknowledged" "Acknowledgement: declined" "Ackn
 		FAIL=$((FAIL + 1))
 	fi
 done
+
+# --- Contextual persona selection (issue #20) --------------------------------
+#
+# Selection changes the dispatch count, and this script is the one that states
+# it before any money is spent. An estimate that priced the discovered roster
+# after the council was narrowed would over-state every narrowed run.
+
+echo "Test: the estimate prices the selected council, not the discovered roster"
+s=$(mk_session deep 5)
+jq '. + {council: ["divisor-p1-code","divisor-p2-code"],
+         deselected: [{agent:"divisor-p3-code",persona:"p3",reason:"docs-only"},
+                      {agent:"divisor-p4-code",persona:"p4",reason:"docs-only"},
+                      {agent:"divisor-p5-code",persona:"p5",reason:"docs-only"}],
+         selection: {applied:true,shape:"docs-only",reason:"prose only",pinned:[]}}' \
+	"$s/session-manifest.json" >"$s/m.tmp" && mv "$s/m.tmp" "$s/session-manifest.json"
+table=$(bash "$ESTIMATE" "$s")
+assert_jq "$s/cost-estimate.json" '.personas' '2' "personas is the council, not the roster"
+assert_jq "$s/cost-estimate.json" '.discovered' '5' "the roster is still recorded"
+assert_jq "$s/cost-estimate.json" '.selection_applied' 'true' "narrowing is recorded"
+assert_jq "$s/cost-estimate.json" '.dispatches_first_pass' '2' "first pass prices two reviewers"
+assert_jq "$s/cost-estimate.json" '.dispatches_worst_case' '10' "worst case multiplies by the cap"
+if grep -qF '2 of 5 discovered reviewers' <<<"$table"; then
+	echo "  PASS: the table discloses the narrowing"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the table does not disclose the narrowing"
+	FAIL=$((FAIL + 1))
+fi
+discard_fixture "$s"
+
+echo "Test: a manifest with no council key still prices the discovered roster"
+# Sessions prepared before selection existed carry no `council`. They must price
+# exactly as they did, not as zero dispatches.
+s=$(mk_session standard 5)
+bash "$ESTIMATE" "$s" >/dev/null
+assert_jq "$s/cost-estimate.json" '.personas' '5' "falls back to agents"
+assert_jq "$s/cost-estimate.json" '.dispatches_first_pass' '5' "dispatch count unchanged"
+assert_jq "$s/cost-estimate.json" '.selection_applied' 'false' "no narrowing claimed"
+discard_fixture "$s"
+
+echo "Test: deep mode sums per-subsystem councils instead of multiplying"
+# One subsystem docs-only, one code: the dispatch count is 3 + 5, and the
+# product of any two numbers on the table would be wrong.
+s=$(mk_session deep 5 2 2)
+jq -n '[{name:"docs",description:"docs",files:["pkg/file1.go","pkg/file2.go"]},
+        {name:"code",description:"code",files:["pkg/file3.go","pkg/file4.go"]}]' \
+	>"$s/subsystems.json"
+jq '. + {council: ["divisor-p1-code","divisor-p2-code","divisor-p3-code",
+                   "divisor-p4-code","divisor-p5-code"],
+         subsystems: [
+           {name:"docs",shape:"docs-only",applied:true,
+            council:["divisor-p1-code","divisor-p2-code","divisor-p3-code"],
+            deselected:[{agent:"divisor-p4-code",persona:"p4",reason:"docs-only"},
+                        {agent:"divisor-p5-code",persona:"p5",reason:"docs-only"}]},
+           {name:"code",shape:"mixed",applied:false,
+            council:["divisor-p1-code","divisor-p2-code","divisor-p3-code",
+                     "divisor-p4-code","divisor-p5-code"],
+            deselected:[]}],
+         selection: {applied:true,shape:"docs-only+mixed",reason:"1 of 2",pinned:[]}}' \
+	"$s/session-manifest.json" >"$s/m.tmp" && mv "$s/m.tmp" "$s/session-manifest.json"
+table=$(bash "$ESTIMATE" "$s")
+assert_jq "$s/cost-estimate.json" '.dispatches_first_pass' '8' "3 + 5, not 5 x 2"
+assert_jq "$s/cost-estimate.json" '.dispatches_worst_case' '40' "worst case multiplies by the cap"
+if grep -qF 'councils differ by subsystem' <<<"$table"; then
+	echo "  PASS: the sentence drops the product it can no longer justify"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the sentence still claims a uniform product"
+	printf '%s\n' "$table" | head -6
+	FAIL=$((FAIL + 1))
+fi
+discard_fixture "$s"
+
+echo "Test: uniform per-subsystem councils keep the product sentence"
+s=$(mk_session deep 5 2 2)
+jq -n '[{name:"a",description:"a",files:["pkg/file1.go","pkg/file2.go"]},
+        {name:"b",description:"b",files:["pkg/file3.go","pkg/file4.go"]}]' \
+	>"$s/subsystems.json"
+table=$(bash "$ESTIMATE" "$s")
+assert_jq "$s/cost-estimate.json" '.dispatches_first_pass' '10' "5 personas x 2 subsystems"
+if grep -qF '5 personas x 2 subsystems' <<<"$table"; then
+	echo "  PASS: the product sentence survives where it is still arithmetic"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the product sentence was lost"
+	printf '%s\n' "$table" | head -6
+	FAIL=$((FAIL + 1))
+fi
+discard_fixture "$s"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -880,6 +880,29 @@ assert_json_field "$result" "status" "ok" "runs without a manifest"
 assert_jq_str "$result" '.missing_verdicts // [] | tojson' '[]' "no false accusation without a manifest"
 rm -rf "$s" "$src"
 
+echo "Test 35: a deliberately deselected persona is expected-absent, not missing"
+# Contextual persona selection (issue #20) makes `agents` (discovered) and
+# `council` (dispatched) different sets. A persona the selector skipped owes no
+# verdict, and reporting one would turn a disclosed, cheaper review into an
+# apparent coverage failure.
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+cat >"$s/session-manifest.json" <<'MJ'
+{"mode":"code","suffix":"code",
+ "agents":["divisor-adversary-code","divisor-curator-code","divisor-sre-code"],
+ "absent":[],
+ "council":["divisor-adversary-code","divisor-curator-code"],
+ "deselected":[{"agent":"divisor-sre-code","persona":"sre",
+                "reason":"docs-only changeset: no runtime surface"}],
+ "selection":{"applied":true,"shape":"docs-only","reason":"prose only","pinned":[]}}
+MJ
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+result=$(cd "$src" && bash "$SCRIPT" "$s")
+assert_jq_str "$result" '.missing_verdicts // [] | tojson' '["divisor-curator-code"]' \
+	"only the dispatched-but-silent agent is named"
+rm -rf "$s" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -38,6 +38,10 @@ base_override=""
 effort="standard"
 post_comment="no"
 post_auto_send="no"
+# Empty means "the caller said nothing": prepare-changes.sh resolves these
+# across CLI > env > config > default, and only a non-empty value here wins.
+persona_selection_cli=""
+triage_cli=""
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -132,6 +136,27 @@ while [[ $# -gt 0 ]]; do
 		post_auto_send="yes"
 		shift
 		;;
+	# Council-shaping switches. Both are tri-state here — unset means "the
+	# caller said nothing", which is what lets the env var and the project's
+	# configuration block have their turn in prepare-changes.sh. A `--flag`
+	# that defaulted to "off" when absent would make the CLI layer win every
+	# run, silently overriding a project that had configured the opposite.
+	--persona-selection)
+		persona_selection_cli="on"
+		shift
+		;;
+	--no-persona-selection)
+		persona_selection_cli="off"
+		shift
+		;;
+	--triage)
+		triage_cli="on"
+		shift
+		;;
+	--no-triage)
+		triage_cli="off"
+		shift
+		;;
 	--help)
 		cat <<-'HELP'
 			Usage: rc-prepare.sh [flags]
@@ -145,6 +170,15 @@ while [[ $# -gt 0 ]]; do
 			  --effort <quick|standard|deep>   Review depth (default: standard)
 			  --post-comment                   Post the verdict as a PR comment (opt-in; confirmed at Step 7)
 			  --post-auto-send                 Post without a per-run confirmation prompt
+			  --persona-selection              Let change shape narrow the council (default: on)
+			  --no-persona-selection           Always dispatch every discovered reviewer
+			  --triage                         Let a triage pass narrow deep-mode subsystem councils (default: off)
+			  --no-triage                      Dispatch every council against every subsystem
+
+			Both council switches also read REVIEW_COUNCIL_PERSONA_SELECTION and
+			REVIEW_COUNCIL_TRIAGE, and a "Persona selection:" / "Subsystem triage:"
+			line in the project's Review Council Configuration block. Precedence is
+			flag, then environment, then configuration, then the default above.
 
 			Scope types:
 			  changed     base...HEAD + uncommitted changes (code default)

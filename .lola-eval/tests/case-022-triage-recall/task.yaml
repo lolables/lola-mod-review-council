@@ -1,0 +1,36 @@
+task_version: "2"
+description: |
+  Recall under subsystem triage. Five cohesive subsystems, each carrying
+  exactly one planted defect, and each defect deliberately placed in the
+  subsystem where a naive triage is most likely to route that lens AWAY:
+  the XSS lives in `web/templates` (looks like presentation), the untestable
+  CI step in `deploy` (looks like plumbing), the now-false README guarantee
+  in `pkg/store` (looks internal), the unbounded map in `pkg/metrics`
+  (looks like instrumentation), and the duplicated store in `pkg/legacy`.
+
+  Run with `--triage` so the triage pass is active. The question this case
+  answers is not whether triage saves money — the session artifacts record
+  that — but whether the five defects survive it. A triaged run that finds
+  all five is evidence for flipping `Subsystem triage` on by default; one
+  that loses any of them is evidence against, and the default stays off.
+
+  Pair with a `--no-triage` run over the same scaffold to separate a triage
+  regression from a review the council would have missed anyway.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-022-triage-recall/scaffold.sh" "$PWD"
+timeout_seconds: 2700
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity> | <file path> | <one-line description>
+    - <severity> | <file path> | <one-line description>
+    SUBSYSTEMS: <the subsystem names decomposition produced>
+    TRIAGE_APPLIED: <yes or no>
+    TRIAGE_SKIPPED: <each persona/subsystem pair triage excluded, or "none">
+    TRIAGE_REFUSED: <each exclusion the invariants refused, or "none">
+    DISPATCHES: <number of reviewer dispatches actually made>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

@@ -15,6 +15,13 @@
 #   jq         Every artifact the pipeline reads or writes is JSON.
 #   coreutils  macOS has no `timeout` at all. GNU timeout bounds every forge
 #              call so a hung `gh` or `git` cannot stall a review.
+#   uv         Builds the .venv that `task lola-eval:*` runs the eval harness
+#              from. It is the only prerequisite here that a plain `task test`
+#              never touches — nothing in the module or its unit suites is
+#              Python — but the eval harness cannot bootstrap itself without
+#              it, and uv also supplies the interpreter when the host's own
+#              python3 is older than the 3.11 lola-eval requires (a stock Mac
+#              ships 3.9).
 #
 # DO NOT add $(brew --prefix coreutils)/libexec/gnubin to PATH.
 #
@@ -32,3 +39,4 @@
 brew "bash"
 brew "jq"
 brew "coreutils"
+brew "uv"

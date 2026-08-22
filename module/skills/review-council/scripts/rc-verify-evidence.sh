@@ -62,13 +62,22 @@ while IFS= read -r -d '' f; do agent_files+=("$f"); done \
 # disclose, not a reason to discard the verdicts that did arrive. A session with
 # no manifest (hand-built, or predating it) claims nothing rather than accusing
 # every agent at once.
+#
+# The diff is against `council`, not `agents`. Since contextual persona
+# selection (rc-select-council.sh) the two can differ: `agents` is who was
+# DISCOVERED and `council` is who was DISPATCHED, and a persona the selector
+# deliberately skipped owes no verdict. Counting it here would report a
+# deliberate, disclosed skip as a dropped verdict — the one confusion the
+# three-state model exists to prevent, and the direction that turns a cheaper
+# review into an apparent failure. `// .agents` covers a manifest written before
+# the key existed, where the two sets were the same by definition.
 missing_json='[]'
 manifest="$session_dir/session-manifest.json"
 if [[ -f "$manifest" ]]; then
 	found_json=$(printf '%s\n' "${agent_files[@]}" |
 		sed 's|.*/||; s|\.json$||' | sort -u | jq -R . | jq -s .)
 	missing_json=$(jq -n --slurpfile m "$manifest" --argjson found "$found_json" \
-		'[ $m[0].agents[]? | select(. as $a | ($found | index($a)) | not) ]')
+		'[ ($m[0].council // $m[0].agents // [])[] | select(. as $a | ($found | index($a)) | not) ]')
 fi
 
 # Merge all findings into one array, tagging each with its agent and verdict.

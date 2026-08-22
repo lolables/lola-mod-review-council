@@ -154,10 +154,15 @@ vocabulary and transitions: `references/pipeline-states.md`.
 ```mermaid
 stateDiagram-v2
     [*] --> Prepare
-    Prepare --> Delegate: ok
+    Prepare --> Select: ok
     Prepare --> [*]: skip (any input or environment fault)
     Prepare --> Prepare: empty (one broader-scope retry)
     Prepare --> [*]: empty after retry (report and stop)
+    Select --> Triage: ok (council, narrowed or whole)
+    Select --> Triage: nothing_to_do (full council stands)
+    Triage --> Delegate: ok (grid narrowed or intact)
+    Triage --> Delegate: nothing_to_do (not deep, or disabled)
+    Triage --> Delegate: triage_error (grid intact, reported)
     Delegate --> Extract: raw verdicts written
     Extract --> Delegate: extract_error (re-dispatch <=1)
     Extract --> Verify: ok
@@ -340,9 +345,98 @@ fall back to standard-mode delegation — do not create `subsystems.json`.
 
 **Update tracking:** Record subsystem count and names.
 
-Proceed to Step 2.2 (Cost Estimate).
+Proceed to Step 2.2 (Council Selection).
 
-### Step 2.2: COST ESTIMATE (deep mode only)
+### Step 2.2: COUNCIL SELECTION (scripted, all efforts)
+
+Narrows the dispatched council to the personas whose concern the changeset
+actually touches. Runs at every effort level — it is one pass over a file list.
+
+```bash
+bash "${SCRIPTS_DIR}/rc-select-council.sh" "${session_dir}"
+```
+
+The script owns the decision. It reads `changeset.txt`, `tracking.md` and
+`session-manifest.json` (plus `subsystems.json` in deep mode), rewrites the
+manifest's `council` and `deselected` arrays, and records a
+`## Phase: Council Selection` block in `tracking.md`. **Do not re-derive, widen
+or second-guess its result** — a council the orchestrator picked by judgment is
+one nothing downstream can audit, and the rules are unit-tested precisely so
+that they are not a per-run opinion.
+
+**Returns JSON to stdout:**
+
+```json
+{
+  "status": "ok",
+  "message": "Council narrowed to 3 of 5 reviewers: every changed file is prose documentation.",
+  "applied": true,
+  "shape": "docs-only",
+  "council": ["divisor-adversary-code", "divisor-curator-code", "divisor-guard-code"],
+  "deselected": [{"agent": "divisor-sre-code", "persona": "sre", "reason": "..."}],
+  "subsystems": []
+}
+```
+
+- On `status: "ok"`, dispatch the `council` array in Step 3. When `applied` is
+  `false` that array is the full discovered roster, which is the unchanged
+  default behaviour.
+- On `status: "nothing_to_do"`, the session could not be read. The manifest
+  still holds the full council from preparation — continue and dispatch
+  everyone.
+
+**Tell the user when the council was narrowed**, naming who was skipped and
+why, in one line. A reduced review that is not disclosed is a review that reads
+as full coverage. Selection can be turned off entirely, or a persona pinned, in
+the project's "Review Council Configuration" block.
+
+This step never blocks and never asks. It fails open on every uncertain
+signal — an unreadable session, an inconclusive changeset shape, an explicit
+`--review-instructions` focus, spec mode, or a narrowing that would leave no
+reviewer at all — and dispatches the full council in each case.
+
+Proceed to Step 2.3 (Subsystem Triage).
+
+### Step 2.3: SUBSYSTEM TRIAGE (deep mode, opt-in)
+
+**Skip unless all three hold:** effort is `deep` and
+`${session_dir}/subsystems.json` exists; `tracking.md` carries
+`- Subsystem triage: on`; and `${session_dir}/session-manifest.json` exists.
+Triage is **off by default** — enable per project (`Subsystem triage: on`), per
+shell (`REVIEW_COUNCIL_TRIAGE=on`), or per run (`--triage`).
+
+Step 2.2 narrowed each subsystem's council by what a filename can tell. This
+step answers only what it cannot: this subsystem is Go code, but is there
+anything in it for the *Adversary*? It decides **where** a persona looks, never
+whether its lens runs.
+
+**Read `${PHASES_DIR}/triage.md`** for the dispatch profile and the prompt.
+Dispatch one fresh-context, cheapest-tier subagent; write its raw reply
+verbatim to `${session_dir}/triage.raw.md`; then:
+
+```bash
+bash "${SCRIPTS_DIR}/rc-apply-triage.sh" "${session_dir}"
+```
+
+The script owns which exclusions survive and the invariants that refuse the
+rest. Do not apply the matrix by hand and do not re-dispatch the agent to argue
+with a refusal.
+
+- `ok` — matrix applied (possibly empty). Continue to Step 2.4.
+- `nothing_to_do` — gate failed or no reply to apply. Continue to Step 2.4.
+- `triage_error` — no fenced json block, or schema-invalid. Say so in one line
+  and continue to Step 2.4; every council is exactly what Step 2.2 left.
+
+**No status stops the run**, and this step never asks a question. A cost
+optimisation that fails is not a reason to withhold a review.
+
+**Tell the user what triage did** in one line when it applied anything, naming
+the count and pointing at `## Phase: Subsystem Triage` in `tracking.md` for the
+per-cell reasons and the refusals.
+
+Proceed to Step 2.4 (Cost Estimate).
+
+### Step 2.4: COST ESTIMATE (deep mode only)
 
 **Skip unless effort is `deep`.** Deep is the mode that multiplies: every
 persona reviews every subsystem, and that product repeats once per iteration up
@@ -426,16 +520,26 @@ guidance and dispatch instructions.
 
 <DISPATCH-ALLOWLIST>
 Dispatch only the agent identifiers in the `agents` array `rc-prepare.sh`
-returned in Step 1. That array is the sole source of truth for who reviews.
-Do NOT dispatch a reviewer that is absent from it, even when a similarly
-named agent is registered and dispatchable in the host — for example an
-un-suffixed legacy `divisor-*` file (`divisor-guard`, not
+returned in Step 1. That array is the sole source of truth for who MAY
+review. Do NOT dispatch a reviewer that is absent from it, even when a
+similarly named agent is registered and dispatchable in the host — for
+example an un-suffixed legacy `divisor-*` file (`divisor-guard`, not
 `divisor-guard-code`) left in a host agents directory by an older install.
 Those files are not discovered by `rc-prepare.sh` (it globs only
 `divisor-*-code.md` / `divisor-*-spec.md`) and are stale; using them runs
 unknown-version personas and yields a verdict you cannot trust. If Step 1
 returned `skip` (or an empty `agents` array), dispatch NO reviewers: report
 the skip message and stop, never a hand-picked substitute from the host.
+
+Of that allowed set, dispatch exactly the `council` array
+`rc-select-council.sh` wrote to `${session_dir}/session-manifest.json` in
+Step 2.2 — always a subset of `agents`, and equal to it whenever selection
+did not apply. Read it from the manifest rather than remembering Step 1's
+array. Do NOT add back a reviewer the manifest lists under `deselected`, and
+do NOT drop one the manifest does not: the council is a scripted, tested
+decision, not a judgment to revisit per run. A host that never ran Step 2.2
+reads a `council` equal to the full roster, so this rule collapses to the
+one above.
 </DISPATCH-ALLOWLIST>
 
 For each reviewer agent in agents array from Step 1:
@@ -841,6 +945,10 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Post auto-send: {yes | no}
 - Agents discovered: {count}
 - Agents absent: none
+- Review instructions: {present | none}
+- Persona selection: {on | off}
+- Pin personas: {none | comma-separated persona names}
+- Subsystem triage: {on | off}
 - Changeset size: {count} files
 
 ## Phase: Decomposition (deep mode only)
@@ -850,9 +958,30 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Cross-cutting files: {count}
 - Fallback to standard: {yes|no}
 
+## Phase: Council Selection
+
+- Selection: {applied | not applied}
+- Changeset shape: {docs-only | docs-prompt-surface | tests-only | deps-only | mixed | empty | not-evaluated}
+- Reason: {why the council was or was not narrowed}
+- Council: {comma-separated agent names}
+- Skipped reviewers: {none | comma-separated agent names}
+- Pinned: {none | comma-separated persona names}
+- Subsystem {name}: {shape} — {count} reviewer(s), skipped {names} (deep mode, one line each)
+
+## Phase: Subsystem Triage (deep mode, opt-in)
+
+- Triage: {applied | not applied}
+- Cells excluded: {count}
+- Refused: {count}
+- Dispatches after triage: {count}
+- Refused ({rule}): {subsystem or persona} — {why the invariant refused it}
+- Skipped {persona} on {subsystem}: {the triage agent's reason}
+
 ## Phase: Cost Estimate (deep mode only)
 
 - Personas: {count}
+- Personas discovered: {count}
+- Selection applied: {true | false}
 - Subsystems: {count}
 - Iteration cap: {5}
 - Dispatches (first pass): {count}
@@ -921,10 +1050,38 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Quality tool: my_quality_reporter
 - Max comments: 1
 - Comment limit: 65536
+- Persona selection: on
+- Pin personas: adversary, guard
+- Subsystem triage: off
 ```
 
 All extension points optional, degrade gracefully when omitted.
 No Constitution path configured: constitution-specific checks skipped.
+
+`Persona selection` and `Subsystem triage` each resolve across four layers, in
+order: the CLI flag (`--persona-selection` / `--no-persona-selection`,
+`--triage` / `--no-triage`), then the environment
+(`REVIEW_COUNCIL_PERSONA_SELECTION`, `REVIEW_COUNCIL_TRIAGE`), then the block
+above, then the built-in default — `on` for selection, `off` for triage. A
+value that is neither `on` nor `off` at any layer is reported on stderr and
+skipped, never read as `off`.
+
+`Subsystem triage` governs Step 2.3 and applies to deep mode only. It is off by
+default because it narrows on a cheap model's judgement and has no measured
+recall behind it yet; `rc-apply-triage.sh` refuses any matrix that would remove
+a lens from the review entirely, leave a subsystem fewer than two reviewers, or
+take away the reviewer holding an unresolved finding there.
+
+`Persona selection` and `Pin personas` govern Step 2.2. Selection is `on` by
+default and drops a reviewer only when the changeset holds nothing in its
+lens — a lockfile-only diff has no documentation to curate, a tests-only diff
+has no user-facing docs, a prose-only diff has no runtime surface. Set it to
+`off` to dispatch the full council on every review. `Pin personas` names
+persona base names (`adversary`, `curator`, `guard`, `sre`, `testing`) that are
+never dropped whatever the change shape, for a project where one lens must run
+unconditionally. Every skip is recorded with its reason in `tracking.md`, the
+report and the PR comment, so a narrowed run never reads as full coverage. See
+README "Council selection".
 
 `Max comments` and `Comment limit` govern an oversized verdict. A review
 with enough findings renders a comment the forge rejects: GitHub caps an

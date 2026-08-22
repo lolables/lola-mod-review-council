@@ -97,7 +97,8 @@ Per-case scores:
 | TS convention pack (5 violations) | 0.75    | 0.85      | 0.45     | 0.79    | 0.79      |
 
 The eval harness lives in `.lola-eval/` and uses `lola-eval` with custom providers and a trajectory judge. Run
-`task lola-eval:test` to reproduce.
+`task lola-eval:test` to reproduce — it installs the harness into `.venv` on first use, which needs
+[`uv`](https://docs.astral.sh/uv/). Reproducing the scores also needs `promptfoo` and `bubblewrap`; see AGENTS.md.
 
 ## Install
 
@@ -117,8 +118,16 @@ macOS ships none of the three: its Bash is 3.2, and there is no `timeout` at
 all. Homebrew installs GNU tools under a `g` prefix, so `coreutils` provides
 `gtimeout` — the scripts accept either name, and no `PATH` changes are needed.
 
+[`uv`](https://docs.astral.sh/uv/) is different: no part of a review touches
+it. It is listed below because `task lola-eval:*` builds the eval harness's
+virtualenv with it, which concerns you only if you cloned this repository to
+reproduce the scores above. Installing the module through lola, skip it. It
+stays in the macOS line so a laptop and the CI leg install the same set. On
+Linux there is no distribution package — use
+`curl -LsSf https://astral.sh/uv/install.sh | sh`.
+
 ```bash
-brew install bash jq coreutils     # macOS
+brew install bash jq coreutils uv  # macOS
 sudo apt-get install jq coreutils  # Debian/Ubuntu
 sudo dnf install jq coreutils      # Fedora/RHEL
 ```
@@ -325,6 +334,7 @@ flowchart TD
   prep["Prepare: detect mode, discover agents, capture changeset"]
   decgate{"Deep effort?"}
   dec["Decompose: split changeset into subsystems"]
+  sel["Select council: drop reviewers the change shape leaves nothing for"]
   cost["Cost estimate: price the fan-out, record the acknowledgement"]
   qg{"PR CI data available?"}
   qgrun["Quality Gates: run CI checks"]
@@ -341,9 +351,11 @@ flowchart TD
 
   prep --> decgate
   decgate -->|yes| dec
-  dec --> cost
+  dec --> sel
+  decgate -->|no| sel
+  sel -->|deep| cost
   cost --> qg
-  decgate -->|no| qg
+  sel -->|quick, standard| qg
   qg -->|yes| qgrun
   qgrun --> del
   qg -->|no| del
@@ -371,7 +383,7 @@ flowchart TD
   class qgrun sysB
   class ver,disp sysC
   class report sysD
-  class dec,cost,ext,post sysE
+  class dec,sel,cost,ext,post sysE
   class qg,iter,dispgate,decgate,postgate sysF
 ```
 
@@ -512,6 +524,8 @@ CLAUDE.md:
 - Batch size: 20
 - Max comments: 1
 - Comment limit: 65536
+- Persona selection: on
+- Pin personas: adversary, guard
 ```
 
 | Extension Point | Purpose                              | Default                  |
@@ -523,9 +537,99 @@ CLAUDE.md:
 | Batch size      | Max files per delegation batch       | 20                       |
 | Max comments    | Comments one verdict may be spread across | 1                   |
 | Comment limit   | Characters per comment, overriding the forge's own | The forge's limit |
+| Persona selection | Whether change shape may narrow the council | `on`             |
+| Pin personas    | Personas that are never dropped      | none                     |
+| Subsystem triage | Whether a triage pass may narrow deep-mode subsystem councils | `off` |
 
 All extension points are optional. The review council works without any of them — agents gracefully skip checks that
 require unconfigured extensions.
+
+### Council selection
+
+Some changesets have nothing in them for some reviewers. A `go.sum` bump has no
+documentation to curate and no test logic to review; a README edit has no
+runtime surface. Dispatching those reviewers anyway costs a full agent each, and
+in deep mode it costs one per subsystem per iteration.
+
+Before delegation, the council is narrowed to the reviewers whose lens the
+changeset actually touches:
+
+| Every changed file is… | Council | Reviewers skipped |
+|---|---|---|
+| prose documentation | 3 of 5 | Tester, Operator |
+| a test artifact | 4 of 5 | Curator |
+| a generated lockfile | 2 of 5 | Guard, Curator, Tester |
+| anything else | 5 of 5 | none |
+
+The rules are mechanical — a shell pass over the changed-file list, no model
+judgment, no extra round trip — so the same changeset always produces the same
+council. Deep mode evaluates each subsystem separately, because a docs subsystem
+and a code subsystem in one review do not need the same reviewers.
+
+**Nothing is narrowed on a guess.** The council stays whole whenever the signal
+is anything short of conclusive:
+
+- The changeset mixes classes (`go.mod` + `go.sum` is mixed — a manifest is
+  authored, and its intent is what the Guard reads).
+- The prose sits under a prompt or instruction surface — `agents/`, `skills/`,
+  `prompts/`, `.claude/`, `AGENTS.md`. In a prompt-driven repository markdown is
+  the behaviour, so "no code changed" is false about it.
+- You passed review instructions. An explicit focus widens the council back to
+  full.
+- It is a spec review, where the artifacts are documentation by construction.
+- A persona is pinned, or the narrowing would leave no reviewer at all.
+
+**A narrowed review says so.** Every skipped reviewer is listed with its reason
+in `tracking.md`, in the report's Discovery Summary, and as its own row in the
+PR comment's reviewer table — so "found nothing" and "was not asked" never look
+alike. Set `Persona selection: off` to dispatch the full council always, or
+`Pin personas:` to exempt individual reviewers. Expected saving and the full
+posture: `references/model-guidance.md`.
+
+### Subsystem triage (deep mode, opt-in)
+
+Council selection answers everything a filename can answer. It cannot answer
+the rest: this subsystem is Go code, but is there anything in it for the
+*Adversary*?
+
+In deep mode, `--triage` adds one cheap pass that reads the diff and names
+(persona, subsystem) pairs holding nothing for that lens. Each named pair is
+one dispatch saved, on a grid that is personas x subsystems x iterations.
+
+It decides **where** a persona looks, never **whether** its lens runs — and
+that is enforced, not assumed. Three invariants refuse any matrix that would:
+
+- **remove a lens from the review** (excluded from every subsystem it covers),
+- **leave a subsystem fewer than two reviewers**, or
+- **take away the reviewer holding an unresolved finding there** — on a
+  re-review that reviewer has to be present to judge the fix.
+
+Every refusal is recorded alongside every applied exclusion, in `tracking.md`.
+The worst a wrong triage can do is make one lens miss one subsystem it still
+reviews elsewhere.
+
+**Off by default.** Unlike change-shape selection, this narrows on a cheap
+model's judgement and has no measured recall behind it yet;
+`.lola-eval/tests/case-022-triage-recall/` is the case that would justify
+flipping it, and it has not been run. Turn it on where you want it:
+
+```bash
+/review-council deep 42            # triage off, the default
+REVIEW_COUNCIL_TRIAGE=on ...       # on for this shell or CI job
+--triage / --no-triage             # on or off for one run
+- Subsystem triage: on             # on for this project
+```
+
+Precedence is flag, then environment, then the configuration block, then the
+default. The same four layers apply to `Persona selection`
+(`--persona-selection` / `--no-persona-selection`,
+`REVIEW_COUNCIL_PERSONA_SELECTION`). A value that is neither `on` nor `off` is
+reported and skipped, never read as `off`.
+
+One honest note on cost: triage runs *before* the deep-mode cost estimate, so
+its dispatch is spent before you see the bill. That is deliberate — the
+estimate then prices the grid that will actually run, and it names the triage
+dispatch as already spent.
 
 ### Oversized verdicts
 

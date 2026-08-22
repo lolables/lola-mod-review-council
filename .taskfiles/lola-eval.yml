@@ -2,8 +2,24 @@
 version: "3"
 
 vars:
+  VENV_DIR: "{{.ROOT_DIR}}/.venv"
+  # Where the harness comes from. Deliberately floating on a branch rather than
+  # pinned to a commit: upstream ships no tags, and tracking main is how fixes
+  # arrive. The cost is that the spec string cannot tell you a newer commit
+  # exists, so `task lola-eval:update` is the only thing that advances an
+  # already-bootstrapped checkout. Edit this line to pin (…git@<sha>) and every
+  # checkout re-installs on its next task, because the bootstrap compares this
+  # exact string against the one it stamped into the venv.
+  LOLA_EVAL_SPEC: "lola-eval @ git+https://github.com/complytime-labs/lola-eval.git@main"
+  # Task resolves a global `sh:` var while parsing this file, before any dep of
+  # any task has run. So this cannot be a lookup that reports "not installed" —
+  # on a fresh clone that answer would be baked in for the whole invocation and
+  # no amount of bootstrapping afterwards could change it. It names a fixed
+  # path instead, and _ensure-lola-eval makes that path real. A lola-eval
+  # already on PATH still wins: an operator who installed the RPM gets theirs.
   LOLA_EVAL:
-    sh: command -v lola-eval 2>/dev/null || { [ -x "{{.ROOT_DIR}}/.venv/bin/lola-eval" ] && echo "{{.ROOT_DIR}}/.venv/bin/lola-eval"; } || echo "__LOLA_EVAL_NOT_FOUND__"
+    sh: command -v lola-eval 2>/dev/null || echo "{{.VENV_DIR}}/bin/lola-eval"
+  BOOTSTRAP: "{{.ROOT_DIR}}/.taskfiles/scripts/ensure-lola-eval.sh"
   PROVISION: "{{.ROOT_DIR}}/.lola-eval/provision.sh"
   MODULE_DIR: "{{.ROOT_DIR}}/module"
   RESULTS_DIR: "{{.ROOT_DIR}}/.lola-eval"
@@ -30,27 +46,21 @@ tasks:
     cmd: |
       task --list 2>/dev/null
 
-  _require-lola-eval:
+  # Runs ahead of every task here, including on a clone that has never run an
+  # eval. Idempotent and quiet when the venv already matches LOLA_EVAL_SPEC;
+  # the uv requirement is enforced inside the script rather than as a
+  # precondition, because a host with its own lola-eval, or a venv that is
+  # already current, needs no uv at all and should not be told otherwise.
+  _ensure-lola-eval:
     internal: true
-    desc: Guard — abort with install instructions when lola-eval is missing
-    silent: true
-    preconditions:
-      - sh: '[ "{{.LOLA_EVAL}}" != "__LOLA_EVAL_NOT_FOUND__" ]'
-        msg: |
-          lola-eval is not installed.
-
-          Install via RPM:
-            sudo dnf install ./dist/lola-eval-<version>.el10.x86_64.rpm
-
-          Or install from source (requires Python >=3.11):
-            uv pip install git+https://github.com/complytime-labs/lola-eval.git
-
-          Then re-run this task.
+    desc: Install the harness into .venv when it is missing or does not match the spec
+    cmds:
+      - bash "{{.BOOTSTRAP}}" "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
 
   _ensure-init:
     internal: true
     desc: Auto-run lola-eval init when config.yaml is missing
-    deps: [_require-lola-eval]
+    deps: [_ensure-lola-eval]
     status:
       - test -f "{{.RESULTS_DIR}}/config.yaml"
     cmds:
@@ -86,6 +96,14 @@ tasks:
     deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} doctor"
+
+  # The escape hatch for a floating LOLA_EVAL_SPEC. Bootstrapping records the
+  # spec string, and a branch name does not change when the branch moves, so
+  # nothing else here will ever notice that upstream has new commits.
+  update:
+    desc: Reinstall the harness from the current tip of LOLA_EVAL_SPEC
+    cmds:
+      - bash "{{.BOOTSTRAP}}" --force "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
 
   provision:
     desc: Copy current module/ into all starter repos

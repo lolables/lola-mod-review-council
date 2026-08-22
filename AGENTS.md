@@ -125,22 +125,34 @@ register. Do NOT compress:
 ## Testing
 
 ```bash
-task test           # run all module tests
-task lola-eval:test # run eval harness (requires lola-eval)
+task test             # run all module tests
+task lola-eval:test   # run eval harness (installs itself on first use)
+task lola-eval:update # pull a newer harness commit into an existing .venv
 ```
 
 Tests use temporary git repos and validate script behavior against
 known inputs. When adding new script flags or behaviors, add
 corresponding test cases.
 
-Running the eval harness needs three things on the host beyond
-`lola-eval` itself: `promptfoo@0.121.19` installed globally
-(`npm install -g promptfoo@0.121.19` — `npx` will not fetch it on demand),
-`bubblewrap` for sandbox isolation (`sudo dnf install -y bubblewrap`), and
-`XDG_CACHE_HOME` set. The eval tasks export `XDG_CACHE_HOME` for you and
-`task lola-eval:test*` runs a `_preflight` guard that checks `promptfoo` and
-`bwrap` with install instructions; `task lola-eval:doctor` reports the full
-environment.
+`lola-eval` itself is not a manual prerequisite. Every `task lola-eval:*`
+target runs `.taskfiles/scripts/ensure-lola-eval.sh` first, which builds
+`.venv` and installs the harness from `LOLA_EVAL_SPEC` in
+`.taskfiles/lola-eval.yml`. That needs `uv` on the host — nothing else. A
+`lola-eval` already on `PATH` wins and the venv is never built.
+
+The spec floats on upstream `main`. A branch name does not change when the
+branch moves, so a checkout that has already bootstrapped stays on the commit
+it first installed; `task lola-eval:update` is what advances it. Editing the
+spec — to pin a SHA, say — re-installs everywhere on the next task, because
+the bootstrap compares the spec string against the one stamped into the venv.
+
+Two things still have to be on the host, and neither can be bootstrapped:
+`promptfoo@0.121.19` installed globally (`npm install -g promptfoo@0.121.19` —
+`npx` will not fetch it on demand) and `bubblewrap` for sandbox isolation
+(`sudo dnf install -y bubblewrap`). `XDG_CACHE_HOME` must be set, and the eval
+tasks export it for you. `task lola-eval:test*` runs a `_preflight` guard that
+checks `promptfoo` and `bwrap` with install instructions; `task
+lola-eval:doctor` reports the full environment.
 
 ## Current persona model
 

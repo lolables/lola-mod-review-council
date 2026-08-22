@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Review Council subsystem triage result",
+  "description": "Exclusions ONLY. Every (persona, subsystem) cell the triage agent does not name here is dispatched. A truncated, empty or malformed response can therefore only ever mean more review, never less — fail-open is a property of this shape rather than of remembering to handle each failure downstream.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["exclusions"],
+  "properties": {
+    "exclusions": {
+      "type": "array",
+      "description": "Cells the agent judges to hold nothing for that persona. An empty array is a valid, meaningful answer: every persona reviews every subsystem.",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subsystem", "persona", "reason"],
+        "properties": {
+          "subsystem": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The `name` of an entry in subsystems.json, verbatim. A name that does not appear there is dropped."
+          },
+          "persona": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "maxLength": 50,
+            "description": "Persona base name (adversary, curator, guard, sre, testing) — not the agent filename. A name outside the discovered roster is dropped."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 500,
+            "description": "Why this subsystem holds nothing in that persona's lens, in terms of what the subsystem contains. Published verbatim beside the skipped reviewer in the report and the PR comment, so a maintainer can judge the exclusion without re-reading the diff. A minimum length is enforced because 'not relevant' is not a reason anyone can check."
+          }
+        }
+      }
+    }
+  }
+}

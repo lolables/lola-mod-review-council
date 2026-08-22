@@ -663,6 +663,89 @@ check_mutation "RC-043 an empty entry is dropped, not refused" \
 	's/^[[:space:]]*\[\[ -z "\$scope_entry" \]\] && continue$/:/' \
 	test-rc-prepare-file-targets.sh
 
+# --- RC-044: council selection could narrow past what it can justify ---------
+#
+# Contextual persona selection is the one feature here whose failures are
+# silent by construction. A council that is too small still produces a verdict,
+# still renders a report, and still reads as a completed review — the finding
+# nobody made is the only evidence, and there is no artifact that shows it. Each
+# mutation below removes one of the three properties that keep that from
+# happening, and none of them breaks anything a human would notice.
+
+# The floor. A partial install can hold fewer personas than a shape licenses
+# dropping, and without this guard a lockfile-only changeset on a two-persona
+# host narrows to an empty council: zero reviewers dispatched, zero findings,
+# APPROVE.
+check_mutation "RC-044 narrowing never empties the council" \
+	rc-select-council.sh \
+	's/^[[:space:]]*elif \[\[ "\$n_council" -eq 0 \]\]; then$/elif [[ "$n_council" -eq -1 ]]; then/' \
+	test-rc-select-council.sh
+
+# The prompt-surface carve-out. In a repository where markdown IS the
+# behaviour — agent definitions, skill bodies, phase documents — treating it as
+# prose drops the Tester and the Operator from exactly the reviews that change
+# how the tool behaves. This module is such a repository, so the mutation would
+# degrade the council on its own pull requests first.
+check_mutation "RC-044 prose under a prompt surface is not plain prose" \
+	rc-select-council.sh \
+	"s/if rc_is_prompt_surface \"\$path\" \"\$base\"; then printf 'prompt-doc'; else printf 'doc'; fi/printf 'doc'/" \
+	test-rc-select-council.sh
+
+# The third coverage state. Diffing arriving verdicts against the DISCOVERED
+# roster rather than the DISPATCHED council reports every deliberate skip as a
+# dropped verdict, which inverts the disclosure: a narrowed run reads as a
+# broken one, and a reader learns to ignore `missing_verdicts` entirely.
+check_mutation "RC-044 a deselected persona is not a missing verdict" \
+	rc-verify-evidence.sh \
+	's/(\$m\[0\].council \/\/ \$m\[0\].agents \/\/ \[\])/($m[0].agents \/\/ [])/' \
+	test-rc-verify-evidence.sh
+
+# --- RC-045: a tracking key that is also a regex -----------------------------
+#
+# rc_parse_kv interpolates the key it is asked for into an ERE. The skipped
+# reviewers line was first written as `Skipped (out of scope):`, whose
+# parentheses compiled as a GROUP: the reader searched for `Skipped out of
+# scope:`, matched nothing, and fell through to its `none` default. The report
+# then stated that no reviewer had been skipped on precisely the runs where two
+# had been — the silent full-coverage claim the line exists to prevent, arrived
+# at through the disclosure itself. Nothing failed, and no artifact disagreed.
+check_mutation "RC-045 the skipped-reviewers key is not read as a regex" \
+	rc-render-report.sh \
+	's/"Skipped reviewers"/"Skipped (out of scope)"/' \
+	test-rc-render-report.sh
+
+# --- RC-046: triage could narrow past "where", into "whether" ----------------
+#
+# Subsystem triage lets a cheap model move a reviewer between subsystems. The
+# three invariants below are the entire reason that is permissible: without
+# them the same mechanism removes a lens from the review, silences a subsystem,
+# or takes away the reviewer who has to check its own finding's fix. Every one
+# of those still produces a verdict, a report and a green pipeline.
+
+# The row. Excluded from every subsystem is not "look elsewhere" — there is no
+# elsewhere left. This is the one that turns triage into the whole-changeset
+# judgement the design refuses to make.
+check_mutation "RC-046 a lens excluded everywhere is restored" \
+	rc-apply-triage.sh \
+	's/select(.present > 0 and .cut >= .present)/select(false)/' \
+	test-rc-apply-triage.sh
+
+# The column. A subsystem is a slice of the changeset; below two reviewers it
+# is being skimmed, not reviewed, and shape selection can already have taken it
+# to two before triage sees it.
+check_mutation "RC-046 a subsystem keeps at least two reviewers" \
+	rc-apply-triage.sh \
+	's/select(.remaining < 2)/select(false)/' \
+	test-rc-apply-triage.sh
+
+# The open finding. On a re-review the agent that filed a finding has to be
+# present to judge the fix. Remove it and the finding is neither confirmed nor
+# withdrawn — it simply stops being mentioned.
+check_mutation "RC-046 a reviewer with an open finding is not routed away" \
+	rc-apply-triage.sh \
+	's/(\$findings.verified + \$findings.correctable)\[\]/[][]/' \
+	test-rc-apply-triage.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

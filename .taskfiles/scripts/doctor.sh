@@ -75,6 +75,13 @@ fi
 require_command shellcheck "needed by 'task lint' — macOS: brew install shellcheck | Fedora: dnf install ShellCheck"
 require_command shfmt "needed by 'task lint' — macOS: brew install shfmt | any: go install mvdan.cc/sh/v3/cmd/shfmt@latest"
 
+# uv builds the .venv that `task lola-eval:*` installs the eval harness into,
+# and supplies a 3.11+ interpreter when the host's python3 is older. Checked
+# here rather than left to fail at eval time so that one `task doctor` still
+# answers "is this checkout ready to work in" for every entry point, not just
+# the ones a given contributor happens to use first.
+require_command uv "needed by 'task lola-eval:*' — macOS: brew bundle | any: curl -LsSf https://astral.sh/uv/install.sh | sh"
+
 # Advisory only: coreutils' unprefixed GNU tools on PATH. This never fails the
 # task — a contributor may want gnubin for unrelated work — but it silently
 # changes what a local run proves, so it is worth saying out loud.

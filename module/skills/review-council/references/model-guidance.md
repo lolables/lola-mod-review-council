@@ -135,7 +135,7 @@ is restored), `column-floor` (no subsystem below two reviewers), and
 The worst available outcome is one lens missing one subsystem it still reviews
 elsewhere — bounded, disclosed, and recoverable by re-running with `--no-triage`.
 
-The default stays `off` until measured. `.lola-eval/tests/case-022-triage-recall/`
+The default stays `off` until measured. `.lola-eval/tests/case-026-triage-recall/`
 plants one defect per lens per subsystem and fails if triage loses any of them;
 that case has not been run, and this document will say so until it has.
 

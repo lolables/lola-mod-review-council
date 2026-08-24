@@ -1,0 +1,33 @@
+task_version: "2"
+description: |
+  Absence case. The feature branch rewrites quota.go and nothing else.
+  quota.go is the only file in the package with no _test.go beside it —
+  bucket.go, window.go and limiter.go each have one.
+
+  Two defects are available, plus a calibration check:
+    - the burst inconsistency (Remaining counts limit+burst, Consume
+      counts limit alone) is visible in the diff and is the control;
+    - the changed file has no covering test while every sibling does;
+    - NewQuotaWithBurst has zero callers, which is NOT a defect — it is
+      an exported constructor in a library package. Reporting it as dead
+      code is the over-flag exported_api_calibration guards against.
+
+  The three baseline runs of 2026-08-23 scored 1.00 on both defects and
+  declined the over-flag. See
+  .lola-eval/analysis/code-graph-prepass-baseline.md.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-031-graph-untested-change/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

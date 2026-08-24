@@ -1,0 +1,32 @@
+task_version: "2"
+description: |
+  Noise canary. The feature branch changes normalizeSpaces to collapse
+  Unicode space separators, and updates spaces_test.go in the same
+  commit. The change is correct, backward-compatible and tested; go vet
+  and go test are green before and after.
+
+  normalizeSpaces has two callers outside the diff — Slugify in
+  slugify.go and Wrap in wrap.go. Neither breaks.
+
+  This case is the false-positive control for the code-graph pre-pass.
+  A review that learns about the two callers must not turn "there are
+  callers" into "the callers are broken". APPROVE is the correct
+  outcome, in both the baseline and the treatment arm. A treatment-arm
+  regression here outweighs a gain on case-030 or case-031.
+  See .lola-eval/analysis/code-graph-prepass-decision.md.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-032-graph-noise-canary/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

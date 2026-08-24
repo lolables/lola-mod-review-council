@@ -206,6 +206,38 @@ tasks:
         fi
         echo "PASS: all disposition cases passed"
 
+  # Gate for the code-graph pre-pass (see
+  # docs/superpowers/specs/2026-08-23-code-graph-prepass-design.md).
+  #
+  # These three measure a gap, not a regression: case-030 and case-031
+  # are EXPECTED to score low until a pre-pass exists to close them, and
+  # a failing run here is the baseline measurement rather than a broken
+  # suite. case-032 is the opposite — it must stay green in both arms, and
+  # a treatment-arm regression on it outweighs any gain on the other two.
+  #
+  # Deliberately excluded from `test-quality` so a low graph score never
+  # reads as a review-quality regression in the published tables.
+  test-graph:
+    desc: Run code-graph pre-pass cases (case-030 through case-032)
+    deps: [provision, _ensure-init, _preflight]
+    cmds:
+      - |
+        failed=0
+        for case in case-030-graph-caller-breakage \
+                    case-031-graph-untested-change \
+                    case-032-graph-noise-canary; do
+          echo "=== Running $case ==="
+          if ! {{.LOLA_EVAL}} test --case "$case"; then
+            failed=$((failed + 1))
+          fi
+        done
+        if [ "$failed" -gt 0 ]; then
+          echo "NOTE: $failed graph case(s) below threshold."
+          echo "      For case-030 and case-031 that is the expected baseline"
+          echo "      result. For case-032 it is a real failure."
+        fi
+        echo "Graph cases complete. Compare arms with 'task lola-eval:baseline-diff'."
+
   baseline-update:
     desc: Promote last-run results to baseline.json
     deps: [_ensure-init]

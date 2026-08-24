@@ -8,7 +8,7 @@ weights:
   no_flapping: 0.1
 ---
 
-# Rubric: case-022-triage-recall
+# Rubric: case-026-triage-recall
 
 The agent ran `/review-council deep main..feat --triage` over a five-subsystem
 changeset holding five planted defects. Each defect sits in the subsystem where

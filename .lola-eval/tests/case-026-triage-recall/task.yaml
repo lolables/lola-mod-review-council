@@ -16,7 +16,7 @@ description: |
 
   Pair with a `--no-triage` run over the same scaffold to separate a triage
   regression from a review the council would have missed anyway.
-pre_run: bash "$LOLA_TEST_SETS_DIR/case-022-triage-recall/scaffold.sh" "$PWD"
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-026-triage-recall/scaffold.sh" "$PWD"
 timeout_seconds: 2700
 followup_messages:
   - |

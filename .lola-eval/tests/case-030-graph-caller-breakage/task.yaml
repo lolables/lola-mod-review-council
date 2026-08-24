@@ -1,0 +1,29 @@
+task_version: "2"
+description: |
+  Blast-radius case. The feature branch rewrites src/currency.ts and
+  nothing else, changing formatAmount from minor units to major units
+  and adding a third required parameter. Four call sites break, and
+  every one of them lives outside the diff: src/checkout.ts,
+  src/invoice.ts, src/report.ts and src/currency.test.ts.
+
+  This case measures a gap, not a regression. A review working from
+  the diff alone can see that the signature changed but cannot
+  enumerate who breaks. A LOW baseline score is the expected result
+  and is the measurement — do not "fix" this case by weakening the
+  rubric. See .lola-eval/analysis/code-graph-prepass-decision.md.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-030-graph-caller-breakage/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

@@ -509,7 +509,7 @@ reviews elsewhere.
 
 **Off by default.** Unlike council selection, this narrows on a cheap
 model's judgement and has no measured recall behind it yet;
-`.lola-eval/tests/case-022-triage-recall/` is the case that would justify
+`.lola-eval/tests/case-026-triage-recall/` is the case that would justify
 flipping it, and it has not been run. Turn it on where you want it — the four
 forms below are notation, not one runnable script:
 

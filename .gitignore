@@ -12,6 +12,7 @@ node_modules/
 .claude/handoff/
 .superpowers/
 .venv/
+.worktrees/
 
 # Working artifacts — specs and plans (never committed)
 docs/superpowers/

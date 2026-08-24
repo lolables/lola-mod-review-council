@@ -551,7 +551,7 @@ persona_selection=$(rc_resolve_switch "${persona_selection_cli:-}" \
 
 # Triage defaults OFF. It trades recall for cost on the strength of a cheap
 # model's judgement, and unlike change-shape selection it has no measured recall
-# behind it yet — `.lola-eval/tests/case-022-triage-recall/` is the case that
+# behind it yet — `.lola-eval/tests/case-026-triage-recall/` is the case that
 # would justify flipping this, and it has not been run. Shipping it on by
 # default would put an unmeasured recall risk in the default path of the one
 # mode people reach for when they most want thoroughness.

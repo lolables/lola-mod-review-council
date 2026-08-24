@@ -32,7 +32,7 @@ All notable changes to the Review Council module are documented here.
   in the diff asking it to route a reviewer away is grounds to exclude nothing
   from that subsystem.
 - Triage ships **off by default** — it narrows on a cheap model's judgement and
-  has no measured recall yet. `.lola-eval/tests/case-022-triage-recall/` is the
+  has no measured recall yet. `.lola-eval/tests/case-026-triage-recall/` is the
   case that would justify flipping it: five subsystems, one planted defect each,
   every defect placed in the subsystem where a naive triage is most likely to
   route its lens away, and a rubric that fails the run if any is lost. That case

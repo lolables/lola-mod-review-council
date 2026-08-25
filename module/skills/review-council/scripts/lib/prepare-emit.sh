@@ -124,6 +124,12 @@ fi
 	echo "- Persona selection: ${persona_selection}"
 	echo "- Pin personas: ${pin_personas}"
 	echo "- Subsystem triage: ${subsystem_triage}"
+	# Batching budgets, carried here for rc-plan-batches.sh — same route, same
+	# reason. Always written, even unconfigured: the planner distinguishes a
+	# session that chose the default from one prepared before the keys existed
+	# only by whether the line is here.
+	echo "- Batch bytes: ${batch_bytes}"
+	echo "- Batch size: ${batch_size}"
 	changeset_line_count=$(wc -l <"${session_dir}/changeset.txt")
 	echo "- Changeset size: ${changeset_line_count} files"
 	echo ""

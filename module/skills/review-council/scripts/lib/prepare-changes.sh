@@ -503,6 +503,22 @@ comment_limit=$(rc_config_value "Comment limit")
 max_comments=$(rc_config_value "Max comments")
 [[ "$max_comments" =~ ^[1-9][0-9]*$ ]] || max_comments=1
 
+# --- Delegation batching budgets ---
+#
+# What a single delegation round may carry: diff bytes first, file count as the
+# cap that bytes cannot express. Resolved here and carried into tracking.md
+# because rc-plan-batches.sh runs as a later stage in a different process, the
+# same route `Comment limit` takes to rc-render-comment.sh. The defaults live in
+# rc-lib.sh, where the planner reads them too.
+#
+# Validated the same way as the two above, and dropped rather than clamped for
+# the same reason: a `Batch size: 0` read as 1 would dispatch a reviewer per
+# file, at council-sized cost, while reading as though it had been honoured.
+batch_bytes=$(rc_config_value "Batch bytes")
+[[ "$batch_bytes" =~ ^[1-9][0-9]*$ ]] || batch_bytes="$RC_DEFAULT_BATCH_BYTES"
+batch_size=$(rc_config_value "Batch size")
+[[ "$batch_size" =~ ^[1-9][0-9]*$ ]] || batch_size="$RC_DEFAULT_BATCH_FILES"
+
 # --- Council-shaping policy ---
 #
 # Read here and carried into tracking.md, because rc-select-council.sh and

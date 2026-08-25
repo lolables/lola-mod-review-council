@@ -1768,6 +1768,36 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: the batching decision stays computed, not judged (RC-041)"
+# Two halves of one rule, and losing either restores the defect issue #26
+# reported. SKILL.md must actually RUN the planner — batching was prose with
+# nothing executing it, so a run that skipped the decision left the same trace
+# as a run that decided against batching, which is none. And delegate.md must
+# not license a split of the orchestrator's own: while it did, the same
+# 280,444-byte pull request was split three ways in one run and two in another,
+# and the two runs shared no findings at all. That is a confound no amount of
+# replication removes, because it originates in the escape hatch.
+rc041_runs=0
+rc041_defers=0
+rc041_hatch=0
+grep -qF 'rc-plan-batches.sh' <<<"$skill_flat" && rc041_runs=1
+grep -qF 'batch-plan.json' <<<"$delegate_flat" && rc041_defers=1
+# The clause as it stood, and the two phrasings a well-meaning edit reaches for.
+if grep -qiE 'native batching or context management|may use its own (batching|mechanism)' \
+	<<<"$delegate_flat"; then
+	rc041_hatch=1
+fi
+if [[ "$rc041_runs" -eq 1 ]] && [[ "$rc041_defers" -eq 1 ]] && [[ "$rc041_hatch" -eq 0 ]]; then
+	echo "  PASS: the plan is computed by a script and dispatched as written"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: batching is a judgment call again"
+	[[ "$rc041_runs" -eq 1 ]] || echo "        SKILL.md no longer invokes rc-plan-batches.sh"
+	[[ "$rc041_defers" -eq 1 ]] || echo "        delegate.md no longer dispatches batch-plan.json"
+	[[ "$rc041_hatch" -eq 0 ]] || echo "        delegate.md licenses a host-side split again"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

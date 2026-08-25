@@ -310,6 +310,83 @@ check_tracking "$d" "selection line" '^- Selection: not applied$' "1"
 check_tracking "$d" "skipped line says none" '^- Skipped reviewers: none$' "1"
 rm -rf "$d"
 
+# --- Model provenance --------------------------------------------------------
+
+# `models.json` used to be the orchestrator's job: phases/delegate.md asked it to
+# append an entry as it dispatched each reviewer. Across 1785 cached sessions the
+# file exists zero times, so every report rendered the renderer's "not recorded"
+# fallback instead of the provenance it promised. The tier a persona is dispatched
+# at is a fixed property of the persona, so the selector — which already knows the
+# roster — seeds the file, and the orchestrator's remaining job is the narrower
+# one of UPGRADING an entry when the host names a concrete model.
+#
+# Entries are asserted sorted by role, so a case pins the set rather than the
+# order the seeding happens to emit.
+# An absent models.json is the exact regression this section guards, so a missing
+# file has to read as a failed assertion rather than abort the suite under `set
+# -e` and take the remaining cases with it. Same handling as check_tracking.
+check_models() { # dir label filter expected
+	local actual
+	actual=$(jq -r "$3" "$1/models.json" 2>/dev/null || true)
+	check "$2" "$actual" "$4"
+}
+
+echo "Test: a full-council run seeds one provenance entry per dispatched reviewer"
+d=$(new_session)
+changeset "$d" "internal/auth/token.go"
+bash "$SELECT" "$d" >/dev/null
+check_models "$d" "one entry per reviewer" 'length' "5"
+check_models "$d" "roles are the dispatched council" \
+	'map(.role) | sort | join(",")' \
+	"divisor-adversary-code,divisor-curator-code,divisor-guard-code,divisor-sre-code,divisor-testing-code"
+
+echo "Test: seeded tiers follow the delegate.md table"
+check_models "$d" "adversary is Capable" 'map(select(.role == "divisor-adversary-code")) | .[0].id' "Capable tier"
+check_models "$d" "guard is Capable" 'map(select(.role == "divisor-guard-code")) | .[0].id' "Capable tier"
+check_models "$d" "testing is Standard" 'map(select(.role == "divisor-testing-code")) | .[0].id' "Standard tier"
+check_models "$d" "sre is Standard" 'map(select(.role == "divisor-sre-code")) | .[0].id' "Standard tier"
+check_models "$d" "curator is Standard" 'map(select(.role == "divisor-curator-code")) | .[0].id' "Standard tier"
+rm -rf "$d"
+
+echo "Test: a deselected reviewer gets no entry, so provenance names only what ran"
+d=$(new_session)
+changeset "$d" "README.md"
+bash "$SELECT" "$d" >/dev/null
+check_council "$d" "docs-only council" \
+	"divisor-adversary-code,divisor-curator-code,divisor-guard-code"
+check_models "$d" "entries match the narrowed council" \
+	'map(.role) | sort | join(",")' \
+	"divisor-adversary-code,divisor-curator-code,divisor-guard-code"
+rm -rf "$d"
+
+echo "Test: re-running neither duplicates entries nor clobbers a host-supplied model ID"
+d=$(new_session)
+changeset "$d" "internal/auth/token.go"
+bash "$SELECT" "$d" >/dev/null
+# Stand in for the orchestrator upgrading a seeded tier once the host named the
+# model it actually dispatched on. A re-run that reset this to "Capable tier"
+# would silently downgrade a true record to a requested one.
+jq '(.[] | select(.role == "divisor-guard-code") | .id) = "claude-sonnet-5"' \
+	"$d/models.json" >"$d/models.json.edited"
+mv "$d/models.json.edited" "$d/models.json"
+bash "$SELECT" "$d" >/dev/null
+check_models "$d" "no duplicate entries on re-run" 'length' "5"
+check_models "$d" "concrete ID survives" \
+	'map(select(.role == "divisor-guard-code")) | .[0].id' "claude-sonnet-5"
+check_models "$d" "unupgraded roles keep their tier" \
+	'map(select(.role == "divisor-adversary-code")) | .[0].id' "Capable tier"
+rm -rf "$d"
+
+echo "Test: a spec-mode council seeds spec personas at the same tiers"
+d=$(new_session spec '["divisor-adversary-spec","divisor-guard-spec","divisor-testing-spec"]')
+changeset "$d" "specs/auth.md"
+bash "$SELECT" "$d" >/dev/null
+check_models "$d" "adversary-spec is Capable" \
+	'map(select(.role == "divisor-adversary-spec")) | .[0].id' "Capable tier"
+check_models "$d" "testing-spec is Standard" \
+	'map(select(.role == "divisor-testing-spec")) | .[0].id' "Standard tier"
+rm -rf "$d"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

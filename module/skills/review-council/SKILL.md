@@ -575,6 +575,35 @@ If `${session_dir}/ci-status.txt` does not exist, skip this step.
 
 **Update tracking:** Set Phase: Quality Gates status to `complete`.
 
+### Step 2.6: BATCH PLAN (scripted, all efforts)
+
+```bash
+bash "${SCRIPTS_DIR}/rc-plan-batches.sh" "${session_dir}"
+```
+
+A delegation round costs context, and context is measured in bytes. The script
+owns the split and every figure behind it: it apportions `diff.patch` across the
+changeset, fills each batch to the byte budget and the file cap from
+`tracking.md`, writes `${session_dir}/batch-plan.json` and
+`${session_dir}/batches.txt`, and records a `## Phase: Batch Plan` block. Do not
+re-derive the split, extend a batch, or merge two of them — Step 3 dispatches
+`batch-plan.json` as it stands.
+
+- `ok` — the plan is written. One batch means the changeset fits one dispatch;
+  that is a decision, recorded as `Batching: not applied`, not a skipped step.
+- `nothing_to_do` — no session or no changeset to plan over. Dispatch the whole
+  changeset in one round.
+
+**This step never blocks and never asks.** A batching decision that could not be
+computed is not grounds to withhold a review.
+
+**Tell the user when the changeset was split**, in one line, naming the batch
+count and the measurement — a review delivered in four rounds costs four times
+the dispatches, and the operator should learn that from the run rather than from
+the bill.
+
+Proceed to Step 3 (Delegation).
+
 ### Step 3: DELEGATION (iteration N)
 
 **Read `${PHASES_DIR}/delegate.md`** for prompt construction
@@ -1151,6 +1180,8 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Persona selection: on
 - Pin personas: adversary, guard
 - Subsystem triage: off
+- Batch bytes: 131072
+- Batch size: 50
 ```
 
 All extension points optional, degrade gracefully when omitted.
@@ -1180,6 +1211,15 @@ never dropped whatever the change shape, for a project where one lens must run
 unconditionally. Every skip is recorded with its reason in `tracking.md`, the
 report and the PR comment, so a narrowed run never reads as full coverage. See
 README "Council selection".
+
+`Batch bytes` and `Batch size` govern Step 2.6, where the changeset is split
+into delegation rounds. `Batch bytes` (default 131072, about 32k tokens of diff)
+is the primary budget, because context is what a round spends; `Batch size`
+(default 50) caps the files in one batch, which bytes cannot express — a
+rename-only changeset is almost no diff and a great many files a reviewer must
+still open. A value that is not a positive integer is reported on stderr and the
+default used. Every split, and every decision not to split, is recorded in
+`tracking.md` and `batch-plan.json`. See README "Batching".
 
 `Max comments` and `Comment limit` govern an oversized verdict. A review
 with enough findings renders a comment the forge rejects: GitHub caps an

@@ -6,7 +6,7 @@ cache layout it writes, and how spec mode decides which files to scan. Read it
 if you are extending, debugging, or reviewing the module itself; using the
 command needs only the README.
 
-The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates thirteen
+The `/review-council` command is a re-entrant state machine implemented in `SKILL.md` that orchestrates fourteen
 phases using a hybrid of bash scripts (deterministic work) and LLM phase files (judgment work). Not every phase runs
 on every review — Decompose, Subsystem Triage, Cost Estimate, Quality Gates, Disposition, Iterate and Post are each
 conditional:
@@ -19,6 +19,7 @@ conditional:
 | **Subsystem Triage**  | `rc-apply-triage.sh` + `phases/triage.md` (deep effort, opt-in)    | Drop persona/subsystem pairs holding nothing for that lens |
 | **Cost Estimate**     | `rc-cost-estimate.sh` (deep effort only)                           | Price the fan-out before dispatch; record acknowledgement |
 | **Quality Gates**     | `SKILL.md` "Step 2.5: QUALITY GATES", CI data from `rc-prepare.sh` | Forge CI status checks (code review with a PR only)       |
+| **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-consolidate.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
@@ -63,6 +64,7 @@ flowchart TD
   cost["Cost estimate: price the fan-out, record the acknowledgement"]
   qg{"PR CI data available?"}
   qgrun["Quality Gates: run CI checks"]
+  plan["Batch plan: split the changeset into delegation rounds on context bytes"]
   del["Delegate: construct prompts, dispatch agents in parallel"]
   ext["Extract: schema-validate each reviewer's JSON verdict"]
   ver["Verify: format gate, correction, calibration, strip, merge-base advisories, consolidation, validation gate"]
@@ -83,8 +85,9 @@ flowchart TD
   cost --> qg
   sel -->|"quick, standard"| qg
   qg -->|yes| qgrun
-  qgrun --> del
-  qg -->|no| del
+  qgrun --> plan
+  qg -->|no| plan
+  plan --> del
   del --> ext
   ext -->|extract_error - re-dispatch once| del
   ext -->|ok| ver
@@ -109,7 +112,7 @@ flowchart TD
   class qgrun sysB
   class ver,disp sysC
   class report sysD
-  class dec,sel,triage,cost,ext,post sysE
+  class dec,sel,triage,cost,plan,ext,post sysE
   class qg,iter,dispgate,decgate,postgate sysF
 ```
 
@@ -142,28 +145,34 @@ flowchart TD
      entirely
 
 6. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
-7. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
+7. **Batch plan** — split the changeset into the delegation rounds step 8 dispatches, on the resource a round
+   spends: context bytes. Files are grouped by parent directory and a batch closes when adding the next group
+   would exceed either `Batch bytes` (default 131072) or `Batch size` (default 50 files); in deep mode both
+   budgets apply within each subsystem. A shell pass over `diff.patch` and `changeset.txt`, no model judgment.
+   The plan is written to `batch-plan.json` and `batches.txt` on every run, single-batch runs included, so a
+   changeset that needed no split is distinguishable from a step that was skipped. See "Batching" in the README
+8. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
    tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
    fenced ` ```json ` verdict block — no markdown prose.
-8. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
+9. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
    `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
    extraction failure rather than a silently dropped finding.
-9. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
+10. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
    apply severity calibration, strip fabricated findings, deduplicate, then run the validation gate. Writes the
    canonical `verdicts/findings.json`.
-10. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
+11. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
     claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
     never the verdict itself). Comments are treated as data, never instructions. See `phases/disposition.md` for
     the full contract.
-11. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
+12. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
     runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
     behind
-12. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
+13. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
     to fix them and re-review. Accepting returns to Delegate and overwrites the report on the next pass. The ceiling
     depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
-13. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
+14. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
     in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
     the report can never disagree
 
@@ -244,6 +253,11 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `tracking.md` — structured phase-by-phase state
 - `changeset.txt` — reviewed file list
 - `diff.patch` — full patch (code review)
+- `batch-plan.json` and `batches.txt` — the delegation rounds and the budgets they were measured against, written on
+  every run so a changeset that needed no split reads differently from a step that never ran
+- `models.json` — LLM provenance for the report header. Seeded by `rc-select-council.sh` with one entry per dispatched
+  reviewer carrying the tier it was requested at, so the header is never empty; the orchestrator upgrades an entry to a
+  concrete model ID where the host exposes one, and appends the coordinator and validator roles it alone knows
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
   canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:

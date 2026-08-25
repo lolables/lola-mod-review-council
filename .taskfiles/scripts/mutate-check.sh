@@ -746,6 +746,31 @@ check_mutation "RC-046 a reviewer with an open finding is not routed away" \
 	's/(\$findings.verified + \$findings.correctable)\[\]/[][]/' \
 	test-rc-apply-triage.sh
 
+# Batching triggered on file count while the resource a delegation round spends
+# is context bytes. The two do not track each other — measured across 20
+# reviews, diff bytes per changed file spanned 0.9 KB to 18.4 KB — so a 44 KB
+# changeset was split and a 176 KB one was not.
+check_mutation "RC-047 a batch closes on the byte budget" \
+	rc-plan-batches.sh \
+	's#bytes + fbytes\[i\] > budget || ##' \
+	test-rc-plan-batches.sh
+
+# The secondary cap, which bytes cannot express: a rename-only changeset is
+# almost no diff and a great many files the reviewer must still open.
+check_mutation "RC-047 a batch closes on the file cap" \
+	rc-plan-batches.sh \
+	's# || count + 1 > cap##' \
+	test-rc-plan-batches.sh
+
+# Planning reads the changeset in sorted order, never the order it was written
+# in. Every local filesystem hands back creation order and CI's does not, so an
+# unsorted rule produces a different split per host over identical inputs —
+# which is the same non-reproducibility the byte budget exists to remove.
+check_mutation "RC-047 batch composition is host-independent" \
+	rc-plan-batches.sh \
+	's#^[[:space:]]*LC_ALL=C sort |$#cat |#' \
+	test-rc-plan-batches.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

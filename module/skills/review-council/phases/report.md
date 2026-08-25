@@ -97,31 +97,30 @@ LLM-generated. **Mandatory, all effort modes** — never remove,
 suppress, or soften. Review artifact a maintainer acts on must declare
 it was produced by an LLM, not a human reviewer.
 
-Before running `rc-render-report.sh`, record models used to
 `${session_dir}/models.json` — a JSON array of `{"role":"...","id":"..."}`
-objects — so the renderer names them in the provenance header. Record, to
-extent host exposes model identity:
+objects — supplies the provenance header. `rc-select-council.sh` already
+seeded it with one entry per dispatched reviewer, each carrying the tier
+that reviewer was requested at, so the header is never empty. You do not
+create this file.
+
+Two roles the selector cannot know are yours to add, to the extent the
+host exposes model identity:
 
 - Coordinator (this orchestrator) model.
-- Each dispatched reviewer agent and its model.
 - Validation-gate agent model, if validation gate ran.
 
-Example `models.json`:
+Append them rather than rewriting the file:
 
-```json
-[
-  {"role": "coordinator", "id": "claude-opus-4-8"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
-  {"role": "divisor-guard-code", "id": "claude-sonnet-4-6"},
-  {"role": "validator", "id": "claude-opus-4-8"}
-]
+```bash
+jq '. + [{"role": "coordinator", "id": "claude-opus-4-8"},
+         {"role": "validator", "id": "claude-opus-4-8"}]' \
+  "${session_dir}/models.json" >"${session_dir}/models.json.tmp"
+mv "${session_dir}/models.json.tmp" "${session_dir}/models.json"
 ```
 
-Host exposes no model IDs: record tier or human-readable names you
-know (e.g., `{"role": "divisor-adversary-code", "id": "Capable tier"}`).
-Nothing known: do not create the file — renderer states models not
-recorded. Do NOT invent model IDs. Renderers dedupe entries
-defensively, so repeated entries across dispatch rounds are safe.
+Host exposes no ID for either role: omit that role. Do NOT invent model
+IDs — an absent entry is a smaller loss than a wrong one. Renderers
+dedupe entries defensively, so repeated entries are safe.
 
 ---
 

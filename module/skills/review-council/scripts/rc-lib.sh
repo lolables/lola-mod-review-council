@@ -40,6 +40,24 @@ RC_MARKER_KEY="review-council:marker"
 # and by prepare-context.sh (the re-review anchor and exclusion).
 RC_MARKER_OPEN="<!-- ${RC_MARKER_KEY} sha="
 
+# Delegation batching budgets, as phases/delegate.md applies them: a batch
+# closes when either would be breached. Bytes are primary, because context is
+# what a delegation round actually spends — 128 KB is roughly 32k tokens of
+# diff, and leaves room for the convention packs, the persona prompt and the
+# files the reviewer must open. The file cap is secondary and covers what bytes
+# cannot: a rename-only changeset is almost no diff and a great many files to
+# read.
+#
+# Defined here because they have two readers in two processes —
+# prepare-changes.sh resolves the project's override against them, and
+# rc-plan-batches.sh falls back to them for a session prepared before the keys
+# existed. A second copy is the drift the RC_PERSONAS guard exists to catch
+# elsewhere in this module.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_DEFAULT_BATCH_BYTES=131072
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_DEFAULT_BATCH_FILES=50
+
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 	echo '{"status":"skip","message":"Bash 4+ is required. macOS ships Bash 3 — install a modern version: brew install bash"}'
 	exit 0

@@ -398,6 +398,54 @@ jq --argjson council "$council_json" \
 	"$manifest" >"$manifest_tmp"
 mv "$manifest_tmp" "$manifest"
 
+# Model provenance, seeded from the roster this run just fixed.
+#
+# phases/delegate.md used to ask the orchestrator to append an entry here as it
+# dispatched each reviewer. It never did: across 1785 cached sessions the file
+# exists zero times, so every report fell through to the renderer's "not
+# recorded" line. Same failure as the batch rule before rc-plan-batches.sh — a
+# decision expressed only as prose, competing for the orchestrator's attention
+# with the review itself, is a decision that does not happen.
+#
+# The tier a persona is dispatched at is a fixed property of the persona (the
+# table in phases/delegate.md), and the council is already known here, so the
+# seed is fully derivable and belongs in a script. What is NOT derivable is the
+# concrete model the host chose; that stays the orchestrator's job, narrowed
+# from "write this file" to "upgrade an entry when the host names a model".
+#
+# A seeded entry therefore records the tier REQUESTED, not a model the host
+# confirmed — which is exactly the fallback delegate.md already specified, now
+# actually produced rather than merely described.
+#
+# An existing id always wins for a role that is still on the council: a re-run
+# (SKILL.md Step 2 resumes mid-run) must not reset an upgraded concrete ID back
+# to its tier. Roles that left the council lose their entry, so provenance names
+# what ran rather than what was once considered.
+models_file="$session_dir/models.json"
+models_prev='[]'
+if [[ -f "$models_file" ]]; then
+	# A hand-damaged file is discarded rather than propagated: the seed below can
+	# rebuild every tier from the roster, so the recoverable loss is only the
+	# upgraded IDs, and that beats aborting the run over a provenance artifact.
+	models_prev=$(jq -c '.' "$models_file" 2>/dev/null || echo '[]')
+fi
+models_tmp="${models_file}.tmp"
+jq -n --argjson council "$council_json" --argjson prev "$models_prev" '
+	# Persona segment of divisor-<persona>-<suffix>. Tiers come from the
+	# "Model Selection Guidance" table in phases/delegate.md; a persona the
+	# table does not name gets a neutral label rather than a guessed tier,
+	# because inventing provenance is worse than disclosing less of it.
+	def tier(role):
+		(role | split("-") | .[1] // "") as $persona
+		| if $persona == "adversary" or $persona == "guard" then "Capable tier"
+		  elif $persona == "testing" or $persona == "sre" or $persona == "curator"
+		  then "Standard tier"
+		  else "Tier not specified" end;
+	($prev | map({key: .role, value: .id}) | from_entries) as $known
+	| [$council[] | {role: ., id: ($known[.] // tier(.))}]
+' >"$models_tmp"
+mv "$models_tmp" "$models_file"
+
 # Joined for the tracking block; "none" when the list is empty, so a reader
 # never has to tell an absent value from an empty one. Resolved into variables
 # here rather than substituted inside the `echo`s below: a command substitution

@@ -361,7 +361,7 @@ watch a run.
 
 ## How It Works
 
-The `/review-council` command is a re-entrant state machine: thirteen phases,
+The `/review-council` command is a re-entrant state machine: fourteen phases,
 implemented as a hybrid of bash scripts for the deterministic work and LLM
 phase files for the judgment work, each loaded only when the pipeline reaches
 it. Not every phase runs on every review — Decompose, Subsystem Triage, Cost
@@ -419,7 +419,8 @@ CLAUDE.md:
 - Knowledge tool: my_semantic_search
 - Docs repo: myorg/docs
 - Quality tool: my_quality_reporter
-- Batch size: 20
+- Batch bytes: 131072
+- Batch size: 50
 - Max comments: 1
 - Comment limit: 65536
 - Persona selection: on
@@ -433,7 +434,8 @@ CLAUDE.md:
 | Knowledge tool  | MCP tool name for semantic search    | Skip prior learnings     |
 | Docs repo       | GitHub repo for documentation issues | Report gaps as findings  |
 | Quality tool    | Agent name for quality analysis      | Skip quality analysis    |
-| Batch size      | Max files per delegation batch       | 20                       |
+| Batch bytes     | Max diff bytes per delegation batch  | 131072 (128 KB)          |
+| Batch size      | Max files per delegation batch       | 50                       |
 | Max comments    | Comments one verdict may be spread across | 1                   |
 | Comment limit   | Characters per comment, overriding the forge's own | The forge's limit |
 | Persona selection | Whether change shape may narrow the council | `on`             |
@@ -530,6 +532,38 @@ One honest note on cost: triage runs *before* the deep-mode cost estimate, so
 its dispatch is spent before you see the bill. That is deliberate — the
 estimate then prices the grid that will actually run, and it names the triage
 dispatch as already spent.
+
+### Batching
+
+A large changeset is reviewed in several rounds rather than one, because a
+delegation prompt has to fit in a reviewer's context alongside the files it is
+told to open. The split is computed before dispatch, by `rc-plan-batches.sh`,
+and written to `batch-plan.json` and `batches.txt` in the session directory.
+
+A batch closes when adding the next group of files would exceed either budget:
+
+| Budget        | Default          | What it protects                                   |
+|---------------|------------------|----------------------------------------------------|
+| `Batch bytes` | 131072 (128 KB)  | Context. About 32k tokens of diff per dispatch.     |
+| `Batch size`  | 50 files         | The reviewer's read of every file in its batch.     |
+
+Bytes are the primary budget. File count is a poor proxy for context — across 20
+measured reviews, diff bytes per changed file ranged from 0.9 KB to 18.4 KB, so
+a 25-file changeset was split while a 18-file one four times its size was not.
+The file cap covers what bytes cannot: a rename-heavy changeset is almost no
+diff and a great many files to open.
+
+Files are grouped by parent directory so a reviewer sees a coherent slice, and a
+directory is kept whole whenever it fits. A file larger than the byte budget
+takes a batch of its own rather than being handed over in halves. In deep mode
+the budgets apply within each subsystem, since that is the unit deep mode
+dispatches.
+
+The decision is recorded whether or not it splits anything — `Batching: applied`
+or `not applied`, with the measurement, both budgets and the per-batch figures,
+under `## Phase: Batch Plan` in `tracking.md`. A review that was never batched
+and a review where the step was skipped are different events, and the artifact
+is what tells them apart.
 
 ### Oversized verdicts
 

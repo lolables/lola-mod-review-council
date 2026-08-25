@@ -78,26 +78,30 @@ If tool lacks model selection, all agents run on default model. Empirical perfor
 
 ## Recording Dispatched Models
 
-As you dispatch each reviewer, append an entry to
-`${session_dir}/models.json` recording which model ran it, so the
-report's provenance header (see `phases/report.md` — "Provenance
-Disclosure") names it. Format: a JSON array of
-`{"role": "{agent-name}", "id": "{model}"}` objects.
+`rc-select-council.sh` already wrote `${session_dir}/models.json` — a JSON
+array of `{"role": "{agent-name}", "id": "{model}"}` objects, one per
+dispatched reviewer, each `id` seeded with that persona's tier from the
+table above. The report's provenance header (see `phases/report.md` —
+"Provenance Disclosure") reads that file, so the tier is disclosed whether
+or not you do anything here.
 
-- Prefer concrete model ID the host exposes (e.g.,
-  `{"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"}`).
-- No concrete ID: record tier from table above instead (e.g.,
-  `{"role": "divisor-adversary-code", "id": "Capable tier"}`).
-  Guarantees at least tier always disclosed.
-- Record each agent once. Deep mode dispatches same agent per
-  subsystem — do not append a duplicate entry each round (renderers
-  dedupe defensively, but keep the file clean).
-- Do NOT invent model IDs. Nothing known about the model: omit the
-  agent's entry.
+A seeded entry records the tier the reviewer was **requested** at, not a
+model the host confirmed. Your job is the upgrade:
 
-Coordinator and validation-gate models recorded separately (see
-`phases/report.md` — "Provenance Disclosure"); this step covers
-reviewer agents.
+- Host exposes a concrete model ID for a reviewer you dispatched: replace
+  that role's `id` with it (e.g. `"claude-sonnet-4-6"` in place of
+  `"Capable tier"`). Edit through a temp file and `mv`, as the scripts do.
+- Host exposes nothing: leave the entry alone. The tier stands.
+- Do NOT invent model IDs, and do NOT append a second entry for a role
+  already present — deep mode dispatches the same agent per subsystem, and
+  one role means one entry (renderers dedupe defensively, but keep the file
+  clean).
+- Do NOT rewrite the file wholesale. Roles you drop are roles the report
+  stops disclosing.
+
+Coordinator and validation-gate models are appended separately (see
+`phases/report.md` — "Provenance Disclosure"); this step covers reviewer
+agents.
 
 ---
 
@@ -278,17 +282,33 @@ For each agent, instruct to return verdict (**APPROVE** or **REQUEST CHANGES**) 
 
 ### Batching
 
-Check project's "Review Council Configuration" for "Batch size" entry. Default: **20** files.
+`rc-plan-batches.sh` decided the split in SKILL.md Step 2.6 and wrote it to
+`${session_dir}/batch-plan.json`. Read that file; do not re-derive it.
 
-If changeset exceeds batch size:
+```json
+{"applied": true, "byte_budget": 131072, "file_cap": 50, "context_bytes": 280444,
+ "batches": [{"batch": 1, "subsystem": null, "files": ["..."], "bytes": 128900}]}
+```
 
-a. Group files by parent directory so related files stay together.
-b. Fill batches up to configured size. Single directory exceeds batch size, split alphabetically.
-c. Dispatch each batch as separate delegation round — all agents review batch 1 in parallel, then batch 2, etc.
-d. Merge findings from all batches before proceeding.
-e. Write `${session_dir}/batches.txt` listing which files went into which batch.
+a. Dispatch each entry of `batches[]` as a separate delegation round — the whole
+   council reviews batch 1 in parallel, then batch 2, and so on.
+b. In each round, filter the Changeset section to that batch's `files` and the
+   Diff section to the hunks for those files. Every other part of the prompt is
+   unchanged, batch to batch.
+c. Merge findings from all rounds before proceeding to verification.
+d. A single entry is the whole changeset in one round. That is the common case,
+   and it needs no special handling here.
 
-If orchestrating tool has native batching or context management, may use its own mechanism instead.
+Do not extend a batch, merge two of them, or substitute a split of your own —
+including when the host offers its own batching or context management. The plan
+is what makes two runs over the same changeset comparable: while this was a
+judgment call, the same 280,444-byte pull request was split three ways in one
+run and two in another, and the two runs shared no findings at all. A host-side
+context tool changes how a round is *carried*, never what is *in* it.
+
+The budgets behind the split are `Batch bytes` and `Batch size` in the project's
+"Review Council Configuration"; the script resolves them, and `tracking.md`
+records which values it used.
 
 ### Deep Mode — Per-Subsystem Delegation
 
@@ -315,8 +335,12 @@ round per subsystem:
      Create the subsystem subdirectory first: `mkdir -p ${session_dir}/verdicts/{subsystem-name}`.
 3. After all subsystems complete, proceed to verification.
 
-**Batching within subsystems:** If subsystem's file count exceeds
-batch size, apply same batching rules within that subsystem.
+**Batching within subsystems:** already planned. In deep mode
+`rc-plan-batches.sh` applies the byte budget WITHIN each subsystem
+rather than across the changeset, and every entry in `batches[]`
+carries the `subsystem` it belongs to, numbered from 1 within that
+subsystem. Dispatch the entries whose `subsystem` matches the round
+you are running.
 
 **Cross-cutting files** (files in multiple subsystems) included in
 each subsystem's delegation round. Each agent reviews file in

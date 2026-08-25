@@ -532,6 +532,42 @@ assert_track "$session_dir" "Max comments" "1" \
 	"a max-comments floor below 1 falls back to the default"
 discard_fixture "$tmpdir"
 
+echo "Test: the batching budgets are read from the configuration block"
+# rc-plan-batches.sh runs in its own process and never sees AGENTS.md, so
+# tracking.md is the only route these two take. Both are budgets, not switches:
+# a project reviewing generated code may want a larger byte budget, and one
+# whose reviewers run on a smaller context window a smaller one.
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+cat >"$tmpdir/AGENTS.md" <<'CFG'
+# Widgets
+
+## Review Council Configuration
+
+- Batch bytes: 65536
+- Batch size: 30
+CFG
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Batch bytes" "65536" "Batch bytes reaches tracking.md"
+assert_track "$session_dir" "Batch size" "30" "Batch size reaches tracking.md"
+discard_fixture "$tmpdir"
+
+echo "Test: unconfigured or malformed batching budgets fall back to the defaults"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Batch bytes: half a megabyte\n- Batch size: 0\n' \
+	>"$tmpdir/AGENTS.md"
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Batch bytes" "131072" \
+	"a non-numeric byte budget falls back to the default"
+assert_track "$session_dir" "Batch size" "50" \
+	"a file cap below 1 falls back to the default"
+discard_fixture "$tmpdir"
+
 echo "Test: AGENTS.md wins over CLAUDE.md key by key"
 tmpdir=$(mktemp -d)
 cd "$tmpdir"

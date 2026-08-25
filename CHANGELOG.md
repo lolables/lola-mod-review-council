@@ -6,6 +6,26 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Delegation batching now triggers on **context bytes** rather than file count,
+  and is computed by `rc-plan-batches.sh` (SKILL.md Step 2.6) at every effort
+  level instead of being decided while prompts are written. File count never
+  tracked the resource batching protects: across 20 measured reviews, diff bytes
+  per changed file spanned 0.9 KB to 18.4 KB, so a 44 KB changeset was split
+  because it touched 25 files while a 176 KB one went to every persona in a
+  single round because it touched 18. A batch now closes when adding the next
+  group of files would exceed either `Batch bytes` (default 131072) or
+  `Batch size`; files are grouped by parent directory, a directory too large for
+  one batch splits alphabetically, and a file larger than the budget takes a
+  batch alone rather than being handed over in halves. Deep mode applies both
+  budgets within each subsystem.
+- The batching decision is now an artifact of every run, split or not:
+  `batch-plan.json`, `batches.txt`, and a `## Phase: Batch Plan` block carrying
+  the measurement, both budgets and the per-batch figures. Batching used to be
+  prose in a phase file with nothing executing it, so a run that skipped the
+  decision left exactly what a run that decided against batching left — nothing.
+  One of the 20 measured sessions batched nothing at 22 files and cannot now be
+  told apart from a session that was never asked.
+
 - Deep mode can now route each persona to only the subsystems that hold
   something for it. Change-shape selection answers everything a filename can
   answer; it cannot answer whether a Go subsystem holds anything for the
@@ -410,6 +430,22 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- **Breaking (configuration):** `Batch size` is now the *secondary* budget — a
+  cap on files per batch, applied after `Batch bytes` — and its default rises
+  from 20 to 50. A project that set it to bound context should set `Batch bytes`
+  instead; a project that set it to bound how many files one reviewer opens
+  should keep it. Neither key was previously read by any script: `Batch size`
+  was documented but only ever consulted as prose, so no shipped behaviour
+  depended on the old default beyond what the orchestrator chose to honour.
+- An orchestrator may no longer substitute its own batching for the computed
+  plan. The clause permitting it where the host had "native batching or context
+  management" is gone from `phases/delegate.md`. It made any A/B test of a
+  host-side context tool uninterpretable: the same 31-file, 280,444-byte pull
+  request reviewed twice — identical but for whether such a tool was connected —
+  split three ways in one arm and two in the other, dispatched 15 personas and
+  11, and produced two reports with no finding in common. The clause defers to a
+  variable the experiment is trying to measure, so the confound is structural
+  and more replications cannot remove it. Guarded by RC-041.
 - The eval matrix is pinned back to `claude-sonnet-4-6`, reverting the
   `claude-sonnet-5` pin taken on 2026-08-21. Per-review cost on `sonnet-5` ran
   well above `4-6` without a matching score gain, and the harness never

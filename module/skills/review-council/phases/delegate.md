@@ -294,10 +294,18 @@ a. Dispatch each entry of `batches[]` as a separate delegation round — the who
    council reviews batch 1 in parallel, then batch 2, and so on.
 b. In each round, filter the Changeset section to that batch's `files` and the
    Diff section to the hunks for those files. Every other part of the prompt is
-   unchanged, batch to batch.
-c. Merge findings from all rounds before proceeding to verification.
-d. A single entry is the whole changeset in one round. That is the common case,
-   and it needs no special handling here.
+   unchanged, batch to batch. Where you write those two filtered inputs to disk,
+   they go to `${session_dir}/batch{N}-files.txt` and
+   `${session_dir}/batch{N}-diff.patch`, taking `N` from the entry's `batch`.
+c. Write each agent's raw output for round `N` verbatim to
+   `${session_dir}/verdicts/batch{N}/{agent-name}.raw.md`, creating the
+   directory first with `mkdir -p`. One file per agent per round — do not fold
+   an agent's rounds into a single file. Verification reads every verdict under
+   `verdicts/` and aggregates per agent (see "Verdict Collection"), so the
+   rounds come back together downstream without anything here combining them.
+d. When `applied` is `false` the plan is a single round over the whole
+   changeset. That is the common case, and it uses the unbatched
+   `${session_dir}/verdicts/{agent-name}.raw.md` path with no batch directory.
 
 Do not extend a batch, merge two of them, or substitute a split of your own —
 including when the host offers its own batching or context management. The plan
@@ -341,6 +349,12 @@ rather than across the changeset, and every entry in `batches[]`
 carries the `subsystem` it belongs to, numbered from 1 within that
 subsystem. Dispatch the entries whose `subsystem` matches the round
 you are running.
+
+Because `batch` restarts per subsystem, a deep run that also batches nests both:
+`${session_dir}/verdicts/{subsystem-name}/batch{N}/{agent-name}.raw.md`. The
+subsystem is the outer directory, since that is the axis councils differ on.
+Where a subsystem plans a single batch, it keeps the unnested
+`${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md` path.
 
 **Cross-cutting files** (files in multiple subsystems) included in
 each subsystem's delegation round. Each agent reviews file in
@@ -420,8 +434,12 @@ Instruct agents to review listed spec artifacts (not code), plus project context
 ## Verdict Collection
 
 Write each agent's RAW output verbatim to `${session_dir}/verdicts/{agent-name}.raw.md`
-(deep mode: `${session_dir}/verdicts/{subsystem}/{agent-name}.raw.md`). Do NOT
-summarize or reformat.
+(deep mode: `${session_dir}/verdicts/{subsystem}/{agent-name}.raw.md`; a batched
+run: `${session_dir}/verdicts/batch{N}/{agent-name}.raw.md`). Do NOT
+summarize or reformat. An agent that ran more than once — per subsystem, per
+batch, or both — owes one file per run, and each is verbatim. Composing them
+into a single file is the one write that cannot be verbatim, and it destroys
+the only record of what each round actually returned.
 
 Then run `scripts/rc-extract-verdict.sh ${session_dir}` to extract and
 schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.json`.
@@ -429,12 +447,14 @@ schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.js
 - On `status: "ok"`, proceed to Verification.
 - On `status: "extract_error"`, re-dispatch each `invalid[]` entry ONCE, keyed
   on its **(agent, path) pair** — not on agent name alone.
-  - In deep mode the same agent runs per subsystem, so the same agent name can
-    appear multiple times in `invalid[]` with different `path` values (e.g.
+  - The same agent name can appear multiple times in `invalid[]` with different
+    `path` values, because the same agent runs once per subsystem in deep mode
+    and once per round in a batched one (e.g.
     `verdicts/auth/divisor-adversary-code.raw.md` vs.
-    `verdicts/api/divisor-adversary-code.raw.md`); each is a distinct failure
-    in a distinct subsystem and must be recovered separately. Use `path` to
-    identify which `{agent}.raw.md` to correct.
+    `verdicts/api/divisor-adversary-code.raw.md`, or `verdicts/batch1/...` vs.
+    `verdicts/batch2/...`); each is a distinct failure over a distinct slice of
+    the changeset and must be recovered separately. Use `path` to identify
+    which `{agent}.raw.md` to correct.
   - **Resume the agent that produced the block wherever the host can.** It
     still holds the files it read and the findings it judged, so what is in
     front of it is a reformat, not a re-review — a fresh dispatch discards all

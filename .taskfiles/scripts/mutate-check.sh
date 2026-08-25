@@ -871,6 +871,25 @@ check_mutation "RC-052 a named file outside git skips every exclusion" \
 	's/^[[:space:]]*if \$rc_no_git && \[\[ ",\${scope_dir}," == \*",\${file},"\* \]\]; then$/if false; then/' \
 	test-rc-prepare-no-git.sh
 
+# --- RC-055: batch artifacts had no named home ------------------------------
+#
+# Issue #27: six batched runs invented six layouts, because delegate.md named
+# `batches.txt` and left the rest unnamed. The convention that fixed it puts a
+# round's verdicts at verdicts/batch{N}/{agent}.raw.md, which costs no script
+# change ONLY because both discovery globs recurse. Narrowing either one is the
+# quiet way to break it: deep mode's own suite would still pass, since a
+# maxdepth of 1 and a maxdepth of 2 are the same thing to a single subsystem
+# level, and every batch after the first would vanish with nothing said.
+check_mutation "RC-055 verdict extraction reaches nested batch rounds" \
+	rc-extract-verdict.sh \
+	's#find "\$vdir"#find "\$vdir" -maxdepth 1#' \
+	test-rc-batch-verdicts.sh
+
+check_mutation "RC-055 verification reaches nested batch rounds" \
+	rc-verify-evidence.sh \
+	's#find "\$vdir"#find "\$vdir" -maxdepth 1#' \
+	test-rc-batch-verdicts.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

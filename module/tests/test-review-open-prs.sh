@@ -36,9 +36,26 @@ args="$*"
 case "$args" in
 auth\ status*) exit 0 ;;
 *--json\ nameWithOwner*) echo "acme/widgets" ;;
-pr\ list*) printf '2\tbbbbbbb\n1\taaaaaaa\n' ;;
-# Single-PR target: `gh pr view <n> ... --json number,headRefOid`.
-*--json\ number,headRefOid*) printf '%s\tccccccc\n' "$3" ;;
+# A forge outage that leaves `auth status` answering: a typo'd --repo, a 502
+# or a secondary rate limit all land here. The driver must tell these apart
+# from a repository that simply has no open PRs.
+pr\ list*)
+	[[ "${STUB_GH_LIST_FAILS:-0}" -eq 0 ]] || {
+		echo "gh: Could not resolve to a Repository." >&2
+		exit 1
+	}
+	printf '2\tbbbbbbb\n1\taaaaaaa\n'
+	;;
+# Single-PR target: `gh pr view <n> ... --json number,headRefOid`. Every PR
+# exists unless a test names one that does not, which real gh answers by
+# failing rather than by printing an empty record.
+*--json\ number,headRefOid*)
+	[[ "$3" != "${STUB_GH_MISSING_PR:-}" ]] || {
+		echo "gh: Could not resolve to a PullRequest with the number of $3." >&2
+		exit 1
+	}
+	printf '%s\tccccccc\n' "$3"
+	;;
 # Comment timeline, as gh returns it: raw JSON, no --jq. The driver runs its own
 # jq over the payload, so these tests exercise the driver's real program rather
 # than a re-implementation of it here — which is the point, since the anchoring
@@ -80,6 +97,14 @@ pr\ comment*)
 *--json\ commits*)
 	if [[ -n "${MOCK_EMAILS_FILE:-}" ]] && [[ -f "${MOCK_EMAILS_FILE}" ]]; then
 		awk -F'\t' -v pr="$3" '$1 == pr { print $2 }' "$MOCK_EMAILS_FILE"
+	fi
+	;;
+# GitHub's review decision, already reduced by --jq to the bare value. Silent
+# unless the test declared one via MOCK_DECISIONS, so an undeclared PR reads as
+# a lookup that answered nothing — the path that must fail open to reviewing.
+*--json\ reviewDecision*)
+	if [[ -n "${MOCK_DECISIONS_FILE:-}" ]] && [[ -f "${MOCK_DECISIONS_FILE}" ]]; then
+		awk -F'\t' -v pr="$3" '$1 == pr { print $2 }' "$MOCK_DECISIONS_FILE"
 	fi
 	;;
 *--json\ changedFiles,author,files*)
@@ -134,6 +159,11 @@ run_case() {
 	local emails_file="$work/emails.tsv"
 	printf '%s' "$MOCK_EMAILS" >"$emails_file"
 
+	# Review decisions for the mock gh, as "<pr><TAB><decision>" lines. Written
+	# even when empty, for the same reason as the authorship file above.
+	local decisions_file="$work/decisions.tsv"
+	printf '%s' "$MOCK_DECISIONS" >"$decisions_file"
+
 	# Comment timelines and collaborator permissions the mock gh will serve,
 	# plus the log its `gh pr comment` writes to. Staged per case so one test's
 	# fixtures cannot leak into the next.
@@ -149,9 +179,9 @@ run_case() {
 
 	set +e
 	if [[ "$input" == "__eof__" ]]; then
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_GH_COMMENTS_LOG="$posted_log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_DECISIONS_FILE="$decisions_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_GH_COMMENTS_LOG="$posted_log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
 	else
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_GH_COMMENTS_LOG="$posted_log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_DECISIONS_FILE="$decisions_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_GH_COMMENTS_LOG="$posted_log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
 	fi
 	RC=$?
 	set -e
@@ -175,6 +205,12 @@ RUN_ENV=()
 # lines. Empty by default: a PR whose authorship cannot be determined must be
 # reviewed, so every test that does not set this exercises the unfiltered path.
 MOCK_EMAILS=""
+
+# Review decisions the next run_case's mock gh will report, as
+# "<pr><TAB><decision>" lines. Empty by default: a PR whose review decision
+# cannot be determined must be reviewed, so every test that does not set this
+# exercises the unfiltered path.
+MOCK_DECISIONS=""
 
 # Directory of `pr-<n>.json` comment timelines the next run_case's mock gh will
 # serve. Empty by default: a PR with no council comment has never been
@@ -553,6 +589,74 @@ assert_contains "$OUT" "--ignore-email" "usage lists --ignore-email"
 assert_contains "$OUT" "--no-ignore-emails" "usage lists --no-ignore-emails"
 assert_contains "$OUT" "IGNORE_EMAILS" "usage documents the environment override"
 
+# ---- Ignoring PRs that are already approved ---------------------------------
+# A PR someone has approved has already had a human decide on it, and a council
+# review costs real money. --ignore-approved drops those before they reach the
+# queue. Opt-in, not a default: an approval says what should happen to the PR,
+# not that this council has looked at it, and skipping on it silently would
+# change what an unflagged run costs and covers.
+echo ""
+echo "Test: --ignore-approved skips a PR GitHub reports as APPROVED"
+MOCK_DECISIONS="2	APPROVED"
+run_case "yes" --repo acme/widgets --run --ignore-approved
+MOCK_DECISIONS=""
+assert_contains "$OUT" "Ignored (approved)" "the plan reports the approved PR"
+assert_contains "$CMDS" "/pull/1" "the unapproved PR is still reviewed"
+assert_not_contains "$CMDS" "/pull/2" "the approved PR is not reviewed"
+assert_equals "$CALLS" "1" "only the unapproved PR costs a review"
+assert_equals "$RC" "0" "the batch completes"
+
+echo ""
+echo "Test: an approved PR is reviewed when the flag is absent"
+MOCK_DECISIONS="2	APPROVED"
+run_case "yes" --repo acme/widgets --run
+MOCK_DECISIONS=""
+assert_contains "$CMDS" "/pull/2" "approval alone does not skip a PR"
+assert_not_contains "$OUT" "Ignored (approved)" "and the plan does not report a filter that is off"
+assert_equals "$CALLS" "2" "the default reviews every open PR"
+
+echo ""
+echo "Test: only APPROVED counts as approved"
+# reviewDecision also reports CHANGES_REQUESTED and REVIEW_REQUIRED. Both mean
+# the PR still wants attention, which is the opposite of what this flag skips.
+MOCK_DECISIONS="1	CHANGES_REQUESTED
+2	REVIEW_REQUIRED"
+run_case "yes" --repo acme/widgets --run --ignore-approved
+MOCK_DECISIONS=""
+assert_equals "$CALLS" "2" "a rejecting or pending decision is not an approval"
+
+echo ""
+echo "Test: a review decision that cannot be read fails open to reviewing"
+MOCK_DECISIONS=""
+run_case "yes" --repo acme/widgets --run --ignore-approved
+assert_equals "$CALLS" "2" "an empty decision lookup never silently drops a PR"
+
+echo ""
+echo "Test: naming a single PR overrides --ignore-approved"
+# As with the author deny-list: this is batch triage, and asking for #2 by
+# number or URL says which PR you want.
+MOCK_DECISIONS="2	APPROVED"
+run_case "yes" --repo acme/widgets 2 --run --ignore-approved
+MOCK_DECISIONS=""
+assert_contains "$CMDS" "/pull/2" "asking for one PR by number is unambiguous"
+assert_equals "$CALLS" "1" "the named PR is reviewed"
+
+echo ""
+echo "Test: an entirely approved queue exits cleanly and says what emptied it"
+MOCK_DECISIONS="1	APPROVED
+2	APPROVED"
+run_case "yes" --repo acme/widgets --run --ignore-approved
+MOCK_DECISIONS=""
+assert_equals "$CALLS" "0" "nothing is reviewed"
+assert_contains "$OUT" "Nothing to review" "an entirely approved queue says so"
+assert_contains "$OUT" "--ignore-approved" "and names the flag that emptied it"
+assert_equals "$RC" "0" "an empty queue is a clean exit, not a usage error"
+
+echo ""
+echo "Test: --help documents --ignore-approved"
+run_case "__eof__" --help
+assert_contains "$OUT" "--ignore-approved" "usage lists --ignore-approved"
+
 # ---- Verdict detection ------------------------------------------------------
 # The mock's `pr list` reports PR 2 at head bbbbbbb and PR 1 at aaaaaaa, so a
 # marker carrying sha=bbbbbbb is "at head" for PR 2 and sha=0000000 is not.
@@ -887,6 +991,120 @@ JSON
 run_case "__eof__" --repo acme/widgets
 assert_contains "$OUT" "Unreviewed: 2" "a decline reply is not a verdict"
 reset_comments
+
+echo ""
+echo "Test: the driver works when invoked through a symlink"
+# The lib lookup must follow the link to the real script's directory. A
+# `dirname "$0"` resolver looks beside the LINK and finds no lib/ at all.
+link_dir=$(mktemp -d)
+ln -s "$SCRIPT" "$link_dir/rc-batch"
+SAVED_SCRIPT="$SCRIPT"
+SCRIPT="$link_dir/rc-batch"
+run_case "__eof__" --repo acme/widgets
+assert_equals "$RC" "0" "a symlinked driver runs"
+assert_contains "$OUT" "Unreviewed:" "a symlinked driver classifies normally"
+SCRIPT="$SAVED_SCRIPT"
+rm -rf "$link_dir"
+
+echo ""
+echo "Test: the driver works through a two-hop relative symlink"
+# Each hop must re-base against the directory of the link it came from. A
+# resolver that only canonicalises once mis-resolves the relative second hop.
+hop_root=$(mktemp -d)
+mkdir -p "$hop_root/a" "$hop_root/b"
+ln -s "$SCRIPT" "$hop_root/a/first"
+ln -s "../a/first" "$hop_root/b/second"
+SAVED_SCRIPT="$SCRIPT"
+SCRIPT="$hop_root/b/second"
+run_case "__eof__" --repo acme/widgets
+assert_equals "$RC" "0" "a two-hop relative symlink resolves"
+assert_contains "$OUT" "Unreviewed:" "and classifies normally"
+SCRIPT="$SAVED_SCRIPT"
+rm -rf "$hop_root"
+
+echo ""
+echo "Test: the ERR trap is installed before comments.sh is sourced"
+# Regression guard for a silent-failure window, not a style preference. If the
+# trap were armed only after comments.sh is sourced, a source-time failure in
+# comments.sh (a typo, an unbound variable, a bad regex) would exit non-zero
+# with no ERROR message at all — this is the driver's entire failure-reporting
+# story for the sourcing step, and it only works installed first.
+# shellcheck disable=SC2016 # literal source text being grepped for, not command substitution.
+trap_line=$(grep -nF 'trap "$ERR_TRAP" ERR' "$SCRIPT" | head -1 | cut -d: -f1)
+# shellcheck disable=SC2016 # literal source text being grepped for, not command substitution.
+comments_source_line=$(grep -nF 'source "$LIB_DIR/comments.sh"' "$SCRIPT" | head -1 | cut -d: -f1)
+if [[ -z "$trap_line" || -z "$comments_source_line" ]]; then
+	echo "  FAIL: could not locate the ERR trap install or the comments.sh source line in $SCRIPT"
+	FAIL=$((FAIL + 1))
+elif [[ "$trap_line" -lt "$comments_source_line" ]]; then
+	echo "  PASS: ERR trap (line $trap_line) is armed before comments.sh is sourced (line $comments_source_line)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: ERR trap (line $trap_line) is armed at or after comments.sh is sourced (line $comments_source_line)"
+	echo "        a source-time failure in comments.sh would then exit with no ERROR message at all"
+	FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "Test: the ERR trap is installed before prs.sh is sourced"
+# Same regression guard, extended to prs.sh: it is sourced after comments.sh
+# (it depends on comments.sh's marker readers), but the trap still has to be
+# armed before it, not just before comments.sh, or a source-time failure in
+# prs.sh itself would exit non-zero with no ERROR message at all.
+# shellcheck disable=SC2016 # literal source text being grepped for, not command substitution.
+prs_source_line=$(grep -nF 'source "$LIB_DIR/prs.sh"' "$SCRIPT" | head -1 | cut -d: -f1)
+if [[ -z "$trap_line" || -z "$prs_source_line" ]]; then
+	echo "  FAIL: could not locate the ERR trap install or the prs.sh source line in $SCRIPT"
+	FAIL=$((FAIL + 1))
+elif [[ "$trap_line" -lt "$prs_source_line" ]]; then
+	echo "  PASS: ERR trap (line $trap_line) is armed before prs.sh is sourced (line $prs_source_line)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: ERR trap (line $trap_line) is armed at or after prs.sh is sourced (line $prs_source_line)"
+	echo "        a source-time failure in prs.sh would then exit with no ERROR message at all"
+	FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "Test: a failed PR listing is fatal, not an empty queue"
+# The regression this pins: collect_prs runs inside `prs_raw="$(collect_prs)"`,
+# and bash unsets errexit inside a command-substitution subshell unless
+# `shopt -s inherit_errexit` is set — which nothing in this tree sets. So a
+# failing `gh pr list` aborts nothing, and before collect_prs reported through
+# its return value the driver read the empty output as "no open pull requests"
+# and exited 0. An unattended run would have been told everything was reviewed.
+RUN_ENV=(STUB_GH_LIST_FAILS=1)
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_equals "$RC" "1" "a broken listing exits non-zero"
+assert_not_contains "$OUT" "No open pull requests found" \
+	"and never claims the repository has nothing to review"
+assert_contains "$OUT" "Could not list the open pull requests" \
+	"the operator is told the lookup failed"
+
+echo ""
+echo "Test: a failed PR listing queues nothing even under --run --yes"
+# The consent gate is bypassed here on purpose. --run --yes is the unattended
+# spelling, and it is the one where "reviewed nothing, exited 0" would go
+# unnoticed; assert that no agent was invoked rather than trusting the message.
+RUN_ENV=(STUB_GH_LIST_FAILS=1)
+run_case "__eof__" --repo acme/widgets --run --yes
+RUN_ENV=()
+assert_equals "$RC" "1" "an unattended run exits non-zero"
+assert_equals "$CALLS" "0" "and spends nothing"
+
+echo ""
+echo "Test: a named PR that does not exist reports only its own message"
+# `exit 1` inside collect_prs ended the command-substitution subshell, not the
+# driver, so the handled error used to arrive decorated with the ERR trap's
+# internal "ERROR: ...:NNN exited 1". The message is the whole output now.
+RUN_ENV=(STUB_GH_MISSING_PR=999999)
+run_case "__eof__" --repo acme/widgets 999999
+RUN_ENV=()
+assert_equals "$RC" "1" "a missing PR exits 1"
+assert_contains "$OUT" "PR #999999 not found in acme/widgets." "it says which PR"
+assert_not_contains "$OUT" "ERROR: " \
+	"a handled error is not decorated with an internal one"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

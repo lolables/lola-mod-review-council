@@ -128,6 +128,30 @@
 #   --no-ignore-emails      Clear the list; consider every PR.
 #   IGNORE_EMAILS           Replace the built-in list (see Environment).
 #
+# Ignoring PRs that are already approved:
+#
+# --ignore-approved drops any PR the forge reports as approved before it is
+# classified at all. A PR somebody has approved has already had a human decide
+# on it, and this is the cheapest way to keep the council off the ones that are
+# only waiting to be merged.
+#
+# The value read is GitHub's own reviewDecision, and only APPROVED counts:
+# CHANGES_REQUESTED and REVIEW_REQUIRED both mean the PR is still waiting on
+# someone, and a PR with no decision at all has been approved by nobody. A
+# lookup that cannot be read is not an approval either, so it fails open to
+# reviewing like every other per-PR lookup here.
+#
+# It is off by default and has no environment default, because an approval says
+# what should happen to a PR rather than that this council has looked at it.
+# Note also what reviewDecision does not track: unless the branch is protected
+# with "dismiss stale approvals", GitHub keeps an approval across later pushes,
+# so a PR approved and then pushed to still reads as APPROVED and is skipped
+# with those new commits unreviewed. Leave the flag off for a run that should
+# see them.
+#
+# Like the address list above, this is batch triage and does not apply to a PR
+# you name explicitly.
+#
 # Default is a DRY RUN: it classifies the PRs and prints the plan, but does
 # not invoke claude or post anything. Pass --run to execute.
 #
@@ -150,6 +174,7 @@
 #   ./review-open-prs.sh --cli opencode --run   # review through opencode, not claude
 #   ./review-open-prs.sh --ignore-email ci@corp.example --run  # also skip CI's PRs
 #   ./review-open-prs.sh --no-ignore-emails --run              # review bot PRs too
+#   ./review-open-prs.sh --ignore-approved --run  # skip PRs someone already approved
 #   ./review-open-prs.sh --requests-per-hour 3 --run  # admit at most 3 requests/hour
 #
 # Target selection:
@@ -221,14 +246,49 @@
 
 set -euo pipefail
 
-# Print the failing line and exit code on any unhandled error. Kept in a
-# variable so the review loop can lift it around the per-PR claude call and
-# re-arm it afterwards (a failed pipeline fires the ERR trap even under
-# `set +e`, and its exit would otherwise abort the whole batch).
-# shellcheck disable=SC2016  # $?/$LINENO are meant to stay literal until the trap fires
-err_trap='rc=$?; echo "ERROR: ${BASH_SOURCE[0]}:${LINENO} exited ${rc}" >&2; exit ${rc}'
-# shellcheck disable=SC2064  # install err_trap's literal body; its $?/$LINENO stay deferred
-trap "$err_trap" ERR
+# Resolve this script through any symlinks to find lib/. Not `dirname "$0"`:
+# invoked through a symlink that is the LINK's directory, not the script's, so
+# the lib lookup would land in the wrong place. Not `readlink -f` or `realpath`
+# either — both are GNU/newer-BSD only, and the macOS leg of the portability
+# suite is the reason this is spelled out by hand. Each hop re-bases with
+# `cd -P` because a relative link target is relative to the directory of the
+# LINK, not of the original invocation.
+_src="${BASH_SOURCE[0]}"
+_hops=0
+while [[ -L "$_src" ]]; do
+	# A symlink cycle is a broken installation, not something to hang on.
+	_hops=$((_hops + 1))
+	if [[ "$_hops" -gt 40 ]]; then
+		echo "Too many symlink hops resolving ${BASH_SOURCE[0]}" >&2
+		exit 1
+	fi
+	_dir="$(cd -P "$(dirname "$_src")" && pwd)"
+	_src="$(readlink "$_src")"
+	[[ "$_src" = /* ]] || _src="${_dir}/${_src}"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$_src")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/lib"
+SCRIPT_REAL="$_src"
+unset _src _dir _hops
+
+# shellcheck source=scripts/lib/common.sh
+source "$LIB_DIR/common.sh"
+
+# Armed right after common.sh defines ERR_TRAP, and before comments.sh is
+# sourced, so a source-time failure in comments.sh (a typo, an unbound
+# variable, a bad regex) is reported rather than exiting silently. The one gap
+# this cannot close is a failure while common.sh itself is sourcing: nothing
+# can catch it with a trap that file has not defined yet. common.sh's own
+# validation paths print their own message and exit 2, so that gap is covered
+# a different way rather than left open.
+# shellcheck disable=SC2064  # install ERR_TRAP's literal body; its $?/$LINENO stay deferred
+trap "$ERR_TRAP" ERR
+
+# shellcheck source=scripts/lib/comments.sh
+source "$LIB_DIR/comments.sh"
+
+# shellcheck source=scripts/lib/prs.sh
+source "$LIB_DIR/prs.sh"
 
 REPO=""   # owner/name; resolved below from URL arg, --repo, or the CWD repo
 TARGET="" # positional PR number or URL; empty => review all open PRs
@@ -236,13 +296,9 @@ RUN=0
 FORCE=0
 YES=0 # consent to the GitHub edits given up front, so --run does not prompt
 FORCE_EFFORT=""
-FORCE_CLI="" # --cli; empty => detect, preferring claude
+FORCE_CLI=""      # --cli; empty => detect, preferring claude
+IGNORE_APPROVED=0 # --ignore-approved; read by classify_prs
 LOG_DIR="./.review-council-logs"
-
-# Cap on comment-requested re-reviews per hour; empty means no cap. `-` rather
-# than `:-`, as with IGNORE_EMAILS below: REREVIEW_PER_HOUR="" has to mean
-# "unlimited", not "fall back to the default". --requests-per-hour overrides it.
-REQUESTS_PER_HOUR="${REREVIEW_PER_HOUR-}"
 
 # Renders claude's stream-json events into one progress line per step, so the
 # terminal shows a run advancing while the log keeps the events themselves.
@@ -267,61 +323,8 @@ def stamp: (now | strflocaltime("%H:%M:%S"));
   else empty end
 '
 
-# Effort-classifier thresholds (env-overridable; see header).
-DEEP_FILES="${DEEP_FILES:-10}"
-QUICK_FILES="${QUICK_FILES:-2}"
-# Reject non-numeric thresholds up front: otherwise the `-ge`/`-le` tests below
-# error mid-classification and (being inside a `||`) silently misclassify.
-[[ "$DEEP_FILES" =~ ^[0-9]+$ ]] || {
-	echo "DEEP_FILES must be a non-negative integer, got: '${DEEP_FILES}'" >&2
-	exit 2
-}
-[[ "$QUICK_FILES" =~ ^[0-9]+$ ]] || {
-	echo "QUICK_FILES must be a non-negative integer, got: '${QUICK_FILES}'" >&2
-	exit 2
-}
-# Checked here rather than at the flag, so REREVIEW_PER_HOUR gets the same
-# rejection the flag gives: a cap that silently reads as "unlimited" is the one
-# misconfiguration this setting exists to prevent.
-[[ -z "$REQUESTS_PER_HOUR" || "$REQUESTS_PER_HOUR" =~ ^[0-9]+$ ]] || {
-	echo "REREVIEW_PER_HOUR must be a non-negative integer, got: '${REQUESTS_PER_HOUR}'" >&2
-	exit 2
-}
-# Any changed path matching this extended-regex (case-insensitive) forces deep.
-# Short/ambiguous tokens (ca, crl, tls, rbac, cert, key) stay segment-anchored
-# by the trailing boundary; the distinctive compound forms (certificates,
-# authentication, cryptography, ...) are spelled out so they are not missed.
-SECURITY_PATHS="${SECURITY_PATHS:-(^|/)(ca|crl|certs?|certificates?|keys?|keystores?|keypairs?|auth|authn|authz|authentication|authorization|crypto|cryptography|secrets?|tls|tokens?|rbac|sign|signing|signature|passwords?|credentials?)([/._-]|$)}"
-
-# Commit-author addresses whose PRs are skipped (see header). The GitHub App
-# forms are the numeric +<id> addresses; the bare and vendor addresses cover
-# self-hosted and older deployments of the same two bots.
-IGNORE_EMAILS_DEFAULT="49699333+dependabot[bot]@users.noreply.github.com
-dependabot[bot]@users.noreply.github.com
-support@dependabot.com
-29139614+renovate[bot]@users.noreply.github.com
-renovate[bot]@users.noreply.github.com
-renovate@whitesourcesoftware.com
-bot@renovateapp.com"
-# `-` rather than `:-`, unlike the thresholds above: IGNORE_EMAILS="" has to
-# mean "ignore nobody", not "fall back to the default list".
-IGNORE_EMAILS="${IGNORE_EMAILS-$IGNORE_EMAILS_DEFAULT}"
-
-# Split on commas and whitespace. Pathname expansion is off around the unquoted
-# expansion that does the splitting because every default entry contains
-# "[bot]", which globbing reads as a bracket expression: with a file named
-# e.g. `dependabotb@users.noreply.github.com` in the working directory, the
-# address would be silently rewritten to that filename and match nothing.
-IGNORE_EMAIL_LIST=()
-set -f
-for entry in ${IGNORE_EMAILS//,/ }; do
-	IGNORE_EMAIL_LIST+=("$entry")
-done
-set +f
-unset entry
-
 usage() {
-	sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\} \{0,1\}//'
+	sed -n '2,/^$/p' "$SCRIPT_REAL" | sed 's/^#\{0,1\} \{0,1\}//'
 }
 
 # ---- Parse arguments -------------------------------------------------------
@@ -375,6 +378,9 @@ while [[ "$#" -gt 0 ]]; do
 	--no-ignore-emails)
 		IGNORE_EMAIL_LIST=()
 		;;
+	--ignore-approved)
+		IGNORE_APPROVED=1
+		;;
 	--requests-per-hour)
 		[[ "$#" -ge 2 ]] || {
 			echo "--requests-per-hour requires an argument (a non-negative integer)" >&2
@@ -416,12 +422,7 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # ---- Preconditions ---------------------------------------------------------
-for bin in gh jq; do
-	command -v "$bin" >/dev/null 2>&1 || {
-		echo "Required command not found: $bin" >&2
-		exit 1
-	}
-done
+require_commands gh jq
 
 # Pick the agent CLI that will run the council. --cli is a demand, not a
 # preference: falling back to the other host would silently change which models
@@ -463,385 +464,43 @@ gh auth status >/dev/null 2>&1 || {
 	exit 1
 }
 
-# ---- Resolve target repository and (optional) single PR --------------------
-# A positional TARGET may be a PR number or a GitHub PR URL. A URL also fixes
-# the repository. TARGET_PR empty => review all open PRs.
-TARGET_PR=""
-if [[ -n "$TARGET" ]]; then
-	if [[ "$TARGET" =~ ^[0-9]+$ ]]; then
-		TARGET_PR="$TARGET"
-	elif [[ "$TARGET" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]]; then
-		url_owner="${BASH_REMATCH[1]}"
-		url_repo="${BASH_REMATCH[2]%.git}"
-		TARGET_PR="${BASH_REMATCH[3]}"
-		if [[ -n "$REPO" ]] && [[ "$REPO" != "${url_owner}/${url_repo}" ]]; then
-			echo "Conflicting repository: --repo '${REPO}' vs URL '${url_owner}/${url_repo}'." >&2
-			exit 2
-		fi
-		REPO="${url_owner}/${url_repo}"
-	else
-		echo "Target must be a PR number or a GitHub PR URL, got: ${TARGET}" >&2
-		exit 2
-	fi
-fi
+# ---- Resolve target repository and (optional) single PR, then collect PRs --
+resolve_target "$TARGET"
 
-# No explicit repo? Fall back to the GitHub repo of the current directory.
-if [[ -z "$REPO" ]]; then
-	REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
-fi
-if [[ -z "$REPO" ]]; then
-	echo "Could not determine the target repository." >&2
-	echo "Pass --repo owner/name, give a PR URL, or run inside a checkout of the repo." >&2
+# collect_prs reports through its exit status, and the `|| collect_rc=$?` is
+# what makes that status readable: errexit does not reach into the command
+# substitution around it (bash unsets errexit there without `inherit_errexit`,
+# which this tree does not set), so without an explicit check a failed lookup
+# would arrive here as an empty string and be announced as "no open pull
+# requests" — a clean exit 0 having reviewed nothing.
+collect_rc=0
+# shellcheck disable=SC2310 # Suspending errexit is the whole point: collect_prs
+# reports failure through its status, and the case below handles every value it
+# documents. Letting set -e abort instead would lose the distinction between a
+# missing PR and a broken listing, which is what this call exists to make.
+prs_raw="$(collect_prs)" || collect_rc=$?
+case "$collect_rc" in
+0) ;;
+1)
+	echo "PR #${TARGET_PR} not found in ${REPO}." >&2
 	exit 1
-fi
-
-# ---- Collect the PRs to consider (number + head SHA) -----------------------
-# Single target: just that PR. Otherwise every open PR, newest first.
-if [[ -n "$TARGET_PR" ]]; then
-	prs_raw="$(gh pr view "$TARGET_PR" --repo "$REPO" \
-		--json number,headRefOid --jq '[.number, .headRefOid] | @tsv' 2>/dev/null || true)"
-	if [[ -z "$prs_raw" ]]; then
-		echo "PR #${TARGET_PR} not found in ${REPO}." >&2
-		exit 1
-	fi
-else
-	prs_raw="$(gh pr list --repo "$REPO" --state open --limit 500 \
-		--json number,headRefOid --jq 'sort_by(.number) | reverse | .[] | [.number, .headRefOid] | @tsv')"
-	if [[ -z "$prs_raw" ]]; then
-		echo "No open pull requests found in ${REPO}."
-		exit 0
-	fi
+	;;
+*)
+	echo "Could not list the open pull requests in ${REPO}." >&2
+	echo "The lookup failed, which is not the same as there being nothing to review; no PRs were queued." >&2
+	exit 1
+	;;
+esac
+if [[ -z "$prs_raw" ]]; then
+	echo "No open pull requests found in ${REPO}."
+	exit 0
 fi
 
 # ---- Classify each PR against its prior Review Council comment --------------
-# A verdict is a comment carrying a LINE that starts, at column 0, with this.
-# The council's own scripts test the same way — rc-lib.sh defines it as
-# RC_MARKER_OPEN, rc-post-comment-github.sh applies it as RC_MARKER_LINE_JQ,
-# prepare-context.sh anchors its conversation window on it — for a reason worth
-# restating here: the marker is public. GitHub's "Quote reply" copies it
-# verbatim behind a "> " prefix, anyone who can comment can type one, and a
-# finding's evidence can quote a sha= of its own. Column 0 separates a verdict
-# from a quote of one; viewerDidAuthor separates ours from a forgery. Matching
-# the bare key anywhere in the body accepts all three, and each of them can pin
-# a PR at its current head and suppress every later review.
-#
-# Restated rather than sourced: this driver points at whichever council the
-# host has installed, and must not depend on that skill's file layout.
-MARKER_OPEN='<!-- review-council:marker sha='
-
-# This driver's own marker, for the reply it posts when a request is deferred.
-# Deliberately a different key from the verdict marker rather than a variant of
-# it: a decline must never be readable as a verdict — not by the lookup above,
-# not by the council, not by the next person to read the thread.
-RATE_MARKER_OPEN='<!-- review-council:rate-limited until='
-
-# comments_for <pr> -> the PR's comment timeline as gh returns it, or empty on
-# failure. Fetched once per PR and handed to each reader below, so one request
-# answers the verdict, the re-review requests and the rate-limit ledger.
-comments_for() {
-	gh pr view "$1" --repo "$REPO" --json comments 2>/dev/null || true
-}
-
-# council_verdict_for <comments-json> -> "<sha>\t<createdAt>" of the newest
-# verdict THIS account posted, or empty when there is none.
-#
-# Empty output means "needs review": a gh failure, an unparseable body and a
-# genuinely unreviewed PR are one answer here, and it is the safe one.
-#
-# gsub("\r"; "") is not decoration. GitHub stores web-authored bodies with CRLF,
-# and a trailing \r defeats both startswith() on a marker and the anchored
-# request match in rereview_requests_for.
-council_verdict_for() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" '
-		[ .comments[]?
-		  | select(.viewerDidAuthor // false)
-		  | select((.isMinimized // false) | not)
-		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
-		] | sort_by(.createdAt) | last as $v
-		| if $v == null then "" else
-		    (($v.body | gsub("\r"; "") | split("\n") | map(select(startswith($open))) | last
-		      | ltrimstr($open) | split(" ")[0] | split("-->")[0])) as $sha
-		    | [$sha, $v.createdAt] | @tsv
-		  end
-	' 2>/dev/null || true
-}
-
-# foreign_verdict_login <comments-json> -> the author of the newest marker-line
-# comment this account did NOT post, or empty when there is none.
-#
-# Two very different things produce that comment and the payload cannot tell
-# them apart: a token rotated between runs (or CI filing verdicts under a bot
-# account), and a forged marker from anyone who can type one.
-#
-# So do not choose. Both are reported as unreviewed and get reviewed, which is
-# this script's answer to every unanswered question — an attacker gains
-# nothing, because the review they tried to suppress happens anyway, and a
-# rotated token costs one round of re-reviews that the caller is told about
-# before it pays for them. Trusting the marker instead would keep the rotated
-# token working at the price of letting a stranger switch reviewing off.
-#
-# prepare-context.sh:281 makes the opposite call on its own lookup, and is
-# right to: what it loses by refusing is a maintainer's reply that Disposition
-# never reads. Losing data is not the same as suppressing a review.
-foreign_verdict_login() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" '
-		[ .comments[]?
-		  | select((.viewerDidAuthor // false) | not)
-		  | select((.isMinimized // false) | not)
-		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
-		] | sort_by(.createdAt) | last | (.author.login // "") // ""
-	' 2>/dev/null || true
-}
-
-# verdicts_since <comments-json> <iso> -> how many verdicts this account posted
-# at or after <iso>. The verdict comments ARE the hourly ledger: timestamped,
-# attributable, and already fetched, so the window needs no state file that a
-# second checkout or a cron wrapper with a different CWD would silently reset.
-#
-# Every review posted in the hour spends the window, not only the requested
-# ones — the budget being protected is the API bill. What the cap gates is the
-# admission of requests: a genuine code change is never held back by it.
-#
-# Counted across the PRs this run examined, so a single-PR run sees a narrower
-# window than a batch. Said plainly in --help rather than papered over.
-verdicts_since() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --arg since "$2" '
-		[ .comments[]?
-		  | select(.viewerDidAuthor // false)
-		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
-		  | select(.createdAt >= $since)
-		] | length
-	' 2>/dev/null || echo 0
-}
-
-# declined_in_window <comments-json> <window-start-iso> -> success when we have
-# already replied to a deferred request on this PR inside the current window.
-# Same stateless trick as the ledger: the reply is its own record.
-declined_in_window() {
-	local n
-	n="$(printf '%s' "$1" | jq -r --arg open "$RATE_MARKER_OPEN" --arg since "$2" '
-		[ .comments[]?
-		  | select(.viewerDidAuthor // false)
-		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
-		  | select(.createdAt >= $since)
-		] | length
-	' 2>/dev/null || echo 0)"
-	[[ "$n" =~ ^[0-9]+$ ]] && [[ "$n" -gt 0 ]]
-}
-
-# rereview_requests_for <comments-json> <since-iso> -> "<login>\t<createdAt>\t<association>"
-# lines. A request is a comment newer than the verdict it asks to replace, not
-# ours, not collapsed, carrying a line that is exactly the command.
-#
-# Anchored at column 0 and to end-of-line for the same reason the marker is:
-# "> /review-council review" is someone quoting a request, not making one, and
-# the command named mid-sentence is a mention. Trailing arguments are
-# deliberately not accepted — the effort tier decides what a review costs, and
-# a requester does not get to pick it.
-rereview_requests_for() {
-	printf '%s' "$1" | jq -r --arg since "$2" '
-		.comments[]?
-		| select((.isMinimized // false) | not)
-		| select((.viewerDidAuthor // false) | not)
-		| select($since == "" or .createdAt > $since)
-		| select(((.body // "") | gsub("\r"; "") | split("\n")
-		          | any(test("^/review-council[ \t]+review[ \t]*$"))))
-		| [ (.author.login // ""), .createdAt, (.authorAssociation // "") ] | @tsv
-	' 2>/dev/null || true
-}
-
-# requester_authorised <login> <association> -> success when this account may
-# spend a review. Two gates, cheap one first: authorAssociation arrives with the
-# comment payload and rules out everyone with no standing in the repo, so the
-# API call happens only for a plausible requester.
-#
-# THIS IS THE ONE LOOKUP IN THIS SCRIPT THAT FAILS CLOSED. Everywhere else an
-# unanswered gh call means "review it", because a duplicate review costs one
-# review. Here it would mean "let a stranger start reviews", and that cost has
-# no ceiling. An unreadable answer is not permission.
-#
-# `.permission` is the legacy four-value field (admin|write|read|none) and it
-# folds the finer roles the way this wants them folded: maintain reports as
-# write, triage reports as read. Triage can label and close but cannot push,
-# and should not be able to spend the API budget either.
-requester_authorised() {
-	local login="$1" assoc="$2" perm
-	case "$assoc" in
-	OWNER | MEMBER | COLLABORATOR) ;;
-	*) return 1 ;;
-	esac
-	# The login is interpolated into an API path. GitHub logins are alphanumeric
-	# with hyphens; anything else is refused rather than sent.
-	[[ "$login" =~ ^[A-Za-z0-9-]+$ ]] || return 1
-	perm="$(gh api "repos/${REPO}/collaborators/${login}/permission" \
-		--jq '.permission' 2>/dev/null || true)"
-	[[ "$perm" = "admin" || "$perm" = "write" ]]
-}
-
-# requested_rereview <pr> <comments-json> <since> -> success when an authorised
-# request is outstanding on this PR. Records the requester, which the rate
-# limiter and the decline reply both read.
-requested_rereview() {
-	local pr="$1" json="$2" since="$3" login at assoc requests
-	requests="$(rereview_requests_for "$json" "$since")"
-	while IFS=$'\t' read -r login at assoc; do
-		[[ -n "$login" ]] || continue
-		# shellcheck disable=SC2310 # A non-zero return is "not authorised" —
-		# the expected answer, not an error — and the one call inside that can
-		# genuinely fail absorbs its own failure to reach it.
-		if requester_authorised "$login" "$assoc"; then
-			REQ_PR+=("$pr")
-			REQ_LOGIN+=("$login")
-			REQ_AT+=("$at")
-			return 0
-		fi
-	done <<<"$requests"
-	return 1
-}
-
-# ignored_author <pr> -> success when the PR was written entirely by addresses
-# on IGNORE_EMAIL_LIST, and so should not be reviewed at all.
-#
-# "Entirely", not "at all": one human commit on a Renovate branch is human work
-# and has to come back for review, and a rebase or merge commit a bot authored
-# must not disqualify a human's PR. The `seen` guard makes the empty case false
-# rather than vacuously true, so a gh failure (which yields no addresses) fails
-# open to reviewing — the same stance reviewed_sha_for takes.
-ignored_author() {
-	local pr="$1" emails email pattern hit seen=0
-	[[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] || return 1
-	emails="$(gh pr view "$pr" --repo "$REPO" --json commits \
-		--jq '.commits[].authors[].email' 2>/dev/null || true)"
-	[[ -n "$emails" ]] || return 1
-	while IFS= read -r email; do
-		[[ -n "$email" ]] || continue
-		hit=0
-		for pattern in "${IGNORE_EMAIL_LIST[@]}"; do
-			# Whole-address compare, lowercased on both sides. Not a glob:
-			# "[bot]" in these addresses is a literal, and `==` would read it
-			# as a one-character bracket expression.
-			if [[ "${email,,}" = "${pattern,,}" ]]; then
-				hit=1
-				break
-			fi
-		done
-		[[ "$hit" -eq 1 ]] || return 1
-		seen=1
-	done <<<"$emails"
-	[[ "$seen" -eq 1 ]]
-}
-
-# effort_for <pr> -> quick | standard | deep
-# Classify a PR's review depth from its GitHub metadata so a trivial change is
-# not sent through an expensive deep review. --effort overrides the result. A
-# gh/jq failure fails open to standard (full verification, no subsystem
-# fan-out) rather than deep, so a transient lookup error cannot silently
-# escalate cost.
-effort_for() {
-	local pr="$1" json files is_bot
-	if [[ -n "$FORCE_EFFORT" ]]; then
-		printf '%s' "$FORCE_EFFORT"
-		return
-	fi
-	json="$(gh pr view "$pr" --repo "$REPO" \
-		--json changedFiles,author,files 2>/dev/null || true)"
-	[[ -n "$json" ]] || {
-		printf 'standard'
-		return
-	}
-	# `|| true` keeps a jq failure from tripping errexit/the ERR trap; the
-	# numeric guard and the "0"/"1" defaults below make the fallback explicit.
-	files="$(printf '%s' "$json" | jq -r '.changedFiles // 0' 2>/dev/null || true)"
-	[[ "$files" =~ ^[0-9]+$ ]] || files=0
-	is_bot="$(printf '%s' "$json" | jq -r 'if (.author.is_bot // false) then 1 else 0 end' 2>/dev/null || true)"
-	if [[ "$files" -ge "$DEEP_FILES" ]] ||
-		printf '%s' "$json" | jq -r '.files[].path' 2>/dev/null | grep -qiE "$SECURITY_PATHS"; then
-		printf 'deep'
-	elif [[ "$is_bot" = 1 ]] && [[ "$files" -le "$QUICK_FILES" ]]; then
-		printf 'quick'
-	else
-		printf 'standard'
-	fi
-}
-
-UNREVIEWED=() # no prior council comment
-STALE=()      # reviewed, but at an older commit (new changes since)
-SKIPPED=()    # reviewed at current head, nothing changed
-IGNORED=()    # written entirely by a denied address (batch runs only)
-
-REQUESTED=() # an authorised re-review request landed after the last verdict
-FOREIGN=()   # "<pr>:<login>" — a marker we did not author, so the PR is reviewed
-
-# The outstanding authorised requests, as parallel arrays: which PR, who asked,
-# and when. Read by the hourly cap and by the reply it posts when it defers one.
-REQ_PR=()
-REQ_LOGIN=()
-REQ_AT=()
-
 # All date arithmetic goes through jq. `date -u -d` is a GNU extension and
 # test-rc-portability.sh fails the macOS leg for it; jq is already required.
 WINDOW_START="$(jq -rn '(now - 3600) | todate')"
-SPENT=0
-OLDEST_IN_WINDOW="" # earliest verdict still inside the window; sets the next slot
-
-# Each PR's comment timeline, kept past the classify loop so the decline reply
-# below can ask whether it has already replied without fetching them again.
-declare -A COMMENTS_JSON
-
-comments_json=""
-verdict_tsv=""
-reviewed=""
-reviewed_at=""
-foreign=""
-spent_here=""
-while IFS=$'\t' read -r pr head; do
-	[[ -n "$pr" ]] || continue
-	# The deny-list is batch triage. Naming one PR by number or URL says which
-	# PR you want, so an explicit target is never filtered out from under you.
-	#
-	# shellcheck disable=SC2310 # Suspending errexit inside ignored_author is
-	# what this call wants: a non-zero return is its "not ignored" answer, not
-	# an error, and the one command in it that can genuinely fail (gh) already
-	# absorbs its own failure with `|| true` to fail open. There is nothing
-	# here for set -e to catch.
-	if [[ -z "$TARGET_PR" ]] && ignored_author "$pr"; then
-		IGNORED+=("$pr")
-		continue
-	fi
-	comments_json="$(comments_for "$pr")"
-	COMMENTS_JSON["$pr"]="$comments_json"
-	spent_here="$(verdicts_since "$comments_json" "$WINDOW_START")"
-	[[ "$spent_here" =~ ^[0-9]+$ ]] || spent_here=0
-	SPENT=$((SPENT + spent_here))
-	verdict_tsv="$(council_verdict_for "$comments_json")"
-	IFS=$'\t' read -r reviewed reviewed_at <<<"$verdict_tsv"
-	if [[ -n "$reviewed_at" ]] && [[ "$reviewed_at" > "$WINDOW_START" ]]; then
-		if [[ -z "$OLDEST_IN_WINDOW" ]] || [[ "$reviewed_at" < "$OLDEST_IN_WINDOW" ]]; then
-			OLDEST_IN_WINDOW="$reviewed_at"
-		fi
-	fi
-	# A sha that is not a sha is not a verdict. Fails open, as everywhere here.
-	[[ "$reviewed" =~ ^[0-9a-fA-F]{7,40}$ ]] || reviewed=""
-	if [[ -z "$reviewed" ]]; then
-		foreign="$(foreign_verdict_login "$comments_json")"
-		[[ -z "$foreign" ]] || FOREIGN+=("${pr}:${foreign}")
-	fi
-	if [[ -z "$reviewed" ]]; then
-		UNREVIEWED+=("$pr")
-	elif [[ "$reviewed" = "$head" ]]; then
-		# Nothing new to review — unless someone with write access asked.
-		#
-		# shellcheck disable=SC2310 # as ignored_author above: a non-zero return
-		# is this predicate's "no request" answer, not a failure.
-		if requested_rereview "$pr" "$comments_json" "$reviewed_at"; then
-			REQUESTED+=("$pr")
-		else
-			SKIPPED+=("$pr")
-		fi
-	else
-		STALE+=("$pr")
-	fi
-done <<<"$prs_raw"
+classify_prs "$prs_raw"
 
 DEFERRED=() # an authorised request the hourly cap could not admit
 # Admit the oldest request first, so a cap resolves in the order people asked.
@@ -917,6 +576,11 @@ fi
 if [[ "${#IGNORE_EMAIL_LIST[@]}" -gt 0 ]] && [[ -z "$TARGET_PR" ]]; then
 	echo "Ignored (author email): ${IGNORED[*]:-(none)}"
 fi
+# Reported only when the filter is on, so a run that did not ask for it is not
+# told about a line of triage that could not have applied.
+if [[ "$IGNORE_APPROVED" -eq 1 ]] && [[ -z "$TARGET_PR" ]]; then
+	echo "Ignored (approved): ${IGNORED_APPROVED[*]:-(none)}"
+fi
 if [[ "${#FOREIGN[@]}" -gt 0 ]]; then
 	echo "Council marker from another account (queued anyway): ${FOREIGN[*]}"
 	echo "      A token rotated between runs reads this way, and so does a forged"
@@ -936,6 +600,9 @@ if [[ "${#QUEUE[@]}" -eq 0 ]]; then
 	fi
 	if [[ "${#IGNORED[@]}" -gt 0 ]]; then
 		echo "(${#IGNORED[@]} PR(s) skipped by author email; pass --no-ignore-emails to review them.)"
+	fi
+	if [[ "${#IGNORED_APPROVED[@]}" -gt 0 ]]; then
+		echo "(${#IGNORED_APPROVED[@]} PR(s) skipped as approved; drop --ignore-approved to review them.)"
 	fi
 	exit 0
 fi
@@ -1089,8 +756,8 @@ for pr in "${QUEUE[@]}"; do
 	"${cmd[@]}" 2>&1 | tee "$log" | "${render[@]}"
 	rc=${PIPESTATUS[0]}
 	set -e
-	# shellcheck disable=SC2064  # re-arm with err_trap's literal body (deferred $?/$LINENO)
-	trap "$err_trap" ERR
+	# shellcheck disable=SC2064  # re-arm with ERR_TRAP's literal body (deferred $?/$LINENO)
+	trap "$ERR_TRAP" ERR
 
 	if [[ "$rc" -ne 0 ]]; then
 		echo "PR #${pr}: claude exited ${rc} (see ${log}); continuing with next PR." >&2

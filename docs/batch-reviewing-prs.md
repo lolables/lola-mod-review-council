@@ -5,6 +5,10 @@ rather than one at a time. It is an operator tool you run yourself — the modul
 does not ship it and no phase of the pipeline calls it, so `lola install` does
 not put it on your disk.
 
+Its read-only companion, `scripts/review-pr-status.sh`, reports where every open
+PR already stands without reviewing anything. See
+[Seeing where every PR stands](#seeing-where-every-pr-stands).
+
 ## Setting up a first run
 
 1. Clone this repository. The script ships nowhere else.
@@ -79,12 +83,13 @@ not put it on your disk.
 The bracketed word on the `Queue` line is the PR's effort tier — how expensive a
 review it is about to be given. See "The word in brackets" below.
 
-Most of that plan prints on every run. Five lines are conditional:
+Most of that plan prints on every run. Six lines are conditional:
 
 - `Deferred (hourly cap):` — only when the cap held a request back.
 - `Skipped (already reviewed at head, unchanged):` — replaced by
   `Forced re-review of unchanged PRs enabled (--force).` under `--force`.
 - `Ignored (author email):` — only on a batch run with a non-empty ignore list.
+- `Ignored (approved):` — only on a batch run under `--ignore-approved`.
 - `Council marker from another account (queued anyway):` — only when there is one.
 - `Effort: forced to '<tier>' for every PR (--effort).` — only under `--effort`.
 
@@ -291,6 +296,41 @@ It is deliberately separate from `--force`, which decides whether *already
 reviewed* PRs get queued — and admits every outstanding re-review request with
 them, hourly cap or no. `--force` will not re-review an ignored bot PR.
 
+## Ignoring PRs that are already approved
+
+`--ignore-approved` drops any PR the forge reports as approved before it is
+classified, and lists it on the `Ignored (approved)` line. A PR somebody has
+approved has already had a human decide on it, so this is the cheapest way to
+keep the council off the ones that are only waiting to be merged.
+
+The value read is GitHub's own `reviewDecision`, and only `APPROVED` counts:
+
+| `reviewDecision`     | Result   |
+|----------------------|----------|
+| `APPROVED`           | ignored  |
+| `CHANGES_REQUESTED`  | reviewed |
+| `REVIEW_REQUIRED`    | reviewed |
+| none, or lookup failed | reviewed |
+
+The last three rows are one rule: anything that is not an approval is a PR that
+still wants attention, and an unreadable answer costs you a redundant review
+rather than a silent miss.
+
+Two things the flag deliberately does not do:
+
+- **It is not a default, and has no environment variable.** An approval says
+  what should happen to a PR, not that this council has looked at it. Turning it
+  on is a decision about a particular run.
+- **It does not check *what* was approved.** Unless the branch is protected with
+  "dismiss stale approvals", GitHub keeps an approval across later pushes, so a
+  PR approved and then pushed to still reads as `APPROVED` and is skipped with
+  those new commits unreviewed. Leave the flag off for a run that should see
+  them.
+
+Like the address list above, this is batch triage: naming one PR
+(`./scripts/review-open-prs.sh 123 --ignore-approved`) reviews that PR whatever
+its review decision says.
+
 ## Which CLI runs the council
 
 `claude` is preferred when both are installed; otherwise whichever is on `PATH`
@@ -382,5 +422,293 @@ that replaces the streaming default and the progress rendering along with it.
 ./scripts/review-open-prs.sh --cli opencode --run   # review through opencode
 ./scripts/review-open-prs.sh --no-ignore-emails --run              # bot PRs too
 ./scripts/review-open-prs.sh --ignore-email ci@corp.example --run  # skip one more
+./scripts/review-open-prs.sh --ignore-approved --run               # skip approved PRs
 ./scripts/review-open-prs.sh --force --effort deep --run
 ```
+
+## Seeing where every PR stands
+
+`scripts/review-pr-status.sh` reports the backlog the driver would work through,
+without working through any of it. It posts no comment, launches no agent CLI
+and spends nothing — every call it makes is a read, which is what makes it safe
+to run on a timer, against somebody else's repository, or while a batch review
+is already in flight. It needs `gh` and `jq`, and nothing else.
+
+Both scripts classify PRs through the same code, so this is the driver's own
+opinion rather than a second one about it. A PR reported here as `unreviewed` is
+a PR `review-open-prs.sh` would queue.
+
+```console
+$ ./scripts/review-pr-status.sh --repo acme/widgets
+review-council status — acme/widgets  (accounts: all)
+6 open · 2 need review · 1 requested · 2 current · 1 ignored
+Requested re-reviews: 0/unlimited used this hour, next slot (now)
+
+PR     STATE        VERDICT            BY          REVIEWED   WOULD RUN
+#241   up-to-date   APPROVE            council-bot 2h ago     standard
+#240   up-to-date*  REQUEST CHANGES    otheruser   1d ago     deep
+#239   unreviewed   —                  —           —          deep
+#238   stale        APPROVE            council-bot 3d ago     standard
+#237   requested    REQUEST CHANGES    council-bot 5h ago     standard
+#236   ignored      —                  —           —          —
+
+* reviewed by another account; your driver would review it again
+```
+
+`VERDICT` is the verdict word read out of the same comment the state was decided
+from, shown verbatim rather than mapped onto a known vocabulary. `BY` is the
+account that posted it. Anything that does not exist — no verdict, no review
+time — prints an em dash rather than a blank or a zero.
+
+`BY` is the one column sized to its content: it grows to fit the longest account
+name in the report and never shortens one. `dependabot[bot]` is fifteen
+characters, and a login clipped to `dependabot[bo…` cannot be pasted back into
+`--account`. `VERDICT` still clips, because it is free text out of a markdown
+heading with no upper bound.
+
+Five words describe a PR, and every PR gets exactly one:
+
+| State        | Meaning                                                              |
+|--------------|----------------------------------------------------------------------|
+| `unreviewed` | no usable prior verdict                                              |
+| `stale`      | a verdict exists, but for an older commit                            |
+| `requested`  | reviewed at head, and someone with write access asked in a comment   |
+| `up-to-date` | reviewed at head, and nobody has asked for more                      |
+| `ignored`    | every commit author is on the ignore list, so the driver would drop it |
+
+The ignore list is the same one the driver uses, and the same three switches
+change it: `--ignore-email <addr>` (repeatable), `--no-ignore-emails`, and the
+`IGNORE_EMAILS` environment variable. Naming one PR by number or URL overrides
+the list, exactly as it does for the driver. What differs is the outcome — an
+ignored PR is *reported*, on its own row, rather than dropped silently.
+
+### `WOULD RUN` is a forecast, not a record
+
+`#239` above is `unreviewed` and still shows `deep`. That is not history leaking
+into the row. The tier is computed from the PR's **current** metadata — its
+changed-file count and whether any changed path looks security-sensitive — so
+every PR has one whether or not it has ever been reviewed. Read the column as
+"what this would cost if you queued it now".
+
+An `ignored` PR shows an em dash instead, because it would not be reviewed at
+all. `DEEP_FILES`, `QUICK_FILES` and `SECURITY_PATHS` tune the classifier here
+the same way they tune it for the driver; see [Effort tiers](#effort-tiers).
+
+### Whose reviews count: `--account`
+
+The driver only trusts a marker **it** posted, because the marker is public and
+anyone who can comment can type one. A report under that rule is close to
+useless when the council runs from a bot account or from a second machine: every
+one of those verdicts reads as `unreviewed`. So the status script defaults to
+counting everybody's.
+
+| Value                  | Counts                                          |
+|------------------------|-------------------------------------------------|
+| `--account all`        | any account's verdict. The default              |
+| `--account self`       | only the account `gh` is authenticated as       |
+| `--account <login>`    | only that account's                             |
+
+The widened default costs one piece of precision, and the `*` is where it is
+paid. `#240` is reviewed at its head by `otheruser`, so the report says
+`up-to-date` — but your own driver refuses that marker and **would review the PR
+again**. The star and its footnote are what keep the two statements from
+contradicting each other.
+
+`--account self` is the one scope under which `STATE` predicts the driver
+exactly, which is what you want when you are debugging its queue. It also stops
+naming reviewers, since the answer is always "you" — so `BY` shrinks to its
+heading:
+
+```console
+$ ./scripts/review-pr-status.sh --repo acme/widgets --account self
+review-council status — acme/widgets  (accounts: self)
+6 open · 3 need review · 1 requested · 1 current · 1 ignored
+Requested re-reviews: 0/unlimited used this hour, next slot (now)
+
+PR     STATE        VERDICT            BY REVIEWED   WOULD RUN
+#241   up-to-date   APPROVE            —  2h ago     standard
+#240   unreviewed   —                  —  —          deep
+#239   unreviewed   —                  —  —          deep
+#238   stale        APPROVE            —  3d ago     standard
+#237   requested    REQUEST CHANGES    —  5h ago     standard
+#236   ignored      —                  —  —          —
+
+Council marker from another account: 240:otheruser
+      A token rotated between runs reads this way, and so does a forged
+      marker. Neither is trusted, so these PRs report as unreviewed.
+```
+
+A marker that the scope did **not** count is named under the table like that,
+and its PR still reports as `unreviewed`. A rotated token and a forged marker
+look identical from the timeline, and neither is something to trust. One that
+*was* counted appears in `BY` instead and is not listed twice.
+
+### The flags
+
+| Flag                     | Effect                                                        |
+|--------------------------|---------------------------------------------------------------|
+| `123` or a PR URL        | report on that one PR; a URL also fixes the repository        |
+| `--repo owner/name`      | a repository other than the current directory's               |
+| `--account <login>\|all\|self` | whose verdicts count (default `all`)                    |
+| `--json`                 | one machine-readable envelope instead of the table            |
+| `--tsv`                  | one tab-separated line per PR, no header; refuses `--json`    |
+| `--exit-code`            | exit 10 rather than 0 when anything is pending                |
+| `--ignore-email <addr>`  | add an address to the ignore list; repeatable                 |
+| `--no-ignore-emails`     | clear the list and report every PR on its own terms           |
+| `-h`, `--help`           | the full reference, which is the file's own header            |
+
+The repository is resolved from a PR URL argument first, then `--repo`, then the
+GitHub remote of the current directory — the same order the driver uses. A
+`--repo` that disagrees with the URL beside it is an error, not a silent winner.
+
+### `--json`
+
+`--json` replaces the table with a single envelope on stdout and drops every
+human decoration that went with it: no summary line, no ledger line, no asterisk
+and no footnote. That is what makes it safe to pipe into `jq`.
+
+```console
+$ ./scripts/review-pr-status.sh --repo acme/widgets 240 --json
+{
+  "repo": "acme/widgets",
+  "generated_at": "2026-08-23T03:16:46Z",
+  "account_scope": "all",
+  "window": {
+    "start": "2026-08-23T02:16:46Z",
+    "spent": 0,
+    "limit": null,
+    "next_slot": "(now)"
+  },
+  "pull_requests": [
+    {
+      "number": 240,
+      "state": "up-to-date",
+      "head": "b2c3d4e5f60718293a4b5c6d7e8f90123456789a",
+      "reviewed_sha": "b2c3d4e5f60718293a4b5c6d7e8f90123456789a",
+      "reviewed_at": "2026-08-22T02:16:36Z",
+      "reviewed_by": "otheruser",
+      "reviewed_is_ours": false,
+      "verdict": "REQUEST CHANGES",
+      "effort": "deep",
+      "foreign_marker": null
+    }
+  ]
+}
+```
+
+Three things to know about the shape:
+
+- An absent value is `null`, never `""` and never the table's em dash.
+- `reviewed_is_ours` is a real boolean — the machine-readable form of the
+  table's `*`, so nothing has to scrape a presentation character back out.
+- `effort` keeps its name even though the column above it now reads
+  `WOULD RUN`. The rename fixed a label; renaming the key would have broken
+  every reader for no gain.
+
+`window.limit` is `null` when `REREVIEW_PER_HOUR` is unset.
+
+### `--tsv`
+
+`--json` is the right shape for a program that wants the whole report.
+`--tsv` is for the shell pipeline that wants a column out of it. One
+tab-separated line per PR, no header line, and the same decoration dropped: no
+summary line, no ledger line, no asterisk, no footnote, no em dashes.
+
+```console
+$ ./scripts/review-pr-status.sh --repo acme/widgets --tsv
+241	up-to-date	APPROVE	council-bot	1	2026-08-23T10:39:05Z	standard	aaaaa41	aaaaa41
+240	up-to-date	REQUEST CHANGES	otheruser	0	2026-08-22T12:39:05Z	deep	aaaaa40	aaaaa40
+239	unreviewed			0		deep	aaaaa39	
+238	stale	APPROVE	council-bot	1	2026-08-20T12:39:05Z	standard	aaaaa38	0000001
+237	requested	REQUEST CHANGES	council-bot	1	2026-08-23T07:39:05Z	standard	aaaaa37	aaaaa37
+236	ignored			0			aaaaa36	
+```
+
+Every gap above is one tab, including the wide-looking runs. `#239` has never
+been reviewed, so fields 3, 4, 6 and 9 are **empty and still there** — an absent
+value is an empty field, never an em dash, never `null`, never `-`. That is what
+makes a fixed field number safe to rely on:
+
+```console
+$ ./scripts/review-pr-status.sh --repo acme/widgets --tsv |
+    awk -F'\t' '$2 == "unreviewed" || $2 == "stale" { print $1, $7 }'
+239 deep
+238 standard
+```
+
+Two fields, no JSON parser, and the answer is a work queue with a price on each
+line. The nine fields, in order:
+
+| # | Field          | Notes                                                        |
+|---|----------------|--------------------------------------------------------------|
+| 1 | `number`       |                                                              |
+| 2 | `state`        | the same five words the table prints, with no `*`            |
+| 3 | `verdict`      | verbatim, and **not** clipped — the table's width is a layout concern |
+| 4 | `by`           | the account whose verdict the state rests on                 |
+| 5 | `is_ours`      | `1` or `0`, the machine form of the table's `*`              |
+| 6 | `reviewed_at`  | the ISO-8601 timestamp, not `2h ago`                         |
+| 7 | `effort`       | empty for an `ignored` PR, as it is `null` in `--json`       |
+| 8 | `head`         |                                                              |
+| 9 | `reviewed_sha` |                                                              |
+
+`reviewed_at` carries the timestamp for the same reason `--json` does: an age is
+computable from a timestamp, and a timestamp is not recoverable from `2h ago`.
+
+**Fields are safe to split on.** Every value has its tabs, carriage returns and
+newlines replaced with a single space before it is written. A verdict is
+whatever somebody typed after `## 🟢 Review Council: ` in a heading, so a tab in
+one would otherwise shift every field after it and `cut -f5` would read the
+wrong column with nothing anywhere reporting an error.
+
+`--account` applies unchanged, and field 5 is where its effect shows per row.
+`--exit-code` applies unchanged too, and gives the same code the table and the
+JSON give for the same repository — the status is about the classification, not
+the presentation. Passing `--tsv` and `--json` together exits 2 rather than one
+of them silently winning; they are alternative renderings, and asking for both
+is a mistake in whatever wrapper did it.
+
+### Exit codes
+
+Without `--exit-code` the report *is* the answer, and a backlog is not a
+failure: the script exits 0 whenever it produced one.
+
+| Code | Meaning                                                                 |
+|------|-------------------------------------------------------------------------|
+| `0`  | reported; with `--exit-code`, nothing is `unreviewed`, `stale` or `requested` |
+| `10` | `--exit-code` only: reported, and at least one PR is pending             |
+| `1`  | a hard failure — `gh` unauthenticated, the repository unresolvable, a named PR that does not exist, or a listing that would not answer |
+| `2`  | a usage or configuration error — an unknown flag, a `--repo` that disagrees with the PR URL beside it, a non-numeric `DEEP_FILES` |
+
+`up-to-date` and `ignored` PRs are never pending, so a repository whose every
+open PR is current or bot-authored exits 0 under `--exit-code` too.
+
+The reason 10 is not 1 is the wrapper:
+
+```bash
+review-pr-status.sh --repo acme/widgets --exit-code || alert
+```
+
+Reusing 1 would fire that identically for "three PRs are waiting" and "GitHub is
+down" — opposite situations, one of them the system working and telling you so,
+the other the check having failed and telling you nothing. `--exit-code` never
+turns a hard failure into 10 or 0; 1 and 2 keep the meanings they already have
+in both scripts.
+
+### Both scripts share `scripts/lib/`
+
+`common.sh`, `comments.sh` and `prs.sh` hold the process setup, the marker
+readers and the PR classification that the driver and the status script both
+use. Neither script is a single file you can copy on its own any more — it needs
+`lib/` beside it.
+
+Each one finds `lib/` by resolving its own path through every symlink hop, so a
+link on your `PATH` works and keeps working:
+
+```bash
+ln -s "$PWD/scripts/review-pr-status.sh" ~/.local/bin/rc-status
+ln -s "$PWD/scripts/review-open-prs.sh"  ~/.local/bin/rc-batch
+```
+
+`rc-status --repo acme/widgets` then runs from any directory. Relative link
+targets, chains of links and directories with spaces in their names all resolve;
+what is deliberately not supported is a copy of one script without its `lib/`.

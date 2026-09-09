@@ -1,0 +1,22 @@
+docs/batch-reviewing-prs.md
+  h_4db53f42b9be42 86,92,299-333,425
+module/tests/test-review-open-prs.sh
+  h_4db53f42b9be42 102-109,162-166,182,184,209-214,592-659
+module/tests/test-scripts-lib.sh
+  h_4db53f42b9be42 237-240,244,391-455
+scripts/lib/prs.sh
+  h_4db53f42b9be42 23-27,236-261,323-324,357,385-394
+scripts/review-open-prs.sh
+  h_4db53f42b9be42 131-154,177,299-300,381-383,579-583,604-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "bbd190b3a6640497ca30f0c9b2020c7be0be9d6e",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

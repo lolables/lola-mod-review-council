@@ -1,0 +1,39 @@
+module/agents/divisor-adversary-code.md
+  s_9bedd7b534e239::t_02a569d5d38559 2,43-44
+module/agents/divisor-adversary-spec.md
+  s_9bedd7b534e239::t_e490b34a442f92 2,42-43
+module/agents/divisor-curator-code.md
+  s_9bedd7b534e239::t_623bfa274a0741 2,105-106
+module/agents/divisor-curator-spec.md
+  s_9bedd7b534e239::t_255ca995dbbc7a 2
+module/agents/divisor-guard-code.md
+  s_9bedd7b534e239::t_de2fb388e16728 2,32-33
+module/agents/divisor-guard-spec.md
+  s_9bedd7b534e239::t_3488240466a393 2
+module/agents/divisor-sre-code.md
+  s_9bedd7b534e239::t_bd760c71617614 2,34-35
+module/agents/divisor-sre-spec.md
+  s_9bedd7b534e239::t_5422e9f0bb8b1f 2
+module/agents/divisor-testing-code.md
+  s_9bedd7b534e239::t_1afd6202d368a1 2,32-33
+module/agents/divisor-testing-spec.md
+  s_9bedd7b534e239::t_2a789cdf5b7281 2
+module/tests/test-rc-doc-guards.sh
+  s_9bedd7b534e239::t_efb758d3bb23d3 1801-1860
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "34345e393b248366b1e52ece7320bcdeef88ab4e",
+  "prompts": {},
+  "sessions": {
+    "s_9bedd7b534e239": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31e27d2b-1e74-422c-bf80-6c0d79ed1c2c",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

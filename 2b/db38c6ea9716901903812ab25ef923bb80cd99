@@ -1,0 +1,21 @@
+.lola-eval/tests/case-024-disposition-true-fix/rubric.md
+  s_6f3fd920cf5abb::t_0fe6eb8d0bb7d4 71-74,79-82
+.lola-eval/tests/case-026-triage-recall/rubric.md
+  s_6f3fd920cf5abb::t_13b227b5005c5d 83-86,97-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2bdb38c6ea9716901903812ab25ef923bb80cd99",
+  "prompts": {},
+  "sessions": {
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

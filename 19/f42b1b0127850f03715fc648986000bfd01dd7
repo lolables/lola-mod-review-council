@@ -1,0 +1,31 @@
+.lola-eval/ledger.jsonl
+  s_6f3fd920cf5abb::t_8720574565773a 167-197
+.lola-eval/snapshots/20260911T175141Z.md
+  s_6f3fd920cf5abb::t_09217536546be5 1-226
+.lola-eval/snapshots/20260911T180100Z.md
+  s_6f3fd920cf5abb::t_4f357df78989aa 1-40
+.lola-eval/snapshots/20260912T204602Z.md
+  s_6f3fd920cf5abb::t_50b9905475c57e 1-40
+.lola-eval/snapshots/20260912T205246Z.md
+  s_6f3fd920cf5abb::t_749966763e5d26 1-40
+.lola-eval/snapshots/20260912T211232Z.md
+  s_6f3fd920cf5abb::t_244e1a4ed0afd6 1-40
+.lola-eval/snapshots/20260913T015905Z.md
+  s_6f3fd920cf5abb::t_5ba3336d69f90f 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "19f42b1b0127850f03715fc648986000bfd01dd7",
+  "prompts": {},
+  "sessions": {
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+.taskfiles/lola-eval.yml
+  s_6f3fd920cf5abb::t_456887a32c15a4 212-228,248-251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1f1d25cc56425b07a26d39ae87c351b87740ad34",
+  "prompts": {},
+  "sessions": {
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+module/skills/review-council/SKILL.md
+  s_6f3fd920cf5abb::t_0255eb0dbb7ade 522-530,534-544
+module/tests/test-rc-cost-estimate.sh
+  s_6f3fd920cf5abb::t_e712b1a30379e9 478-507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "befe6b73a517a48e78e011f43a47bdbbe0d8ba65",
+  "prompts": {},
+  "sessions": {
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

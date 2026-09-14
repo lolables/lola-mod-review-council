@@ -1,0 +1,21 @@
+module/skills/review-council/phases/report.md
+  s_6f3fd920cf5abb::t_888c9ea9029d27 416-432
+module/tests/test-rc-doc-guards.sh
+  s_6f3fd920cf5abb::t_c9811788756c5c 1861-1895
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ca4b79ef19780a6ad08f3019b3dc0bae87435892",
+  "prompts": {},
+  "sessions": {
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

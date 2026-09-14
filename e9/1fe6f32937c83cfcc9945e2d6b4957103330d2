@@ -1,0 +1,165 @@
+.lola-eval/ledger.jsonl
+  s_6f3fd920cf5abb::t_fa6950b07563b4 198-239
+.lola-eval/snapshots/20260913T171910Z.md
+  s_6f3fd920cf5abb::t_f2f254ee67cbe7 1-215
+.lola-eval/snapshots/20260914T144809Z.md
+  s_5bbac4893b7abf::t_caf2fe36f63879 1-40
+.lola-eval/snapshots/20260914T144916Z.md
+  s_1bf6f080102769::t_f7246e56eb8c1e 1-40
+.lola-eval/snapshots/20260914T150027Z.md
+  s_b61f11d09c156f::t_8062f97d830ea5 1-40
+.lola-eval/snapshots/20260914T150140Z.md
+  s_f75cbba51e828e::t_0b2508bdbc61d7 1-40
+.lola-eval/snapshots/20260914T151513Z.md
+  s_8cd939d54ffee9::t_5163684fa5cca9 1-40
+.lola-eval/snapshots/20260914T151626Z.md
+  s_547bbcd42b1cc1::t_67b7768b8ff4c0 1-40
+.lola-eval/snapshots/20260914T153504Z.md
+  s_96fc224a0c73d2::t_b175c39442d9cb 1-40
+.lola-eval/snapshots/20260914T153622Z.md
+  s_49be85311a153a::t_54adab363496fa 1-40
+.lola-eval/snapshots/20260914T154616Z.md
+  s_0309938df3008a::t_0372595da58af2 1-40
+.lola-eval/snapshots/20260914T154729Z.md
+  s_6f3fd920cf5abb::t_b3e7ec6538c5fa 1-40
+.lola-eval/snapshots/20260914T222619Z.md
+  s_9cb2df71dec37e::t_25645dd2cf95ba 1-40
+.lola-eval/snapshots/20260914T223907Z.md
+  s_2dc32ff5fbd042::t_0a0f79da3e17fb 1-40
+.lola-eval/snapshots/20260914T225308Z.md
+  s_575378d9e23dd5::t_172bea5e35fe6b 1-40
+.lola-eval/snapshots/20260914T230357Z.md
+  s_0e17e9e5e3e611::t_2cb985cc2da031 1-40
+.lola-eval/snapshots/20260914T231512Z.md
+  s_134dfc24ba6917::t_9bc9562484915c 1-40
+.lola-eval/snapshots/20260914T232604Z.md
+  s_6f3fd920cf5abb::t_ab3ec3e88008a5 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "e91fe6f32937c83cfcc9945e2d6b4957103330d2",
+  "prompts": {},
+  "sessions": {
+    "s_0309938df3008a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8757238d-b432-44b3-82a3-9ca983370d1e",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_0e17e9e5e3e611": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aba335b3-d80c-4d9a-acb7-9707b612a958",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_134dfc24ba6917": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a77f220b-5965-4548-ac97-7d88209f9405",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_1bf6f080102769": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cf64e679-5b9d-41d1-86b9-f096a79042c6",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_2dc32ff5fbd042": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a230123e-87b4-45f3-9e12-e7f61b36be6c",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_49be85311a153a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6135ea7b-ab06-49e1-a149-f5e892b9bd55",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_547bbcd42b1cc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089c8617-62b5-4038-a7ee-efed82314030",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_575378d9e23dd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8549359a-bb43-4d06-910d-5817d2dc4416",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_5bbac4893b7abf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "943781cb-6e75-4a4f-9091-b1d43d8dca42",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_8cd939d54ffee9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66748a53-5cea-4654-922f-ab3e77a47a38",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_96fc224a0c73d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e657dbd-7b54-4102-8b8c-ec85bca442bf",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_9cb2df71dec37e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7468e58-a92a-46cf-96e4-948957f6ce04",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_b61f11d09c156f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "260a634a-ff97-4e1b-a3f4-3dd7b42bcbe1",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_f75cbba51e828e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3fe57ccc-2654-42fc-a746-9175c9c275fe",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

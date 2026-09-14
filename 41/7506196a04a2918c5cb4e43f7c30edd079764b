@@ -1,0 +1,21 @@
+.lola-eval/tests/case-004-go-clean/rubric.md
+  s_9bedd7b534e239::t_1dc47500c71b4e 27-32
+.lola-eval/tests/case-032-graph-noise-canary/rubric.md
+  s_9bedd7b534e239::t_b670865dab098d 38-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "417506196a04a2918c5cb4e43f7c30edd079764b",
+  "prompts": {},
+  "sessions": {
+    "s_9bedd7b534e239": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31e27d2b-1e74-422c-bf80-6c0d79ed1c2c",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

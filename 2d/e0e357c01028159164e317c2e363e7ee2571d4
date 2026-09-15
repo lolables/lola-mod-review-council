@@ -1,0 +1,67 @@
+.lola-eval/ledger.jsonl
+  s_9bedd7b534e239::t_178482002d5bf0 240-263
+.lola-eval/snapshots/20260915T141512Z.md
+  s_9bedd7b534e239::t_8db3e3b0dee2cb 1-40
+.lola-eval/snapshots/20260915T142420Z.md
+  s_9bedd7b534e239::t_dc8a2980718299 1-40
+.lola-eval/snapshots/20260915T143249Z.md
+  s_9bedd7b534e239::t_53e6986eb6a045 1-40
+.lola-eval/snapshots/20260915T144324Z.md
+  s_9bedd7b534e239::t_6fb0cea4ae1afc 1-40
+.lola-eval/snapshots/20260915T145727Z.md
+  s_9bedd7b534e239::t_782aaab3f067ec 1-40
+.lola-eval/snapshots/20260915T151013Z.md
+  s_9bedd7b534e239::t_522443fe6f2ce1 1-40
+.lola-eval/snapshots/20260915T152335Z.md
+  s_9bedd7b534e239::t_9528c05ebdd314 1-40
+.lola-eval/snapshots/20260915T153652Z.md
+  s_9bedd7b534e239::t_997850edcd4808 1-40
+.lola-eval/snapshots/20260915T161352Z.md
+  s_9bedd7b534e239::t_653b5eddff38a7 1-40
+.lola-eval/snapshots/20260915T161357Z.md
+  s_9bedd7b534e239::t_ccb559c15565eb 1-40
+.lola-eval/snapshots/20260915T161401Z.md
+  s_9bedd7b534e239::t_d548216d5b756b 1-40
+.lola-eval/snapshots/20260915T161406Z.md
+  s_9bedd7b534e239::t_b1a3d91ccb11fe 1-40
+.lola-eval/snapshots/20260915T161410Z.md
+  s_9bedd7b534e239::t_736758269ee8d8 1-40
+.lola-eval/snapshots/20260915T161415Z.md
+  s_9bedd7b534e239::t_730f3a0baf6827 1-40
+.lola-eval/snapshots/20260915T161419Z.md
+  s_9bedd7b534e239::t_cccfd382157edc 1-40
+.lola-eval/snapshots/20260915T161424Z.md
+  s_9bedd7b534e239::t_d4ce75a0543d67 1-40
+.lola-eval/snapshots/20260915T180313Z.md
+  s_9bedd7b534e239::t_83dee4d932b93d 1-40
+.lola-eval/snapshots/20260915T181353Z.md
+  s_9bedd7b534e239::t_e181d486780f11 1-40
+.lola-eval/snapshots/20260915T182808Z.md
+  s_9bedd7b534e239::t_d60989436363a3 1-40
+.lola-eval/snapshots/20260915T183940Z.md
+  s_9bedd7b534e239::t_0cdbce870708b1 1-40
+.lola-eval/snapshots/20260915T184847Z.md
+  s_9bedd7b534e239::t_1e100717ca47bc 1-40
+.lola-eval/snapshots/20260915T185928Z.md
+  s_9bedd7b534e239::t_7f15359fe4bf2e 1-40
+.lola-eval/snapshots/20260915T191115Z.md
+  s_9bedd7b534e239::t_399f5f4425d2f1 1-40
+.lola-eval/snapshots/20260915T192217Z.md
+  s_9bedd7b534e239::t_33d895022f42a1 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2de0e357c01028159164e317c2e363e7ee2571d4",
+  "prompts": {},
+  "sessions": {
+    "s_9bedd7b534e239": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31e27d2b-1e74-422c-bf80-6c0d79ed1c2c",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

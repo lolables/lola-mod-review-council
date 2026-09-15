@@ -1,0 +1,21 @@
+module/skills/review-council/phases/verify.md
+  s_3d694afece5b91::t_5da6989829dc42 321-346
+module/tests/test-rc-doc-guards.sh
+  s_3d694afece5b91::t_57f3e6cbf9564b 1896-1957
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f109bedf0b4c21603baf4640a7a4ed8347fa9a22",
+  "prompts": {},
+  "sessions": {
+    "s_3d694afece5b91": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a3cc151aa9e56953b",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

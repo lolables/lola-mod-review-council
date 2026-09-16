@@ -1,5 +1,5 @@
 ---
-description: "Documentation & content pipeline triage — owns documentation gaps, doc convention compliance, blog/tutorial opportunities, and documentation issue filing."
+description: "CODE REVIEW — documentation and content pipeline triage for source code diffs. Audits shipped changes for the documentation gaps they create, doc convention violations, and blog or tutorial opportunities worth filing. Not for written specifications or plans — use divisor-curator-spec instead."
 ---
 
 # Role: Curator
@@ -101,6 +101,8 @@ Before reviewing, read:
 ## Review Scope
 
 Review scope is changeset provided in delegation prompt. Read every file in changeset before producing findings. Classify changed files as user-facing or internal to determine whether documentation checks apply. See reviewer-protocol.md for evidence discipline rules.
+
+Do NOT review spec artifacts. Scope is exclusively code in the changeset — specs, plans, and governance documents are read for intent context only, never audited as the subject of review.
 
 ## User-Facing Change Detection Heuristic
 

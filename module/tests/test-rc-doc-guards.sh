@@ -1896,6 +1896,66 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: each persona's two descriptions route to different agents (RC-056)"
+# The description is the ONLY frontmatter key the module is allowed to carry
+# (CLAUDE.md, tool agnosticism rule 1), so it is the whole of what a host router
+# sees before it dispatches. All five pairs once shipped byte-identical
+# descriptions differing only in filename suffix, which gave a router asking for
+# "a security reviewer" a coin flip between auditing a diff and auditing a spec.
+# Three properties fix that and each is load-bearing: the descriptions differ at
+# all, each opens with the mode token a router can match literally, and each
+# names its twin so the router is handed the alternative instead of inferring
+# one. Discovery in prepare-target.sh already picks the arm by mode; this guard
+# protects the hosts that route on prose before any script runs.
+rc056_same=""
+rc056_unmarked=""
+rc056_unpaired=""
+for rc056_persona in adversary curator guard sre testing; do
+	rc056_code=$(grep -m1 '^description:' "$AGENTS/divisor-${rc056_persona}-code.md")
+	rc056_spec=$(grep -m1 '^description:' "$AGENTS/divisor-${rc056_persona}-spec.md")
+	[[ "$rc056_code" == "$rc056_spec" ]] && rc056_same+=" ${rc056_persona}"
+	grep -qF 'CODE REVIEW' <<<"$rc056_code" &&
+		grep -qF 'SPEC REVIEW' <<<"$rc056_spec" ||
+		rc056_unmarked+=" ${rc056_persona}"
+	grep -qF "divisor-${rc056_persona}-spec" <<<"$rc056_code" &&
+		grep -qF "divisor-${rc056_persona}-code" <<<"$rc056_spec" ||
+		rc056_unpaired+=" ${rc056_persona}"
+done
+if [[ -z "$rc056_same$rc056_unmarked$rc056_unpaired" ]]; then
+	echo "  PASS: all five pairs are distinguishable before dispatch"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a router cannot tell the two arms apart"
+	[[ -z "$rc056_same" ]] || echo "        identical description by:${rc056_same}"
+	[[ -z "$rc056_unmarked" ]] || echo "        missing CODE/SPEC REVIEW token by:${rc056_unmarked}"
+	[[ -z "$rc056_unpaired" ]] || echo "        does not name its twin by:${rc056_unpaired}"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: every reviewer body refuses the artifact it does not own (RC-057)"
+# The description stops most misroutes; this stops the rest. A persona that is
+# dispatched anyway — by a host with no router, by a stale pinned agent name, or
+# by an orchestrator inlining the file per delegate.md's fallback — must read its
+# own refusal and produce nothing rather than review the wrong artifact with the
+# wrong calibration. The constraint was one-sided before: four of five -spec
+# agents carried it, divisor-adversary-spec carried nothing, and no -code agent
+# had the mirror at all.
+rc057_missing=""
+for rc057_persona in adversary curator guard sre testing; do
+	grep -qiE 'Do NOT review spec' "$AGENTS/divisor-${rc057_persona}-code.md" ||
+		rc057_missing+=" divisor-${rc057_persona}-code"
+	grep -qiE 'Do NOT review code' "$AGENTS/divisor-${rc057_persona}-spec.md" ||
+		rc057_missing+=" divisor-${rc057_persona}-spec"
+done
+if [[ -z "$rc057_missing" ]]; then
+	echo "  PASS: all ten agents refuse the opposite artifact"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no scope refusal in:${rc057_missing}"
+	echo "        a misrouted dispatch there reviews the wrong artifact silently"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

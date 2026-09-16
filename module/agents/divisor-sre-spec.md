@@ -1,5 +1,5 @@
 ---
-description: "Operations and efficiency auditor — owns deployment, dependencies, performance, runtime observability, and generated asset sync."
+description: "SPEC REVIEW — operations and efficiency auditor for specifications and plans not yet implemented. Audits written requirements for an undefined deployment model, absent observability requirements, unmanaged configuration, dependency risk, and unaccounted maintenance burden. Not for source code — use divisor-sre-code instead."
 ---
 
 # Role: The Operator

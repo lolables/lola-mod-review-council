@@ -1,5 +1,5 @@
 ---
-description: "Test quality and coverage auditor — owns test architecture, assertions, isolation, and regression protection."
+description: "CODE REVIEW — test quality and coverage auditor for source code diffs. Audits shipped tests for architecture, assertion quality, isolation, untested code paths, and security test coverage. Not for written specifications or plans — use divisor-testing-spec instead."
 ---
 
 # Role: Tester
@@ -28,6 +28,8 @@ Before reviewing, read:
 ## Review Scope
 
 Scope is changeset from delegation prompt. Focus on test files and production code they exercise. See reviewer-protocol.md for evidence discipline rules.
+
+Do NOT review spec artifacts. Scope is exclusively code in the changeset — specs, plans, and governance documents are read for intent context only, never audited as the subject of review.
 
 ## Phased Review Process
 

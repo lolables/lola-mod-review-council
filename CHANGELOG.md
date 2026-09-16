@@ -671,6 +671,16 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Each `-code` and `-spec` reviewer now has its own `description`. All five
+  pairs shipped byte-identical descriptions, and the description is all a host
+  router sees before it dispatches, so asking for "a security reviewer" picked
+  between auditing a diff and auditing a spec by coin flip. Each description now
+  opens with `CODE REVIEW` or `SPEC REVIEW`, names the artifact it reviews, and
+  names its twin for the other one. Every reviewer body also refuses the
+  artifact it does not own: no `-code` agent did, and `divisor-adversary-spec`
+  was the one `-spec` agent without it, so a misrouted dispatch reviewed with
+  the wrong calibration and said nothing. The pipeline's own dispatch was never
+  affected, since it already picks the agent by detected mode.
 - A batched round now writes to named paths. `phases/delegate.md` named only
   `batches.txt`, so every batched run invented a layout for the rest: six runs
   produced six, with three spellings of the raw verdict directory. Each round's

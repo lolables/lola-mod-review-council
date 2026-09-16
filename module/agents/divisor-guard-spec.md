@@ -1,5 +1,5 @@
 ---
-description: "Intent drift detector — owns plan alignment, zero-waste, constitution, cross-component value, and structural coherence."
+description: "SPEC REVIEW — intent drift detector for specifications and plans not yet implemented. Audits written requirements for drift from stated intent, scope creep, constitution breaches, lost cross-component value, and incoherence across sibling specs. Not for source code — use divisor-guard-code instead."
 ---
 
 # Role: The Guard

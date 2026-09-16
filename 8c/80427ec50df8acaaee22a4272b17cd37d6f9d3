@@ -1,0 +1,151 @@
+.lola-eval/tests/case-024-disposition-true-fix/rubric.md
+  s_6f3fd920cf5abb::t_0fe6eb8d0bb7d4 71-74,79-82
+.lola-eval/tests/case-026-triage-recall/rubric.md
+  s_6f3fd920cf5abb::t_13b227b5005c5d 83-86,97-102
+.taskfiles/lola-eval.yml
+  s_6f3fd920cf5abb::t_456887a32c15a4 212-228,248-251
+module/skills/review-council/phases/report.md
+  s_6f3fd920cf5abb::t_888c9ea9029d27 416-432
+module/tests/test-rc-doc-guards.sh
+  s_6f3fd920cf5abb::t_c9811788756c5c 1861-1895
+.lola-eval/tests/case-004-go-clean/rubric.md
+  s_9bedd7b534e239::t_1dc47500c71b4e 27-32
+.lola-eval/tests/case-032-graph-noise-canary/rubric.md
+  s_9bedd7b534e239::t_b670865dab098d 38-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8c80427ec50df8acaaee22a4272b17cd37d6f9d3",
+  "prompts": {},
+  "sessions": {
+    "s_0309938df3008a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8757238d-b432-44b3-82a3-9ca983370d1e",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_0e17e9e5e3e611": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "aba335b3-d80c-4d9a-acb7-9707b612a958",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_134dfc24ba6917": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a77f220b-5965-4548-ac97-7d88209f9405",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_1bf6f080102769": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cf64e679-5b9d-41d1-86b9-f096a79042c6",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_2dc32ff5fbd042": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a230123e-87b4-45f3-9e12-e7f61b36be6c",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_49be85311a153a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6135ea7b-ab06-49e1-a149-f5e892b9bd55",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_547bbcd42b1cc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089c8617-62b5-4038-a7ee-efed82314030",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_575378d9e23dd5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8549359a-bb43-4d06-910d-5817d2dc4416",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_5bbac4893b7abf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "943781cb-6e75-4a4f-9091-b1d43d8dca42",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_6f3fd920cf5abb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "48af77f4-1f9b-4a25-b209-96482474fd90",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_8cd939d54ffee9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "66748a53-5cea-4654-922f-ab3e77a47a38",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_96fc224a0c73d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e657dbd-7b54-4102-8b8c-ec85bca442bf",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_9bedd7b534e239": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31e27d2b-1e74-422c-bf80-6c0d79ed1c2c",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    },
+    "s_9cb2df71dec37e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c7468e58-a92a-46cf-96e4-948957f6ce04",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_b61f11d09c156f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "260a634a-ff97-4e1b-a3f4-3dd7b42bcbe1",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_f75cbba51e828e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3fe57ccc-2654-42fc-a746-9175c9c275fe",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

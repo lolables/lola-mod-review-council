@@ -325,6 +325,32 @@ b. Apply calibration rules:
 - **CRITICAL/HIGH assigned to style, documentation, or convention issue**: downgrade to level matching severity pack examples for that persona and issue type.
 - **CRITICAL/HIGH assigned to standard language semantics** (e.g., Go nil-pointer panics, Python AttributeError on None, JS TypeError on undefined): downgrade to MEDIUM or strip. Expected runtime behaviors, not defects.
 - **HIGH assigned to test coverage preferences** (table-driven tests, additional edge cases, assertion depth) when comprehensive test suite already exists: downgrade to MEDIUM or LOW.
+- **CRITICAL/HIGH resting on a claim that cannot be checked against the changeset
+  or the repository** (which language/runtime versions are current or still
+  supported, upstream release and security calendars, package registry or module
+  proxy state, whether a CVE is still live): downgrade to **LOW** and say in the
+  description that the claim is unverified; strip the finding if the claim is all
+  it rests on. Evidence verification cannot catch these — it confirms the cited
+  line exists and says what the finding says it says, which a claim about the
+  outside world satisfies while remaining unchecked. The reviewer had no more
+  access to that fact than the validator does.
+- **CRITICAL/HIGH assigned to the absence of project infrastructure the changeset
+  neither adds nor touches** (no CI pipeline, no release automation, no
+  contribution guide or issue templates): downgrade to **MEDIUM**. A
+  repository-level setup decision that predates the changeset is not a defect
+  the changeset introduced — it stays in the report so the operator sees it,
+  but it does not block the change under review. The severity pack invites this
+  one: its Operator column lists "Release pipeline broken" as CRITICAL, which
+  reads across to a pipeline that was never built. **Exception:** when the
+  changeset is itself that infrastructure — it edits CI config, release
+  workflow, or contribution docs — the finding is in scope and keeps the
+  severity the reviewer assigned.
+- **HIGH assigned to repository metadata whose harm lands only on publication or
+  deployment** (placeholder module path, absent repository URL, unset version or
+  license field) when nothing in the changeset shows that step is imminent:
+  downgrade to **MEDIUM**. The code builds and the tests pass; the fix is a
+  one-line edit before release, which is "worth fixing but does not block merge"
+  as the severity pack defines MEDIUM.
 
 c. Apply each downgrade by editing `findings.json`: set the finding's `severity` to
    the new level and append `{from, to, reason}` to its `provenance.calibrated_from`.

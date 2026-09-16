@@ -682,6 +682,17 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The deep-mode cost estimate no longer asks before dispatching. It printed the
+  estimate and asked "Proceed with this deep review?", with a fallback for when
+  no answer arrived, but asking ends the turn, so nothing ever saw the missing
+  answer. Every headless deep run stopped at the question with its review
+  prepared and nothing dispatched; eval case-026 spent $0.97 and 18 turns
+  getting there. The estimate is still printed and recorded in `tracking.md`,
+  and the acknowledgement records what the operator already said:
+  `acknowledged` if the invocation authorised the deep run, `declined` if they
+  said not to spend it (nothing is dispatched), otherwise
+  `not acknowledged (non-interactive)`. Interactive sessions are no longer
+  asked either.
 - Each `-code` and `-spec` reviewer now has its own `description`. All five
   pairs shipped byte-identical descriptions, and the description is all a host
   router sees before it dispatches, so asking for "a security reviewer" picked

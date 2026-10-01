@@ -1,0 +1,87 @@
+module/skills/review-council-debug/SKILL.md
+  s_9173a2a1eaed7f::t_582150e5d3c799 360-361
+docs/dev/pipeline.md
+  s_9173a2a1eaed7f::t_449d0e555d76e1 25
+  s_9173a2a1eaed7f::t_6ab7481e5ee6a5 204,237-238,250
+  s_9173a2a1eaed7f::t_e2628b15621c2c 221,235,252,269
+module/tests/test-rc-state-vocab.sh
+  s_9173a2a1eaed7f::t_e101a9d26bb3c2 42-45
+module/skills/review-council/references/validation-schema.json
+  s_9173a2a1eaed7f::t_c162117002e9c5 1-26,28-37
+  s_9173a2a1eaed7f::t_3540b13cda0ae8 27
+module/tests/test-verdict-schema.sh
+  s_9173a2a1eaed7f::t_ddb426ca76f7d2 167-181
+  s_9173a2a1eaed7f::t_e101a9d26bb3c2 93,97-98,165-166
+docs/dev/testing.md
+  s_9173a2a1eaed7f::t_449d0e555d76e1 102
+module/tests/test-rc-idempotency.sh
+  s_9173a2a1eaed7f::t_e101a9d26bb3c2 132-151
+.taskfiles/scripts/mutate-check.sh
+  s_9173a2a1eaed7f::t_edb0b969cdac6a 234-236,806-807
+  s_9173a2a1eaed7f::t_449d0e555d76e1 797-805,808-812
+module/skills/review-council/SKILL.md
+  s_9173a2a1eaed7f::t_c6e9a3b2931ad4 804-808,819
+  s_9173a2a1eaed7f::t_e2628b15621c2c 53,809-818,820-821
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_9173a2a1eaed7f::t_d838e990b7e925 310-313,322-325
+  s_9173a2a1eaed7f::t_c2a27b45123fa6 329-331
+CHANGELOG.md
+  s_9173a2a1eaed7f::t_449d0e555d76e1 9-16
+  s_9173a2a1eaed7f::t_e2628b15621c2c 17-19
+module/skills/review-council/scripts/jq/apply-validation.jq
+  s_9173a2a1eaed7f::t_c162117002e9c5 1-3,6,10-26,31-37,39-61,65-80,82-84,86-88,90-95,102-104
+  s_9173a2a1eaed7f::t_53d8bf6b5a505f 62,81,85,89
+  s_9173a2a1eaed7f::t_3b6e95da17f45b 27-30,38,100-101
+  s_9173a2a1eaed7f::t_a09fd18bc9a8c9 98
+  s_9173a2a1eaed7f::t_66b6be584b31e0 4-5,7-9,63-64,96-97,99
+module/tests/test-rc-verify-evidence.sh
+  s_9173a2a1eaed7f::t_da95fb48cf73de 924-942
+  s_9173a2a1eaed7f::t_d51837d9a1c0b6 918
+  s_9173a2a1eaed7f::t_e2b2b4e37961c0 906-917,919-923
+module/skills/review-council/scripts/rc-apply-validation.sh
+  s_9173a2a1eaed7f::t_53d8bf6b5a505f 70-74,98,101-102,128
+  s_9173a2a1eaed7f::t_34930af8e32597 111-112
+  s_9173a2a1eaed7f::t_c162117002e9c5 1-6,8-16,21-32,62-69,75-76,78-79,88-95,103-104,106-110,113-116,118-127,129-130,132-135
+  s_9173a2a1eaed7f::t_a09fd18bc9a8c9 7,17-20,33-61,77,84,105,117,131
+  s_9173a2a1eaed7f::t_3540b13cda0ae8 81-83,85-87,97
+  s_9173a2a1eaed7f::t_fa3a0a26819ef9 96,99-100
+  s_9173a2a1eaed7f::t_16b7dac10c832e 80
+README.md
+  s_9173a2a1eaed7f::t_449d0e555d76e1 399-400
+module/skills/review-council/references/pipeline-states.md
+  s_9173a2a1eaed7f::t_c6e9a3b2931ad4 35
+  s_9173a2a1eaed7f::t_449d0e555d76e1 38-41,43-44
+  s_9173a2a1eaed7f::t_e2628b15621c2c 14,42
+module/tests/test-rc-apply-validation.sh
+  s_9173a2a1eaed7f::t_3b6e95da17f45b 82,146,179,199-224,226-227,229
+  s_9173a2a1eaed7f::t_c162117002e9c5 1-39,41-52,57-67,69-81,83-105,108-117,119-121,124-134,136-141,143-145,153-157,159-160,162-175,303-305
+  s_9173a2a1eaed7f::t_7356bb5741e4fb 40
+  s_9173a2a1eaed7f::t_3183a3c741f215 53-56,68,106-107,118,122-123,135,158,161
+  s_9173a2a1eaed7f::t_824999894b6d6c 186
+  s_9173a2a1eaed7f::t_1bc4f176e20a04 142,147-152,176-178,180-185,187-198,225,228,230-257
+  s_9173a2a1eaed7f::t_da95fb48cf73de 259-296,299-302
+  s_9173a2a1eaed7f::t_c2a27b45123fa6 297-298
+  s_9173a2a1eaed7f::t_41ae3466881e82 258
+module/skills/review-council/phases/verify.md
+  s_9173a2a1eaed7f::t_7387ade82f5eef 77-78
+  s_9173a2a1eaed7f::t_c6e9a3b2931ad4 171-172,472-473,493-496,500-501,503-505,509-512,514-516,532-533,536-537,541-553,557-565,632-633
+  s_9173a2a1eaed7f::t_3274d5f72a6a2b 22,37,53
+  s_9173a2a1eaed7f::t_582150e5d3c799 576-580
+  s_9173a2a1eaed7f::t_ecfd5fd9c9b026 295,497-499,513,517-531,534-535,538-540,554-556,569-575,581-583,597,621-622,641
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "367e84536d5e0c3ae7f921a7ca282f459390b97f",
+  "prompts": {},
+  "sessions": {
+    "s_9173a2a1eaed7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5d586b3b-40f0-454f-ae79-1245b939fdef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

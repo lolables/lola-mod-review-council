@@ -110,6 +110,6 @@ payload=$(jq -n --arg b "$body_file" \
 	"${RC_COMMENT_PART_FILES[@]}")
 msg="Rendered comment body for merge request !${mr}; GitLab posting is not implemented - post it manually."
 [[ "$RC_COMMENT_PARTS" -gt 1 ]] && msg="Rendered comment body for merge request !${mr} in ${RC_COMMENT_PARTS} parts; GitLab posting is not implemented - post them in order, manually."
-[[ "$RC_COMMENT_LEVEL" -gt 0 ]] && msg="${msg} Trimmed to fit the note limit (level ${RC_COMMENT_LEVEL}, ${RC_COMMENT_DROPPED} finding(s) omitted); the full report is in the run artifacts."
+[[ "$RC_COMMENT_LEVEL" -gt 0 ]] && msg="${msg} Trimmed to fit the note limit (level ${RC_COMMENT_LEVEL}, ${RC_COMMENT_DROPPED} finding(s) omitted); the full report is ${session_dir}/report.md."
 json_output "rendered" "$msg" "$payload"
 exit 0

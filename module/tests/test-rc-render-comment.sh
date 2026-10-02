@@ -676,10 +676,15 @@ else
 fi
 rm -rf "$sess"
 
+# The paring ladder runs only when a verdict cannot be split, so the tests that
+# exercise it hold the verdict to one comment rather than the default.
+pin_one_comment() { printf -- '- Max comments: 1\n' >>"$1/tracking.md"; }
+
 echo "Test: the disclosure line starts its own block too"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -734,6 +739,7 @@ echo "Test: a tight limit pares the body under it and says so"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -753,6 +759,17 @@ if grep -qF "Trimmed to fit the" "$sess/comment-body.md"; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: pared body is silently incomplete"
+	FAIL=$((FAIL + 1))
+fi
+# The reader of a PR comment cannot reach the session directory, and nothing in
+# this module uploads it anywhere, so the disclosure must not point them at
+# "run artifacts". It names the setting that would have posted it all instead.
+disc_line=$(grep -F "Trimmed to fit the" "$sess/comment-body.md" | head -1)
+if [[ "$disc_line" != *"run artifacts"* && "$disc_line" == *"\`Max comments\`"* ]]; then
+	echo "  PASS: the disclosure points at what the reader can act on"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the disclosure points somewhere the reader cannot go: ${disc_line}"
 	FAIL=$((FAIL + 1))
 fi
 # Evidence is what makes a finding checkable, and it is what rc-verify-evidence
@@ -778,6 +795,7 @@ echo "Test: the ladder sheds the lowest severity first"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -807,6 +825,7 @@ echo "Test: the terminal case never emits an over-limit body"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -848,6 +867,7 @@ echo "Test: a cut body still carries its marker and its disclosure"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -902,6 +922,7 @@ echo "Test: under the disclosure and marker the cut keeps only those"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -936,6 +957,7 @@ echo "Test: a cut deep enough to keep the disclosure is not handed a second"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 for dup_limit in 785 900 1100 1239; do
 	(
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
@@ -1000,6 +1022,7 @@ echo "Test: the limit is read from tracking.md on the standalone path"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 printf -- '- Comment limit: 20000\n' >>"$sess/tracking.md"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
 standalone_len=$(body_bytes "$sess/comment-body.md")
@@ -1018,6 +1041,7 @@ echo "Test: a recorded limit overrides the forge hook"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 printf -- '- Comment limit: 20000\n' >>"$sess/tracking.md"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
@@ -1043,6 +1067,7 @@ echo "Test: evidence and recommendation outlive the analysis prose"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -1065,6 +1090,7 @@ echo "Test: collapsing a finding is not losing it"
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
+pin_one_comment "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -1173,25 +1199,27 @@ for bad in "" "unlimited" "0" "-1"; do
 	rm -rf "$sess"
 done
 
-echo "Test: a recorded Max comments that is not a positive integer means one"
+echo "Test: a recorded Max comments that is not a positive integer means the default"
+# The default is compared by rendering it explicitly, not by restating 3 here:
+# the number lives once in rc-lib.sh, and this pins only that the fallback
+# reaches it.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+render_with_limit "$sess" "- Comment limit: 12000\n- Max comments: 3\n" "none" >/dev/null
+default_parts=$(find "$sess" -maxdepth 1 -name 'comment-body*.md' | wc -l | tr -d ' ')
+rm -rf "$sess"
 for bad in "abc" "0" "-3"; do
 	sess=$(mktemp -d)
 	make_review_session "$sess"
 	make_review_session_many "$sess"
-	limit_probe=$(render_with_limit "$sess" "- Comment limit: 12000\n- Max comments: ${bad}\n" "none")
-	read -r _ bad_level _ <<<"$limit_probe"
-	(
-		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
-		source "$SCRIPT"
-		rc_render_comment_body "$sess" "$sess/comment-body.md"
-		printf '%s\n' "$RC_COMMENT_PARTS" >"$sess/parts"
-	)
-	bad_parts=$(cat "$sess/parts")
-	if [[ "$bad_parts" -eq 1 && "$bad_level" -gt 0 ]]; then
-		echo "  PASS: Max comments '${bad}' fell back to 1, so the ladder ran instead"
+	render_with_limit "$sess" "- Comment limit: 12000\n- Max comments: ${bad}\n" "none" >/dev/null
+	bad_parts=$(find "$sess" -maxdepth 1 -name 'comment-body*.md' | wc -l | tr -d ' ')
+	if [[ "$default_parts" -eq 3 && "$bad_parts" -eq "$default_parts" ]]; then
+		echo "  PASS: Max comments '${bad}' fell back to the default of ${default_parts}"
 		PASS=$((PASS + 1))
 	else
-		echo "  FAIL: Max comments '${bad}' was honoured (parts=$bad_parts level=$bad_level)"
+		echo "  FAIL: Max comments '${bad}' rendered ${bad_parts} part(s), the default renders ${default_parts}"
 		FAIL=$((FAIL + 1))
 	fi
 	rm -rf "$sess"

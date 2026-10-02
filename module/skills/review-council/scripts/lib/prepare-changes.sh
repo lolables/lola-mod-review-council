@@ -562,7 +562,7 @@ fi
 comment_limit=$(rc_config_value "Comment limit")
 [[ "$comment_limit" =~ ^[1-9][0-9]*$ ]] || comment_limit=""
 max_comments=$(rc_config_value "Max comments")
-[[ "$max_comments" =~ ^[1-9][0-9]*$ ]] || max_comments=1
+[[ "$max_comments" =~ ^[1-9][0-9]*$ ]] || max_comments="$RC_DEFAULT_MAX_COMMENTS"
 
 # --- Delegation batching budgets ---
 #

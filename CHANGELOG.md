@@ -458,6 +458,11 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- `Max comments` now defaults to 3 instead of 1. A 64-finding review hit
+  GitHub's 65,536-character limit at the old default and was posted with the
+  reviewer analysis cut from 63 findings, which a PR reader cannot get any other
+  way. Three comments fit about a hundred findings in full. Set `Max comments: 1`
+  to keep the old single-comment behaviour.
 - **Breaking (configuration):** `Batch size` is now the *secondary* budget — a
   cap on files per batch, applied after `Batch bytes` — and its default rises
   from 20 to 50. A project that set it to bound context should set `Batch bytes`
@@ -661,6 +666,11 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- A trimmed PR comment no longer says the full report is "in the run
+  artifacts". Nothing in this module uploads the session, so for a local run
+  there were no run artifacts to find. The notice now says the rest stays with
+  whoever ran the review and that a higher `Max comments` posts it all. The
+  status message names `report.md` in the session directory instead.
 - A `--scope paths` entry beginning with `-` is now always a path. `find` read a
   dash-first start point as part of its expression, so a target named
   `-delete` deleted the working directory (spec-mode discovery had the same

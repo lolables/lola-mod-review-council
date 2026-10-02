@@ -1030,7 +1030,7 @@ there is nothing to post to and stop.
      split. `part_files` lists every file, in order; show the user that there
      are several, not just the first.
    - `pare_level` greater than 0 — the body was trimmed to fit. Say so, and
-     say that the full verdict is in the report and the run artifacts.
+     say that the full verdict is in `${session_dir}/report.md`.
    - Either way, do NOT present a trimmed or partial body as the complete
      review.
 
@@ -1205,7 +1205,7 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Knowledge tool: my_semantic_search
 - Docs repo: myorg/docs
 - Quality tool: my_quality_reporter
-- Max comments: 1
+- Max comments: 3
 - Comment limit: 65536
 - Persona selection: on
 - Pin personas: adversary, guard
@@ -1254,13 +1254,13 @@ default used. Every split, and every decision not to split, is recorded in
 `Max comments` and `Comment limit` govern an oversized verdict. A review
 with enough findings renders a comment the forge rejects: GitHub caps an
 issue comment at 65,536 characters and a 30-finding review reaches about
-58,000. `Max comments` (default 1) is how many comments one verdict may
+58,000. `Max comments` (default 3) is how many comments one verdict may
 be spread across; `Comment limit` overrides the forge's own value, and is
 only needed when the effective limit is smaller — self-hosted GitLab, or
 GHE behind a proxy. Beyond `Comment limit` x `Max comments` the renderer
 trims, analysis prose before evidence and CRITICAL last, and says so in a
-line beginning `Trimmed to fit the`. The full verdict is always in the
-run artifacts. See README "Oversized verdicts".
+line beginning `Trimmed to fit the`. The full verdict is always in
+`report.md` in the session directory. See README "Oversized verdicts".
 
 Convention packs define project-specific coding standards. Override or
 extend shipped packs by placing files in `.review-council/packs/`

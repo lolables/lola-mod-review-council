@@ -125,7 +125,7 @@ echo "Test 5: a recorded Comment limit overrides the forge, and is disclosed"
 sess=$(mktemp -d)
 make_review_session "$sess" gitlab 7 "$GL_ORIGIN"
 make_review_session_many "$sess"
-printf -- '- Comment limit: 20000\n' >>"$sess/tracking.md"
+printf -- '- Comment limit: 20000\n- Max comments: 1\n' >>"$sess/tracking.md"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 gl_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
 if [[ "$gl_bytes" -le 20000 ]]; then
@@ -147,6 +147,16 @@ if echo "$result" | jq -r '.message' | grep -qF "Trimmed to fit the note limit";
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the trim is only in the body a human may never open"
+	FAIL=$((FAIL + 1))
+fi
+# Whoever reads the envelope holds the session, so it names the file they can
+# open; "run artifacts" exist only if someone outside this module uploaded them.
+gl_msg=$(echo "$result" | jq -r '.message')
+if [[ "$gl_msg" == *"$sess/report.md"* && "$gl_msg" != *"run artifacts"* ]]; then
+	echo "  PASS: the status envelope names the full report's path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the status envelope does not say where the full report is: ${gl_msg}"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"

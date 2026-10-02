@@ -528,7 +528,7 @@ result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/nu
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Comment limit" "forge default" \
 	"a non-numeric limit defers to the forge"
-assert_track "$session_dir" "Max comments" "1" \
+assert_track "$session_dir" "Max comments" "3" \
 	"a max-comments floor below 1 falls back to the default"
 discard_fixture "$tmpdir"
 
@@ -566,6 +566,8 @@ assert_track "$session_dir" "Batch bytes" "131072" \
 	"a non-numeric byte budget falls back to the default"
 assert_track "$session_dir" "Batch size" "50" \
 	"a file cap below 1 falls back to the default"
+assert_track "$session_dir" "Max comments" "3" \
+	"an unconfigured max-comments takes the default of 3"
 discard_fixture "$tmpdir"
 
 echo "Test: AGENTS.md wins over CLAUDE.md key by key"

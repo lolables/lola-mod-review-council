@@ -58,6 +58,18 @@ RC_DEFAULT_BATCH_BYTES=131072
 # shellcheck disable=SC2034 # read by the scripts that source this file.
 RC_DEFAULT_BATCH_FILES=50
 
+# How many comments one verdict may span when the project sets no `Max
+# comments`. Three, not one: a trimmed comment loses reviewer analysis that a
+# PR reader has no other way to reach, since the full report stays in the
+# session directory of whoever ran the review. Three GitHub comments hold
+# roughly a hundred findings at full fidelity.
+#
+# Two readers, as above: prepare-changes.sh resolves the project's value
+# against it, and rc-render-comment.sh falls back to it for a session whose
+# recorded value is missing or malformed.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_DEFAULT_MAX_COMMENTS=3
+
 if [[ "${BASH_VERSINFO[0]}" -lt 4 ]]; then
 	echo '{"status":"skip","message":"Bash 4+ is required. macOS ships Bash 3 — install a modern version: brew install bash"}'
 	exit 0

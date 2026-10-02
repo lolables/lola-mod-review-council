@@ -6,6 +6,21 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- `--scope paths` and `--scope all` now work outside a git repository. A named
+  file is reviewed whole, a named directory as every file under it (smart
+  excludes and the binary filter still apply), and the result message warns
+  that there is no diff, base branch, or forge context. Previously every
+  non-url scope refused with "Not a git repository", so reviewing a lone file
+  meant copying it into a scratch repo whose only commit invented a history.
+  The history scopes (`changed`, `range`, `pr`) still refuse, and their
+  refusal now points at `--scope paths`; `--base` outside a repository is
+  refused rather than ignored. The skill's own directory routing
+  (`--scope changed --scope paths <dir>`) takes the same path. Walked files
+  that look like credentials are left out and counted, since there is no
+  ignore list; a file named explicitly is reviewed whatever its name or type.
+  Walks prune excluded directories instead of traversing and then dropping
+  them, so a vendored tree neither slows the walk nor outvotes the real files
+  when auto mode classifies, and a directory the walk cannot read is reported.
 - Delegation batching now triggers on **context bytes** rather than file count,
   and is computed by `rc-plan-batches.sh` (SKILL.md Step 2.6) at every effort
   level instead of being decided while prompts are written. File count never
@@ -632,6 +647,20 @@ All notable changes to the Review Council module are documented here.
   `fw-react.md` calibration)
 
 ### Fixed
+
+- A `--scope paths` entry beginning with `-` is now always a path. `find` read a
+  dash-first start point as part of its expression, so a target named
+  `-delete` deleted the working directory (spec-mode discovery had the same
+  shape). Every user-supplied `find` start point is now written `./-...`.
+
+- A `--scope paths` target outside the directory the review runs from — via
+  `..`, an absolute path, or a symlink — is refused. It used to be prepared and
+  then have every finding stripped by evidence verification as outside the
+  root, so the review read clean. Targets inside the directory are rewritten
+  to one relative spelling, which also lets a named symlink review its target.
+
+- `--scope all --scope paths <typo>` is refused with "Target not found" instead
+  of reporting "No changes to review".
 
 - The `Review Council Configuration` block was never read on macOS, so every key
   it carries fell back to its default there. The `sed` that lifts the block out

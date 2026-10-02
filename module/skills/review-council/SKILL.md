@@ -313,6 +313,16 @@ skipped (non-GitHub forge, missing `gh` for a private repo, or clone failure),
 `review_root` stays `.` and review proceeds from the diff — note this to the
 user, since grounding is weaker.
 
+**Outside a git repository.** `paths` and `all` scope still prepare a session
+(so does the Step 0 directory routing, `changed` + `paths`): named files are
+reviewed whole, named directories as every file under them, with no diff, base
+branch, or forge. Files a walk turns up that look like credentials (`.env`,
+keys) are left out; a file named explicitly never is. The `ok` message then
+carries a `Warning: not a git repository` sentence, a count of any
+credential files left out, and a note when part of the tree could not be read —
+relay all of it to the user. The history scopes
+(`changed` alone, `range`, `pr`) return `skip` there instead.
+
 **Returns JSON to stdout:**
 ```json
 {

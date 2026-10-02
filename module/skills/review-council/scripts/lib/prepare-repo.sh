@@ -34,13 +34,35 @@ set -uo pipefail
 # directory plays no part, so it need not be a git repo. PR-number scope, by
 # contrast, still derives forge_owner/forge_repo from the *local* git remote
 # (Section 2, the `else` branch below) and so still requires a local checkout.
+#
+# `paths` and `all` need no repository either: a file is reviewable from its
+# bytes alone, so outside git they review what is on disk — a named file whole,
+# a named directory as every file under it — with no diff, base branch or forge.
+# rc_no_git carries that to the later stages, and the result message says so.
+# The scopes defined BY history (changed, range, pr) still refuse: there is no
+# honest answer to "what changed" without one, and a scratch repo would only
+# invent a diff that never happened.
+rc_no_git=false
 if [[ "$input_type" != "url" ]] && ! git rev-parse --git-dir >/dev/null 2>&1; then
-	# Only `--scope url` genuinely bypasses this gate. `--scope pr` does not:
-	# it still derives forge_owner/forge_repo from the local git remote (see
-	# the comment above), so naming it here would send the user straight back
-	# into this same refusal.
-	json_output "skip" "Not a git repository. Use --scope url to review a pull request without a local checkout, or run 'git init' first."
-	exit 0
+	if [[ "$input_type" == "dir_scope" || "$input_type" == "all" ]]; then
+		rc_no_git=true
+	elif [[ "$input_type" == "auto" && -n "$scope_dir" ]]; then
+		# `--scope changed --scope paths <dir>` is how SKILL.md routes a named
+		# directory. Outside git there are no changes for it to filter, so the
+		# only meaning left is the directory review `--scope paths` gives;
+		# refusing it made that review unreachable from the skill.
+		rc_no_git=true
+		input_type="dir_scope"
+		input_value="$scope_dir"
+		scope_type="paths"
+	else
+		# `--scope pr` is not offered as a way out: it still derives
+		# forge_owner/forge_repo from the local git remote (see the comment
+		# above), so naming it here would send the user straight back into this
+		# same refusal.
+		json_output "skip" "Not a git repository, so there is no history to compare. Use --scope paths <file-or-dir> or --scope all to review files as they are on disk, --scope url to review a pull request without a local checkout, or run 'git init' first."
+		exit 0
+	fi
 fi
 
 # Abort unless <range> resolves. `git diff` on an unresolvable ref is fatal,
@@ -235,6 +257,14 @@ fi
 base_branch=""
 if [[ "$input_type" == "url" ]]; then
 	: # base is PR-derived (pr_base / the forge diff) — no local ref needed
+elif $rc_no_git; then
+	# No repository, so no base: files are reviewed whole (see Section 1). A
+	# --base given anyway is refused rather than dropped, so nobody reads the
+	# result as a review against that branch.
+	if [[ -n "${base_override:-}" ]]; then
+		json_output "skip" "--base has no meaning outside a git repository: there is no branch to compare against. Drop --base to review the files as they are on disk."
+		exit 0
+	fi
 elif [[ -n "${base_override:-}" ]]; then
 	if git rev-parse --verify "$base_override" >/dev/null 2>&1; then
 		base_branch="$base_override"

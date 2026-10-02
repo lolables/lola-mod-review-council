@@ -231,7 +231,9 @@ check_mutation "RC-11 findings assembly via files" \
 	's#^[[:space:]]*--slurpfile verified ".*#--argjson verified "$verified" \\#;
 	 s#^[[:space:]]*--slurpfile correctable ".*#--argjson correctable "$correctable" \\#;
 	 s#^[[:space:]]*--slurpfile stripped ".*#--argjson stripped "$stripped" \\#;
-	 s/verified:\$verified\[0\], correctable:\$correctable\[0\], stripped:\$stripped\[0\]/verified:$verified, correctable:$correctable, stripped:$stripped/' \
+	 s/\$verified\[0\]/$verified/g;
+	 s/\$correctable\[0\]/$correctable/g;
+	 s/\$stripped\[0\]/$stripped/g' \
 	test-rc-verify-evidence.sh
 
 # The repo name parsed from the local remote kept its trailing `.git`. The strip
@@ -770,6 +772,104 @@ check_mutation "RC-047 batch composition is host-independent" \
 	rc-plan-batches.sh \
 	's#^[[:space:]]*LC_ALL=C sort |$#cat |#' \
 	test-rc-plan-batches.sh
+
+# Outside git, paths and all review files from disk instead of refusing. Closing
+# the gate again brings back the scratch-repo workaround for a lone file.
+check_mutation "RC-048 paths scope runs outside git" \
+	lib/prepare-repo.sh \
+	's/^[[:space:]]*if \[\[ "\$input_type" == "dir_scope" || "\$input_type" == "all" \]\]; then$/if false; then/' \
+	test-rc-prepare-no-git.sh
+
+# A named directory outside git classifies by its files. Without this branch it
+# falls through to a `git diff` that finds nothing, and auto mode guesses.
+check_mutation "RC-048 a non-git directory decides the mode" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*elif \$rc_no_git; then$/elif false; then/' \
+	test-rc-prepare-no-git.sh
+
+# The warning is the only thing telling the user the review had no diff, base or
+# forge behind it.
+check_mutation "RC-048 a non-git review warns" \
+	lib/prepare-emit.sh \
+	's/^[[:space:]]*if \$rc_no_git; then$/if false; then/' \
+	test-rc-prepare-no-git.sh
+
+# The file echo is what catches a transposed validator answer. Without it the
+# two outcomes are applied to each other's findings and nothing says so.
+check_mutation "RC-049 a validator outcome must echo its finding's file" \
+	jq/apply-validation.jq \
+	's/^[[:space:]]*elif \$e\.file != \$f\.file then {id: \$id, reject: "FILE_MISMATCH"}$/elif false then null/' \
+	test-rc-apply-validation.sh
+
+# The --final pass is the only thing that stops a finding the validator never
+# answered from sitting pending forever: without it the report cannot tell a
+# validated finding from one the gate skipped. (The renderers do not read
+# provenance.validator; it is verification.txt that could not tell the two apart.)
+check_mutation "RC-049 --final marks unanswered findings UNVALIDATED" \
+	jq/apply-validation.jq \
+	's/^[[:space:]]*if \$final and (\$f\.provenance\.validator\.result \/\/ null) == null$/if false/' \
+	test-rc-apply-validation.sh
+
+# --dispute is how the orchestrator stops a retraction whose evidence does not
+# hold up. Without the DISPUTED branch the retraction is applied anyway and the
+# finding leaves the report.
+check_mutation "RC-050 a disputed retraction is rejected" \
+	jq/apply-validation.jq \
+	's/^[[:space:]]*elif \$e\.result == "RETRACTED" and any(\$disputed\[\]; \. == \$id)$/elif false/' \
+	test-rc-apply-validation.sh
+
+# A mistyped dispute id names no finding. Without the refusal, the retraction it
+# was meant to stop goes through and the typo is never reported.
+check_mutation "RC-050 an unknown dispute id refuses the pass" \
+	rc-apply-validation.sh \
+	's/^[[:space:]]*if \[\[ -n "\$unknown_disputes" \]\]; then$/if false; then/' \
+	test-rc-apply-validation.sh
+
+# find reads a dash-first start point as part of its expression: a target named
+# `-delete` deleted the working directory. The `./-` rewrite in rc_walk_files,
+# which every walk outside git goes through, is all that stands between a path
+# and an option.
+check_mutation "RC-051 a dash-first target never reaches find as an option" \
+	lib/prepare-target.sh \
+	's|find "\${@/#-/\./-}"|find "$@"|' \
+	test-rc-prepare-no-git.sh
+
+# Walking into a vendored tree before dropping it costs a full traversal and
+# lets its files outvote the real contents in auto-mode classification.
+check_mutation "RC-051 walks outside git prune excluded directories" \
+	lib/prepare-target.sh \
+	's|-prune \\) -o|-false \\) -o|' \
+	test-rc-prepare-no-git.sh
+
+# A target outside the directory the review runs from has every finding
+# stripped by evidence verification, so the review reads clean. Without the
+# resolution step it is prepared anyway.
+check_mutation "RC-051 a target outside the directory is refused" \
+	lib/prepare-args.sh \
+	's/^[[:space:]]*if \[\[ -e "\$scope_entry" \]\]; then$/if false; then/' \
+	test-rc-prepare-no-git.sh
+
+# SKILL.md routes a named directory as `--scope changed --scope paths <dir>`.
+# Without the conversion outside git, that refuses and the directory review is
+# unreachable from the skill.
+check_mutation "RC-052 the skill's directory routing works outside git" \
+	lib/prepare-repo.sh \
+	's/^[[:space:]]*elif \[\[ "\$input_type" == "auto" && -n "\$scope_dir" \]\]; then$/elif false; then/' \
+	test-rc-prepare-no-git.sh
+
+# Outside git there is no ignore list: without the credential filter, a walked
+# tree hands .env files and private keys to the reviewers.
+check_mutation "RC-052 walked trees outside git drop credential files" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \$rc_no_git; then$/if false; then/' \
+	test-rc-prepare-no-git.sh
+
+# A named file is a target outside git as inside it. Without the bypass, naming
+# a smart-excluded or binary file reviews nothing.
+check_mutation "RC-052 a named file outside git skips every exclusion" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \$rc_no_git && \[\[ ",\${scope_dir}," == \*",\${file},"\* \]\]; then$/if false; then/' \
+	test-rc-prepare-no-git.sh
 
 total=$((caught + missed + broken))
 echo ""

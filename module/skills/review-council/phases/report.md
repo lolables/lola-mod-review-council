@@ -35,22 +35,28 @@ failure the quick-mode LEARNINGS rule guards against.
 This is what SKILL.md's EXECUTION-CONTRACT means by "fill only the markers".
 The marker set is larger than `<!-- NARRATIVE -->` and `<!-- LEARNINGS -->`:
 
-| Marker                          | What replaces it                            | Procedure below              |
-|---------------------------------|---------------------------------------------|------------------------------|
-| `<!-- TLDR -->`                 | One-line TL;DR under the Council Verdict    | Narrative Synthesis          |
-| `<!-- SUBSYSTEM-ANALYSIS -->`   | Subsystem Analysis section                  | Subsystem Analysis           |
-| `<!-- MERGE-ADVISORIES -->`     | Merge Advisories section                    | Merge Advisories             |
-| `<!-- ACCEPTANCE-CRITERIA -->`  | Acceptance Criteria Coverage section        | Acceptance Criteria Coverage |
-| `<!-- DISPOSITION-OUTCOMES -->` | Disposition Outcomes, all three subsections | Disposition Outcomes         |
-| `<!-- CI-COMMENTARY -->`        | CI Commentary section                       | CI Commentary                |
-| `<!-- NARRATIVE -->`            | Council Synthesis body                      | Narrative Synthesis          |
-| `<!-- LEARNINGS -->`            | Prior Learnings body                        | Learnings Extraction         |
+| Marker                          | Heading                | What replaces it                            | Procedure below              |
+|---------------------------------|------------------------|---------------------------------------------|------------------------------|
+| `<!-- TLDR -->`                 | `## Council Verdict`   | One-line TL;DR under the Council Verdict    | Narrative Synthesis          |
+| `<!-- SUBSYSTEM-ANALYSIS -->`   | own                    | Subsystem Analysis section                  | Subsystem Analysis           |
+| `<!-- MERGE-ADVISORIES -->`     | own                    | Merge Advisories section                    | Merge Advisories             |
+| `<!-- ACCEPTANCE-CRITERIA -->`  | own                    | Acceptance Criteria Coverage section        | Acceptance Criteria Coverage |
+| `<!-- DISPOSITION-OUTCOMES -->` | own                    | Disposition Outcomes, all three subsections | Disposition Outcomes         |
+| `<!-- CI-COMMENTARY -->`        | own                    | CI Commentary section                       | CI Commentary                |
+| `<!-- NARRATIVE -->`            | `## Council Synthesis` | Council Synthesis body                      | Narrative Synthesis          |
+| `<!-- LEARNINGS -->`            | `## Prior Learnings`   | Prior Learnings body                        | Learnings Extraction         |
 
-The replacement text carries its own `##` heading. The renderer emits a bare
-marker line and no heading precisely so that dropping the marker leaves no
-dangling heading behind. `<!-- TLDR -->` is the exception on both counts: it
-sits under `## Council Verdict`, which the renderer already emitted, and its
-replacement is one plain sentence with no heading of its own.
+The **Heading** column says who emits each section's `##` heading.
+
+- `own` — the replacement text carries its own `##` heading. The renderer emits
+  a bare marker and no heading precisely so that dropping the marker leaves no
+  dangling heading behind.
+- A named heading — the renderer has already emitted it, because the section
+  appears in every report, and the marker sits under it. The replacement is the
+  body alone: repeating the heading publishes it twice. `<!-- TLDR -->` is one
+  plain sentence under the verdict line; `<!-- NARRATIVE -->` and
+  `<!-- LEARNINGS -->` are the section bodies. These markers are never
+  dropped: each has a literal fallback line for a run that skipped its phase.
 
 A section you believe belongs in the report but has no marker is a renderer
 bug — fix `rc-render-report.sh` and its tests, do not hand-append the section.
@@ -133,8 +139,10 @@ synthesis entirely. Compact report consists of:
 
 Still splice `<!-- TLDR -->` — the marker is not droppable, and step 4 below
 gives the fallback line to use whenever `comment-summary.md` is absent or
-empty, which it always is here. Then skip to Final Verdict Determination
-section.
+empty, which it always is here. Replace `<!-- NARRATIVE -->` with the literal
+line `Narrative synthesis is skipped at quick effort.` — it sits under the
+renderer's `## Council Synthesis` heading, and deleting it would leave that
+heading empty. Then skip to Final Verdict Determination section.
 
 Template rendering is performed by `rc-render-report.sh`, which owns all
 structure (tables, counts, findings list, verdict) and leaves a
@@ -413,11 +421,23 @@ silent:
 
 ## Final Verdict Determination
 
-Determine the council verdict:
+Determine the council verdict from the **verified** finding set, in both review
+modes. Severity decides it, because severity is where this module already
+defines what blocks: `${REFERENCES_DIR}/severity.md` calls CRITICAL "MUST NOT
+merge" and HIGH "Blocks review", while MEDIUM "does not block merge" and LOW is
+"Non-blocking".
 
-- **APPROVE** — all discovered reviewers returned APPROVE (after verification).
-- **REQUEST CHANGES** — one or more reviewers returned REQUEST CHANGES with verified findings.
-- **APPROVE WITH ADVISORIES** (Spec Review Mode only) — only LOW/MEDIUM findings remain; no HIGH/CRITICAL findings present. Remaining findings are advisory and do not block merge.
+- **REQUEST CHANGES** — one or more verified CRITICAL or HIGH findings remain.
+- **APPROVE WITH ADVISORIES** — verified findings remain, but none is CRITICAL
+  or HIGH. They are advisory and do not block merge.
+- **APPROVE** — no verified findings remain.
+
+Read that off the findings, not off the reviewers' own verdicts. A reviewer may
+return REQUEST CHANGES while holding nothing but MEDIUMs — the validator only
+forces REQUEST CHANGES for CRITICAL/HIGH — and letting that alone set the
+council verdict is how a clean changeset with two optional test-coverage notes
+came back blocked. Each reviewer's own verdict still appears verbatim in the
+per-reviewer table, so nothing is hidden by aggregating this way.
 
 Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) do not affect verdict.
 

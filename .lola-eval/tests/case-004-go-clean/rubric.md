@@ -24,8 +24,12 @@ Score two components, each in [0.0, 1.0]:
 
 Did the review produce the correct verdict?
 
-- 1.0 — the review verdict is APPROVE (or equivalent: "no issues
-  found", "code looks good", "no changes requested").
+- 1.0 — the review verdict is APPROVE or APPROVE WITH ADVISORIES (or
+  equivalent: "no issues found", "code looks good", "no changes requested").
+  Both are non-blocking outcomes. The council reserves REQUEST CHANGES for
+  verified CRITICAL or HIGH findings, so a clean library that draws a couple
+  of optional notes is *correctly* reported as APPROVE WITH ADVISORIES — that
+  is a right answer here, not a partial one.
 - 0.0 — the review verdict is REQUEST CHANGES.
 
 ## false_positive_rate (weight 0.34)

@@ -19,6 +19,7 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
 {
   "verified": [
     {
+      "id": "F1",
       "severity": "HIGH",
       "file": "auth/token.go",
       "line": 42,
@@ -33,6 +34,7 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   ],
   "correctable": [
     {
+      "id": "F2",
       "severity": "MEDIUM",
       "file": "internal/config.go",
       "line": 10,
@@ -48,6 +50,7 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   ],
   "stripped": [
     {
+      "id": "F3",
       "severity": "LOW",
       "file": "does/not/exist.go",
       "line": null,
@@ -70,6 +73,8 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   }
 }
 ```
+
+`id` is assigned here, unique across the three arrays, and is what the validation gate (Step 4) keys its outcomes on.
 
 **Fields**:
 - `verified`: passed all mechanical checks (file exists and resolves inside the
@@ -163,6 +168,8 @@ Corrected (validator): 0
 Severity downgrades: 0
 Stripped: 0
 Retracted (validator): 0
+Unvalidated (validator): 0
+Rejected validator outcomes: 0
 Duplicates consolidated: 0
 
 Per agent:
@@ -285,7 +292,7 @@ Send agent focused correction prompt:
 **Correction round rules**:
 
 - ONE correction attempt per finding. No further rounds.
-- Agent provides corrected evidence found in file: upgraded to **verified**.
+- Agent provides corrected evidence found in file: upgraded to **verified**, keeping every field including its `id`.
 - Agent withdraws finding: removed (not stripped — withdrawn by agent).
 - Agent provides evidence still not matching: **stripped**.
 - Agent does not respond or times out: **stripped**.
@@ -462,6 +469,8 @@ Validator does NOT receive:
 
 Validator performs checks mechanical verification cannot: identifier grounding, logical soundness, holistic judgment. Does NOT re-check file existence or evidence quotes — already verified mechanically.
 
+Present each surviving verified finding under its `id` (from `findings.json`), with its file, line, severity, evidence, description and recommendation.
+
 > You are an independent validator. You have not participated in the review that produced these findings. Each finding has already passed mechanical checks (file exists, evidence quote found in file). Your job is to verify what mechanical checks cannot.
 >
 > For each finding:
@@ -481,33 +490,99 @@ Validator performs checks mechanical verification cannot: identifier grounding, 
 > - Optional improvements (documentation examples, benchmark tests, additional docs) elevated above LOW.
 > - Framework-specific patterns flagged without checking the framework version: React class components in pre-hooks codebases, Express middleware patterns, Django class-based views.
 >
-> For each finding, return one of:
+> For each finding, decide one of:
 >
-> - **CONFIRMED** — finding is accurate as stated. State briefly what you verified.
-> - **CORRECTED** — finding is real but details are wrong. Provide corrections: fixed identifier, adjusted severity, or clarified description. Quote the evidence that supports the correction.
-> - **RETRACTED** — finding is not supported by the source code. Quote what you read or show the grep output that contradicts the finding.
+> - **CONFIRMED** — accurate as stated. `reason` says briefly what you verified.
+> - **CORRECTED** — real, but details are wrong. `corrections` holds only the fields you change, from `severity`, `line`, `title`, `description`, `recommendation`; `reason` quotes the evidence for the change.
+> - **RETRACTED** — not supported by the source. `reason` says why it is unsupported; `evidence` quotes what you read or the grep output that contradicts it.
+>
+> `reason` is required for every outcome.
+>
+> Reply with one JSON object and nothing else, one entry per finding, copying each finding's `id` and `file` exactly as given:
+>
+> ```json
+> {"results":[{"id":"F1","file":"auth/token.go","result":"CONFIRMED","reason":"..."}]}
+> ```
 
 ### Processing Validator Output
 
-Validator outcomes are recorded in each finding's `provenance.validator` object
-(`{result, reason}`) and any corrected fields are updated in place in
-`findings.json`. Do not inject validator commentary into prose fields.
+Outcomes are SCRIPT-APPLIED. Never apply one by hand: the script ties each
+outcome to its finding by `id` and echoed `file`, and rejects any that do not
+tie back.
 
-- **CONFIRMED**: finding passes to report unchanged.
-- **CORRECTED**: apply validator corrections to finding. Log what changed:
-  > "Finding `{title}` corrected by validator — {description of change}"
-- **RETRACTED**: strip finding. Log retraction with validator reasoning:
-  > "Finding `{title}` retracted by validator — {reason}"
+1. Save the validator's reply verbatim to
+   `${session_dir}/verdicts/_meta/validation.json` (conforms to
+   `references/validation-schema.json`). A missing, unparsable or
+   `results`-less file counts as no outcomes.
+2. Judge each RETRACTED entry ("Judging Validator Retractions" below) and note
+   the id of every one that is unsupported.
+3. Run `bash ${SCRIPTS_DIR}/rc-apply-validation.sh ${session_dir}`, adding
+   `--dispute <ids>` (comma-separated, e.g. `--dispute F3,F7`) for the noted
+   ids. Dispatch on the returned `status`:
+   - `ok` — continue. Its counts feed Step 5. (Zero verified findings also
+     returns `ok`.)
+   - `retry` — re-ask the validator about the ids in `pending`, disputed ones
+     included (the same validator if the host can continue a subagent,
+     otherwise a fresh validator given only those findings). Pass each
+     `rejected` `{id, reason}`; for a disputed id say "quote what contradicts
+     it, or change your outcome". Ask for a COMPLETE reply for those ids. Save
+     it verbatim over `validation.json`, judge its retractions again, and run
+     the script with `--final`, adding `--dispute` for any retraction still
+     unsupported. There is no third attempt.
+   - `validation_error` — nothing was applied. If the message names a
+     `--dispute` id that is not a finding id, correct the list and run the
+     same pass again. Otherwise stop and report the message verbatim.
+     `findings.json` is unchanged.
+   - `nothing_to_do` — the session directory or `findings.json` is missing;
+     stop and report.
 
-If validator retracts ALL findings from agent whose verdict was REQUEST CHANGES, upgrade verdict to APPROVE (same logic as Step 3).
+Rejection reasons: `UNKNOWN_ID`, `DUPLICATE_ID`, `FILE_MISMATCH`,
+`ALREADY_FINAL`, `NO_EVIDENCE`, `DISPUTED` (a retraction named in
+`--dispute`), `BAD_CORRECTION`, `BAD_RESULT` (a result other than
+CONFIRMED/CORRECTED/RETRACTED, or a blank or missing `reason`). A rejected
+outcome is not applied; its finding stays pending.
+
+What the script records:
+
+- Each outcome lives in the finding's `provenance.validator`
+  (`{result, reason}`, plus `changed_from` for CORRECTED and `evidence` for
+  RETRACTED). CORRECTED fields are updated in place. Do not inject validator
+  commentary into prose fields.
+- RETRACTED findings move to `stripped` with `reason: "VALIDATOR_RETRACTED"`.
+- With `--final`, a verified finding that still has no outcome is marked
+  `UNVALIDATED`. It stays verified and is listed in `verification.txt`
+  (`Unvalidated (validator)`); rejected outcomes are counted there too
+  (`Rejected validator outcomes`).
+- The `ok` and `retry` payload counts (`confirmed`, `corrected`, `retracted`,
+  `unvalidated`) describe `findings.json` as it now stands, so the last pass's
+  counts are the totals. `rejected` lists only that pass's rejections.
+
+Log each correction and retraction to Step 5:
+
+> "Finding `{title}` corrected by validator — {description of change}"
+> "Finding `{title}` retracted by validator — {reason}"
+
+Verdict changes are Step 6's job: if every finding from an agent whose verdict
+was REQUEST CHANGES is retracted, Step 6 upgrades the verdict (same logic as
+Step 3).
 
 Record retracted findings as false positive patterns in learnings (same as stripped-findings logic in report phase).
 
-### Cross-Checking Validator Retractions
+### Judging Validator Retractions
 
-For each RETRACTED finding, verify validator claim before applying:
+After saving the reply, read every RETRACTED entry. Its `evidence` must be
+quoted file text or grep output that contradicts the finding; an assertion ("I
+checked and it's not there") is not evidence. If it is an assertion, or quotes
+text that does not contradict the finding, add its id to `--dispute` when
+running the script. The script then keeps the finding instead of retracting it.
 
-- Validator must have quoted evidence or shown grep output supporting retraction. If retraction contains no supporting evidence (just assertion like "I checked and it's not there"), disregard retraction and keep finding as verified. Log as validator error.
+- Never edit the reply and never restore a finding in `findings.json` by hand:
+  outcomes reach the findings only through `rc-apply-validation.sh`. The script
+  itself refuses a retraction with empty `evidence` (`NO_EVIDENCE`); it cannot
+  judge whether non-empty evidence actually contradicts the finding, which is
+  why this judgement is yours.
+- No other send-back: the only re-ask is the one `retry` triggers. A retraction
+  still unsupported on `--final` is disputed again and ends `UNVALIDATED`.
 - If validator retracts finding upgraded to verified during correction round (Step 1), agent's corrected evidence was also fabricated. Log as **correction failure pattern** in learnings — agent doubled down on false claim. Record both original and corrected evidence as false positives.
 
 ### When to Skip
@@ -521,6 +596,7 @@ Skip validation gate if:
 ## Step 5 — Write Verification Summary
 
 Write combined verification, correction, and validation results to `${session_dir}/verdicts/_meta/verification.txt`.
+The validator counts come from the `ok` payload of the last `rc-apply-validation.sh` pass (they describe `findings.json`, so they need no summing). `Rejected validator outcomes` is the sum of the `rejected` list lengths across both passes, counting only the last run of each pass (a re-run reports already-applied outcomes as `ALREADY_FINAL`).
 
 Format:
 
@@ -544,7 +620,8 @@ Format:
 {consolidated findings}
 
 === VALIDATION GATE ===
-{per-finding validator result: CONFIRMED/CORRECTED/RETRACTED}
+{per-finding validator result: CONFIRMED/CORRECTED/RETRACTED/UNVALIDATED,
+ plus each rejected outcome as id:reason (UNKNOWN_ID, DISPUTED, ...)}
 
 === SUMMARY ===
 Total findings: {N}
@@ -554,6 +631,8 @@ Corrected (validator): {N}
 Severity downgrades: {N} ({original} → {adjusted}, ...)
 Stripped: {N}
 Retracted (validator): {N}
+Unvalidated (validator): {N}
+Rejected validator outcomes: {N}
 Duplicates consolidated: {N}
 
 Per agent:
@@ -561,7 +640,7 @@ Per agent:
   ...
 ```
 
-Update `${session_dir}/tracking.md` Phase: Verification with fields: findings total, verified, corrected, stripped, severity downgrades, duplicates consolidated, validator confirmed/corrected/retracted, final verdict.
+Update `${session_dir}/tracking.md` Phase: Verification with fields: findings total, verified, corrected, stripped, severity downgrades, duplicates consolidated, validator confirmed/corrected/retracted/unvalidated/rejected, final verdict.
 
 ---
 

@@ -1,6 +1,6 @@
 # prepare-target.sh — PR metadata, target materialization, review mode, agent discovery.
 #
-# Sections 6-8b of the preparation pipeline, sourced by rc-prepare.sh in order.
+# Sections 6-8 of the preparation pipeline, sourced by rc-prepare.sh in order.
 # Not executable on its own: these are straight-line statements over the
 # globals the caller and the earlier fragments set, exactly as they were
 # when this was one 1,400-line file. An `exit` on a skip path still ends
@@ -110,6 +110,88 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 fi
 
 # ============================================================================
+# SECTION 6d: Exclusion Lists, and the Walk That Honours Them
+# ============================================================================
+
+SMART_EXCLUDES=(
+	"node_modules/"
+	"vendor/"
+	".git/"
+	".next/"
+	".nuxt/"
+	"dist/"
+	"build/"
+	"out/"
+	"__pycache__/"
+	".pytest_cache/"
+	"target/"
+	"coverage/"
+	".nyc_output/"
+	"package-lock.json"
+	"go.sum"
+	"yarn.lock"
+	"pnpm-lock.yaml"
+	"Gemfile.lock"
+	"poetry.lock"
+	"Cargo.lock"
+	"composer.lock"
+)
+
+# Basename globs for files that commonly hold credentials. Applied only to trees
+# walked outside a git repository, where no ignore list exists: inside one,
+# untracked files already honour .gitignore, which is where .env and keys live.
+# A file named explicitly in --scope paths is never dropped — naming it is the
+# intent. Matched as globs (unquoted on the right of ==), unlike SMART_EXCLUDES.
+CREDENTIAL_EXCLUDES=(
+	".env"
+	".env.*"
+	"*.pem"
+	"*.key"
+	"*.p12"
+	"*.pfx"
+	"*.jks"
+	"*.kdbx"
+	"id_rsa"
+	"id_dsa"
+	"id_ecdsa"
+	"id_ed25519"
+	".netrc"
+	".pgpass"
+	".npmrc"
+	".pypirc"
+	"credentials"
+	"credentials.json"
+)
+
+# Every regular file under the start points, relative to the current
+# directory, without descending into an excluded directory. The four walks
+# outside git (both changeset builders and both mode-detection branches) share
+# it. Pruning during the walk rather than filtering after it is what keeps a
+# vendored tree from costing a full traversal (a 3000-file node_modules took
+# 80s) and from voting when auto mode classifies the files. The directory
+# patterns are the same SMART_EXCLUDES the changeset builder filters with, so
+# a pruned path is one it would have dropped anyway. A leading `-` becomes
+# `./-`: find reads a dash-first start point as part of its expression, so a
+# target named `-delete` deleted the working directory.
+#
+# Returns non-zero when find could not read part of the tree (the output is
+# still every file it could). Callers record that with
+# `|| rc_walk_incomplete=true` rather than discarding it, so the result message
+# can say part of the tree went unreviewed; a bare assignment would also trip
+# the error trap under pipefail.
+rc_walk_incomplete=false
+rc_walk_files() { # start...
+	local pattern
+	local prune=()
+	for pattern in "${SMART_EXCLUDES[@]}"; do
+		[[ "$pattern" == */ ]] && prune+=(-name "${pattern%/}" -o)
+	done
+	unset 'prune[${#prune[@]}-1]'
+	find "${@/#-/./-}" \( -type d \( "${prune[@]}" \) -prune \) -o -type f -print 2>/dev/null |
+		sed 's|^\./||'
+}
+
+# ============================================================================
 # SECTION 7: Determine Review Mode
 # ============================================================================
 
@@ -150,6 +232,11 @@ else
 		for mode_scope_path in "${mode_scope_paths[@]}"; do
 			if [[ -f "$mode_scope_path" ]]; then
 				changeset_for_mode_detection+="${mode_scope_path}"$'\n'
+			elif $rc_no_git; then
+				# Outside git a directory reviews every file under it, so that
+				# is what it classifies as.
+				mode_scope_files=$(rc_walk_files "$mode_scope_path") || rc_walk_incomplete=true
+				[[ -n "$mode_scope_files" ]] && changeset_for_mode_detection+="${mode_scope_files}"$'\n'
 			else
 				# Appended only when it found something. An unconditional
 				# `+=$(...)$'\n'` leaves a lone newline behind for a directory
@@ -161,6 +248,11 @@ else
 				[[ -n "$mode_scope_diff" ]] && changeset_for_mode_detection+="${mode_scope_diff}"$'\n'
 			fi
 		done
+	elif $rc_no_git; then
+		# Outside git `--scope all` reviews the whole tree, so the tree is what
+		# it classifies as. A git diff here is always empty, which sent any
+		# plain directory holding a specs/ folder to spec mode.
+		changeset_for_mode_detection=$(rc_walk_files .) || rc_walk_incomplete=true
 	else
 		# Use local git diff
 		changeset_for_mode_detection=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")
@@ -265,31 +357,3 @@ else
 	agents_absent_line=$(printf '%s, ' "${agents_absent[@]}")
 	agents_absent_line="${agents_absent_line%, }"
 fi
-
-# ============================================================================
-# SECTION 8b: Smart Exclusions (for --scope all)
-# ============================================================================
-
-SMART_EXCLUDES=(
-	"node_modules/"
-	"vendor/"
-	".git/"
-	".next/"
-	".nuxt/"
-	"dist/"
-	"build/"
-	"out/"
-	"__pycache__/"
-	".pytest_cache/"
-	"target/"
-	"coverage/"
-	".nyc_output/"
-	"package-lock.json"
-	"go.sum"
-	"yarn.lock"
-	"pnpm-lock.yaml"
-	"Gemfile.lock"
-	"poetry.lock"
-	"Cargo.lock"
-	"composer.lock"
-)

@@ -99,7 +99,7 @@ without their dependency while the binary was still on the PATH it handed them.
 A *phase script* is one of the `rc-*.sh` scripts under
 `module/skills/review-council/scripts/` that a phase document in
 `module/skills/review-council/phases/` invokes against a session directory —
-`rc-consolidate.sh`, `rc-verify-evidence.sh`, `rc-extract-verdict.sh`,
+`rc-consolidate.sh`, `rc-apply-validation.sh`, `rc-verify-evidence.sh`, `rc-extract-verdict.sh`,
 `rc-render-report.sh` and `rc-render-comment.sh` today.
 
 `test-rc-idempotency.sh` covers a property across *every* phase script: re-run

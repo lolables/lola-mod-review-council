@@ -275,10 +275,8 @@ cat <<EOF
 EOF
 
 # Anchor for the deep-mode subsystem tree (phases/report.md, "Subsystem
-# Analysis"), which introduces the findings list. Emitted with no placeholder
-# sentence, unlike the NARRATIVE and LEARNINGS markers below: this section is
-# usually absent, and a bare marker left unspliced is invisible in rendered
-# markdown, where "The LLM will add ..." would publish as content.
+# Analysis"), which introduces the findings list. Emitted bare, like every
+# marker: a placeholder sentence beside it would publish as content.
 cat <<'EOF'
 <!-- SUBSYSTEM-ANALYSIS -->
 
@@ -392,19 +390,19 @@ cat <<'EOF'
 
 EOF
 
-# Narrative and learnings markers
+# Narrative and learnings markers. Both sections appear in every report, so the
+# headings are emitted here and the markers carry the body alone (the Heading
+# column in phases/report.md). Nothing follows either marker: splicing replaces
+# the marker LINE, so a placeholder sentence after it outlived every splice and
+# published as content.
 cat <<'EOF'
 ## Council Synthesis
 
 <!-- NARRATIVE -->
 
-The LLM will add narrative synthesis here based on the findings and verdicts above.
-
 ## Prior Learnings
 
 <!-- LEARNINGS -->
-
-The LLM will record false positives, validated patterns, and evidence quality feedback here.
 
 EOF
 

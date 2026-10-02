@@ -187,7 +187,8 @@ while [[ $# -gt 0 ]]; do
 			  paths       Comma-separated paths in --scope-value. A file is reviewed
 			              on its own, whatever git makes of it (untracked, ignored,
 			              or committed and unmodified); a directory filters the
-			              changeset to what changed under it.
+			              changeset to what changed under it. Outside a git
+			              repository a directory reviews every file under it.
 			  pr          Fetch PR by number in --scope-value
 			  url         Fetch PR by URL in --scope-value
 
@@ -286,6 +287,45 @@ if [[ -n "$scope_dir" ]]; then
 			scope_entry="${scope_entry%/}"
 		done
 		[[ -z "$scope_entry" ]] && continue
+		# An entry that exists is resolved to where it physically is and
+		# rewritten relative to the current directory. Evidence verification
+		# strips every finding on a file outside the directory the review runs
+		# from, so a `..`, absolute or symlinked target leading out of it would
+		# prepare a review whose findings all vanish — a clean result for code
+		# nobody checked. It is refused here instead. Inside the directory, the
+		# rewrite gives every consumer the same spelling (`./src`, `$PWD/src`
+		# and a symlink to it all become `src`), and lets a named symlink
+		# review what it points at rather than an empty walk of the link.
+		# Entries that do not exist are left alone: a file deleted on the
+		# branch is still a legitimate target, and the changeset builders own
+		# the missing-target refusal.
+		if [[ -e "$scope_entry" ]]; then
+			scope_phys="$scope_entry"
+			# readlink without -f, which macOS lacked until 12.3. -e above
+			# follows links, so a cycle never reaches this loop.
+			while [[ -L "$scope_phys" ]]; do
+				scope_link=$(readlink -- "$scope_phys")
+				if [[ "$scope_link" == /* ]]; then
+					scope_phys="$scope_link"
+				else
+					scope_phys="$(dirname -- "$scope_phys")/$scope_link"
+				fi
+			done
+			if [[ -d "$scope_phys" ]]; then
+				scope_phys=$(CDPATH='' cd -- "$scope_phys" && pwd -P)
+			else
+				scope_phys="$(CDPATH='' cd -- "$(dirname -- "$scope_phys")" && pwd -P)/${scope_phys##*/}"
+			fi
+			scope_root=$(pwd -P)
+			if [[ "$scope_phys" == "$scope_root" ]]; then
+				scope_entry="."
+			elif [[ "$scope_phys" == "$scope_root/"* ]]; then
+				scope_entry="${scope_phys#"$scope_root"/}"
+			else
+				json_output "skip" "Target outside the current directory: ${scope_entry}. Findings are verified against the directory the review runs from, so every finding on it would be discarded. Run the review from a directory that contains it."
+				exit 0
+			fi
+		fi
 		scope_dir="${scope_dir:+${scope_dir},}${scope_entry}"
 	done
 	if [[ -z "$scope_dir" ]]; then
@@ -295,5 +335,9 @@ if [[ -n "$scope_dir" ]]; then
 	# input_value carries the same list on `--scope paths`, and spec-mode
 	# discovery falls back to it. Left unnormalised it is the raw string again,
 	# by a different route.
-	[[ "$input_type" == "dir_scope" ]] && input_value="$scope_dir"
+	# An `if`, not `&&`: as the last statement of a sourced file a false test
+	# would be its exit status, and the error trap reports it as a failure.
+	if [[ "$input_type" == "dir_scope" ]]; then
+		input_value="$scope_dir"
+	fi
 fi

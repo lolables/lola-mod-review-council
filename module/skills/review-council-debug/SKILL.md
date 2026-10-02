@@ -357,6 +357,8 @@ Corrected (validator): 0
 Severity downgrades: 0
 Stripped: 0
 Retracted (validator): 0
+Unvalidated (validator): 0
+Rejected validator outcomes: 0
 Duplicates consolidated: 0
 
 Per agent:

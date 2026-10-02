@@ -84,7 +84,11 @@ fi
 	echo ""
 	echo "- Input type: ${input_type}"
 	echo "- Scope: ${scope_type:-changed}"
-	echo "- Scope value: ${input_value:-${base_branch}...HEAD}"
+	if $rc_no_git; then
+		echo "- Scope value: ${input_value:-whole directory (no git repository)}"
+	else
+		echo "- Scope value: ${input_value:-${base_branch}...HEAD}"
+	fi
 	echo "- Forge: ${forge}"
 	echo "- Tooling: ${forge_tool}"
 	echo "- PR: ${pr_number:-none}"
@@ -289,10 +293,24 @@ jq -n \
 	              reason: "council selection has not run", pinned: []}}' \
 	>"${session_dir}/session-manifest.json"
 
+# A review with no repository behind it is weaker in ways the reviewers cannot
+# see for themselves — no diff, no base, no forge — so the message says so and
+# SKILL.md has the orchestrator pass it on to the user.
+result_message="Review session prepared: ${session_dir}"
+if $rc_no_git; then
+	result_message+=". Warning: not a git repository; reviewing files as they are on disk, with no diff, base branch, or forge context."
+	if $rc_walk_incomplete; then
+		result_message+=" Some of the tree could not be read, so the files in it were not reviewed."
+	fi
+	if [[ "${credential_skipped:-0}" -gt 0 ]]; then
+		result_message+=" ${credential_skipped} file(s) that look like credentials were left out; name one explicitly to review it."
+	fi
+fi
+
 # Build the result JSON
 jq -n \
 	--arg status "ok" \
-	--arg message "Review session prepared: ${session_dir}" \
+	--arg message "$result_message" \
 	--arg session_dir "$session_dir" \
 	--arg mode "$mode" \
 	--arg language "$language" \

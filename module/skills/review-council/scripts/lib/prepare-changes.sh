@@ -32,16 +32,58 @@ diff_content=""
 has_diff=false
 
 if [[ "$mode" == "code" ]]; then
-	if [[ "$input_type" == "all" ]]; then
-		# All non-ignored project files
-		all_files=$(git ls-files 2>/dev/null || echo "")
-		all_files+=$'\n'$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+	if [[ "$input_type" == "all" ]] || $rc_no_git; then
+		if ! $rc_no_git; then
+			# All non-ignored project files
+			all_files=$(git ls-files 2>/dev/null || echo "")
+			all_files+=$'\n'$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+		elif [[ "$input_type" == "dir_scope" ]]; then
+			# No repository, so no changeset for a directory to filter: a named
+			# directory means every file under it, a named file means itself.
+			# Both then take the smart-exclude and binary filters below, so
+			# `--scope paths src` outside git drops src/node_modules exactly as
+			# `--scope all` does. A missing entry is refused, as in a repo.
+			IFS=',' read -ra scope_paths <<<"$scope_dir"
+			scope_missing=()
+			for scope_path in "${scope_paths[@]}"; do
+				[[ -e "$scope_path" ]] || scope_missing+=("$scope_path")
+			done
+			if [[ ${#scope_missing[@]} -gt 0 ]]; then
+				json_output "skip" "Target not found: ${scope_missing[*]}. Paths are relative to the current directory; name a file to review that file, or a directory to review every file under it."
+				exit 0
+			fi
+			all_files=$(rc_walk_files "${scope_paths[@]}") || rc_walk_incomplete=true
+		else
+			# `.git`-less tree: there is no ignore list, so the smart excludes
+			# below are the only filter. `./` is stripped so paths match the
+			# repo-relative shape `git ls-files` produces.
+			all_files=$(rc_walk_files .) || rc_walk_incomplete=true
+		fi
 
 		# Apply smart exclusions
 		filtered_files=""
+		credential_skipped=0
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue
+			# Outside git a file named in --scope paths is a target, as it is
+			# inside a repository: no exclusion applies to it. Only files a
+			# directory walk turned up are filtered.
+			if $rc_no_git && [[ ",${scope_dir}," == *",${file},"* ]]; then
+				filtered_files+="${file}"$'\n'
+				continue
+			fi
 			excluded=false
+			if $rc_no_git; then
+				for pattern in "${CREDENTIAL_EXCLUDES[@]}"; do
+					# shellcheck disable=SC2053 # the pattern is a glob on purpose
+					if [[ "${file##*/}" == $pattern ]]; then
+						excluded=true
+						credential_skipped=$((credential_skipped + 1))
+						break
+					fi
+				done
+				$excluded && continue
+			fi
 			for pattern in "${SMART_EXCLUDES[@]}"; do
 				if [[ "$pattern" == */ ]]; then
 					# Directory pattern
@@ -51,7 +93,7 @@ if [[ "$mode" == "code" ]]; then
 					fi
 				else
 					# File pattern (exact basename match)
-					if [[ "$(basename "$file")" == "$pattern" ]]; then
+					if [[ "${file##*/}" == "$pattern" ]]; then
 						excluded=true
 						break
 					fi
@@ -71,6 +113,10 @@ if [[ "$mode" == "code" ]]; then
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue
 			[[ -f "$file" ]] || continue
+			if $rc_no_git && [[ ",${scope_dir}," == *",${file},"* ]]; then
+				changeset_files+="${file}"$'\n'
+				continue
+			fi
 			mime_type=""
 			if [[ "$_RC_HAVE_FILE" == "yes" ]]; then
 				# `--` guards paths that begin with a dash from being read as flags.
@@ -173,7 +219,7 @@ if [[ "$mode" == "code" ]]; then
 				$scope_found || scope_missing+=("$scope_path")
 			done
 			if [[ ${#scope_missing[@]} -gt 0 ]]; then
-				json_output "skip" "Target not found: ${scope_missing[*]}. Paths are relative to the repository root; name a file to review that file, or a directory to filter the changeset to it."
+				json_output "skip" "Target not found: ${scope_missing[*]}. Paths are relative to the current directory; name a file to review that file, or a directory to filter the changeset to it."
 				exit 0
 			fi
 		else
@@ -190,6 +236,21 @@ if [[ "$mode" == "code" ]]; then
 		# Filter changeset to paths under scope_dir
 		filtered=""
 		IFS=',' read -ra filter_paths <<<"$scope_dir"
+		# Under `--scope all` the tree on disk is the whole universe, so a filter
+		# naming nothing on disk is a typo, and filtering to it reported "No
+		# changes to review" — a clean result for a review that never ran. Other
+		# base scopes keep the empty result: a filter matching nothing a range or
+		# PR touched is a legitimate answer there.
+		if [[ "$input_type" == "all" ]]; then
+			filter_missing=()
+			for fp in "${filter_paths[@]}"; do
+				[[ -e "$fp" ]] || filter_missing+=("$fp")
+			done
+			if [[ ${#filter_missing[@]} -gt 0 ]]; then
+				json_output "skip" "Target not found: ${filter_missing[*]}. Paths are relative to the current directory; name a file or directory that exists to narrow the review to it."
+				exit 0
+			fi
+		fi
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue
 			for fp in "${filter_paths[@]}"; do
@@ -282,8 +343,8 @@ else
 		[[ -d "$dir" ]] || return 0
 		[[ ${#spec_find_args[@]} -gt 0 ]] || return 0
 		while IFS= read -r file; do
-			[[ -f "$file" ]] && changeset_files+="${file}"$'\n'
-		done < <(find "$dir" -type f \( "${spec_find_args[@]}" \) 2>/dev/null || true)
+			[[ -f "$file" ]] && changeset_files+="${file#./}"$'\n'
+		done < <(find "${dir/#-/./-}" -type f \( "${spec_find_args[@]}" \) 2>/dev/null || true)
 		return 0
 	}
 
@@ -313,7 +374,7 @@ else
 			collect_specs_in "$dir"
 		done
 		if [[ ${#spec_missing[@]} -gt 0 ]]; then
-			json_output "skip" "Target not found: ${spec_missing[*]}. Paths are relative to the repository root; name a file to review that file, or a directory to search it for spec artifacts."
+			json_output "skip" "Target not found: ${spec_missing[*]}. Paths are relative to the current directory; name a file to review that file, or a directory to search it for spec artifacts."
 			exit 0
 		fi
 	elif [[ "$input_type" == "all" ]] || [[ -z "$scope_type" ]] || [[ "$scope_type" == "all" ]]; then

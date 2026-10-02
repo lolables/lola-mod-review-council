@@ -254,6 +254,20 @@ Naming a file reviews that file whatever git makes of it — untracked, ignored,
 or committed and unmodified. Naming a directory keeps its other meaning: it
 filters the changeset to what changed under it, rather than sweeping the tree.
 
+Outside a git repository, naming files or directories still works: a file is
+reviewed whole and a directory as every file under it, and the council warns
+that there is no diff, base branch, or forge context behind the review. With no
+`.gitignore` to consult, files a directory walk finds that look like
+credentials (`.env`, `*.pem`, `*.key`, SSH private keys and the like) are left
+out and counted in that warning; name one explicitly to review it. Anything
+that compares history (the current branch, a ref range, a PR number), and
+`--base`, needs a repository and says so.
+
+Whatever you name must sit inside the directory you run the review from:
+findings are checked against that directory, so a target reached through `..`,
+an absolute path, or a symlink leading elsewhere is refused rather than
+reviewed and then silently emptied. `cd` to a directory that contains it.
+
 ### Effort tiers
 
 An **effort tier** sets how much work a review is allowed to do. Say the word
@@ -390,8 +404,8 @@ these packs:
 | `pipeline-states.md`   | Any        | Phase status vocabulary and transitions            |
 
 The `references/` directory also holds the JSON schemas the scripts validate
-against — `verdict-schema.json`, `consolidation-schema.json` and
-`triage-schema.json`. Those are machine contracts, not packs.
+against — `verdict-schema.json`, `consolidation-schema.json`,
+`triage-schema.json` and `validation-schema.json`. Those are machine contracts, not packs.
 
 Pack filenames encode their type: `lang-{language}.md` for standalone language packs, `fw-{framework}.md` for
 additive framework packs that load alongside the language pack.

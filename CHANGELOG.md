@@ -6,6 +6,34 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Validator outcomes are now applied by `rc-apply-validation.sh`, keyed on a
+  finding `id` that `rc-verify-evidence.sh` assigns (`F1`, `F2`, ...). Each
+  outcome echoes its finding's file; one that names an unknown or duplicate id,
+  a different file, a retraction without evidence, a correction to a field
+  the validator may not change, or a bad result or blank reason is rejected by
+  name. Outcomes used to be matched to findings by position and applied by
+  hand, and a real run applied two transposed answers to each other's
+  findings. The validator gets one retry for findings it left unanswered;
+  anything still unanswered is kept, marked `UNVALIDATED`. `--dispute <ids>`
+  rejects a retraction the orchestrator judged unsupported (`DISPUTED`); the
+  finding stays verified and, after the retry, is marked `UNVALIDATED`. A
+  `--dispute` id that names no finding refuses the pass before anything is
+  applied, so a typo cannot let the retraction it meant to stop through.
+- `--scope paths` and `--scope all` now work outside a git repository. A named
+  file is reviewed whole, a named directory as every file under it (smart
+  excludes and the binary filter still apply), and the result message warns
+  that there is no diff, base branch, or forge context. Previously every
+  non-url scope refused with "Not a git repository", so reviewing a lone file
+  meant copying it into a scratch repo whose only commit invented a history.
+  The history scopes (`changed`, `range`, `pr`) still refuse, and their
+  refusal now points at `--scope paths`; `--base` outside a repository is
+  refused rather than ignored. The skill's own directory routing
+  (`--scope changed --scope paths <dir>`) takes the same path. Walked files
+  that look like credentials are left out and counted, since there is no
+  ignore list; a file named explicitly is reviewed whatever its name or type.
+  Walks prune excluded directories instead of traversing and then dropping
+  them, so a vendored tree neither slows the walk nor outvotes the real files
+  when auto mode classifies, and a directory the walk cannot read is reported.
 - Delegation batching now triggers on **context bytes** rather than file count,
   and is computed by `rc-plan-batches.sh` (SKILL.md Step 2.6) at every effort
   level instead of being decided while prompts are written. File count never
@@ -632,6 +660,32 @@ All notable changes to the Review Council module are documented here.
   `fw-react.md` calibration)
 
 ### Fixed
+
+- A `--scope paths` entry beginning with `-` is now always a path. `find` read a
+  dash-first start point as part of its expression, so a target named
+  `-delete` deleted the working directory (spec-mode discovery had the same
+  shape). Every user-supplied `find` start point is now written `./-...`.
+
+- A `--scope paths` target outside the directory the review runs from — via
+  `..`, an absolute path, or a symlink — is refused. It used to be prepared and
+  then have every finding stripped by evidence verification as outside the
+  root, so the review read clean. Targets inside the directory are rewritten
+  to one relative spelling, which also lets a named symlink review its target.
+
+- `--scope all --scope paths <typo>` is refused with "Target not found" instead
+  of reporting "No changes to review".
+
+- Quick mode no longer leaves an empty `## Council Synthesis` heading: the
+  NARRATIVE marker gets a literal fallback line, as LEARNINGS already did.
+
+- The report's Council Synthesis and Prior Learnings headings no longer
+  publish twice, and no "The LLM will ..." placeholder survives the splice.
+  `phases/report.md` said every marker's replacement carries its own `##`
+  heading, but `rc-render-report.sh` already emits those two, and a placeholder
+  sentence after each marker outlived the marker-line substitution the doc
+  prescribes. The marker table now has a Heading column naming who emits each
+  heading, the placeholders are gone, and a test checks the column against the
+  rendered output.
 
 - The `Review Council Configuration` block was never read on macOS, so every key
   it carries fell back to its default there. The `sed` that lifts the block out

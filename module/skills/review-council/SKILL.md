@@ -50,7 +50,7 @@ these steps by hand, even in non-interactive / headless runs:
   against the verdicts that arrive to report `missing_verdicts` — editing it by
   hand makes a reviewer appear or disappear from the coverage the report claims.
 - Write pipeline state that phases produce — `clusters.json`,
-  `verification.txt`, `disposition.txt` — under `${session_dir}/verdicts/_meta/`,
+  `validation.json`, `verification.txt`, `disposition.txt` — under `${session_dir}/verdicts/_meta/`,
   never in `verdicts/` itself. `verdicts/` holds per-agent verdict artifacts and
   the derived `findings.json`; everything that discovers verdicts globs it, and
   a phase artifact landing there gets parsed as a verdict.
@@ -312,6 +312,16 @@ read files under `review_root` (see `delegate.md` "Review root" and pass
 skipped (non-GitHub forge, missing `gh` for a private repo, or clone failure),
 `review_root` stays `.` and review proceeds from the diff — note this to the
 user, since grounding is weaker.
+
+**Outside a git repository.** `paths` and `all` scope still prepare a session
+(so does the Step 0 directory routing, `changed` + `paths`): named files are
+reviewed whole, named directories as every file under them, with no diff, base
+branch, or forge. Files a walk turns up that look like credentials (`.env`,
+keys) are left out; a file named explicitly never is. The `ok` message then
+carries a `Warning: not a git repository` sentence, a count of any
+credential files left out, and a note when part of the tree could not be read —
+relay all of it to the user. The history scopes
+(`changed` alone, `range`, `pr`) return `skip` there instead.
 
 **Returns JSON to stdout:**
 ```json
@@ -795,8 +805,26 @@ these in this order:
   - Do not re-run it and do not proceed to the validation gate: the manifest
     is not what failed, so rewriting it changes nothing, and every later stage
     reads the same document.
-- Run validation gate — dispatch fresh-context validator agent
-  to check findings against actual code
+- **Run the validation gate (verify.md Step 4) — outcomes are SCRIPT-APPLIED.**
+  - Dispatch the fresh-context validator over the verified findings, each
+    under its `id`. Save its JSON reply verbatim to
+    `${session_dir}/verdicts/_meta/validation.json`
+    (`${REFERENCES_DIR}/validation-schema.json`).
+  - Judge each RETRACTED entry: if its `evidence` is assertion, or quotes
+    text that does not contradict the finding, note its id for `--dispute`.
+  - Run: `bash ${SCRIPTS_DIR}/rc-apply-validation.sh ${session_dir}`, adding
+    `--dispute <ids>` (comma-separated) for the noted ids. Never apply an
+    outcome by hand: the script ties each one to its finding by `id` and
+    echoed `file`, and rejects any that do not tie back.
+  - On `ok`, continue. On `retry`, re-ask the validator about the `pending`
+    ids only, passing each rejected `{id, reason}`; save the reply verbatim,
+    then run again with `--final` (plus `--dispute` for any retraction still
+    unsupported). Once only.
+  - On `validation_error`, nothing was applied: if it names a `--dispute` id
+    that is not a finding id, correct the list and re-run the same pass;
+    otherwise stop and report the message verbatim.
+  - On `nothing_to_do` (session directory or `findings.json` missing), stop
+    and report.
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
 **Effort-conditional behavior:**
@@ -950,7 +978,9 @@ and learnings extraction guidance.
 **Effort-conditional behavior:**
 - **quick**: Compact report: findings list (sorted by severity)
   and verdict only. Skip learnings extraction and narrative synthesis
-  (no subagent dispatch, no narrative splice). Still splice the
+  (no subagent dispatch). Still splice the `<!-- NARRATIVE -->` marker —
+  replace it with the literal line
+  `Narrative synthesis is skipped at quick effort.` — the
   `<!-- LEARNINGS -->` marker — replace it with the literal line
   `None recorded.` — and the `<!-- TLDR -->` marker, which takes the
   absent-or-empty fallback above because no subagent wrote

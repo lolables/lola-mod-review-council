@@ -129,6 +129,38 @@ assert_idempotent "rc-render-comment.sh" "$s/comment-body.md" \
 	bash "$SCRIPTS/rc-render-comment.sh" "$s"
 rm -rf "$s"
 
+echo "Test 7: rc-apply-validation.sh is idempotent on both passes"
+s=$(new_session)
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"divisor-guard-code","severity":"HIGH","file":"a.go","line":3,"evidence":"x","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+ {"id":"F2","agent":"divisor-guard-code","severity":"MEDIUM","file":"b.go","line":9,"evidence":"y","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+ {"id":"F3","agent":"divisor-sre-code","severity":"LOW","file":"c.go","line":1,"evidence":"z","description":"d","recommendation":"r","verdict":"APPROVE","status":"verified","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":3,"duplicates_consolidated":0,"verdicts":{}}
+FJ
+cat >"$s/verdicts/_meta/validation.json" <<'VJ'
+{"results":[
+ {"id":"F1","file":"a.go","result":"RETRACTED","reason":"r","evidence":"a.go:4"},
+ {"id":"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"severity":"LOW"}}]}
+VJ
+assert_idempotent "rc-apply-validation.sh (first pass)" "$s/verdicts/findings.json" \
+	bash "$SCRIPTS/rc-apply-validation.sh" "$s"
+assert_idempotent "rc-apply-validation.sh --final" "$s/verdicts/findings.json" \
+	bash "$SCRIPTS/rc-apply-validation.sh" "$s" --final
+# Same reply, with F1's retraction disputed: the finding must stay put on every
+# re-run of either pass, not flip between pending and stripped.
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"divisor-guard-code","severity":"HIGH","file":"a.go","line":3,"evidence":"x","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+ {"id":"F2","agent":"divisor-guard-code","severity":"MEDIUM","file":"b.go","line":9,"evidence":"y","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{}}
+FJ
+assert_idempotent "rc-apply-validation.sh --dispute (first pass)" "$s/verdicts/findings.json" \
+	bash "$SCRIPTS/rc-apply-validation.sh" "$s" --dispute F1
+assert_idempotent "rc-apply-validation.sh --final --dispute" "$s/verdicts/findings.json" \
+	bash "$SCRIPTS/rc-apply-validation.sh" "$s" --final --dispute F1
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

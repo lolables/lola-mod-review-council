@@ -22,7 +22,7 @@ conditional:
 | **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
-| **Verify**            | `rc-verify-evidence.sh` + `rc-consolidate.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
+| **Verify**            | `rc-verify-evidence.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
 | **Disposition**       | `phases/disposition.md` (re-review only)                           | Triage untrusted PR-conversation replies against findings |
 | **Report**            | `rc-render-report.sh` + `phases/report.md`                         | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
@@ -201,6 +201,7 @@ flowchart TD
   extr["Extract: rc-extract-verdict.sh"]
   vevi["Verify: rc-verify-evidence.sh"]
   vcon["Verify: rc-consolidate.sh"]
+  vval["Verify: rc-apply-validation.sh"]
   vorc["Verify: orchestrator write-up"]
   dsp["Disposition subagent"]
   rrep["Report: rc-render-report.sh"]
@@ -217,6 +218,7 @@ flowchart TD
     subgraph mdir["verdicts/_meta/ — phase state, kept out of the glob"]
       vtxt["verification.txt"]
       clus["clusters.json"]
+      valj["validation.json"]
       dtxt["disposition.txt"]
     end
   end
@@ -230,7 +232,10 @@ flowchart TD
   vevi --> find
   find --> vcon
   vcon --> clus
+  vval --> valj
   vcon -->|"merged back in place"| find
+  find --> vval
+  vval -->|"outcomes applied in place"| find
   vorc --> vtxt
   dsp --> dtxt
   find --> rrep
@@ -242,9 +247,9 @@ flowchart TD
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
   classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
-  class vevi,vcon,vorc,dsp sysC
+  class vevi,vcon,vval,vorc,dsp sysC
   class rrep sysD
-  class extr,raw,vjson,vmap,find,vtxt,clus,dtxt,meta1,learn sysE
+  class extr,raw,vjson,vmap,find,vtxt,clus,valj,dtxt,meta1,learn sysE
 ```
 
 Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>/` containing:
@@ -261,7 +266,7 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
   canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
-  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), and, on a re-review,
+  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render
   without `verification.txt`
 - `learnings.txt` — false positives and validated patterns

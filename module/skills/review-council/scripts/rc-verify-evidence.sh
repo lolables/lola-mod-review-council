@@ -307,6 +307,10 @@ trap 'rm -rf "$argdir"' EXIT
 printf '%s' "$verified" >"$argdir/verified.json"
 printf '%s' "$correctable" >"$argdir/correctable.json"
 printf '%s' "$stripped" >"$argdir/stripped.json"
+# Every finding gets an ID here, once, numbered across all three arrays so no
+# two share one. The validation gate (verify.md Step 4) keys its outcomes on it:
+# before IDs, outcomes were matched to findings by position, and a validator
+# that transposed two answers had them applied to the wrong findings silently.
 jq -n \
 	--slurpfile verified "$argdir/verified.json" \
 	--slurpfile correctable "$argdir/correctable.json" \
@@ -315,10 +319,16 @@ jq -n \
 	--argjson dedup "$dedup" \
 	--argjson missing "$missing_json" \
 	--slurpfile vmap "$vdir/verdicts-map.json" \
-	'{verified:$verified[0], correctable:$correctable[0], stripped:$stripped[0],
+	'def ids($from): to_entries | map(.value + {id: "F\(.key + $from + 1)"});
+	 ($verified[0] | length) as $nv | ($correctable[0] | length) as $nc |
+	 {verified:($verified[0] | ids(0)), correctable:($correctable[0] | ids($nv)),
+	  stripped:($stripped[0] | ids($nv + $nc)),
 	  total_findings:$total, duplicates_consolidated:$dedup, verdicts:$vmap[0],
 	  missing_verdicts:$missing}' \
 	>"$vdir/findings.json"
+# Ids restart at F1 on every run, so a validator reply saved against the
+# previous findings.json would apply to this run's unrelated findings.
+rm -f "$vdir/_meta/validation.json"
 
 vc=$(echo "$verified" | jq 'length')
 cc=$(echo "$correctable" | jq 'length')

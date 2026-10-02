@@ -90,11 +90,12 @@ else
 fi
 
 echo "Test 8: every copy of the severity list outside the schema matches it"
-# Five places re-declare the schema's severity names, and none reads the schema
+# Six places re-declare the schema's severity names, and none reads the schema
 # at runtime: the validator fallback in rc-extract-verdict.sh, the render loops
 # in rc-render-report.sh and rc-render-comment.sh, and the two rankers that now
 # live as standalone jq programs — jq/dedup-findings.jq and
-# jq/consolidate-clusters.jq. Drift between any copy and the schema is silent in both
+# jq/consolidate-clusters.jq — plus the correction enum in
+# jq/apply-validation.jq. Drift between any copy and the schema is silent in both
 # directions — a name the schema drops still renders, and a name the schema adds
 # ranks 0 and never gets a section — so each copy is compared here rather than
 # merely pinned.
@@ -161,6 +162,23 @@ check_severity_copy "rc-render-comment.sh severity loops" \
 	"$SCRIPTS_DIR/rc-render-comment.sh" '^[[:space:]]*for sev in ' exact
 check_severity_copy "jq/consolidate-clusters.jq cluster ranker" \
 	"$SCRIPTS_DIR/jq/consolidate-clusters.jq" 'def rank:' prefix
+check_severity_copy "jq/apply-validation.jq correction enum" \
+	"$SCRIPTS_DIR/jq/apply-validation.jq" 'def severities' exact
+check_severity_copy "references/validation-schema.json correction enum" \
+	"$SCRIPT_DIR/../skills/review-council/references/validation-schema.json" '"severity": [{]' exact
+
+# The jq reducer's list of correctable fields and the validation schema's
+# corrections.properties are two declarations of one set.
+VSCHEMA="$SCRIPT_DIR/../skills/review-council/references/validation-schema.json"
+schema_fields=$(jq -r '.properties.results.items.properties.corrections.properties | keys | join(" ")' "$VSCHEMA")
+jq_fields=$(grep -E 'def correctable_fields' "$SCRIPTS_DIR/jq/apply-validation.jq" | grep -oE '"[a-z]+"' | tr -d '"' | sort | tr '\n' ' ')
+if [[ -n "$schema_fields" && "${jq_fields% }" == "$schema_fields" ]]; then
+	echo "  PASS: correctable_fields matches validation-schema.json corrections"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: correctable_fields '${jq_fields% }' vs schema '$schema_fields'"
+	FAIL=$((FAIL + 1))
+fi
 
 echo "Test: title is an optional finding property with no length bound"
 # The renderers have always headlined findings with `.title // ...`, but the

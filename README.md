@@ -404,8 +404,8 @@ these packs:
 | `pipeline-states.md`   | Any        | Phase status vocabulary and transitions            |
 
 The `references/` directory also holds the JSON schemas the scripts validate
-against — `verdict-schema.json`, `consolidation-schema.json` and
-`triage-schema.json`. Those are machine contracts, not packs.
+against — `verdict-schema.json`, `consolidation-schema.json`,
+`triage-schema.json` and `validation-schema.json`. Those are machine contracts, not packs.
 
 Pack filenames encode their type: `lang-{language}.md` for standalone language packs, `fw-{framework}.md` for
 additive framework packs that load alongside the language pack.

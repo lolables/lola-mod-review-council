@@ -231,7 +231,9 @@ check_mutation "RC-11 findings assembly via files" \
 	's#^[[:space:]]*--slurpfile verified ".*#--argjson verified "$verified" \\#;
 	 s#^[[:space:]]*--slurpfile correctable ".*#--argjson correctable "$correctable" \\#;
 	 s#^[[:space:]]*--slurpfile stripped ".*#--argjson stripped "$stripped" \\#;
-	 s/verified:\$verified\[0\], correctable:\$correctable\[0\], stripped:\$stripped\[0\]/verified:$verified, correctable:$correctable, stripped:$stripped/' \
+	 s/\$verified\[0\]/$verified/g;
+	 s/\$correctable\[0\]/$correctable/g;
+	 s/\$stripped\[0\]/$stripped/g' \
 	test-rc-verify-evidence.sh
 
 # The repo name parsed from the local remote kept its trailing `.git`. The strip
@@ -791,6 +793,37 @@ check_mutation "RC-048 a non-git review warns" \
 	lib/prepare-emit.sh \
 	's/^[[:space:]]*if \$rc_no_git; then$/if false; then/' \
 	test-rc-prepare-no-git.sh
+
+# The file echo is what catches a transposed validator answer. Without it the
+# two outcomes are applied to each other's findings and nothing says so.
+check_mutation "RC-049 a validator outcome must echo its finding's file" \
+	jq/apply-validation.jq \
+	's/^[[:space:]]*elif \$e\.file != \$f\.file then {id: \$id, reject: "FILE_MISMATCH"}$/elif false then null/' \
+	test-rc-apply-validation.sh
+
+# The --final pass is the only thing that stops a finding the validator never
+# answered from sitting pending forever: without it the report cannot tell a
+# validated finding from one the gate skipped. (The renderers do not read
+# provenance.validator; it is verification.txt that could not tell the two apart.)
+check_mutation "RC-049 --final marks unanswered findings UNVALIDATED" \
+	jq/apply-validation.jq \
+	's/^[[:space:]]*if \$final and (\$f\.provenance\.validator\.result \/\/ null) == null$/if false/' \
+	test-rc-apply-validation.sh
+
+# --dispute is how the orchestrator stops a retraction whose evidence does not
+# hold up. Without the DISPUTED branch the retraction is applied anyway and the
+# finding leaves the report.
+check_mutation "RC-050 a disputed retraction is rejected" \
+	jq/apply-validation.jq \
+	's/^[[:space:]]*elif \$e\.result == "RETRACTED" and any(\$disputed\[\]; \. == \$id)$/elif false/' \
+	test-rc-apply-validation.sh
+
+# A mistyped dispute id names no finding. Without the refusal, the retraction it
+# was meant to stop goes through and the typo is never reported.
+check_mutation "RC-050 an unknown dispute id refuses the pass" \
+	rc-apply-validation.sh \
+	's/^[[:space:]]*if \[\[ -n "\$unknown_disputes" \]\]; then$/if false; then/' \
+	test-rc-apply-validation.sh
 
 # find reads a dash-first start point as part of its expression: a target named
 # `-delete` deleted the working directory. The `./-` rewrite in rc_walk_files,

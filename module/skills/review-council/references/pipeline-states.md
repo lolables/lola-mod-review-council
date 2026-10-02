@@ -11,6 +11,7 @@ these tokens. This is the machine-readable spine of the state diagram in SKILL.m
 | Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure)                                                       |
 | Verify           | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do`                              | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty)                                                          |
 | Consolidate      | `rc-consolidate.sh`     | `ok` \| `consolidate_error` \| `nothing_to_do`       | `ok`->Validate; `consolidate_error`->stop; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`              |
+| Validate         | `rc-apply-validation.sh` | `ok` \| `retry` \| `validation_error` \| `nothing_to_do` | `ok`->Report; `retry`->re-ask validator for `pending` ids, judge retractions->Validate `--final` [`--dispute`] (once); `validation_error`->stop (or, for an unknown `--dispute` id, correct it and re-run the pass); `nothing_to_do`->stop (session or `findings.json` missing). Skipped entirely when effort is `quick` or the gate's skip rule holds |
 | Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip`                                 | ->post/Report                                                                                                                                               |
 | Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report                                                                                                                                                    |
 
@@ -31,13 +32,16 @@ holding an unresolved finding there (`open-finding`). That asymmetry is why one
 is on by default and the other is not.
 
 Effort gates (quick skips Correction/Calibrate/Consolidate/Validate/Narrative)
-and the orchestrator-run states (Correction, Calibrate, Validate, Report) are
+and the orchestrator-run states (Correction, Calibrate, Report) are
 LLM judgment steps documented in `phases/verify.md` and `phases/report.md`.
 
-Consolidate is in the table rather than that list because it is both: the
-orchestrator judges which findings describe the same defect and writes
-`clusters.json`, then `rc-consolidate.sh` folds them and emits the status the
-orchestrator dispatches on. Only the second half is a state token.
+Consolidate and Validate are in the table rather than that list because each is
+both. For Consolidate the orchestrator judges which findings describe the same
+defect and writes `clusters.json`, then `rc-consolidate.sh` folds them and
+emits the status the orchestrator dispatches on. For Validate the validator
+judges each finding and replies, the orchestrator saves the reply as
+`validation.json`, then `rc-apply-validation.sh` applies the outcomes by
+finding id and emits the status. Only the second half of each is a state token.
 
 `consolidate_error` is the conservation guard: the fold would have taken more
 findings out of the verified array than it declared merged. `findings.json` is

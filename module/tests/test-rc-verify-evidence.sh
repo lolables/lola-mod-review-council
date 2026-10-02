@@ -903,6 +903,43 @@ assert_jq_str "$result" '.missing_verdicts // [] | tojson' '["divisor-curator-co
 	"only the dispatched-but-silent agent is named"
 rm -rf "$s" "$src"
 
+echo "Test 36: every finding carries a unique id, numbered across all three arrays"
+# The validation gate keys its outcomes on these IDs; one that is missing or
+# repeated is a finding the validator's answer cannot be tied back to.
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
+ {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d1","recommendation":"r"},
+ {"severity":"MEDIUM","file":"token.go","line":1,"evidence":"not in the file","description":"d2","recommendation":"r"},
+ {"severity":"LOW","file":"missing.go","line":1,"evidence":"x","description":"d3","recommendation":"r"}]'
+(cd "$src" && bash "$SCRIPT" "$s" >/dev/null)
+fj="$s/verdicts/findings.json"
+assert_jq_str "$(<"$fj")" '[.verified[], .correctable[], .stripped[] | .id] | tojson' '["F1","F2","F3"]' \
+	"ids run F1..F3 across verified, correctable, stripped"
+assert_jq_str "$(<"$fj")" '[.verified[], .correctable[], .stripped[] | .id] | (length == (unique | length)) | tostring' 'true' \
+	"no id repeats"
+rm -rf "$s" "$src"
+
+echo "Test 37: a previous iteration's validator reply is discarded"
+# Ids restart at F1 every run, so a reply saved for the last run's F1 would
+# otherwise be applied to this run's unrelated F1.
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
+ {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d1","recommendation":"r"}]'
+printf '{"results":[]}' >"$s/verdicts/_meta/validation.json"
+(cd "$src" && bash "$SCRIPT" "$s" >/dev/null)
+if [[ ! -e "$s/verdicts/_meta/validation.json" ]]; then
+	echo "  PASS: stale validation.json removed"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: stale validation.json survived a re-verification"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

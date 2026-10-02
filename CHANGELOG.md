@@ -6,6 +6,19 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- Validator outcomes are now applied by `rc-apply-validation.sh`, keyed on a
+  finding `id` that `rc-verify-evidence.sh` assigns (`F1`, `F2`, ...). Each
+  outcome echoes its finding's file; one that names an unknown or duplicate id,
+  a different file, a retraction without evidence, a correction to a field
+  the validator may not change, or a bad result or blank reason is rejected by
+  name. Outcomes used to be matched to findings by position and applied by
+  hand, and a real run applied two transposed answers to each other's
+  findings. The validator gets one retry for findings it left unanswered;
+  anything still unanswered is kept, marked `UNVALIDATED`. `--dispute <ids>`
+  rejects a retraction the orchestrator judged unsupported (`DISPUTED`); the
+  finding stays verified and, after the retry, is marked `UNVALIDATED`. A
+  `--dispute` id that names no finding refuses the pass before anything is
+  applied, so a typo cannot let the retraction it meant to stop through.
 - `--scope paths` and `--scope all` now work outside a git repository. A named
   file is reviewed whole, a named directory as every file under it (smart
   excludes and the binary filter still apply), and the result message warns

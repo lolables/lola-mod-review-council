@@ -1207,5 +1207,75 @@ else
 fi
 rm -rf "$s"
 
+echo "Test 20: every marker's heading is emitted exactly once, by whoever the doc says"
+# phases/report.md's marker table says, per marker, whether the renderer emits
+# the section heading or the replacement text carries its own. The doc once said
+# every replacement carried its own `##` heading while the renderer emitted
+# `## Council Synthesis` and `## Prior Learnings` itself, so an orchestrator
+# following the doc published both headings twice. The table is checked against
+# what the renderer actually puts above each marker, so the two cannot drift.
+report_doc="$SCRIPT_DIR/../skills/review-council/phases/report.md"
+session=$(mk_verdict_session 'APPROVE')
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+# shellcheck disable=SC2016 # the backticks are literal markdown, not expansions
+rows=$(grep -E '^[|] `<!-- [A-Z-]+ -->`' "$report_doc" || true)
+if [[ -z "$rows" ]]; then
+	echo "  FAIL: no marker rows found in phases/report.md"
+	FAIL=$((FAIL + 1))
+fi
+while IFS= read -r row; do
+	[[ -z "$row" ]] && continue
+	# shellcheck disable=SC2016 # literal markdown backticks, as above
+	marker=$(sed -E 's/^[|] `(<!-- [A-Z-]+ -->)`.*/\1/' <<<"$row")
+	documented=$(awk -F'|' '{ sub(/^ +/, "", $3); sub(/ +$/, "", $3); print $3 }' <<<"$row")
+	# A heading column naming `## X` means the renderer emits X and the marker
+	# sits under it: X must be the nearest heading above. `own` means the
+	# replacement brings its heading: the renderer must put none directly above.
+	if ! grep -qxF "$marker" <<<"$result"; then
+		echo "  FAIL: $marker is in the doc table but the renderer never emits it"
+		FAIL=$((FAIL + 1))
+		continue
+	fi
+	nearest=$(awk -v m="$marker" '$0 == m { print h; exit } /^## / { h = $0 }' <<<"$result")
+	above=$(awk -v m="$marker" '$0 == m { print prev; exit } NF { prev = $0 }' <<<"$result")
+	if [[ "$documented" == "own" ]]; then
+		[[ "$above" != "## "* ]] && ok=true || ok=false
+	else
+		[[ "$documented" == "\`$nearest\`" ]] && ok=true || ok=false
+		# Exactly once: a second copy is the doubled heading this test exists for.
+		heading_count=$(grep -cxF -- "$nearest" <<<"$result" || true)
+		[[ "$heading_count" -eq 1 ]] || ok=false
+	fi
+	if $ok; then
+		echo "  PASS: $marker heading: $documented"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $marker heading documented as '$documented'; nearest heading '$nearest', line above '$above'"
+		FAIL=$((FAIL + 1))
+	fi
+done <<<"$rows"
+# The reverse direction: a marker the renderer emits but the table omits has no
+# documented heading owner at all.
+while IFS= read -r emitted; do
+	[[ -z "$emitted" ]] && continue
+	if grep -qF "\`$emitted\`" <<<"$rows"; then
+		echo "  PASS: $emitted is documented"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: renderer emits $emitted but phases/report.md's table omits it"
+		FAIL=$((FAIL + 1))
+	fi
+done < <(grep -xE '<!-- [A-Z-]+ -->' <<<"$result" || true)
+# Splicing replaces the marker LINE. Anything the renderer prints between a
+# marker and the next section survives that splice and publishes as content.
+if grep -q 'The LLM will' <<<"$result"; then
+	echo "  FAIL: placeholder prose survives a marker-line splice"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no placeholder prose outlives the splice"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

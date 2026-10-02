@@ -675,6 +675,18 @@ All notable changes to the Review Council module are documented here.
 - `--scope all --scope paths <typo>` is refused with "Target not found" instead
   of reporting "No changes to review".
 
+- Quick mode no longer leaves an empty `## Council Synthesis` heading: the
+  NARRATIVE marker gets a literal fallback line, as LEARNINGS already did.
+
+- The report's Council Synthesis and Prior Learnings headings no longer
+  publish twice, and no "The LLM will ..." placeholder survives the splice.
+  `phases/report.md` said every marker's replacement carries its own `##`
+  heading, but `rc-render-report.sh` already emits those two, and a placeholder
+  sentence after each marker outlived the marker-line substitution the doc
+  prescribes. The marker table now has a Heading column naming who emits each
+  heading, the placeholders are gone, and a test checks the column against the
+  rendered output.
+
 - The `Review Council Configuration` block was never read on macOS, so every key
   it carries fell back to its default there. The `sed` that lifts the block out
   of `AGENTS.md` and `CLAUDE.md` closed its brace group with `p}`, and BSD sed —

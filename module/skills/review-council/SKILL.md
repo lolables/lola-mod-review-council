@@ -978,7 +978,9 @@ and learnings extraction guidance.
 **Effort-conditional behavior:**
 - **quick**: Compact report: findings list (sorted by severity)
   and verdict only. Skip learnings extraction and narrative synthesis
-  (no subagent dispatch, no narrative splice). Still splice the
+  (no subagent dispatch). Still splice the `<!-- NARRATIVE -->` marker —
+  replace it with the literal line
+  `Narrative synthesis is skipped at quick effort.` — the
   `<!-- LEARNINGS -->` marker — replace it with the literal line
   `None recorded.` — and the `<!-- TLDR -->` marker, which takes the
   absent-or-empty fallback above because no subagent wrote

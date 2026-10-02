@@ -1,0 +1,70 @@
+module/tests/test-rc-prepare-no-git.sh
+  s_9173a2a1eaed7f::t_39181375534410 1-20,31-58,60-68,70-82,84-92,93-100,102-138,140-159,334-336
+  s_9173a2a1eaed7f::t_cbb2092d342ba2 187-188,212-213,216-217
+  s_9173a2a1eaed7f::t_4eb8dc7193025d 59,69
+  s_9173a2a1eaed7f::t_1feef1e7710496 160-186,189-198,200-211,214-215,218-245
+  s_9173a2a1eaed7f::t_e14f4e3ffab49d 246
+  s_9173a2a1eaed7f::t_f8b6496eaa3076 21-30,83,101,139,199,285-331
+  s_9173a2a1eaed7f::t_c798bb73a01ce1 280-281
+  s_9173a2a1eaed7f::t_a2902a1a980321 247-279,282-284,332-333
+CHANGELOG.md
+  s_9173a2a1eaed7f::t_2b921d4ed31553 9-15
+  s_9173a2a1eaed7f::t_7960fd123770c3 661
+  s_9173a2a1eaed7f::t_3d50ba6d631675 652,658,661
+  s_9173a2a1eaed7f::t_435652d11e20fb 16,648-651,653-657,659-660
+  s_9173a2a1eaed7f::t_5cd0f58686b25c 17-20
+.taskfiles/scripts/mutate-check.sh
+  s_9173a2a1eaed7f::t_1a03b368702bb5 774-794
+  s_9173a2a1eaed7f::t_449d0e555d76e1 836
+  s_9173a2a1eaed7f::t_7a63f8567890c6 836
+  s_9173a2a1eaed7f::t_25efc9fe8df2b6 795-814
+  s_9173a2a1eaed7f::t_83f472d84235a2 815-836
+README.md
+  s_9173a2a1eaed7f::t_ea8688002c190d 257-258,270
+  s_9173a2a1eaed7f::t_5492435ac838ab 263-269
+  s_9173a2a1eaed7f::t_5cd0f58686b25c 259-262
+module/skills/review-council/SKILL.md
+  s_9173a2a1eaed7f::t_317a3c7545be6e 324
+  s_9173a2a1eaed7f::t_5cd0f58686b25c 316-323
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_9173a2a1eaed7f::t_5efec0e7237797 296-301,305-306,310
+  s_9173a2a1eaed7f::t_6b88062febde19 87-91
+  s_9173a2a1eaed7f::t_18ecf72ce94b47 302-304
+module/skills/review-council/scripts/lib/prepare-repo.sh
+  s_9173a2a1eaed7f::t_6b1c3b041d86c8 37-45,47-48,58-65
+  s_9173a2a1eaed7f::t_d5080ba76195c9 260
+  s_9173a2a1eaed7f::t_73411a54812dc3 261-267
+  s_9173a2a1eaed7f::t_c798bb73a01ce1 49-57
+module/skills/review-council/scripts/lib/prepare-args.sh
+  s_9173a2a1eaed7f::t_ff14e86353687d 190-191
+  s_9173a2a1eaed7f::t_1433a078870425 338-342
+  s_9173a2a1eaed7f::t_f91b7882b14a16 290-328
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_9173a2a1eaed7f::t_2b3ba0167bba6c 153-155,159
+  s_9173a2a1eaed7f::t_03121932b9c9db 156-158
+  s_9173a2a1eaed7f::t_73411a54812dc3 171-175
+  s_9173a2a1eaed7f::t_18ecf72ce94b47 308-333
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_9173a2a1eaed7f::t_4008b557025837 35-54,60-65
+  s_9173a2a1eaed7f::t_02316d787efc2a 243-257
+  s_9173a2a1eaed7f::t_03121932b9c9db 55-59,350-351
+  s_9173a2a1eaed7f::t_6b88062febde19 100,226,381
+  s_9173a2a1eaed7f::t_affe2809f99696 72-78,80,120-123
+  s_9173a2a1eaed7f::t_18ecf72ce94b47 69,81-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6b57e640b84e2bf51afcc89d2248a1f1f6e82b3",
+  "prompts": {},
+  "sessions": {
+    "s_9173a2a1eaed7f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5d586b3b-40f0-454f-ae79-1245b939fdef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,45 @@
+CHANGELOG.md
+  s_02d42660368a85::t_86d30eff35639c 461-465,669-673
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_02d42660368a85::t_e6fe1d884d0b35 565
+README.md
+  s_02d42660368a85::t_0ef866d570cfc6 438,453,612,646-648,659-661
+module/tests/test-rc-prepare.sh
+  s_02d42660368a85::t_a9f15d19d7efa0 531,569-570
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_02d42660368a85::t_948be9bd27cb0d 693
+  s_02d42660368a85::t_e6fe1d884d0b35 451
+  s_02d42660368a85::t_c83892b32071c0 218
+module/skills/review-council/scripts/rc-post-comment-gitlab.sh
+  s_02d42660368a85::t_948be9bd27cb0d 113
+module/tests/test-rc-post-comment-gitlab.sh
+  s_02d42660368a85::t_1130a0231a0d25 128
+  s_02d42660368a85::t_a9f15d19d7efa0 152-161
+module/skills/review-council/references/forge-adapters.md
+  s_02d42660368a85::t_0ef866d570cfc6 180
+module/skills/review-council/SKILL.md
+  s_02d42660368a85::t_0ef866d570cfc6 1033,1208,1257,1262-1263
+module/skills/review-council/scripts/rc-lib.sh
+  s_02d42660368a85::t_f98222660b9f6d 61-72
+module/tests/test-rc-render-comment.sh
+  s_02d42660368a85::t_6b8996f512f559 679-682,687,742,798,828,870,925,960,1025,1044,1070,1093
+  s_02d42660368a85::t_dff2e62fff266a 764-767,769-774
+  s_02d42660368a85::t_40067174e7aec7 1202-1211,1216-1219,1222
+  s_02d42660368a85::t_37e4a3015ec6fc 768
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "752565f7b749c9ff8035951bafec9c64e1c7df25",
+  "prompts": {},
+  "sessions": {
+    "s_02d42660368a85": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "be6b1d2f-7fb8-44bb-86a0-c32d5b898ebe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

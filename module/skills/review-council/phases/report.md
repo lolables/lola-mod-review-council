@@ -421,11 +421,23 @@ silent:
 
 ## Final Verdict Determination
 
-Determine the council verdict:
+Determine the council verdict from the **verified** finding set, in both review
+modes. Severity decides it, because severity is where this module already
+defines what blocks: `${REFERENCES_DIR}/severity.md` calls CRITICAL "MUST NOT
+merge" and HIGH "Blocks review", while MEDIUM "does not block merge" and LOW is
+"Non-blocking".
 
-- **APPROVE** — all discovered reviewers returned APPROVE (after verification).
-- **REQUEST CHANGES** — one or more reviewers returned REQUEST CHANGES with verified findings.
-- **APPROVE WITH ADVISORIES** (Spec Review Mode only) — only LOW/MEDIUM findings remain; no HIGH/CRITICAL findings present. Remaining findings are advisory and do not block merge.
+- **REQUEST CHANGES** — one or more verified CRITICAL or HIGH findings remain.
+- **APPROVE WITH ADVISORIES** — verified findings remain, but none is CRITICAL
+  or HIGH. They are advisory and do not block merge.
+- **APPROVE** — no verified findings remain.
+
+Read that off the findings, not off the reviewers' own verdicts. A reviewer may
+return REQUEST CHANGES while holding nothing but MEDIUMs — the validator only
+forces REQUEST CHANGES for CRITICAL/HIGH — and letting that alone set the
+council verdict is how a clean changeset with two optional test-coverage notes
+came back blocked. Each reviewer's own verdict still appears verbatim in the
+per-reviewer table, so nothing is hidden by aggregating this way.
 
 Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) do not affect verdict.
 

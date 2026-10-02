@@ -35,8 +35,10 @@ Score each component in [0.0, 1.0]:
 
 ## correct_verdict (weight 0.40)
 
-- 1.0 — the review verdict is APPROVE (or equivalent: "no issues
-  found", "no changes requested").
+- 1.0 — the review verdict is APPROVE or APPROVE WITH ADVISORIES (or
+  equivalent: "no issues found", "no changes requested"). Both are
+  non-blocking; the council reserves REQUEST CHANGES for verified CRITICAL or
+  HIGH findings, and this change has none.
 - 0.0 — the review verdict is REQUEST CHANGES.
 
 ## caller_false_alarm (weight 0.25)

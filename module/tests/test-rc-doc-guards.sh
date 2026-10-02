@@ -1798,6 +1798,41 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: the council verdict blocks on severity, not on mode (RC-053)"
+# severity.md is the module's blocking contract: CRITICAL "MUST NOT merge",
+# HIGH "Blocks review", MEDIUM "does not block merge", LOW "Non-blocking". The
+# verdict rule used to gate APPROVE WITH ADVISORIES to "Spec Review Mode only",
+# so a code review holding nothing but non-blocking findings had no verdict to
+# express that -- one verified LOW forced REQUEST CHANGES for the whole council.
+#
+# eval case-004-go-clean measured it: five reps scored 0.25/0.84/0.49/0.49/1.00,
+# and the 0.49 runs carry false_positive_rate 1.0 WITH correct_verdict 0.0 --
+# every finding legitimate, the verdict still wrong. The case can only reach
+# 1.00 when every reviewer independently finds nothing, which is luck.
+#
+# Two properties: the advisory verdict is not gated to one mode, and blocking
+# is decided by CRITICAL/HIGH rather than by a reviewer's choice of verdict
+# alone. Removing the gate while leaving "one or more reviewers returned
+# REQUEST CHANGES" as the blocking rule would leave the bug in place, since a
+# reviewer may return REQUEST CHANGES holding only MEDIUMs.
+rc053_rule=$(sed -n '/^## Final Verdict Determination/,/^## /p' "$REPORT_MD" | tr '\n' ' ' | tr -s ' ')
+if grep -qiE 'APPROVE WITH ADVISORIES[^-]*\((spec|code) review mode only\)' <<<"$rc053_rule"; then
+	echo "  FAIL: the advisory verdict is still gated to one mode (RC-053)"
+	echo "        code reviews then have no verdict for non-blocking findings"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the advisory verdict is available in both modes (RC-053)"
+	PASS=$((PASS + 1))
+fi
+if grep -qiE 'REQUEST CHANGES\*\* — (one or more )?(verified )?(CRITICAL|HIGH)' <<<"$rc053_rule"; then
+	echo "  PASS: REQUEST CHANGES is conditioned on CRITICAL/HIGH (RC-053)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: REQUEST CHANGES is not conditioned on severity (RC-053)"
+	echo "        a reviewer holding only MEDIUMs can still block the council"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

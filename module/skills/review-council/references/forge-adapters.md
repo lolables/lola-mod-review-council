@@ -177,7 +177,7 @@ Points):
 - `Comment limit: N` overrides the hook. It is for an effective limit smaller
   than the forge's own — self-hosted GitLab, or GHE behind a proxy that
   truncates bodies.
-- `Max comments: N` (default 1) is **policy**: how many comments one verdict may
+- `Max comments: N` (default 3) is **policy**: how many comments one verdict may
   be spread across. The budget is `comment_limit x max_comments`.
 
 Both are resolved by `rc-prepare.sh` and written into `tracking.md`. That is not

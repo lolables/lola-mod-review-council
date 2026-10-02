@@ -215,7 +215,7 @@ _rc_disclosure() { # level keep -> _RC_OUT
 	[[ "$n_collapsed" -gt 0 ]] && clauses="${clauses:+$clauses; }${n_collapsed} finding(s) collapsed to a headline and permalink"
 	[[ "$n_dropped" -gt 0 ]] && clauses="${clauses:+$clauses; }${n_dropped} finding(s) omitted entirely"
 	[[ -n "$clauses" ]] || return 0
-	_RC_OUT="_Trimmed to fit the ${_RC_FORGE_NAME:-forge} comment limit: ${clauses}. The complete report is in the run artifacts._"$'\n\n'
+	_RC_OUT="_Trimmed to fit the ${_RC_FORGE_NAME:-forge} comment limit: ${clauses}. The rest stays with whoever ran this review; a higher \`Max comments\` posts it all._"$'\n\n'
 }
 
 # One part's findings section, covering findings [start, end). Severity groups
@@ -448,7 +448,7 @@ rc_render_comment_body() { # session_dir body_file
 	# sources this file rather than calling into it.
 	RC_COMMENT_LIMIT="$limit"
 	max_parts=$(rc_parse_kv "$session_dir/tracking.md" "Max comments")
-	[[ "$max_parts" =~ ^[1-9][0-9]*$ ]] || max_parts=1
+	[[ "$max_parts" =~ ^[1-9][0-9]*$ ]] || max_parts="$RC_DEFAULT_MAX_COMMENTS"
 
 	_rc_load_findings "$RC_EVIDENCE"
 	_rc_solve "$limit" "$max_parts"
@@ -690,7 +690,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 		"${RC_COMMENT_PART_FILES[@]}")
 	msg="Rendered comment body; no posting integration for this forge - post it manually."
 	[[ "$RC_COMMENT_PARTS" -gt 1 ]] && msg="Rendered comment body in ${RC_COMMENT_PARTS} parts; no posting integration for this forge - post them in order, manually."
-	[[ "$RC_COMMENT_LEVEL" -gt 0 ]] && msg="${msg} Trimmed to fit the comment limit (level ${RC_COMMENT_LEVEL}, ${RC_COMMENT_DROPPED} finding(s) omitted); the full report is in the run artifacts."
+	[[ "$RC_COMMENT_LEVEL" -gt 0 ]] && msg="${msg} Trimmed to fit the comment limit (level ${RC_COMMENT_LEVEL}, ${RC_COMMENT_DROPPED} finding(s) omitted); the full report is ${session_dir}/report.md."
 	json_output "rendered" "$msg" "$body_payload"
 	exit 0
 fi

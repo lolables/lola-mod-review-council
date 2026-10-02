@@ -435,7 +435,7 @@ CLAUDE.md:
 - Quality tool: my_quality_reporter
 - Batch bytes: 131072
 - Batch size: 50
-- Max comments: 1
+- Max comments: 3
 - Comment limit: 65536
 - Persona selection: on
 - Pin personas: adversary, guard
@@ -450,7 +450,7 @@ CLAUDE.md:
 | Quality tool    | Agent name for quality analysis      | Skip quality analysis    |
 | Batch bytes     | Max diff bytes per delegation batch  | 131072 (128 KB)          |
 | Batch size      | Max files per delegation batch       | 50                       |
-| Max comments    | Comments one verdict may be spread across | 1                   |
+| Max comments    | Comments one verdict may be spread across | 3                   |
 | Comment limit   | Characters per comment, overriding the forge's own | The forge's limit |
 | Persona selection | Whether change shape may narrow the council | `on`             |
 | Pin personas    | Personas that are never dropped      | none                     |
@@ -609,7 +609,7 @@ flowchart TD
   t4["Terminal: CRITICAL analysis yields, then CRITICAL findings"]
   says["Add the disclosure line beginning Trimmed to fit the, naming what was omitted and how much"]
   post["Comment the forge accepts"]
-  full["Complete verdict stays in the run artifacts and the rendered report"]
+  full["Complete verdict stays in the rendered report, with whoever ran the review"]
 
   body --> budget
   budget --> fit
@@ -643,9 +643,9 @@ characters, and a 30-finding review already reaches about 58,000 — so this is 
 
 Two settings control what happens then, and neither is normally needed:
 
-- **`Max comments`** raises the ceiling. At the default of 1 the verdict must fit one comment. Set it to 3 and a
-  verdict too large for one is split across up to three, at full fidelity, cross-linked from the first. Roughly a
-  hundred findings fit in three GitHub comments.
+- **`Max comments`** sets the ceiling. At the default of 3 a verdict too large for one comment is split across up to
+  three, at full fidelity, cross-linked from the first. Roughly a hundred findings fit in three GitHub comments. Set it
+  to 1 to hold every verdict to a single comment, or higher for very large reviews.
 - **`Comment limit`** lowers it. The per-forge value is already known (65,536 for GitHub, 1,000,000 for GitLab), so
   configure this only when your effective limit is smaller — self-hosted GitLab, or GitHub Enterprise behind a proxy
   that truncates bodies.
@@ -656,7 +656,9 @@ findings to a headline and permalink, and drops findings only as a last resort. 
 because evidence is what makes a finding checkable. Critical findings are the last thing to go.
 
 **A trimmed comment always says so**, in a line beginning `Trimmed to fit the`, naming what was omitted and how much.
-The complete verdict is always in the run artifacts and in the rendered report, whatever the comment had room for.
+The complete verdict is always in the rendered report (`report.md` in the session directory), whatever the comment had
+room for. That file stays with whoever ran the review; nothing uploads it, so a PR reader cannot reach it. The
+disclosure says so and names `Max comments` as the way to post the whole verdict.
 
 ## Verification
 

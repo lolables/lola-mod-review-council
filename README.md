@@ -45,13 +45,13 @@ analysis by specialized reviewer agents).
 
 Review Council runs a panel of specialized reviewer agents against your code or specifications:
 
-| Persona           | Agent files                                       | Focus                                | Temperature |
-|-------------------|---------------------------------------------------|--------------------------------------|-------------|
-| **The Guard**     | `divisor-guard-code.md`, `divisor-guard-spec.md`         | Intent drift, governance, zero-waste | 0.1         |
-| **The Adversary** | `divisor-adversary-code.md`, `divisor-adversary-spec.md` | Security, resilience, secrets, CVEs  | 0.1         |
-| **The Tester**    | `divisor-testing-code.md`, `divisor-testing-spec.md`     | Test quality, coverage, isolation    | 0.1         |
-| **The Operator**  | `divisor-sre-code.md`, `divisor-sre-spec.md`             | Operations, deployment, dependencies | 0.1         |
-| **The Curator**   | `divisor-curator-code.md`, `divisor-curator-spec.md`     | Documentation gaps, content triage   | 0.2         |
+| Persona           | Agent files                                       | Focus                                             | Temperature |
+|-------------------|---------------------------------------------------|---------------------------------------------------|-------------|
+| **The Guard**     | `divisor-guard-code.md`, `divisor-guard-spec.md`         | Intent drift, governance, zero-waste              | 0.1         |
+| **The Adversary** | `divisor-adversary-code.md`, `divisor-adversary-spec.md` | Security, resilience, secrets, CVEs               | 0.1         |
+| **The Tester**    | `divisor-testing-code.md`, `divisor-testing-spec.md`     | Test quality, coverage, isolation, economy (code) | 0.1         |
+| **The Operator**  | `divisor-sre-code.md`, `divisor-sre-spec.md`             | Operations, deployment, dependencies              | 0.1         |
+| **The Curator**   | `divisor-curator-code.md`, `divisor-curator-spec.md`     | Documentation gaps, content triage                | 0.2         |
 
 Each persona ships as two agent files — a `-code` variant for code review and a `-spec` variant for spec review — so
 ten files install but only five personas run per review. (`divisor` is the historical prefix the agent files carry;

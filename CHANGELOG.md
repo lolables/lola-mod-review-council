@@ -455,6 +455,11 @@ All notable changes to the Review Council module are documented here.
   `task doctor`, and named with an install remedy when the bootstrap cannot
   find it. It is the one prerequisite no part of a review touches — only the
   eval harness needs it
+- The Tester (`divisor-testing-code`) now flags tests that cost upkeep without
+  catching bugs: meta tests, platform tests, redundant or over-specific
+  assertions, change detectors, prose/structure pinning, and dead tests in the
+  changeset. These are MEDIUM and never block. Before, the persona only pushed
+  toward more testing.
 
 ### Changed
 

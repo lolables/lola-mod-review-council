@@ -162,7 +162,7 @@ Review Council uses 5 reviewer personas:
 |-------|---------|-------|
 | divisor-guard-{code,spec} | Guard | Intent drift, governance, zero-waste |
 | divisor-adversary-{code,spec} | Adversary | Security, resilience, secrets, CVEs |
-| divisor-testing-{code,spec} | Tester | Test quality, coverage, isolation |
+| divisor-testing-{code,spec} | Tester | Test quality, coverage, isolation, economy (code) |
 | divisor-sre-{code,spec} | Operator | Operations, deployment, dependencies |
 | divisor-curator-{code,spec} | Curator | Documentation gaps, content triage |
 

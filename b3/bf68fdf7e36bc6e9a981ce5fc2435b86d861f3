@@ -1,0 +1,21 @@
+AGENTS.md
+  s_5452eba4109999::t_32b7e7b4cda5e9 165
+README.md
+  s_5452eba4109999::t_32b7e7b4cda5e9 48-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b3bf68fdf7e36bc6e9a981ce5fc2435b86d861f3",
+  "prompts": {},
+  "sessions": {
+    "s_5452eba4109999": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35998482-710e-4962-9b5e-7556ecba34d4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

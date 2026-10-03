@@ -1833,6 +1833,28 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: the Tester rates test-economy waste MEDIUM (RC-054)"
+# The Tester used to push only toward more testing. Criterion 6 adds the other
+# direction: tests that can fail, but only for the wrong reason or with a signal
+# another test already gives. The calibration row is what changes a reviewer's
+# output, so it is the one fact pinned here. The six pattern bullets are left
+# unpinned on purpose: grepping each would be the redundant prose pinning the
+# criterion itself tells reviewers to flag.
+#
+# Raw file, not the flattened copy: a table row binds a condition to a severity
+# and flattening dissolves that boundary. The "changeset adds or modifies"
+# qualifier is pinned because it keeps the row off untouched tests (the RC-038
+# lesson).
+rc054_row=$(grep -cE '^[|][[:space:]]*Test Economy[^|]*changeset adds or modifies[^|]*[|][[:space:]]*MEDIUM[[:space:]]*[|]' "$TESTING_MD" || true)
+if [[ "$rc054_row" -eq 1 ]]; then
+	echo "  PASS: test-economy findings carry a MEDIUM calibration row (RC-054)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no single MEDIUM calibration row for Test Economy (RC-054)"
+	echo "        found $rc054_row matching rows in divisor-testing-code.md"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

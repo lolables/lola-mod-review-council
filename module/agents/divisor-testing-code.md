@@ -119,6 +119,23 @@ Do NOT evaluate whether production code is secure — Adversary's domain. Cross-
 - Timing dependence (wall-clock time, sleep-based synchronization)
 - Temporary directory / sandbox usage for filesystem operations
 
+### 6. Test Economy
+
+Applies to tests the changeset adds or modifies. Every test is upkeep: it must change whenever the code it touches changes. Flag tests whose upkeep buys no bug-catching signal. Each finding cites the test and line(s) and names the remedy.
+
+- **Meta test** — its subject is the test suite itself: fixtures exist, test or file counts, `assert_*` helpers, runner wiring. Remedy: delete it; the real tests that use the helper already cover it.
+- **Platform test** — exercises the language, standard library, or a third-party tool rather than project code. Remedy: delete it, or point it at the project code that depends on the behavior.
+- **Redundant / over-specific** — several assertions or tests prove one behavior (for example, one grep per static line of a single block). Remedy: name the single dynamic or bespoke check that replaces them.
+- **Change detector** — restates the implementation: a literal copied from source, or a mock told to return X followed by an assertion that the result is X. Remedy: assert an observable consequence instead.
+- **Prose/structure pinning** — asserts wording or layout instead of behavior. One bespoke pin per rule is acceptable; several pins that would all fail on the same regression is the finding. Remedy: collapse them to one pin, or assert the behavior.
+- **Dead test** — a skipped, commented-out, or perpetually expected-to-fail test the changeset adds, or keeps disabled while modifying it. Remedy: delete it or re-enable it.
+
+**Meta-test exemption.** When the test tooling is itself a deliverable — a published test library, a test runner, or a guard users invoke — tests of it are real tests. Internal helpers are never exempt.
+
+**Not filler.** Filler (criterion 4) can never fail. A test flagged for economy can fail, but only for the wrong reason, or its signal duplicates another test's. A dead test does not run at all: it is economy, not filler, and it is concealment (criterion 4, CRITICAL) only when it was disabled to hide a failing result — cite the line.
+
+A dead test that leaves changed code with no coverage at all is a coverage gap, not an economy finding: rate it under criterion 2, where it can reach HIGH.
+
 ## Severity Calibration
 
 | Condition                                                                                                              | Severity |
@@ -131,6 +148,7 @@ Do NOT evaluate whether production code is secure — Adversary's domain. Cross-
 | Untested code path the changeset does not touch, or one already covered by an integration/CI layer                     | MEDIUM   |
 | Shallow assertions on critical behavior                                                                                | MEDIUM   |
 | Missing property/fuzz/contract tests for untrusted input or public API contract                                        | MEDIUM   |
+| Test Economy pattern (criterion 6) in a test the changeset adds or modifies                                            | MEDIUM   |
 | Filler tests on non-critical behavior (can never fail, assert only obvious outcomes)                                   | LOW      |
 | Missing property/fuzz/contract tests (general case)                                                                    | LOW      |
 | Test architecture improvements on well-tested code                                                                     | LOW      |
@@ -167,6 +185,8 @@ All mean: go back to Phase 1, re-read files.
 | "Test file exists, so coverage is adequate"                 | Test file with shallow assertions (checking only `err == nil`) provides false confidence. Assertion depth matters.          |
 | "Property testing is overkill for this"                     | Function processes untrusted input or implements public contract? Property testing is proportionate, not overkill.          |
 | "I can't tell if tests are meaningful without running them" | Read assertions. Test asserting `!= nil` on constructor is filler. Test checking specific field values locks down behavior. |
+| "More assertions are safer"                                 | Assertions that prove one behavior twice double the upkeep, not the safety. One check per behavior.                         |
+| "A check per sentence keeps the docs safe"                  | One check per rule protects them. A check per sentence fails on rewording, not on regressions.                              |
 
 ## Output
 

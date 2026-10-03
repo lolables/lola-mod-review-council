@@ -1,0 +1,29 @@
+module/tests/test-rc-batch-verdicts.sh
+  s_4654fb0685dfc9::t_c7991a9d21f3b5 1-158
+.taskfiles/scripts/mutate-check.sh
+  s_4654fb0685dfc9::t_0f01181ca3425a 874,883,888
+  s_4654fb0685dfc9::t_c7991a9d21f3b5 875-882,884-887,889-891
+README.md
+  s_4654fb0685dfc9::t_c7991a9d21f3b5 557-563
+module/skills/review-council/phases/delegate.md
+  s_4654fb0685dfc9::t_c7991a9d21f3b5 297-308,353-358,437-442,450-452,454-457
+module/tests/test-rc-doc-guards.sh
+  s_4654fb0685dfc9::t_c7991a9d21f3b5 1859-1874,1879-1880,1882-1885,1887,1889-1892,1897
+  s_4654fb0685dfc9::t_0f01181ca3425a 1858,1875-1878,1881,1886,1888,1893-1895
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3da0a2c1aa82b9c807264497d80cfeca30c8188",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -40,6 +40,17 @@ else
 	echo "  FAIL: em/en dash present"
 	FAIL=$((FAIL + 1))
 fi
+# The footer's attribution and its feedback invitation render on separate
+# lines. <br>, not a trailing-backslash hard break: the body must stay free of
+# backslashes (see Test 5), and two trailing spaces do not survive editors.
+footer_re='code reviewer\._<br>'$'\n''_Spot a wrong call'
+if [[ "$body" =~ $footer_re ]]; then
+	echo "  PASS: footer breaks the line before its feedback invitation"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: footer attribution and feedback invitation share a line"
+	FAIL=$((FAIL + 1))
+fi
 # Blank line between a finding title and the fence opening its evidence. Bash's
 # =~ spans lines without needing GNU grep's -z, and uses only POSIX ERE
 # constructs (a backtick is literal in an ERE).

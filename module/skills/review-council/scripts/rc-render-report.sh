@@ -412,7 +412,8 @@ repo_url="${REVIEW_COUNCIL_REPO:-https://github.com/lolables/lola-mod-review-cou
 cat <<EOF
 ---
 
-_Produced by [Review Council]($repo_url). Found a problem with this review, or want the source? [Open an issue]($repo_url/issues) or browse the [repository]($repo_url)._
+_Produced by [Review Council]($repo_url)._<br>
+_Found a problem with this review, or want the source? [Open an issue]($repo_url/issues) or browse the [repository]($repo_url)._
 EOF
 
 exit 0

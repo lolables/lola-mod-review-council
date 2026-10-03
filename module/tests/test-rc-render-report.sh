@@ -142,6 +142,17 @@ else
 	echo "  FAIL: per-agent table row missing or wrong"
 	FAIL=$((FAIL + 1))
 fi
+# The footer's attribution and its feedback invitation render on separate
+# lines. <br>, matching the PR comment footer, whose body must stay free of
+# backslashes (test-rc-render-comment.sh Test 5).
+footer_re='_Produced by \[Review Council\]\([^)]*\)\._<br>'$'\n''_Found a problem'
+if [[ "$result" =~ $footer_re ]]; then
+	echo "  PASS: footer breaks the line before its feedback invitation"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: footer attribution and feedback invitation share a line"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$session"
 
 # Test 3: models.json is surfaced in the provenance header when present

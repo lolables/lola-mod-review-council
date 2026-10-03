@@ -412,7 +412,7 @@ rc_render_comment_body() { # session_dir body_file
 	if [[ -n "$agent_rows" ]]; then
 		_RC_HEAD_TABLE="| Reviewer | Verdict | Findings |"$'\n'"|---|---|---|"$'\n'"${agent_rows}"$'\n'
 	fi
-	_RC_FOOTER="---"$'\n'"_Produced by [Review Council](${repo_url}), an open-source multi-persona code reviewer. Spot a wrong call or want the source? [File feedback](${repo_url}/issues) or browse the [repository](${repo_url})._"$'\n\n'
+	_RC_FOOTER="---"$'\n'"_Produced by [Review Council](${repo_url}), an open-source multi-persona code reviewer._<br>"$'\n'"_Spot a wrong call or want the source? [File feedback](${repo_url}/issues) or browse the [repository](${repo_url})._"$'\n\n'
 
 	# --- Resolve the budget -----------------------------------------------
 	#

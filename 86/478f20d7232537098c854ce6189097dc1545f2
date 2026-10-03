@@ -1,0 +1,38 @@
+README.md
+  s_5452eba4109999::t_32b7e7b4cda5e9 48-54
+module/tests/test-rc-doc-guards.sh
+  s_d512b2a271794b::t_1ce33a4b5fe53f 1845-1848
+  s_d512b2a271794b::t_a3ffb04edcf70a 1836-1844,1849-1857
+CHANGELOG.md
+  s_d512b2a271794b::t_d3c1f082fb76e4 458-462
+AGENTS.md
+  s_5452eba4109999::t_32b7e7b4cda5e9 165
+module/agents/divisor-testing-code.md
+  s_d512b2a271794b::t_f7c9be83a9f1bd 122-129,132-134,136-138,151,188
+  s_d512b2a271794b::t_6d64e3a60c532e 130
+  s_d512b2a271794b::t_48184da8bc1f96 131,135,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "86478f20d7232537098c854ce6189097dc1545f2",
+  "prompts": {},
+  "sessions": {
+    "s_5452eba4109999": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "35998482-710e-4962-9b5e-7556ecba34d4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_d512b2a271794b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c28b2e97-9764-4f6c-96be-fdd29ac7e808",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

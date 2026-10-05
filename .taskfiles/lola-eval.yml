@@ -323,3 +323,11 @@ tasks:
     cmds:
       - "{{.LOLA_EVAL}} clean --cache --state"
       - task: clean
+
+  ctx-prescreen:
+    desc: Run the context-mode arithmetic pre-screen (no eval spend)
+    cmds:
+      - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-prescreen.sh"
+      - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-mode-config.sh"
+      - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-measure-tax.sh"
+      - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-routing-rate.sh"

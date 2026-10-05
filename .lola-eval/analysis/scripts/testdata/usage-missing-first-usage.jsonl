@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"s1"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"thinking, no usage block on this event"}]}}
+{"type":"assistant","message":{"usage":{"input_tokens":3,"cache_creation_input_tokens":4000,"cache_read_input_tokens":1000,"output_tokens":10}}}
+{"type":"result","num_turns":2,"total_cost_usd":0.1,"usage":{"input_tokens":3,"cache_creation_input_tokens":4000,"cache_read_input_tokens":1000,"output_tokens":10}}

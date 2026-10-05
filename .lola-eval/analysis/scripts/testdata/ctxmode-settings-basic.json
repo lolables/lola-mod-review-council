@@ -1,0 +1,78 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code pretooluse"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read|Write|Edit|Glob|Grep|mcp__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code posttooluse"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "codegraph prompt-hook"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code userpromptsubmit"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code precompact"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code sessionstart"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code stop"
+          }
+        ]
+      }
+    ]
+  }
+}

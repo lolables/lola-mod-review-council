@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-labelledby="title desc">
+  <title id="title">Review Council</title>
+  <desc id="desc">Specialized AI reviewers. One evidence-verified verdict.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16213b"/>
+      <stop offset="1" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="rim" gradientUnits="userSpaceOnUse" x1="58.97" y1="58.97" x2="165.03" y2="165.03">
+      <stop offset="0.0000" stop-color="#fdf65d"/>
+      <stop offset="0.2800" stop-color="#fdf65d"/>
+      <stop offset="0.2800" stop-color="#ffffff"/>
+      <stop offset="0.7200" stop-color="#ffffff"/>
+      <stop offset="0.7200" stop-color="#b07ada"/>
+      <stop offset="1.0000" stop-color="#b07ada"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fdf65d"/>
+      <stop offset="0.25" stop-color="#fdf65d"/>
+      <stop offset="0.25" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#b07ada"/>
+      <stop offset="0.75" stop-color="#b07ada"/>
+      <stop offset="0.75" stop-color="#565656"/>
+      <stop offset="1" stop-color="#565656"/>
+    </linearGradient>
+    <radialGradient id="glass" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#2a3858"/>
+      <stop offset="1" stop-color="#172038"/>
+    </radialGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <g transform="translate(96 128) scale(1.5)">
+    <line x1="162" y1="162" x2="206" y2="206" stroke="#64748b" stroke-width="28" stroke-linecap="round"/>
+    <circle cx="112" cy="112" r="66" fill="url(#glass)" stroke="url(#rim)" stroke-width="18"/>
+    <circle cx="112" cy="112" r="75" fill="none" stroke="#565656" stroke-width="4"/>
+    <circle cx="112" cy="112" r="57" fill="none" stroke="#565656" stroke-width="4"/>
+    <path d="M84 113 L104 133 L142 93" fill="none" stroke="#f8fafc" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g font-family="Inter, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="520" y="270" font-size="88" font-weight="700" fill="#f8fafc" letter-spacing="-1">Review Council</text>
+    <rect x="523" y="298" width="140" height="8" rx="4" fill="url(#accent)"/>
+    <text x="523" y="360" font-size="32" fill="#cbd5e1">Specialized AI reviewers.</text>
+    <text x="523" y="402" font-size="32" fill="#cbd5e1">One evidence-verified verdict.</text>
+    <text x="523" y="456" font-size="22" fill="#7c8aa5">Code and specification review for AI coding tools</text>
+  </g>
+</svg>

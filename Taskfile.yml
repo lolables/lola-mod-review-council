@@ -2,6 +2,8 @@
 version: '3'
 
 includes:
+  assets:
+    taskfile: .taskfiles/assets.yml
   lola-eval:
     taskfile: .taskfiles/lola-eval.yml
   test:

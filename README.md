@@ -1,4 +1,4 @@
-# Review Council
+# ![Review Council](docs/assets/banner.svg)
 
 Instead of one AI reviewer catching what it can, five specialized agents review your code in parallel — security,
 testing, operations, governance, and documentation — then produce a unified verdict.
@@ -721,6 +721,8 @@ for and how to write a test that actually tests something.
 Measuring whether a tool or module change makes reviews cheaper or better is
 a different job from adding an eval case; [docs/dev/ab-evaluations.md](docs/dev/ab-evaluations.md)
 covers how to run one without fooling yourself.
+The banner and icon are hand-edited SVGs; [docs/dev/branding.md](docs/dev/branding.md)
+explains their geometry and how to regenerate the PNGs.
 
 ```
 task doctor          # check prerequisites are installed and reachable

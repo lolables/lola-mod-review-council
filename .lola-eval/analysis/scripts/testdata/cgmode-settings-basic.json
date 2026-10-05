@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__BASENAME__ prompt-hook"
+          }
+        ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/llm/.local/bin/context-mode\" hook claude-code userpromptsubmit"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|WebFetch|Read|Grep|Agent|mcp__",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/home/llm/.local/bin/context-mode\" hook claude-code pretooluse"
+          }
+        ]
+      }
+    ]
+  }
+}

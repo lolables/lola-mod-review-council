@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "some-other-server": {
+      "type": "stdio",
+      "command": "some-other-server"
+    }
+  }
+}

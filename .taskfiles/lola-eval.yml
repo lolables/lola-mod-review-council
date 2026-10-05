@@ -345,3 +345,4 @@ tasks:
       - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-mode-config.sh"
       - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-measure-tax.sh"
       - bash "{{.RESULTS_DIR}}/analysis/scripts/test-ctx-routing-rate.sh"
+      - bash "{{.RESULTS_DIR}}/analysis/scripts/test-cg-mode-config.sh"

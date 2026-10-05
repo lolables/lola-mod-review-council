@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "not-__BASENAME__-wrapper prompt-hook"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "__BASENAME__ prompt-hook"
+          }
+        ]
+      }
+    ]
+  }
+}

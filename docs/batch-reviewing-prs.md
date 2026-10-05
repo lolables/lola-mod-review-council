@@ -404,8 +404,14 @@ events verbatim; the terminal gets a line per step as they arrive:
 ```
 14:02:31 → Task divisor-adversary-code
 14:02:33   Dispatching 5 reviewers over 2 subsystems.
-14:41:08 done — $8.23, 57 turns
+14:41:08 turn ended — $8.23 so far, 57 turns
+PR #42: done.
 ```
+
+A `turn ended` line is not the end of the review. The orchestrator ends a turn
+to wait for reviewers running in the background, so one review can print
+several, each with the cost so far. `PR #<n>: done.` is the completion line; it
+comes from claude's exit status.
 
 Set `EXTRA_CLAUDE_ARGS="--output-format json"` to choose a different format;
 that replaces the streaming default and the progress rendering along with it.

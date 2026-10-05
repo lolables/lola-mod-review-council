@@ -682,6 +682,11 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- `review-open-prs.sh` no longer reports a review as done before it is. Its
+  progress line printed `done` for every `result` event, but the orchestrator
+  ends a turn to wait on background reviewers and claude emits a result per
+  turn, so one review printed `done` twice. Those lines now read `turn ended —
+  $X so far`; `PR #<n>: done.`, from the exit status, marks completion.
 - The deep-mode cost estimate no longer asks before dispatching. It printed the
   estimate and asked "Proceed with this deep review?", with a fallback for when
   no answer arrived, but asking ends the turn, so nothing ever saw the missing

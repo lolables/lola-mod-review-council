@@ -1,0 +1,41 @@
+module/agents/divisor-testing-code.md
+  s_4654fb0685dfc9::t_9f1b4efbd17778 2,32-33
+module/agents/divisor-guard-spec.md
+  s_4654fb0685dfc9::t_5ebfe007fc8728 2
+module/agents/divisor-adversary-code.md
+  s_4654fb0685dfc9::t_1addbaf094ffb9 2,43-44
+module/agents/divisor-curator-spec.md
+  s_4654fb0685dfc9::t_a61b0058a28161 2
+module/agents/divisor-testing-spec.md
+  s_4654fb0685dfc9::t_2f0626e0d0a5a4 2
+module/agents/divisor-sre-spec.md
+  s_4654fb0685dfc9::t_f60eac26f76515 2
+module/agents/divisor-curator-code.md
+  s_4654fb0685dfc9::t_2b648cd6acb44a 2,105-106
+module/agents/divisor-adversary-spec.md
+  s_4654fb0685dfc9::t_dfbba46d68de73 2,42-43
+module/agents/divisor-sre-code.md
+  s_4654fb0685dfc9::t_f757ec38559a2b 2,34-35
+module/agents/divisor-guard-code.md
+  s_4654fb0685dfc9::t_cabc056b4db267 2,32-33
+CHANGELOG.md
+  s_4654fb0685dfc9::t_8bd69c152e635e 674-683
+module/tests/test-rc-doc-guards.sh
+  s_4654fb0685dfc9::t_61510c409b06e1 1899-1958
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51ed55a00d348011df4e56985dabacc467185805",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

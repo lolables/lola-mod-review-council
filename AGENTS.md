@@ -54,3 +54,9 @@ Envoy were removed — update any reference to them you find.
   runs it with the workdir as `$1`, after `reset.sh` makes the "starter"
   commit. It must be idempotent, exit non-zero to abort, and commit with
   `git -c user.name="scaffold" -c user.email="scaffold@test"`.
+
+## A/B evaluations
+
+Before measuring whether a tool or module change makes reviews cheaper or
+better, read `docs/dev/ab-evaluations.md`. Its rules are what the code-graph and
+context-mode runs cost to learn.

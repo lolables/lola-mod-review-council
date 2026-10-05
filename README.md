@@ -718,6 +718,9 @@ Curator reports documentation gaps as findings instead of filing GitHub issues.
 end-to-end, degraded-mode, and mutation — each catching a class the others
 cannot. See [docs/dev/testing.md](docs/dev/testing.md) for what each layer is
 for and how to write a test that actually tests something.
+Measuring whether a tool or module change makes reviews cheaper or better is
+a different job from adding an eval case; [docs/dev/ab-evaluations.md](docs/dev/ab-evaluations.md)
+covers how to run one without fooling yourself.
 
 ```
 task doctor          # check prerequisites are installed and reachable

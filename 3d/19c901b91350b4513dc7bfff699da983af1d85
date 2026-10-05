@@ -1,0 +1,24 @@
+.taskfiles/assets.yml
+  s_c38a7a408420d9::t_bff2ec9a4703f5 21
+  s_c38a7a408420d9::t_0c83b648383857 1-20,22-29
+docs/dev/branding.md
+  s_c38a7a408420d9::t_57dd617468afa2 59,62,65-72
+Taskfile.yml
+  s_c38a7a408420d9::t_bff2ec9a4703f5 5-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d19c901b91350b4513dc7bfff699da983af1d85",
+  "prompts": {},
+  "sessions": {
+    "s_c38a7a408420d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13e28f45-afdc-4c9a-995e-fa30829764ef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

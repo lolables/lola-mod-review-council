@@ -68,15 +68,18 @@ that its only finding is resolved?
 
 ## output
 
-Return strict JSON:
+Return strict JSON — the object alone, with no code fence, no preamble and no
+trailing prose. A fenced reply is only recoverable by a brace scan that a
+quoted source line containing `{` defeats, and this rubric asks the
+explanation to quote source.
 
 ```
 {
   "components": {
-    "claim_independently_checked": "<float>",
-    "correctly_resolved": "<float>",
-    "evidence_source_backed": "<float>",
-    "verdict_upgraded": "<float>"
+    "claim_independently_checked": <float>,
+    "correctly_resolved": <float>,
+    "evidence_source_backed": <float>,
+    "verdict_upgraded": <float>
   },
   "explanation": "<one-paragraph rationale citing what the agent found when it re-checked the source and the finding's final status>"
 }

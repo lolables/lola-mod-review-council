@@ -80,7 +80,10 @@ retrying?
 
 ## output
 
-Return strict JSON:
+Return strict JSON — the object alone, with no code fence, no preamble and no
+trailing prose. Put every nested object across multiple lines as shown; a
+nested object written on a single line is picked up as the whole reply and the
+run is scored as if no criteria were returned.
 
 ```json
 {
@@ -91,7 +94,12 @@ Return strict JSON:
     "no_flapping": <float>
   },
   "missed_defects": [
-    {"id": <int>, "file": "<path>", "lens": "<persona>", "triage_excluded_this_cell": <true|false>}
+    {
+      "id": <int>,
+      "file": "<path>",
+      "lens": "<persona>",
+      "triage_excluded_this_cell": <true|false>
+    }
   ],
   "explanation": "<one-paragraph rationale>"
 }

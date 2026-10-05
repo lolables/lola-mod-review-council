@@ -209,11 +209,23 @@ tasks:
   # Gate for the code-graph pre-pass (see
   # docs/superpowers/specs/2026-08-23-code-graph-prepass-design.md).
   #
-  # These three measure a gap, not a regression: case-030 and case-031
-  # are EXPECTED to score low until a pre-pass exists to close them, and
-  # a failing run here is the baseline measurement rather than a broken
-  # suite. case-032 is the opposite — it must stay green in both arms, and
-  # a treatment-arm regression on it outweighs any gain on the other two.
+  # These three were written to measure a gap: case-030 and case-031 were
+  # EXPECTED to score low until a pre-pass closed them. That expectation no
+  # longer holds. On 2026-09-11/12 all three scored 1.00 with no pre-pass in
+  # the module — the spec was rejected after three eval runs — so whatever
+  # the two were detecting is not reproducing. Treat a low score here as a
+  # real finding to investigate, NOT as the expected baseline. n=1 per cell:
+  # one clean sweep is not proof the gap is closed, only that the old
+  # expectation cannot be used to wave a failure through.
+  #
+  # That wave-through is the concrete risk. On the 2026-09-11 run case-030
+  # was killed mid-review by the account session limit and recorded as
+  # `composite: 0.0`, which read as "the expected low score" until its
+  # exit_status (target_error) was checked. Triage this suite by exit_status
+  # first, score second.
+  #
+  # case-032 is the noise canary: it must stay green, and a regression on it
+  # outweighs any gain on the other two.
   #
   # Deliberately excluded from `test-quality` so a low graph score never
   # reads as a review-quality regression in the published tables.
@@ -233,8 +245,10 @@ tasks:
         done
         if [ "$failed" -gt 0 ]; then
           echo "NOTE: $failed graph case(s) below threshold."
-          echo "      For case-030 and case-031 that is the expected baseline"
-          echo "      result. For case-032 it is a real failure."
+          echo "      All three scored 1.00 on 2026-09-11/12, so this is a"
+          echo "      real failure to investigate, not the old expected"
+          echo "      baseline. Check exit_status before the score: a"
+          echo "      session-limit kill is recorded as composite 0.0."
         fi
         echo "Graph cases complete. Compare arms with 'task lola-eval:baseline-diff'."
 

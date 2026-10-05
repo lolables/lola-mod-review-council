@@ -1,0 +1,25 @@
+module/skills/review-council/SKILL.md
+  s_4654fb0685dfc9::t_80de8dc0ad37b9 532-540,544-554
+module/tests/test-rc-cost-estimate.sh
+  s_4654fb0685dfc9::t_3a55e0b9bafdef 478-507
+CHANGELOG.md
+  s_4654fb0685dfc9::t_397891efbd9e01 466-475
+docs/dev/pipeline.md
+  s_4654fb0685dfc9::t_5ef25ee93c1c0d 137-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af0a3c74d03fa09fff23c1a9caedd7a093829a4d",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

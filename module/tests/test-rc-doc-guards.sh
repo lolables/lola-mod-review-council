@@ -1956,6 +1956,68 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: calibration covers claims evidence verification cannot reach (RC-058)"
+# rc-verify-evidence.sh checks that a finding's cited file:line exists and says
+# what the finding claims it says. That is the whole of mechanical verification,
+# so a claim ABOUT THE WORLD passes it untouched as long as the anchor is real.
+#
+# eval case-004-go-clean, rep 2026-09-14T22:26, is the case in point. Five reps
+# over an identical clean library produced the same findings; only severity
+# moved. That rep alone rated the placeholder module path HIGH and added a HIGH
+# claiming `go 1.22` sits "~18 months past Go's security support window" --
+# anchored at go.mod:3, which exists, and resting on a release calendar the
+# reviewer cannot read from the repo. Two HIGHs, verdict REQUEST CHANGES,
+# composite 0.25 against 1.00 for the other four.
+#
+# Severity calibration is the right home: it already runs per verified finding,
+# already downgrades, and already logs. These two rules are what it was missing.
+rc058_cal=$(sed -n '/^## Step 2 — Severity Calibration/,/^---/p' "$VERIFY_MD" | tr '\n' ' ' | tr -s ' ')
+if grep -qiE 'cannot be (checked|verified) against the changeset' <<<"$rc058_cal"; then
+	echo "  PASS: calibration downgrades unverifiable outside-world claims (RC-058)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: calibration has no rule for unverifiable outside-world claims (RC-058)"
+	echo "        evidence verification passes them whenever the anchor line exists"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qiE 'publication|publish' <<<"$rc058_cal"; then
+	echo "  PASS: calibration downgrades publication-conditional metadata (RC-058)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: calibration has no rule for publication-conditional metadata (RC-058)"
+	echo "        a placeholder module path then blocks a changeset that builds"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: calibration covers absent project infrastructure (RC-059)"
+# The third finding class that blocked a clean changeset, after the two RC-058
+# covers. Twice now -- the 2026-09-13 full matrix and eval rep 2026-09-15T15:23
+# -- a case-004 review came back REQUEST CHANGES on the strength of one HIGH
+# for "no CI pipeline". The gap is real and the finding is honest; it is just
+# not a defect the changeset introduced, and severity.md's Operator column
+# invites the mistake by listing "Release pipeline broken" as CRITICAL.
+#
+# The exception matters as much as the rule: when the changeset IS the
+# infrastructure, the finding is in scope and keeps its severity. A guard that
+# only checked for the downgrade would let someone write a blanket rule that
+# silences CI findings on CI changes.
+rc059_cal=$(sed -n '/^## Step 2 — Severity Calibration/,/^---/p' "$VERIFY_MD" | tr '\n' ' ' | tr -s ' ')
+if grep -qiE 'absence of project infrastructure|project infrastructure the changeset' <<<"$rc059_cal"; then
+	echo "  PASS: calibration downgrades absent project infrastructure (RC-059)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: calibration has no rule for absent project infrastructure (RC-059)"
+	echo "        one HIGH for 'no CI pipeline' then blocks a changeset that builds"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qiE 'unless the changeset|exception' <<<"$rc059_cal"; then
+	echo "  PASS: the rule exempts changesets that own that infrastructure (RC-059)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the rule would silence CI findings on CI changes (RC-059)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -463,6 +463,17 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- Severity calibration downgrades three kinds of finding that blocked clean
+  changesets without being defects in them. A CRITICAL or HIGH that rests on a
+  claim nobody can check from the changeset or the repository (whether a
+  runtime version is still supported, whether a CVE is live) drops to LOW, or
+  is stripped if the claim is all it rests on. A CRITICAL or HIGH for project
+  infrastructure the changeset neither adds nor touches (no CI, no release
+  automation) drops to MEDIUM, unless the changeset is that infrastructure. A
+  HIGH for repository metadata that only matters at publication (placeholder
+  module path, unset version) drops to MEDIUM. Downgraded findings stay in the
+  report. In eval case-004, a deliberately clean Go library, the run that
+  rated two such findings HIGH scored 0.25 against 1.00 for the others.
 - `Max comments` now defaults to 3 instead of 1. A 64-finding review hit
   GitHub's 65,536-character limit at the old default and was posted with the
   reviewer analysis cut from 63 findings, which a PR reader cannot get any other

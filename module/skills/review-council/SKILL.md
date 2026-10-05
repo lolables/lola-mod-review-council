@@ -529,25 +529,29 @@ material on disk, writes `${session_dir}/cost-estimate.json`, and records a
 one of your own. A figure the orchestrator invents is one the operator cannot
 check against the artifact.
 
-**This step never blocks a run that has nobody to answer it.** Ask only when the
-session is interactive, for the same reason Step 2.5 and Step 5 stop short of a
-blocking question: a piped or scheduled run ends at the prompt having produced
-nothing, and this repository's own batch driver (`scripts/review-open-prs.sh
---effort deep`, at the repo root — not under `${SCRIPTS_DIR}`) is exactly such
-a run.
+**This step never blocks.** Relay the table, record the acknowledgement, and
+continue to Step 2.5 **in the same turn**. Do not stop to wait for an answer.
+Asking is ending the turn: there is no later moment at which you observe that no
+answer arrived, because control never comes back to you. A turn that ends here
+throws away a prepared review that nothing has been spent on yet, and a headless
+run never gets another turn — this repository's own batch driver
+(`scripts/review-open-prs.sh --effort deep`, at the repo root — not under
+`${SCRIPTS_DIR}`) is one. Step 5 can pose its question safely only because it
+fires after Step 6 has written every artifact; this step has nothing behind it.
 Spending money the operator did not see is the lesser failure; the estimate is
 in `tracking.md` either way.
 
-1. **Interactive** — after relaying the table, ask: "Proceed with this deep
-   review?"
-   - Yes: append `- Acknowledgement: acknowledged` to
-     `${session_dir}/tracking.md` and continue to Step 2.5.
-   - No: append `- Acknowledgement: declined`, dispatch nothing, and stop.
-     Tell the user the prepared session is at `${session_dir}` and that
-     re-invoking the skill resumes it (Step 2 re-entry).
-2. **Non-interactive, or no answer arrives** — append
-   `- Acknowledgement: not acknowledged (non-interactive)` and continue to
-   Step 2.5.
+Append one line to `${session_dir}/tracking.md` recording what the operator has
+already told you — never what a question would have told you — then continue:
+
+1. `- Acknowledgement: acknowledged` — the operator authorised this deep run in
+   the invocation, or is resuming a session that already showed them this table.
+2. `- Acknowledgement: declined` — the operator has told you not to spend it.
+   Dispatch nothing and stop. Tell them the prepared session is at
+   `${session_dir}` and that re-invoking the skill resumes it (Step 2 re-entry).
+3. `- Acknowledgement: not acknowledged (non-interactive)` — anything else,
+   including every piped, scheduled or headless run. This is the default and
+   needs no confirmation: continue to Step 2.5.
 
 If the script prints `**Cost estimate unavailable:** ...` in place of the table,
 relay that line and continue to Step 2.5. An estimate that could not be produced

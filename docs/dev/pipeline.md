@@ -134,8 +134,11 @@ flowchart TD
    - A dollar band, read at run time from the Cost Per Review table in `references/model-guidance.md` and divided
      by the council size stated beside it
 
-   An interactive session is asked to acknowledge the estimate. A non-interactive one records `not acknowledged
-   (non-interactive)` and proceeds, because a blocking question ends a headless run outright.
+   The estimate is never a question: asking ends the turn, and a headless run would stop there with nothing
+   dispatched. The run records what the operator already said and acts on it in the same turn: `acknowledged` if
+   the invocation authorised the deep run or the session is resuming after showing them the table, `declined` if
+   they said not to spend it (nothing is dispatched and the run stops), otherwise `not acknowledged
+   (non-interactive)`. The first and last proceed.
 
    Two overrides, in priority order:
 

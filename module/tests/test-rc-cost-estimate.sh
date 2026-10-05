@@ -475,6 +475,36 @@ for outcome in "Acknowledgement: acknowledged" "Acknowledgement: declined" "Ackn
 	fi
 done
 
+# The step must not pose a question the operator has to answer (RC-060).
+#
+# Saying "never blocks" is not enough, and the previous wording proved it: it
+# offered an interactive branch that asked "Proceed with this deep review?" and
+# a non-interactive branch keyed on "no answer arrives". No orchestrator can
+# take the second branch. Asking IS ending the turn, so at the moment the
+# condition would be evaluated control has already left the model -- eval
+# case-026 spent $0.97 to relay the table, end its turn, and dispatch nobody.
+# Step 5 gets away with the same question only because it fires after Step 6
+# has written every artifact, where a turn that ends costs nothing.
+#
+# Two properties, each load-bearing: no question is posed, and the step says
+# outright that it continues within the same turn. Dropping the question while
+# staying silent about the turn invites the next reader to re-add a wait.
+if grep -qF 'Proceed with this deep review?' <<<"$step_22"; then
+	echo "  FAIL: Step 2.4 still poses a blocking question (RC-060)"
+	echo "        a turn that ends here discards a prepared, unpaid-for review"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: Step 2.4 poses no blocking question (RC-060)"
+	PASS=$((PASS + 1))
+fi
+if grep -qF 'same turn' <<<"$step_22"; then
+	echo "  PASS: Step 2.4 states that it continues in the same turn (RC-060)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: Step 2.4 never says to continue in the same turn (RC-060)"
+	FAIL=$((FAIL + 1))
+fi
+
 # --- Contextual persona selection (issue #20) --------------------------------
 #
 # Selection changes the dispatch count, and this script is the one that states

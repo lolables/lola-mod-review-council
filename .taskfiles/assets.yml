@@ -1,0 +1,29 @@
+version: '3'
+
+vars:
+  ASSETS: '{{.ROOT_DIR}}/docs/assets'
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  render:
+    desc: Render the branding PNGs from their SVG sources in docs/assets/
+    preconditions:
+      - sh: command -v rsvg-convert
+        msg: "rsvg-convert not found — dnf install librsvg2-tools | brew install librsvg"
+      # The banner's font stack falls through to Helvetica when Noto Sans is
+      # absent, and fontconfig maps Helvetica to whatever metric clone is
+      # installed — the PNG changes typeface without any error. Refuse instead.
+      - sh: fc-match -f '%{family}' 'Noto Sans' | grep -q 'Noto Sans'
+        msg: "Noto Sans not installed — dnf install google-noto-sans-vf-fonts | brew install --cask font-noto-sans"
+    sources:
+      - '{{.ASSETS}}/*.svg'
+    generates:
+      - '{{.ASSETS}}/*.png'
+    cmds:
+      - rsvg-convert -w 512 "{{.ASSETS}}/icon.svg" -o "{{.ASSETS}}/icon.png"
+      - rsvg-convert -w 1280 "{{.ASSETS}}/banner.svg" -o "{{.ASSETS}}/banner.png"
+      - rsvg-convert -w 1280 "{{.ASSETS}}/social-preview.svg" -o "{{.ASSETS}}/social-preview.png"

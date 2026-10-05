@@ -1,0 +1,52 @@
+module/agents/divisor-adversary-code.md
+  s_4654fb0685dfc9::t_1addbaf094ffb9 2,43-44
+module/agents/divisor-adversary-spec.md
+  s_4654fb0685dfc9::t_dfbba46d68de73 2,42-43
+module/agents/divisor-curator-code.md
+  s_4654fb0685dfc9::t_2b648cd6acb44a 2,105-106
+module/agents/divisor-curator-spec.md
+  s_4654fb0685dfc9::t_a61b0058a28161 2
+module/agents/divisor-guard-code.md
+  s_4654fb0685dfc9::t_cabc056b4db267 2,32-33
+module/agents/divisor-guard-spec.md
+  s_4654fb0685dfc9::t_5ebfe007fc8728 2
+module/agents/divisor-sre-code.md
+  s_4654fb0685dfc9::t_f757ec38559a2b 2,34-35
+module/agents/divisor-sre-spec.md
+  s_4654fb0685dfc9::t_f60eac26f76515 2
+module/agents/divisor-testing-code.md
+  s_4654fb0685dfc9::t_9f1b4efbd17778 2,32-33
+module/agents/divisor-testing-spec.md
+  s_4654fb0685dfc9::t_2f0626e0d0a5a4 2
+module/tests/test-rc-doc-guards.sh
+  s_4654fb0685dfc9::t_61510c409b06e1 1899-1910,1912-1918,1920-1923,1925-1929,1931-1958
+  s_4654fb0685dfc9::t_10b5e1a8acf441 1959-2020
+CHANGELOG.md
+  s_4654fb0685dfc9::t_8bd69c152e635e 695-704
+  s_4654fb0685dfc9::t_9605c8ed6d2c01 476-486
+  s_4654fb0685dfc9::t_397891efbd9e01 466-475
+module/skills/review-council/phases/verify.md
+  s_4654fb0685dfc9::t_2d847fb939f16a 328-353
+module/skills/review-council/SKILL.md
+  s_4654fb0685dfc9::t_80de8dc0ad37b9 532-540,544-554
+module/tests/test-rc-cost-estimate.sh
+  s_4654fb0685dfc9::t_3a55e0b9bafdef 478-507
+docs/dev/pipeline.md
+  s_4654fb0685dfc9::t_5ef25ee93c1c0d 137-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e690c37fb912d7139341b5b4ac89f6b16948f721",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

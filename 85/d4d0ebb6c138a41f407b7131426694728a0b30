@@ -1,0 +1,27 @@
+docs/dev/pipeline.md
+  s_4654fb0685dfc9::t_5ef25ee93c1c0d 137-140
+  s_4654fb0685dfc9::t_99a3e7e3ff0ed6 141
+module/tests/test-rc-cost-estimate.sh
+  s_4654fb0685dfc9::t_3a55e0b9bafdef 478-507
+module/skills/review-council/SKILL.md
+  s_4654fb0685dfc9::t_80de8dc0ad37b9 532-541,545-554
+  s_4654fb0685dfc9::t_5a973b02f6ff43 555
+CHANGELOG.md
+  s_4654fb0685dfc9::t_4a34b7fe51cfa4 685-695
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85d4d0ebb6c138a41f407b7131426694728a0b30",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+CHANGELOG.md
+  h_4db53f42b9be42 685-692
+module/skills/review-council-debug/SKILL.md
+  h_4db53f42b9be42 32,35-42,47,50,58-60,81-88,94,105-108,123,215,242,275,353,391
+module/tests/test-rc-debug-skill.sh
+  h_4db53f42b9be42 1-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35e744f824d616768a79e3d6ce7b947ee5eec43a",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

@@ -442,8 +442,24 @@ RUN_ENV=(MOCK_CLI_STDOUT='{"type":"assistant","message":{"content":[{"type":"too
 run_case "yes" --repo acme/widgets --run
 RUN_ENV=()
 assert_contains "$OUT" "→ Task Review auth" "a dispatch is shown as one readable line"
-assert_contains "$OUT" "done — \$8.23, 57 turns" "the run's cost and turn count close it out"
+assert_contains "$OUT" "turn ended — \$8.23 so far, 57 turns" "the turn's cost and turn count are shown"
 assert_not_contains "$OUT" '"type":"assistant"' "the raw event does not reach the terminal"
+
+# Reviewers run in the background, and the orchestrator waits for them by
+# ending its turn. claude emits a result event per turn, so one run can carry
+# several, each with the session's cumulative cost. The renderer reads line by
+# line and cannot know which is last; calling each one "done" printed the same
+# run as finished twice. Completion is the driver's own exit-code line.
+echo ""
+echo "Test: a result event per turn is not reported as the run finishing"
+RUN_ENV=(MOCK_CLI_STDOUT='{"type":"result","subtype":"success","total_cost_usd":1.28,"num_turns":13}
+{"type":"result","subtype":"success","total_cost_usd":1.28,"num_turns":9}')
+run_case "yes" --repo acme/widgets --run
+RUN_ENV=()
+assert_contains "$OUT" "turn ended — \$1.28 so far, 13 turns" "the first turn is labelled as a turn"
+assert_contains "$OUT" "turn ended — \$1.28 so far, 9 turns" "the second turn is labelled as a turn"
+assert_not_contains "$OUT" "done —" "no turn claims the run is done"
+assert_contains "$OUT" "PR #1: done." "completion comes from the exit code"
 
 # stderr is merged into the same stream and is not JSON. A driver that renders
 # only what parses would swallow exactly the output an operator needs when a

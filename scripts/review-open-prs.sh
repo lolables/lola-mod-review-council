@@ -306,6 +306,9 @@ LOG_DIR="./.review-council-logs"
 # is not JSON, and a diagnostic is the last thing that should be swallowed.
 # Only the events that answer "is this still making progress, and at what
 # cost" are printed; the rest are dropped rather than scrolled past.
+# A result event closes a turn, not the run: the orchestrator ends a turn to wait
+# on background reviewers, so one run can emit several. Completion is reported
+# from the exit code after the pipeline returns.
 PROGRESS_FILTER='
 def clip: if (. | length) > 100 then .[0:100] + "…" else . end;
 def stamp: (now | strflocaltime("%H:%M:%S"));
@@ -318,7 +321,7 @@ def stamp: (now | strflocaltime("%H:%M:%S"));
         "\(stamp)   \(.text | split("\n")[0] | clip)"
       else empty end
   elif .type == "result" then
-    "\(stamp) \(if .subtype == "success" then "done" else "FAILED: " + .subtype end) — $\(((.total_cost_usd // 0) * 100 | round) / 100), \(.num_turns // 0) turns"
+    "\(stamp) \(if .subtype == "success" then "turn ended" else "FAILED: " + .subtype end) — $\(((.total_cost_usd // 0) * 100 | round) / 100) so far, \(.num_turns // 0) turns"
   elif .type == "raw" then .line
   else empty end
 '

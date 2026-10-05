@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"s1"}
+{"type":"assistant","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":2000,"cache_read_input_tokens":0,"output_tokens":50}}}
+{"type":"assistant","message":{"usage":{"input_tokens":5,"cache_creation_input_tokens":100,"cache_read_input_tokens":2000,"output_tokens":70}}}
+{"type":"result","num_turns":2,"total_cost_usd":0.25,"usage":{"input_tokens":15,"cache_creation_input_tokens":2100,"cache_read_input_tokens":2000,"output_tokens":120}}

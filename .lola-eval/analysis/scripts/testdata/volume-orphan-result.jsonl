@@ -1,0 +1,3 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t999","content":"abc"}]}}
+{"type":"result","num_turns":1}

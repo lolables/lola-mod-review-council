@@ -14,7 +14,7 @@ vars:
   # unchecked without anything failing. scripts/ is the entry that shows why:
   # it holds operator tools rather than anything the module ships or `task`
   # calls, so nothing here breaks when it silently stops being linted.
-  SH_PATHS: module .taskfiles/scripts scripts
+  SH_PATHS: module .taskfiles/scripts scripts .lola-eval/analysis/scripts
 
 tasks:
   default:

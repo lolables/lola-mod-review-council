@@ -1,0 +1,7 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"0123456789"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Agent"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"abcde"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"Bash"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"xy"}]}}
+{"type":"result","num_turns":3}

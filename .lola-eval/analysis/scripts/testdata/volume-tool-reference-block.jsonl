@@ -1,0 +1,3 @@
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"ToolSearch"}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":"abc"},{"type":"tool_reference","tool_name":"Foo"}]}]}}
+{"type":"result","num_turns":1}

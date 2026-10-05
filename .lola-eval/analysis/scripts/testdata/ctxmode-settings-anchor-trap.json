@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/usr/bin/not-__BASENAME__-wrapper\" hook pretooluse"
+          },
+          {
+            "type": "command",
+            "command": "\"__BIN__\" hook claude-code pretooluse"
+          }
+        ]
+      }
+    ]
+  }
+}

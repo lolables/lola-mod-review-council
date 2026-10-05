@@ -1,0 +1,20 @@
+docs/dev/branding.md
+  s_c38a7a408420d9::t_ed1f8119632ec6 66-69
+  s_c38a7a408420d9::t_7894dfe585300b 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65e96afed0f3e5c1dbb5fbf877e73d2564c03174",
+  "prompts": {},
+  "sessions": {
+    "s_c38a7a408420d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "13e28f45-afdc-4c9a-995e-fa30829764ef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

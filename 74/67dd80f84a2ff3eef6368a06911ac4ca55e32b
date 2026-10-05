@@ -1,0 +1,26 @@
+docs/dev/ab-evaluations.md
+  s_4654fb0685dfc9::t_9f762c69c063c2 1-5,7-101,109-119
+  s_4654fb0685dfc9::t_79e1c32026a121 102-108
+  s_4654fb0685dfc9::t_0537ed9762f5cb 6
+  s_4654fb0685dfc9::t_eec93aada4ea6f 120-121
+README.md
+  s_4654fb0685dfc9::t_5f4391ad13aaed 714-716
+AGENTS.md
+  s_4654fb0685dfc9::t_5f4391ad13aaed 57-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7467dd80f84a2ff3eef6368a06911ac4ca55e32b",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

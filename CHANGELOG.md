@@ -671,6 +671,14 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- A batched round now writes to named paths. `phases/delegate.md` named only
+  `batches.txt`, so every batched run invented a layout for the rest: six runs
+  produced six, with three spellings of the raw verdict directory. Each round's
+  raw verdicts now go to `verdicts/batch{N}/{agent-name}.raw.md` (under the
+  subsystem directory in a deep run) and its filtered inputs to
+  `batch{N}-files.txt` and `batch{N}-diff.patch`. Verification already reads
+  `verdicts/` recursively, so the orchestrator no longer merges rounds by hand
+  into an `{agent-name}.raw.md` that is not the agent's verbatim output.
 - A trimmed PR comment no longer says the full report is "in the run
   artifacts". Nothing in this module uploads the session, so for a local run
   there were no run artifacts to find. The notice now says the rest stays with

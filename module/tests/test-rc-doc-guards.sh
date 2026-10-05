@@ -1855,6 +1855,47 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: batch artifacts have named paths, not invented ones (RC-055)"
+# Issue #27: delegate.md named `batches.txt` and left every other batch artifact
+# unnamed, so six batched runs in a 20-session corpus invented six layouts —
+# four separator conventions for the same concept and three spellings of the raw
+# verdict directory. Anything reading a batched session had to glob defensively.
+#
+# The per-batch raw verdict is the half that matters, and it nests UNDER
+# verdicts/ on purpose. rc-extract-verdict.sh finds '*.raw.md' recursively and
+# rc-verify-evidence.sh finds 'divisor-*.json' recursively, so a nested batch
+# directory is collected by the same mechanism that already carries deep mode's
+# per-subsystem nesting — the one-agent-many-verdicts case both scripts handle.
+# Parking them in a sibling directory, as every observed run did, hides them from
+# both globs and forces the orchestrator to hand-merge instead.
+#
+# Which is the third clause: an orchestrator that merges rounds itself writes a
+# composed `{agent}.raw.md` that is no longer the verbatim agent output Verdict
+# Collection requires, and leaves nothing to audit the merge against.
+rc055_raw=0
+rc055_inputs=0
+rc055_handmerge=0
+grep -qF 'verdicts/batch{N}/{agent-name}.raw.md' <<<"$delegate_flat" && rc055_raw=1
+if grep -qF 'batch{N}-files.txt' <<<"$delegate_flat" &&
+	grep -qF 'batch{N}-diff.patch' <<<"$delegate_flat"; then
+	rc055_inputs=1
+fi
+# The instruction as it stood, and the phrasing a well-meaning edit reaches for.
+if grep -qiE 'merge findings from all rounds|merge (the )?(raw )?verdicts across (all )?(rounds|batches)' \
+	<<<"$delegate_flat"; then
+	rc055_handmerge=1
+fi
+if [[ "$rc055_raw" -eq 1 ]] && [[ "$rc055_inputs" -eq 1 ]] && [[ "$rc055_handmerge" -eq 0 ]]; then
+	echo "  PASS: every batch artifact has one spelled-out path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: batched runs are free to invent their own layout again"
+	[[ "$rc055_raw" -eq 1 ]] || echo "        delegate.md no longer names verdicts/batch{N}/{agent-name}.raw.md"
+	[[ "$rc055_inputs" -eq 1 ]] || echo "        delegate.md no longer names the per-batch diff and file list"
+	[[ "$rc055_handmerge" -eq 0 ]] || echo "        delegate.md asks the orchestrator to merge rounds by hand"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

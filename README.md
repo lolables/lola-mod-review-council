@@ -554,6 +554,13 @@ delegation prompt has to fit in a reviewer's context alongside the files it is
 told to open. The split is computed before dispatch, by `rc-plan-batches.sh`,
 and written to `batch-plan.json` and `batches.txt` in the session directory.
 
+Each round leaves its own artifacts, named so that a session directory reads the
+same way whoever produced it: `batch{N}-files.txt` and `batch{N}-diff.patch` for
+the round's inputs, and `verdicts/batch{N}/{agent}.raw.md` for what each reviewer
+returned. A run that fits in one round keeps the unbatched `verdicts/{agent}.raw.md`
+layout. Findings are merged across rounds during verification, not before it, so
+every round's verdict survives as its own file.
+
 A batch closes when adding the next group of files would exceed either budget:
 
 | Budget        | Default          | What it protects                                   |

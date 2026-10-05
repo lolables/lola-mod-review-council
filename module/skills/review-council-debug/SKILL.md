@@ -29,16 +29,25 @@ host resolved that path to load this file) for `<this-skill-dir>`:
 
 ```bash
 SCRIPTS_DIR="<this-skill-dir>/../review-council/scripts"
+AGENTS_DIR="<this-skill-dir>/../../agents"
 ```
 
-In a checkout of this module, that resolves to the following, which you
+`AGENTS_DIR` is two levels up, not a sibling, for the same reason as in
+review-council's own path setup: that holds for both the co-located
+(`.../module/skills/...` → `.../module/agents`) and the split
+(`~/.claude/skills/...` → `~/.claude/agents`) install layouts.
+`rc-prepare.sh` needs it to discover reviewers; without it every run
+answers `status: "skip"` and Step 1 never reaches the success path.
+
+In a checkout of this module, those resolve to the following, which you
 may use directly instead:
 
 ```bash
 SCRIPTS_DIR="$(git rev-parse --show-toplevel)/module/skills/review-council/scripts"
+AGENTS_DIR="$(git rev-parse --show-toplevel)/module/agents"
 ```
 
-Confirm the assignment before running anything else — every later step
+Confirm both assignments before running anything else — every later step
 expands `${SCRIPTS_DIR}`, and an unset or wrong value makes each
 invocation a "command not found" rather than a diagnostic result:
 
@@ -46,6 +55,9 @@ invocation a "command not found" rather than a diagnostic result:
 [[ -x "${SCRIPTS_DIR}/rc-prepare.sh" ]] \
   && echo "SCRIPTS_DIR ok: ${SCRIPTS_DIR}" \
   || echo "SCRIPTS_DIR wrong: ${SCRIPTS_DIR}"
+compgen -G "${AGENTS_DIR}/divisor-*.md" >/dev/null \
+  && echo "AGENTS_DIR ok: ${AGENTS_DIR}" \
+  || echo "AGENTS_DIR wrong: ${AGENTS_DIR}"
 ```
 
 Scripts referenced:
@@ -66,12 +78,20 @@ Scripts referenced:
 
 ## Diagnostic Procedure
 
+Every block captures a script's stdout alone in `$output` and leaves
+stderr uncaptured. The scripts write their JSON to stdout and warnings
+to stderr (for example `rc-extract-verdict.sh`'s `rc-warning:` line when
+no sourcemeta/jsonschema validator is installed). Merged into `$output`,
+a warning lands in front of the JSON and `jq` reports a parse error the
+script did not make. Read any stderr lines in the tool output, and
+record them in the Step 6 report under the script that printed them.
+
 ### Step 1: Test rc-prepare.sh
 
 Execute preparation script:
 
 ```bash
-output=$(${SCRIPTS_DIR}/rc-prepare.sh 2>&1)
+output=$(AGENTS_DIR="${AGENTS_DIR}" ${SCRIPTS_DIR}/rc-prepare.sh)
 echo "$output"
 session_dir=$(printf '%s' "$output" | jq -r 'select(.status == "ok") | .session_dir // empty')
 echo "session_dir=${session_dir}"
@@ -82,7 +102,10 @@ the success payload, which is what the `jq -r` above reads. Two results
 are both informative: an empty `session_dir=` line means `status` was
 not `ok` (Steps 2-4 then run against the Step 2 mock instead), and a
 `jq: error` means the script did not emit parseable JSON at all — that
-is a Step 1 finding, not a setup problem to work around.
+is a Step 1 finding, not a setup problem to work around. On a checkout
+with nothing to review, `status: "empty"` is the correct answer, not a
+defect; `status: "skip"` naming `AGENTS_DIR` means the anchoring above
+was skipped.
 
 Validate JSON output:
 - `status` present?
@@ -97,7 +120,7 @@ If Step 1's session already has reviewer output (real subagents
 dispatched, each having written `verdicts/<agent>.raw.md`), run:
 
 ```bash
-output=$(${SCRIPTS_DIR}/rc-extract-verdict.sh "${session_dir}" 2>&1)
+output=$(${SCRIPTS_DIR}/rc-extract-verdict.sh "${session_dir}")
 echo "$output"
 ```
 
@@ -189,7 +212,7 @@ verdict_json=$(jq -n --arg file "$target_rel" '{
   echo '```'
 } >"${mock_session}/verdicts/divisor-test-code.raw.md"
 
-output=$(${SCRIPTS_DIR}/rc-extract-verdict.sh "${mock_session}" 2>&1)
+output=$(${SCRIPTS_DIR}/rc-extract-verdict.sh "${mock_session}")
 echo "$output"
 echo "mock_session=${mock_session}"
 ```
@@ -216,7 +239,7 @@ session directory this step ran against.
 1. Run against Step 1's session directory:
 
    ```bash
-   output=$(${SCRIPTS_DIR}/rc-verify-evidence.sh "${session_dir}" 2>&1)
+   output=$(${SCRIPTS_DIR}/rc-verify-evidence.sh "${session_dir}")
    echo "$output"
    ```
 
@@ -249,7 +272,7 @@ The mock consumes `verdicts/divisor-test-code.json` that
 
    ```bash
    output=$(REVIEW_ROOT="${mock_session}" \
-     ${SCRIPTS_DIR}/rc-verify-evidence.sh "${mock_session}" 2>&1)
+     ${SCRIPTS_DIR}/rc-verify-evidence.sh "${mock_session}")
    echo "$output"
    echo "--- verdicts/findings.json ---"
    cat "${mock_session}/verdicts/findings.json"
@@ -327,7 +350,7 @@ cat >"${mock_session}/tracking.md" <<'TRACKEOF'
 - Changeset size: 1 files
 TRACKEOF
 
-output=$(${SCRIPTS_DIR}/rc-render-report.sh "${mock_session}" 2>&1)
+output=$(${SCRIPTS_DIR}/rc-render-report.sh "${mock_session}")
 echo "$output"
 ```
 
@@ -365,7 +388,7 @@ Per agent:
   divisor-test-code: 1 finding, 1 verified
 VERIFYEOF
 
-output=$(${SCRIPTS_DIR}/rc-render-report.sh "${mock_session}" 2>&1)
+output=$(${SCRIPTS_DIR}/rc-render-report.sh "${mock_session}")
 echo "$output"
 rm -rf "${mock_session}"
 ```

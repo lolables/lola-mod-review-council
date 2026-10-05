@@ -682,6 +682,14 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- `/review-council-debug` exercises `rc-prepare.sh`'s success path again. Its
+  Step 1 ran the script without `AGENTS_DIR`, so every run answered
+  `status: "skip"` and fell back to the mock, leaving preparation untested. The
+  skill now derives `AGENTS_DIR` alongside `SCRIPTS_DIR` and checks both before
+  starting. Its captures also stop merging stderr into `$output`: without a
+  sourcemeta/jsonschema validator, `rc-extract-verdict.sh` warns on stderr, and
+  that warning in front of the JSON made `jq` report a parse error the script
+  never made. `test-rc-debug-skill.sh` runs the skill's own blocks to guard both.
 - `review-open-prs.sh` no longer reports a review as done before it is. Its
   progress line printed `done` for every `result` event, but the orchestrator
   ends a turn to wait on background reviewers and claude emits a result per

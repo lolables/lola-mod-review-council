@@ -1,0 +1,43 @@
+.lola-eval/analysis/scripts/testdata/cgmode-settings-basic.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-34
+.lola-eval/analysis/scripts/testdata/cgmode-settings-event-null.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-5
+.lola-eval/analysis/scripts/cg-mode-config.sh
+  s_4654fb0685dfc9::t_ffbb103839e036 1-144
+.lola-eval/analysis/scripts/testdata/cgmode-claude-json-basic.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-9
+.lola-eval/analysis/scripts/testdata/cgmode-settings-hooks-missing.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-3
+.taskfiles/lola-eval.yml
+  s_4654fb0685dfc9::t_ffbb103839e036 333
+.lola-eval/analysis/scripts/testdata/cgmode-settings-no-codegraph.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-26
+.lola-eval/analysis/scripts/testdata/cgmode-claude-json-no-codegraph-entry.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-8
+.lola-eval/analysis/scripts/testdata/cgmode-settings-hooks-not-object.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-3
+.lola-eval/analysis/scripts/test-cg-mode-config.sh
+  s_4654fb0685dfc9::t_ffbb103839e036 1-162
+.lola-eval/analysis/scripts/cg-adoption-probe.sh
+  s_4654fb0685dfc9::t_ffbb103839e036 1-331
+.lola-eval/analysis/scripts/testdata/cgmode-settings-anchor-trap.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-22
+.lola-eval/analysis/scripts/testdata/cgmode-claude-json-no-mcp-servers.json
+  s_4654fb0685dfc9::t_ffbb103839e036 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00f782736bc0a5c4e44f3b2e46a0ae893d09ae10",
+  "prompts": {},
+  "sessions": {
+    "s_4654fb0685dfc9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "65c1cf13-262b-48ff-81f6-16fb18620bef",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

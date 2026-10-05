@@ -1,5 +1,5 @@
 ---
-description: "Documentation & content pipeline triage — owns documentation gaps, doc convention compliance, blog/tutorial opportunities, and documentation issue filing."
+description: "SPEC REVIEW — documentation and content pipeline triage for specifications and plans not yet implemented. Audits written requirements for unaddressed documentation impact, undeclared doc deliverables, and the content opportunities the spec implies. Not for source code — use divisor-curator-code instead."
 ---
 
 # Role: Curator

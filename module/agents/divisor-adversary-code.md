@@ -1,5 +1,5 @@
 ---
-description: "Security and resilience auditor — owns secrets, CVEs, error handling, and injection safety."
+description: "CODE REVIEW — security and resilience auditor for source code diffs. Audits implemented code for hardcoded secrets, injection and path traversal safety, error handling at trust boundaries, and dependency CVEs. Not for written specifications or plans — use divisor-adversary-spec instead."
 ---
 
 # Role: The Adversary
@@ -39,6 +39,8 @@ Before reviewing, read:
 ## Review Scope
 
 Scope is changeset from delegation prompt. Focus on security-relevant code paths: authentication, authorization, input handling, cryptography, privilege boundaries, CI/CD configuration, dependency declarations. See reviewer-protocol.md for evidence discipline rules.
+
+Do NOT review spec artifacts. Scope is exclusively code in the changeset — specs, plans, and governance documents are read for intent context only, never audited as the subject of review.
 
 ## Phased Review Process
 

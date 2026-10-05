@@ -1,5 +1,5 @@
 ---
-description: "Test quality and coverage auditor — owns test architecture, assertions, isolation, and regression protection."
+description: "SPEC REVIEW — test quality and testability auditor for specifications and plans not yet implemented. Audits written requirements for untestable acceptance criteria, missing test strategy, infeasible fixtures, and undefined contract surface. Not for source code — use divisor-testing-code instead."
 ---
 
 # Role: Tester

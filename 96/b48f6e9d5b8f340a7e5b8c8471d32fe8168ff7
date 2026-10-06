@@ -1,0 +1,32 @@
+.taskfiles/scripts/mutate-check.sh
+  s_2b291de378d9b6::t_782be34817af39 934-951
+docs/dev/pipeline.md
+  s_2b291de378d9b6::t_191ca84bcc311c 302-305
+  s_2b291de378d9b6::t_a9e3b14440b36d 298-301
+module/tests/test-rc-prepare-mode-scope.sh
+  s_2b291de378d9b6::t_8d6ccf43d3deb9 271-277
+  s_2b291de378d9b6::t_d6917db2916763 301-405
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_2b291de378d9b6::t_77f25fc96c68d1 269
+  s_2b291de378d9b6::t_b7fdf4390f952e 256-257,260
+  s_2b291de378d9b6::t_8ea899f05ac7c7 391-393
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_2b291de378d9b6::t_e3280bee51ec2c 211-212
+  s_2b291de378d9b6::t_1d5894fc841192 319-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96b48f6e9d5b8f340a7e5b8c8471d32fe8168ff7",
+  "prompts": {},
+  "sessions": {
+    "s_2b291de378d9b6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2a1998c0-1a0c-4655-b0c2-6ace45a7efd1",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

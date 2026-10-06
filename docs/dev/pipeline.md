@@ -294,6 +294,16 @@ docs/rfcs/  docs/adr/  rfcs/  adr/  design/
 
 Files count as specs when they end in `.md`, `.mdx`, `.markdown`, `.txt`, `.rst` or `.adoc`.
 
+Without `--mode`, preparation picks the mode from the same file set the chosen scope captures: a range's diff, the
+branch plus staged and unstaged work for `changed` (and for a run with no `--scope`), every non-ignored file for
+`all`, each narrowed by a secondary `--scope paths` filter. A file in that set is a spec when it has one of the
+extensions above under one of the directories above, or when its name is `spec.md`, `plan.md`, `tasks.md`, `design.md`
+or `research.md`, alone or after a `-`, `_` or `.` (`feature-spec.md`, not `respec.md`). Any other file makes it a code
+review, and a spec review chosen this way reviews those changed specs rather than sweeping the directories above.
+Only an empty set from a scope that names no changeset of its own (`changed`, `all`, `paths`) falls back to looking
+for spec directories on disk; an empty range or PR is reported as empty. Both stages read one definition, in
+`scripts/lib/prepare-target.sh`.
+
 Bare `docs/` is deliberately not on the list — most projects keep tutorials, blog posts and release notes there
 alongside anything spec-shaped, and scanning all of it turns a spec review into a review of the whole site.
 

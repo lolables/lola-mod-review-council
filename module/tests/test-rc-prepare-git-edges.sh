@@ -161,6 +161,17 @@ else
 fi
 rm -rf "$work"
 
+echo "Test 8b: an explicit mode still rejects a garbage ref range"
+# Auto mode refuses the range while classifying it. An explicit --mode skips
+# classification, so the changeset builders' own check is the only one left.
+work=$(mktemp -d)
+setup_repo "$work" >/dev/null 2>&1
+for m in code specs; do
+	result=$(prepare_in "$work" --mode "$m" --scope range --scope-value 'no-such-ref..HEAD')
+	assert_json_field "$result" "status" "skip" "--mode $m rejects a nonexistent ref"
+done
+rm -rf "$work"
+
 echo "Test 9: a valid ref range on a multi-commit repo still works"
 # Regression guard for Tests 7 and 8: the new validation must not reject
 # ranges that do resolve.

@@ -191,12 +191,82 @@ rc_walk_files() { # start...
 		sed 's|^\./||'
 }
 
+# Print the lines of stdin that are one of the given scope paths or lie under
+# one — never merely something starting with one. `$file == $fp*` admitted
+# `src/auth.go.bak` for a filter of `src/auth.go`, and `src/quiet.go` for a
+# filter of `src/q`: a review that quietly covers files nobody named. Mode
+# detection and changeset capture both filter through this, so the files that
+# decide the mode are the files that get reviewed.
+rc_filter_to_scope() { # path...
+	local file fp
+	while IFS= read -r file; do
+		[[ -z "$file" ]] && continue
+		for fp in "$@"; do
+			fp="${fp%/}"
+			if [[ "$file" == "$fp" ]] || [[ "$file" == "$fp/"* ]]; then
+				printf '%s\n' "$file"
+				break
+			fi
+		done
+	done
+}
+
+# What counts as a spec is defined once, here, and read by mode detection and
+# by every spec-mode discovery branch in prepare-changes.sh. Detection used to
+# carry its own shorter list, so a file could select spec mode and then fail
+# spec capture's filter — the run reported "No spec artifacts found" for the
+# very file that chose the mode.
+#
+# Extensions. `.mdx` is what Mintlify, Docusaurus and Nextra publish, and
+# what the MCP specification itself is written in; `.rst` is Sphinx and
+# `.adoc` is AsciiDoc. Excluding them made spec mode unusable on most modern
+# documentation sites for no reason a user could discover.
+#
+# Directories. This list can only ever be a guess at someone else's layout,
+# so both it and the extension list are overridable. Bare `docs/` is
+# deliberately absent: it is where projects keep tutorials, blog posts and
+# release notes as well as specs, and sweeping all of it turns a spec review
+# into a review of the whole site. A project that does want that says so
+# with REVIEW_COUNCIL_SPEC_DIRS.
+IFS=', ' read -ra spec_exts <<<"${REVIEW_COUNCIL_SPEC_EXTS:-md mdx markdown txt rst adoc}"
+IFS=', ' read -ra spec_default_dirs <<<"${REVIEW_COUNCIL_SPEC_DIRS:-specs docs/specs docs/specification docs/design docs/superpowers docs/rfcs docs/adr rfcs adr design}"
+
+# find(1) predicate for the extension set: `\( -name "*.md" -o … \)`.
+spec_find_args=()
+for ext in "${spec_exts[@]}"; do
+	[[ -z "$ext" ]] && continue
+	[[ ${#spec_find_args[@]} -gt 0 ]] && spec_find_args+=(-o)
+	spec_find_args+=(-name "*.${ext}")
+done
+
+# The same set as an anchored ERE, for filtering a list of changed paths
+# rather than walking the tree. Built from the same array so the two forms
+# cannot drift.
+spec_ext_re=$(
+	IFS='|'
+	printf '%s' "${spec_exts[*]}"
+)
+spec_dir_re=$(
+	IFS='|'
+	printf '%s' "${spec_default_dirs[*]}"
+)
+
+# A changed path is a spec when it has a spec extension under a spec
+# directory, or is one of the planning documents a spec workflow writes
+# wherever it keeps them (feature-spec.md, plan.md, tasks.md, ...). The name
+# must be a whole word: unanchored, respec.md and redesign.md were specs too.
+rc_is_spec_path() { # path
+	{ [[ "$1" =~ \.(${spec_ext_re})$ ]] && [[ "$1" =~ ^(${spec_dir_re})/ ]]; } ||
+		[[ "$1" =~ (^|/|[-_.])(spec|plan|tasks|design|research)\.md$ ]]
+}
+
 # ============================================================================
 # SECTION 7: Determine Review Mode
 # ============================================================================
 
 mode="code"
 mode_reason="default"
+mode_from_changeset=false
 
 # The flag parser admits only code, specs or auto, so this branch is
 # exhaustive rather than a catch-all: reaching the else means "code".
@@ -209,13 +279,43 @@ if [[ -n "$mode_override" ]] && [[ "$mode_override" != "auto" ]]; then
 		mode_reason="explicit override"
 	fi
 else
-	# Auto-detect mode
+	# Auto-detect mode, from the same file set the changeset builder will
+	# capture for this scope. Detection once read `base...HEAD` for every git
+	# scope it had no branch for, so `--scope range HEAD~1..HEAD` on a merged
+	# commit classified an empty list, found a gitignored spec directory on
+	# disk, and resolved to spec mode — and spec capture then dropped every
+	# Terraform file the range actually changed. Nothing was reviewed.
 	changeset_for_mode_detection=""
+	# A range or a PR names its changeset outright. Documents outside it say
+	# nothing about what it is, so an empty one stays empty rather than being
+	# classified by whatever spec directories happen to be on disk.
+	mode_scope_explicit=false
+	IFS=',' read -ra mode_filter_paths <<<"${scope_dir:-}"
 
 	if [[ -n "${pr_diff_cache:-}" ]] && [[ -f "${pr_diff_cache:-}" ]]; then
 		# Reuse the PR diff fetched in Section 6c
 		changeset_for_mode_detection=$(grep '^diff --git' "$pr_diff_cache" |
 			sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
+		if [[ -n "${scope_dir:-}" ]]; then
+			changeset_for_mode_detection=$(rc_filter_to_scope "${mode_filter_paths[@]}" <<<"$changeset_for_mode_detection")
+		fi
+		mode_scope_explicit=true
+	elif [[ "$input_type" == "ref_range" ]]; then
+		require_resolvable_range "$input_value"
+		changeset_for_mode_detection=$(git diff --name-only "$input_value" -- 2>/dev/null || echo "")
+		if [[ -n "${scope_dir:-}" ]]; then
+			changeset_for_mode_detection=$(rc_filter_to_scope "${mode_filter_paths[@]}" <<<"$changeset_for_mode_detection")
+		fi
+		mode_scope_explicit=true
+	elif [[ "$input_type" == "all" ]] && ! $rc_no_git; then
+		# `--scope all` reviews every tracked and untracked non-ignored file, so
+		# that is what it classifies as — not a branch diff that is empty on a
+		# clean main.
+		changeset_for_mode_detection=$(git ls-files 2>/dev/null || echo "")
+		changeset_for_mode_detection+=$'\n'$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+		if [[ -n "${scope_dir:-}" ]]; then
+			changeset_for_mode_detection=$(rc_filter_to_scope "${mode_filter_paths[@]}" <<<"$changeset_for_mode_detection")
+		fi
 	elif [[ -n "${scope_dir:-}" ]]; then
 		# Classify what is actually under review, not the branch it sits on.
 		# Detection read the whole branch diff regardless of scope, so naming a
@@ -238,14 +338,12 @@ else
 				mode_scope_files=$(rc_walk_files "$mode_scope_path") || rc_walk_incomplete=true
 				[[ -n "$mode_scope_files" ]] && changeset_for_mode_detection+="${mode_scope_files}"$'\n'
 			else
-				# Appended only when it found something. An unconditional
-				# `+=$(...)$'\n'` leaves a lone newline behind for a directory
-				# with no changes under it, which is not the empty string: the
-				# no-changes branch below is skipped, classification counts zero
-				# files of either kind, and the run silently resolves to spec
-				# mode.
-				mode_scope_diff=$(git diff --name-only "${base_branch}...HEAD" -- "$mode_scope_path" 2>/dev/null || echo "")
-				[[ -n "$mode_scope_diff" ]] && changeset_for_mode_detection+="${mode_scope_diff}"$'\n'
+				# Committed, staged and unstaged changes under the directory: what
+				# the changeset builder captures for it. A directory with none
+				# contributes only blank lines, which the normalisation after this
+				# chain removes.
+				changeset_for_mode_detection+=$(git diff --name-only "${base_branch}...HEAD" -- "$mode_scope_path" 2>/dev/null || echo "")$'\n'
+				changeset_for_mode_detection+=$(git diff --name-only HEAD -- "$mode_scope_path" 2>/dev/null || echo "")$'\n'
 			fi
 		done
 	elif $rc_no_git; then
@@ -254,16 +352,29 @@ else
 		# plain directory holding a specs/ folder to spec mode.
 		changeset_for_mode_detection=$(rc_walk_files .) || rc_walk_incomplete=true
 	else
-		# Use local git diff
+		# The branch plus staged and unstaged work: what `--scope changed`
+		# captures. Committed-only detection sent a staged code change on a
+		# clean branch to the on-disk spec search below.
 		changeset_for_mode_detection=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")
+		changeset_for_mode_detection+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
 	fi
+	# Blank lines are not files. Left in, a scope with no changes is not the
+	# empty string: the no-changes branch below is skipped, classification
+	# counts zero files of either kind, and the run silently resolves to spec.
+	changeset_for_mode_detection=$(sed '/^$/d' <<<"$changeset_for_mode_detection")
 
 	# Check if changeset is empty first
-	if [[ -z "$changeset_for_mode_detection" ]]; then
+	if [[ -z "$changeset_for_mode_detection" ]] && $mode_scope_explicit; then
+		# Code mode's capture reports the empty changeset truthfully; spec mode
+		# would report missing spec directories the request never asked about.
+		mode="code"
+		mode_reason="requested changeset is empty"
+	elif [[ -z "$changeset_for_mode_detection" ]]; then
 		# Empty changeset - check for spec artifacts to decide mode
 		has_specs=false
-		for dir in specs docs/specs docs/design docs/superpowers design; do
-			if [[ -d "$dir" ]] && find "$dir" -type f \( -name "*.md" -o -name "*.txt" \) -print -quit 2>/dev/null | grep -q .; then
+		for dir in "${spec_default_dirs[@]}"; do
+			if [[ -d "$dir" ]] && [[ ${#spec_find_args[@]} -gt 0 ]] &&
+				find "${dir/#-/./-}" -type f \( "${spec_find_args[@]}" \) -print -quit 2>/dev/null | grep -q .; then
 				has_specs=true
 				break
 			fi
@@ -277,6 +388,9 @@ else
 			mode_reason="no changes, no spec artifacts"
 		fi
 	else
+		# Spec capture reads this: a mode chosen from changed files must review
+		# those files, not sweep the spec directories as a scopeless run does.
+		mode_from_changeset=true
 		# Classify files
 		spec_files=0
 		code_files=0
@@ -284,8 +398,7 @@ else
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue
 
-			if [[ "$file" =~ ^(specs|docs/specs|docs/design|docs/superpowers|design)/ ]] ||
-				[[ "$file" =~ (spec|plan|tasks|design|research)\.md$ ]]; then
+			if rc_is_spec_path "$file"; then
 				spec_files=$((spec_files + 1))
 			else
 				code_files=$((code_files + 1))

@@ -173,9 +173,9 @@ if [[ "$mode" == "code" ]]; then
 			IFS=',' read -ra scope_paths <<<"$scope_dir"
 
 			changeset_files=$(git diff --name-only "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
-			changeset_files+=$'\n'$(git diff --name-only -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			changeset_files+=$'\n'$(git diff --name-only HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
 			diff_content=$(git diff "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
-			diff_content+=$'\n'$(git diff -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git diff HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
 
 			# An entry naming an existing FILE is a target in its own right,
 			# taken from disk whatever git makes of it — untracked, ignored, or
@@ -208,15 +208,8 @@ if [[ "$mode" == "code" ]]; then
 			scope_missing=()
 			for scope_path in "${scope_paths[@]}"; do
 				[[ -e "$scope_path" ]] && continue
-				scope_found=false
-				while IFS= read -r changed_file; do
-					[[ -z "$changed_file" ]] && continue
-					if [[ "$changed_file" == "$scope_path" ]] || [[ "$changed_file" == "$scope_path/"* ]]; then
-						scope_found=true
-						break
-					fi
-				done <<<"$changeset_files"
-				$scope_found || scope_missing+=("$scope_path")
+				scope_hits=$(rc_filter_to_scope "$scope_path" <<<"$changeset_files")
+				[[ -n "$scope_hits" ]] || scope_missing+=("$scope_path")
 			done
 			if [[ ${#scope_missing[@]} -gt 0 ]]; then
 				json_output "skip" "Target not found: ${scope_missing[*]}. Paths are relative to the current directory; name a file to review that file, or a directory to filter the changeset to it."
@@ -224,9 +217,11 @@ if [[ "$mode" == "code" ]]; then
 			fi
 		else
 			changeset_files=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")
-			changeset_files+=$'\n'$(git diff --name-only 2>/dev/null || echo "")
+			# Diffing the working tree against HEAD, not the index, is what
+			# includes staged changes: plain `git diff` saw unstaged edits only.
+			changeset_files+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
 			diff_content=$(git diff "${base_branch}...HEAD" 2>/dev/null || echo "")
-			diff_content+=$'\n'$(git diff 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git diff HEAD 2>/dev/null || echo "")
 		fi
 		has_diff=true
 	fi
@@ -234,7 +229,6 @@ if [[ "$mode" == "code" ]]; then
 	# Apply secondary path filter if present
 	if [[ -n "$scope_dir" ]] && [[ "$input_type" != "dir_scope" ]] && [[ "$input_type" != "auto" ]]; then
 		# Filter changeset to paths under scope_dir
-		filtered=""
 		IFS=',' read -ra filter_paths <<<"$scope_dir"
 		# Under `--scope all` the tree on disk is the whole universe, so a filter
 		# naming nothing on disk is a typo, and filtering to it reported "No
@@ -251,22 +245,7 @@ if [[ "$mode" == "code" ]]; then
 				exit 0
 			fi
 		fi
-		while IFS= read -r file; do
-			[[ -z "$file" ]] && continue
-			for fp in "${filter_paths[@]}"; do
-				fp="${fp%/}" # Remove trailing slash
-				# The path itself, or something under it — never merely
-				# something starting with it. `$file == $fp*` admitted
-				# `src/auth.go.bak` for a filter of `src/auth.go`, and
-				# `src/quiet.go` for a filter of `src/q`: a review that
-				# quietly covers files nobody named.
-				if [[ "$file" == "$fp" ]] || [[ "$file" == "$fp/"* ]]; then
-					filtered+="${file}"$'\n'
-					break
-				fi
-			done
-		done <<<"$changeset_files"
-		changeset_files="$filtered"
+		changeset_files=$(rc_filter_to_scope "${filter_paths[@]}" <<<"$changeset_files")
 
 		# Filter diff too if present
 		if [[ "$has_diff" == true ]] && [[ -n "$diff_content" ]]; then
@@ -293,49 +272,9 @@ if [[ "$mode" == "code" ]]; then
 		: >"${session_dir}/diff.patch"
 	fi
 else
-	# Spec mode
-	#
-	# What counts as a spec is defined once, here, and read by all four
-	# discovery branches below. It used to be written out four times, and the
-	# copies had already diverged in effect: the branch handling `--scope paths`
-	# carried the same `.md`/`.txt` filter as the default sweep, so the recovery
-	# the skill suggests when the sweep comes up empty ("re-run pointing at your
-	# spec directory") found nothing either. Pointing discovery straight at 142
-	# `.mdx` files still reported no spec artifacts.
-	#
-	# Extensions. `.mdx` is what Mintlify, Docusaurus and Nextra publish, and
-	# what the MCP specification itself is written in; `.rst` is Sphinx and
-	# `.adoc` is AsciiDoc. Excluding them made spec mode unusable on most modern
-	# documentation sites for no reason a user could discover.
-	#
-	# Directories. This list can only ever be a guess at someone else's layout,
-	# so both it and the extension list are overridable. Bare `docs/` is
-	# deliberately absent: it is where projects keep tutorials, blog posts and
-	# release notes as well as specs, and sweeping all of it turns a spec review
-	# into a review of the whole site. A project that does want that says so
-	# with REVIEW_COUNCIL_SPEC_DIRS.
-	IFS=', ' read -ra spec_exts <<<"${REVIEW_COUNCIL_SPEC_EXTS:-md mdx markdown txt rst adoc}"
-	IFS=', ' read -ra spec_default_dirs <<<"${REVIEW_COUNCIL_SPEC_DIRS:-specs docs/specs docs/specification docs/design docs/superpowers docs/rfcs docs/adr rfcs adr design}"
-
-	# find(1) predicate for the extension set: `\( -name "*.md" -o … \)`.
-	spec_find_args=()
-	for ext in "${spec_exts[@]}"; do
-		[[ -z "$ext" ]] && continue
-		[[ ${#spec_find_args[@]} -gt 0 ]] && spec_find_args+=(-o)
-		spec_find_args+=(-name "*.${ext}")
-	done
-
-	# The same set as an anchored ERE, for the two branches that filter a list
-	# of changed paths rather than walking the tree. Built from the same array
-	# so the two forms cannot drift.
-	spec_ext_re=$(
-		IFS='|'
-		printf '%s' "${spec_exts[*]}"
-	)
-	spec_dir_re=$(
-		IFS='|'
-		printf '%s' "${spec_default_dirs[*]}"
-	)
+	# Spec mode. What counts as a spec — spec_exts, spec_default_dirs,
+	# spec_find_args and rc_is_spec_path — is defined once in prepare-target.sh,
+	# where mode detection reads the same definition.
 
 	# Collect every spec file under a directory into changeset_files.
 	collect_specs_in() {
@@ -377,8 +316,13 @@ else
 			json_output "skip" "Target not found: ${spec_missing[*]}. Paths are relative to the current directory; name a file to review that file, or a directory to search it for spec artifacts."
 			exit 0
 		fi
-	elif [[ "$input_type" == "all" ]] || [[ -z "$scope_type" ]] || [[ "$scope_type" == "all" ]]; then
-		# Scan common spec locations
+	elif [[ "$input_type" == "all" ]] || [[ "$scope_type" == "all" ]] ||
+		{ [[ -z "$scope_type" ]] && ! $mode_from_changeset; }; then
+		# Scan common spec locations. A scopeless run sweeps them only when the
+		# mode was not chosen from the branch's changes: `--mode specs`, or
+		# auto-detection that found no changes and fell back to the disk.
+		# Otherwise it reviews the changes that chose the mode, as `changed`
+		# does.
 		for dir in "${spec_default_dirs[@]}"; do
 			collect_specs_in "$dir"
 		done
@@ -387,21 +331,33 @@ else
 		local_range="${input_value:-${base_branch}...HEAD}"
 		require_resolvable_range "$local_range"
 		changed=$(git diff --name-only "$local_range" -- 2>/dev/null || echo "")
+		diff_content=$(git diff "$local_range" -- 2>/dev/null || echo "")
+		if [[ -z "$input_value" ]]; then
+			# `--scope changed` promises staged and unstaged work too, as in
+			# code mode.
+			changed+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git diff HEAD 2>/dev/null || echo "")
+		fi
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue
-			if [[ "$file" =~ \.(${spec_ext_re})$ ]] && [[ "$file" =~ ^(${spec_dir_re})/ ]]; then
+			if rc_is_spec_path "$file"; then
 				changeset_files+="${file}"$'\n'
 			fi
 		done <<<"$changed"
-		diff_content=$(git diff "$local_range" -- 2>/dev/null || echo "")
 		has_diff=true
+		# Files changed but none is a spec: say that, not that the spec
+		# directories are empty — a layout problem is not what happened.
+		if [[ -z "$changeset_files" ]] && grep -q . <<<"$changed"; then
+			json_output "empty" "No spec artifacts in ${local_range}: files changed, but none is a spec. Review them in code mode, or point spec review at your layout with --scope paths <dir>, REVIEW_COUNCIL_SPEC_DIRS or REVIEW_COUNCIL_SPEC_EXTS."
+			exit 0
+		fi
 	elif [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
 		# PR-based spec review
 		if [[ -n "${pr_diff_cache:-}" ]] && [[ -f "${pr_diff_cache:-}" ]]; then
 			pr_files=$(grep '^diff --git' "$pr_diff_cache" | sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
 			while IFS= read -r file; do
 				[[ -z "$file" ]] && continue
-				if [[ "$file" =~ \.(${spec_ext_re})$ ]] && [[ "$file" =~ ^(${spec_dir_re})/ ]]; then
+				if rc_is_spec_path "$file"; then
 					changeset_files+="${file}"$'\n'
 				fi
 			done <<<"$pr_files"

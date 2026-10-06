@@ -611,7 +611,7 @@ check_mutation "RC-043 a missing target is refused" \
 # file nobody named. Distinct from the entries above — this one adds files
 # rather than losing them.
 check_mutation "RC-043 path filter matches a path, not a prefix" \
-	lib/prepare-changes.sh \
+	lib/prepare-target.sh \
 	's/if \[\[ "\$file" == "\$fp" \]\]/if [[ "$file" == "$fp"* ]]/' \
 	test-rc-prepare-file-targets.sh
 
@@ -632,14 +632,13 @@ check_mutation "RC-043 the named target decides the mode" \
 	's/^[[:space:]]*elif \[\[ -n "\${scope_dir:-}" \]\]; then$/elif false; then/' \
 	test-rc-prepare-file-targets.sh
 
-# The same stage's empty case. Appending unconditionally leaves a lone newline
-# behind for a directory with no changes under it, and a newline is not the
-# empty string: the no-changes branch is skipped, classification counts zero
-# files of either kind, and the run resolves to spec mode by falling off the
-# end of a tally that never ran.
+# The same stage's empty case. A scope with no changes leaves blank lines
+# behind, and a newline is not the empty string: the no-changes branch is
+# skipped, classification counts zero files of either kind, and the run
+# resolves to spec mode by falling off the end of a tally that never ran.
 check_mutation "RC-043 an empty target diff stays empty" \
 	lib/prepare-target.sh \
-	's/^[[:space:]]*\[\[ -n "\$mode_scope_diff" \]\] && \(changeset_for_mode_detection+=.*\)$/\1/' \
+	's/^[[:space:]]*changeset_for_mode_detection=\$(sed .*$/:/' \
 	test-rc-prepare-file-targets.sh
 
 # The normalisation, which lives in the arg parser so that the changeset
@@ -889,6 +888,66 @@ check_mutation "RC-055 verification reaches nested batch rounds" \
 	rc-verify-evidence.sh \
 	's#find "\$vdir"#find "\$vdir" -maxdepth 1#' \
 	test-rc-batch-verdicts.sh
+
+# --- RC-061: mode detection classified a different scope than capture --------
+#
+# `/review-council HEAD` on a merged Terraform commit stopped with "No spec
+# artifacts found": detection had no range branch, read the empty
+# `base...HEAD`, found a gitignored spec directory on disk and chose spec mode,
+# and spec capture dropped every file the range changed. Each mutation puts
+# back one way the two stages disagreed about what is under review.
+check_mutation "RC-061 a range classifies its own diff" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*elif \[\[ "\$input_type" == "ref_range" \]\]; then$/elif false; then/' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 an empty range is not classified by specs on disk" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*if \[\[ -z "\$changeset_for_mode_detection" \]\] && \$mode_scope_explicit; then$/if false; then/' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 --scope all classifies the whole tree" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*elif \[\[ "\$input_type" == "all" \]\] && ! \$rc_no_git; then$/elif false; then/' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 detection sees staged changes" \
+	lib/prepare-target.sh \
+	's/git diff --name-only HEAD/git diff --name-only/g' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 capture keeps staged changes" \
+	lib/prepare-changes.sh \
+	's/git diff --name-only HEAD/git diff --name-only/g' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 spec capture shares detection's spec definition" \
+	lib/prepare-changes.sh \
+	's/if rc_is_spec_path "\$file"; then/if [[ "$file" =~ ^(${spec_dir_re})\/ ]]; then/' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 changed-but-not-spec is reported as such" \
+	lib/prepare-changes.sh \
+	's/^[[:space:]]*if \[\[ -z "\$changeset_files" \]\] && grep -q \. <<<"\$changed"; then$/if false; then/' \
+	test-rc-prepare-mode-scope.sh
+
+# The range covers the PR branch only: the range and --scope all branches
+# carry the same filter line, and a mutation of all three would be caught by
+# their own tests rather than the PR's.
+check_mutation "RC-061 a PR classifies only its filtered files" \
+	lib/prepare-target.sh \
+	'/pr_diff_cache:-}" \]\]; then$/,/mode_scope_explicit=true/s/^\([[:space:]]*\)changeset_for_mode_detection=\$(rc_filter_to_scope .*$/\1true/' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 a scopeless spec run reviews the changes that chose it" \
+	lib/prepare-target.sh \
+	's/^[[:space:]]*mode_from_changeset=true$/:/' \
+	test-rc-prepare-mode-scope.sh
+
+check_mutation "RC-061 a planning-document name is a spec only as a whole word" \
+	lib/prepare-target.sh \
+	's#(.|/|\[-_.\])(spec|plan#(spec|plan#' \
+	test-rc-prepare-mode-scope.sh
 
 total=$((caught + missed + broken))
 echo ""

@@ -1,0 +1,44 @@
+CHANGELOG.md
+  s_07d1db2011bc18::t_b67f603be6a9c8 703-706
+  s_07d1db2011bc18::t_5cceb962ae35c5 707-713,717-719
+module/skills/review-council-debug/SKILL.md
+  s_07d1db2011bc18::t_51f883e3db3826 224,498-500
+module/skills/review-council/phases/verify.md
+  s_07d1db2011bc18::t_eee398b226f144 129-135
+  s_07d1db2011bc18::t_51f883e3db3826 215,232-235,238-239
+module/tests/test-rc-doc-guards.sh
+  s_07d1db2011bc18::t_044d659ab2ccd7 452-456,459-460,462,467-469,472
+  s_07d1db2011bc18::t_43736bfd0f9613 458
+  s_07d1db2011bc18::t_b67f603be6a9c8 2060-2062
+  s_07d1db2011bc18::t_202e014816e852 463,465-466
+  s_07d1db2011bc18::t_7d92d6b9d59939 461,464
+  s_07d1db2011bc18::t_b9306663820272 2063-2064
+module/tests/test-rc-extract-verdict.sh
+  s_07d1db2011bc18::t_9482a81e1ad9e2 709-744
+  s_07d1db2011bc18::t_1fa1080844e547 687-708
+.taskfiles/scripts/mutate-check.sh
+  s_07d1db2011bc18::t_baadfcb3390970 959,964,969-974
+  s_07d1db2011bc18::t_5cceb962ae35c5 1005-1012
+  s_07d1db2011bc18::t_1eb84c35b2d99e 1013
+module/skills/review-council/phases/delegate.md
+  s_07d1db2011bc18::t_51f883e3db3826 497-501
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_07d1db2011bc18::t_54eceb5085a3ce 347-349
+  s_07d1db2011bc18::t_8e0cd443b5c701 250-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7433e27352ebc190d9b6fb5c8b9d99e3da17843",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

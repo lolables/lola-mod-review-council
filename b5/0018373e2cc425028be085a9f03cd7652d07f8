@@ -1,0 +1,27 @@
+CHANGELOG.md
+  s_07d1db2011bc18::t_c5858c94657ad4 685-693
+module/tests/test-rc-doc-guards.sh
+  s_07d1db2011bc18::t_af553f8905c1d2 2045-2048
+.taskfiles/scripts/mutate-check.sh
+  s_07d1db2011bc18::t_af553f8905c1d2 967-971
+module/skills/review-council/phases/verify.md
+  s_07d1db2011bc18::t_98b993d8f362d3 262-267
+module/tests/test-rc-extract-verdict.sh
+  s_07d1db2011bc18::t_af553f8905c1d2 659-672
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b50018373e2cc425028be085a9f03cd7652d07f8",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

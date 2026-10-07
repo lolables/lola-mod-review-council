@@ -1,0 +1,23 @@
+module/skills/review-council/phases/delegate.md
+  s_07d1db2011bc18::t_9260b07e1a14e9 441-444
+module/tests/test-rc-doc-guards.sh
+  s_07d1db2011bc18::t_50fa17052bc8b5 2035-2038
+CHANGELOG.md
+  s_07d1db2011bc18::t_6f69e5ea88bf4e 694-696
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b9a2cb47e58ce986bd9b6688acb61f166bef9a47",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

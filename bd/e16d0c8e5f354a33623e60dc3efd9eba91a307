@@ -1,0 +1,34 @@
+module/skills/review-council/scripts/lib/prepare-repo.sh
+  s_07d1db2011bc18::t_79d3ca9946d2b4 279-280
+module/tests/test-rc-prepare-git-edges.sh
+  s_07d1db2011bc18::t_c246db655c509d 185-197,207-210,224
+  s_07d1db2011bc18::t_aed3c353a980a5 203-204
+  s_07d1db2011bc18::t_226c92421d36b4 198-202,205-206
+  s_07d1db2011bc18::t_2331e5d213a2c0 211-223
+  s_07d1db2011bc18::t_ab661044ae391c 184
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_07d1db2011bc18::t_7dd62433ed99fc 39
+.taskfiles/scripts/mutate-check.sh
+  s_07d1db2011bc18::t_c2fe0134c8cb22 988
+  s_07d1db2011bc18::t_ab661044ae391c 977-987,989-990
+module/skills/review-council/SKILL.md
+  s_07d1db2011bc18::t_7004d3af1c4cf9 1109
+CHANGELOG.md
+  s_07d1db2011bc18::t_c716fba78bda72 697-702
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bde16d0c8e5f354a33623e60dc3efd9eba91a307",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

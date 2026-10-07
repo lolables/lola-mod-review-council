@@ -1,0 +1,25 @@
+module/tests/test-rc-prepare-git-edges.sh
+  s_07d1db2011bc18::t_e0e56c744b984b 225-247
+module/skills/review-council/scripts/lib/prepare-args.sh
+  s_07d1db2011bc18::t_f1f596a566c6ee 224-229
+CHANGELOG.md
+  s_07d1db2011bc18::t_5cceb962ae35c5 703-705
+.taskfiles/scripts/mutate-check.sh
+  s_07d1db2011bc18::t_223adcb3d6edfb 991-999
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "912316266a1cb611f7a04655c7621427f0ac7fc2",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

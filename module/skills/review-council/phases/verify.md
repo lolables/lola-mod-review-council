@@ -126,7 +126,13 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   empty when the session carries no manifest — absence of the manifest claims
   nothing rather than accusing every agent at once.
 
-**When `missing_verdicts` is non-empty, disclose it.** Record one line per
+**When `missing_verdicts` is non-empty, first check what you hold.** An agent
+listed there whose response you still have did not fail: its `.raw.md` was
+never written, which is a collection gap. Write that response verbatim to its
+path, then re-run the extractor and this script — a write, not a re-dispatch.
+Only an agent that returned nothing is disclosed as below.
+
+**Disclose every agent that returned nothing.** Record one line per
 agent in `${session_dir}/verdicts/_meta/verification.txt` naming the agent and
 stating that it returned no verdict, and carry the same statement into the
 report narrative. A reviewer that was dispatched and returned nothing is a hole
@@ -206,7 +212,7 @@ It short-circuits with:
 ```json
 { "status": "extract_error", "valid": 3,
   "invalid": [ { "agent": "...",
-  "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT",
+  "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "AGENT_MISMATCH",
   "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
@@ -223,10 +229,14 @@ is missing because of an unresolved `extract_error`.
 declares `APPROVE` over a CRITICAL or HIGH finding — the schema constrains
 `verdict` and `severity` independently, so `rc-extract-verdict.sh` enforces that
 coupling itself. Do not conflate the two: validating a `VERDICT_INCOHERENT`
-block against the schema by hand will show it passing.
+block against the schema by hand will show it passing. `AGENT_MISMATCH` means
+the block's `agent` names a different reviewer than its file does — usually
+one reviewer's response written to another's path, which would otherwise
+count the first twice and lose the second without a trace.
 
 The one-round re-dispatch (remediation text plus, when present, that agent's
-`invalid[].detail` — set for `SCHEMA_INVALID` and `VERDICT_INCOHERENT`, absent
+`invalid[].detail` — set for `SCHEMA_INVALID`, `VERDICT_INCOHERENT` and
+`AGENT_MISMATCH`, absent
 for `NO_JSON_BLOCK` — then re-run the extractor) happens in the Delegation
 phase — see
 `phases/delegate.md` — "Verdict Collection". By the time this phase starts,
@@ -259,11 +269,12 @@ that round has already run. Your job here is to interpret its outcome:
     firing to `${session_dir}/gate-firings.jsonl`, which Step 6 — Gate-Firing
     Disclosure reads back, so a firing you never saw — a resumed session, a
     compacted context — still reaches the report.
-- `status: "nothing_to_do"` means the whole session produced zero verdict
-  blocks (e.g., no `.raw.md` files exist at all) — a delegation failure, NOT
-  a per-agent "no findings" signal. Treat it as the "all agents fail" case in
-  `phases/delegate.md` — "Verdict Collection": stop and report a
-  configuration issue.
+- `status: "nothing_to_do"` means no `.raw.md` file exists anywhere under
+  `verdicts/` — a delegation failure, NOT a per-agent "no findings" signal.
+  Handle it as `phases/delegate.md` — "Verdict Collection" says: if you hold
+  the reviewers' responses, write them verbatim to their paths and re-run the
+  extractor; stop and report a configuration issue only when no reviewer
+  returned anything. Never run evidence verification on this status.
 
 ---
 
@@ -296,6 +307,37 @@ Send agent focused correction prompt:
 - Agent withdraws finding: removed (not stripped — withdrawn by agent).
 - Agent provides evidence still not matching: **stripped**.
 - Agent does not respond or times out: **stripped**.
+
+**Apply the round with `rc-apply-corrections.sh` — never by editing
+`findings.json`.** A hand edit moves a finding to `verified` without testing
+the new quote, so a correction that still misses the source would ship as
+verified evidence. Record each agent's reply, keyed on the finding `id`, in
+`${session_dir}/verdicts/_meta/corrections.json`:
+
+```json
+{"results": [
+  {"id": "F2", "outcome": "CORRECTED", "evidence": "exact quote from the file", "line": 41},
+  {"id": "F3", "outcome": "WITHDRAWN"}
+]}
+```
+
+`evidence` is the agent's corrected quote, verbatim; `line` is optional and
+replaces the cited line. Omit a finding the agent did not answer — the script
+strips it as `NO_CORRECTION`. Then run
+`bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}`, prefixed with
+`REVIEW_ROOT="<review_root>"` exactly as the evidence check was. It checks each
+correction with the matcher `rc-verify-evidence.sh` used, applies the rules
+above, and deduplicates promoted findings against the verified set.
+
+- `ok` — applied. Its `verified`, `stripped`, `withdrawn` and `unanswered`
+  arrays name the ids for the `CORRECTION ROUND` section of
+  `verification.txt`; a stripped correction keeps its attempt and the check it
+  failed under `provenance.correction`.
+- `correction_error` — `corrections.json` is missing or malformed, or names a
+  finding that is not correctable. Nothing was applied: fix the file as the
+  message says and re-run. To strip every correctable finding as unanswered,
+  write `{"results": []}`.
+- `nothing_to_do` — no correctable findings remain (a re-run after `ok`).
 
 **Efficiency**: batch all correctable findings for same agent into single correction prompt. Do not dispatch separate rounds per finding.
 

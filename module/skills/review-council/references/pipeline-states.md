@@ -3,13 +3,19 @@
 Each stage is a script emitting a JSON `status`. The orchestrator dispatches on
 these tokens. This is the machine-readable spine of the state diagram in SKILL.md.
 
+Every stage script exits 0 whatever its status; a non-zero exit is a crash, not
+a state. Exit-code chaining such as `&&` therefore cannot route the pipeline —
+it runs the next stage after `nothing_to_do`, `skip` or `extract_error` alike.
+Read `status` and take the edge the table names.
+
 | State            | Script                  | Emits (`status`)                                     | On status -> next                                                                                                                                           |
 |------------------|-------------------------|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Prepare          | `rc-prepare.sh`         | `ok` \| `skip` \| `empty`                            | `ok`->Select; `skip`->stop (report reason); `empty`->one recovery retry with broader scope (see SKILL.md Step 1 recovery table), then stop if still empty |
 | Select           | `rc-select-council.sh`  | `ok` \| `nothing_to_do`                              | Both ->Triage. `ok` narrows or confirms the council in `session-manifest.json`; `nothing_to_do` (session unreadable) leaves preparation's full council in place. Never `skip` — an unevaluatable session still gets every reviewer |
 | Triage           | `rc-apply-triage.sh`    | `ok` \| `nothing_to_do` \| `triage_error`            | All three ->Delegate. `ok` applies the surviving exclusions to the per-subsystem councils; `nothing_to_do` (not deep, no subsystems, disabled, or no reply) and `triage_error` (no fenced json block, or schema-invalid) both leave every council as Select wrote it. No status stops the run |
-| Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->stop (delegation failure)                                                       |
+| Extract          | `rc-extract-verdict.sh` | `ok` \| `extract_error` \| `nothing_to_do` \| `skip` | `extract_error`->re-dispatch (<=1)->Extract; `ok`->Verify; `nothing_to_do`->write held responses, then Extract; none held ->stop (delegation failure) |
 | Verify           | `rc-verify-evidence.sh` | `ok` \| `nothing_to_do`                              | `ok` & correctable>0->Correction; `ok` & correctable=0->Calibrate; `nothing_to_do`->Render (empty)                                                          |
+| Correction       | `rc-apply-corrections.sh` | `ok` \| `correction_error` \| `nothing_to_do` | `ok`->Calibrate; `nothing_to_do` (no correctable findings)->Calibrate; `correction_error`->fix `corrections.json`, nothing applied ->Correction |
 | Consolidate      | `rc-consolidate.sh`     | `ok` \| `consolidate_error` \| `nothing_to_do`       | `ok`->Validate; `consolidate_error`->stop; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`              |
 | Validate         | `rc-apply-validation.sh` | `ok` \| `retry` \| `validation_error` \| `nothing_to_do` | `ok`->Report; `retry`->re-ask validator for `pending` ids, judge retractions->Validate `--final` [`--dispute`] (once); `validation_error`->stop (or, for an unknown `--dispute` id, correct it and re-run the pass); `nothing_to_do`->stop (session or `findings.json` missing). Skipped entirely when effort is `quick` or the gate's skip rule holds |
 | Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip`                                 | ->post/Report                                                                                                                                               |

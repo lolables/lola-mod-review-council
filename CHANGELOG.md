@@ -682,6 +682,59 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- A run whose reviewers all returned verdicts no longer stops as if they had
+  returned nothing. The orchestrator had asked read-only reviewers to write
+  their own `.raw.md` files, so none was written, and extraction's
+  `nothing_to_do` led only to a stop. The docs now say the orchestrator writes
+  every raw file, require a collection check before extraction, and route
+  `nothing_to_do` to "write the responses you hold and re-run" before any
+  stop. They also say every stage exits 0 whatever its status, so `&&` cannot
+  route between stages. `rc-extract-verdict.sh`'s `nothing_to_do` now names
+  the dispatched council in `expected` and says whose write is missing.
+  "Verbatim" also now says to undo a host's transport encoding (`&amp;` for
+  `&`) before writing, since an encoded character breaks every evidence
+  quote that holds it.
+- A `--scope range` review no longer needs a local `main` or `master`. Base
+  detection ran before the scope was considered, so `HEAD~1..HEAD` in a
+  single-branch clone stopped with "main and master both not found", although
+  a range names both of its own ends and is never diffed against a base.
+  Such a session now reports `Base: none (explicit range)`. `changed` scope,
+  which does diff `base...HEAD`, still refuses.
+- `verify.md` no longer reports a reviewer whose response the orchestrator
+  holds as having returned nothing. A `missing_verdicts` entry is first checked
+  against the responses in hand; a held one is a collection gap, written and
+  re-extracted rather than disclosed as a silent reviewer.
+- A verdict filed under the wrong reviewer's name is refused. Extraction and
+  verification key reviewers by filename, so one reviewer's response written
+  to another's `.raw.md` counted the first twice and dropped the second with
+  nothing reported missing. `rc-extract-verdict.sh` now rejects a block whose
+  `agent` differs from its filename as `AGENT_MISMATCH`, and its `detail`
+  distinguishes a misfiled write (rewrite it, no dispatch) from a reviewer
+  that misnamed itself.
+- A `--scope range` value beginning with `-` is refused. It reached `git diff`
+  as an option, so `--output=<path>` overwrote that file with the diff and the
+  run then reported "No changes to review". No ref name can begin with `-`.
+- `rc-extract-verdict.sh` and `rc-verify-evidence.sh` claim nothing from a
+  manifest that parses but holds no list of names. In the extractor a string
+  `council` came back as a string `expected`, and in both scripts a string
+  `council` or a top-level array aborted the run.
+- The correction round is applied by `rc-apply-corrections.sh` instead of by
+  hand. Orchestrators moved corrected findings from `correctable` to `verified`
+  by editing `findings.json`, and nothing re-checked the new quote, so a
+  correction that still missed the source shipped as verified evidence. The
+  replies go in `verdicts/_meta/corrections.json`, keyed on finding id; each
+  corrected quote meets the same matcher `rc-verify-evidence.sh` ran, now
+  shared through `scripts/lib/evidence.sh`. A failed correction is stripped as
+  `CORRECTION_FAILED` and an unanswered one as `NO_CORRECTION`; a malformed
+  reply refuses the pass with `findings.json` unchanged.
+- When two reviewers quote the same line, the more severe finding now
+  survives whole. Exact deduplication kept the first finding's title and
+  description and raised only its severity, so two different defects on one
+  line merged into one defect's text at the other's severity.
+- `rc-extract-verdict.sh` no longer collects a `*.raw.md` under
+  `verdicts/_meta/` as a verdict, drops a leading byte-order mark instead of
+  reading it as a missing JSON block, and tells a file named just `.raw.md`
+  which filename its block belongs in.
 - `/review-council-debug` exercises `rc-prepare.sh`'s success path again. Its
   Step 1 ran the script without `AGENTS_DIR`, so every run answered
   `status: "skip"` and fell back to the mock, leaving preparation untested. The

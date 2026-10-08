@@ -449,20 +449,27 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
-# The gate rejects a block that is schema-VALID, so it needs its own reason
-# code — a maintainer told `SCHEMA_INVALID` runs `jsonschema validate`, watches
-# it pass, and loses the afternoon. `reason` is the machine-readable channel
-# both the orchestrator and the debug skill read as a classification, so the
-# three documents that enumerate it must all carry the token.
-echo "Test: VERDICT_INCOHERENT is enumerated wherever reason codes are (RC-018)"
+# RC-066: `reason` is the machine-readable channel both the orchestrator and
+# the debug skill read as a classification, so every document that enumerates
+# the codes must carry each one. The codes are read from the extractor, so one
+# added there and left out of a document fails here without anyone first
+# writing a guard for it. This replaces RC-018's VERDICT_INCOHERENT-only check.
 debug_flat=$(tr '\n' ' ' <"$SCRIPT_DIR/../skills/review-council-debug/SKILL.md" | tr -s ' ')
-if grep -qF 'VERDICT_INCOHERENT' <<<"$verify_flat" &&
-	grep -qF 'VERDICT_INCOHERENT' <<<"$delegate_flat" &&
-	grep -qF 'VERDICT_INCOHERENT' <<<"$debug_flat"; then
-	echo "  PASS: reason code enumerated in verify, delegate and debug"
+echo "Test: every extractor reason code is enumerated in each document (RC-066)"
+rc066_reasons=$(grep -oE -- '--arg r "[A-Z_]+"' "$SKILLS/scripts/rc-extract-verdict.sh" | sed -E 's/.*"([A-Z_]+)"/\1/' | sort -u)
+rc066_missing=""
+declare -A rc066_docs=([verify]="$verify_flat" [delegate]="$delegate_flat" [debug]="$debug_flat")
+for reason in $rc066_reasons; do
+	for doc in verify delegate debug; do
+		grep -qF "$reason" <<<"${rc066_docs[$doc]}" || rc066_missing+=" $doc.md:$reason"
+	done
+done
+if [[ -n "$rc066_reasons" && -z "$rc066_missing" ]]; then
+	rc066_count=$(wc -w <<<"$rc066_reasons")
+	echo "  PASS: $rc066_count reason codes enumerated in verify, delegate and debug"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: a reason-code enumeration still omits VERDICT_INCOHERENT"
+	echo "  FAIL: reason codes missing from:${rc066_missing:- (no codes found in the extractor)}"
 	FAIL=$((FAIL + 1))
 fi
 
@@ -2015,6 +2022,67 @@ if grep -qiE 'unless the changeset|exception' <<<"$rc059_cal"; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the rule would silence CI findings on CI changes (RC-059)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-062: a run stopped with every reviewer's verdict in hand. The orchestrator
+# asked read-only reviewers to write their own .raw.md files, wrote none itself,
+# then chained extraction into verification with `&&` — and every stage exits 0
+# whatever its status, so the chain ran past nothing_to_do. Each check pins one
+# of the four rules that run broke: who writes, the pre-extraction check, the
+# recovery on nothing_to_do, and status-not-exit-code routing.
+echo "Test: verdict collection is orchestrator-owned and routed on status (RC-062)"
+rc062_collect=$(sed -n '/^## Verdict Collection/,/^## /p' "$DELEGATE_MD" | tr '\n' ' ' | tr -s ' ')
+rc062_missing=0
+if grep -qiE 'no agent wrote' <<<"$rc062_collect" ||
+	! grep -qiE 'reviewers are read-only[^.]*never ask' <<<"$rc062_collect"; then
+	echo "  missing: delegate.md still lets the reviewer own the .raw.md write"
+	rc062_missing=$((rc062_missing + 1))
+fi
+if ! grep -qiE 'transport encoding[^.]*undo that encoding' <<<"$rc062_collect"; then
+	echo "  missing: delegate.md never says to undo a host's transport encoding"
+	rc062_missing=$((rc062_missing + 1))
+fi
+if ! grep -qiE 'before running the extractor, confirm that every reviewer that returned' <<<"$rc062_collect"; then
+	echo "  missing: delegate.md has no pre-extraction collection check"
+	rc062_missing=$((rc062_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans, not command substitutions.
+if ! grep -qiE 'nothing_to_do.{0,200}`expected`' <<<"$rc062_collect" ||
+	! grep -qiE 'collection failure, not a reviewer failure' <<<"$rc062_collect"; then
+	echo "  missing: delegate.md's nothing_to_do branch has no collection recovery"
+	rc062_missing=$((rc062_missing + 1))
+fi
+if ! grep -qiE 'nothing_to_do.{0,250}write them verbatim[^.]*re-run' <<<"$verify_flat"; then
+	echo "  missing: verify.md's format gate still stops on nothing_to_do"
+	rc062_missing=$((rc062_missing + 1))
+fi
+if ! grep -qiE 'missing_verdicts` is non-empty, first check what you hold' <<<"$verify_flat" ||
+	! grep -qiE 'collection gap\. Write that response verbatim' <<<"$verify_flat"; then
+	echo "  missing: verify.md reports a held-but-unwritten verdict as 'returned nothing'"
+	rc062_missing=$((rc062_missing + 1))
+fi
+if ! grep -qiE 'nothing_to_do.{0,200}write them verbatim[^.]*re-run' <<<"$skill_flat"; then
+	echo "  missing: SKILL.md Step 3 stops on nothing_to_do without recovering held responses"
+	rc062_missing=$((rc062_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans, not command substitutions.
+if ! grep -qiE '`nothing_to_do`->write held responses' <<<"$pipeline_states_flat"; then
+	echo "  missing: pipeline-states.md's Extract row has no recovery edge"
+	rc062_missing=$((rc062_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans, not command substitutions.
+if ! grep -qiE 'exits 0 whatever its status' <<<"$pipeline_states_flat" ||
+	! grep -qF '`&&`' <<<"$pipeline_states_flat"; then
+	echo "  missing: pipeline-states.md never says exit codes cannot route stages"
+	rc062_missing=$((rc062_missing + 1))
+fi
+if [[ "$rc062_missing" -eq 0 ]]; then
+	echo "  PASS: collection ownership, check, recovery and routing all stated"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc062_missing collection rule(s) missing — a run can stop with every"
+	echo "        verdict returned and none written, and call it a reviewer failure"
 	FAIL=$((FAIL + 1))
 fi
 

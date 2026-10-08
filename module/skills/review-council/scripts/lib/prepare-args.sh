@@ -221,6 +221,12 @@ range)
 		json_output "skip" "--scope range requires --scope-value with a ref range (e.g., HEAD~1..HEAD)"
 		exit 0
 	fi
+	# The range is git's first argument, so a leading `-` is read as an option
+	# (`--output=<path>` overwrites a file). No ref name may begin with `-`.
+	if [[ "$scope_value" == -* ]]; then
+		json_output "skip" "Ref range '$scope_value' begins with '-', so git would read it as an option. Give a range of refs, e.g. HEAD~1..HEAD."
+		exit 0
+	fi
 	input_type="ref_range"
 	input_value="$scope_value"
 	;;

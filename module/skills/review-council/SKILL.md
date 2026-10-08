@@ -213,13 +213,16 @@ stateDiagram-v2
     Triage --> Delegate: ok (grid narrowed or intact)
     Triage --> Delegate: nothing_to_do (not deep, or disabled)
     Triage --> Delegate: triage_error (grid intact, reported)
-    Delegate --> Extract: raw verdicts written
+    Delegate --> Extract: every returned verdict written
     Extract --> Delegate: extract_error (re-dispatch <=1)
+    Extract --> Extract: nothing_to_do (write held responses)
+    Extract --> [*]: nothing_to_do, none held (stop)
     Extract --> Verify: ok
     Verify --> Render: effort=quick
     Verify --> Render: nothing_to_do (no findings file)
     Verify --> Correction: correctable>0
     Verify --> Calibrate: correctable=0
+    Correction --> Correction: correction_error (fix corrections.json)
     Correction --> Calibrate
     Calibrate --> Validate: verified>0 & not all LOW
     Calibrate --> Render: nothing to validate & no conversation
@@ -667,11 +670,14 @@ Step 1's `agents` array):
   (e.g., "divisor-guard-code") — mechanism varies by host;
   see `${PHASES_DIR}/delegate.md` Dispatch Mechanism section
 - Collect the agent's raw output verbatim, write to
-  `${session_dir}/verdicts/{agent-name}.raw.md`
+  `${session_dir}/verdicts/{agent-name}.raw.md` — the orchestrator's write,
+  never the reviewer's: reviewers are read-only and return their verdict
 
 Dispatch all agents in parallel for speed.
 
-**Extract and validate verdicts.** Once all raw output is collected, run:
+**Extract and validate verdicts.** Once every returned response has its
+`.raw.md` on disk (the collection check in `${PHASES_DIR}/delegate.md`
+**Verdict Collection**), run:
 
 `bash ${SCRIPTS_DIR}/rc-extract-verdict.sh ${session_dir}`
 
@@ -685,9 +691,14 @@ writes `${session_dir}/verdicts/{agent-name}.json` on success.
   `${PHASES_DIR}/delegate.md` **Verdict Collection**, then re-run the
   script. If an agent still fails after that one attempt, log it loudly
   and surface it in the report — never a silent zero.
-- `status: "nothing_to_do"` — zero verdict blocks were produced
-  session-wide (a delegation failure, not a per-agent "no findings"
-  signal). Stop and report a configuration issue.
+- `status: "nothing_to_do"` — no `.raw.md` exists session-wide (a
+  delegation failure, not a per-agent "no findings" signal). If you hold
+  reviewer responses, write them verbatim to their paths and re-run the
+  script; the `expected` array names the dispatched council. Otherwise stop
+  and report a configuration issue. Never proceed to Step 4 on this status.
+
+The script exits 0 on every status, so a shell `&&` cannot route between
+stages — read `status` and branch.
 
 **Effort-conditional behavior:**
 - **quick / standard**: Delegate once over whole changeset as above.
@@ -787,9 +798,17 @@ these in this order:
     verify.md's correction prompt verbatim.
   - Batch all of one agent's correctable findings into a single dispatch;
     do not dispatch a round per finding.
-  - Corrected evidence that matches the file is upgraded to **verified**; a
-    withdrawal removes the finding; evidence that still does not match, or no
-    reply at all, is **stripped**. There is no second attempt.
+  - **Apply the replies with the script — SCRIPT-OWNED, never by editing
+    `findings.json`.** Record each reply in
+    `${session_dir}/verdicts/_meta/corrections.json` per verify.md Step 1,
+    then run `bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}`
+    (prefixed with `REVIEW_ROOT="<review_root>"` exactly as the evidence check
+    above was). It re-checks every corrected quote with the same matcher:
+    a match is **verified** under its own id; a quote that still does not
+    match, or no reply at all, is **stripped**; a withdrawal is removed.
+    There is no second attempt. Branch on `status`: `ok` or `nothing_to_do`
+    → continue; `correction_error` → fix `corrections.json` as the message
+    says and re-run (nothing was applied).
   - Skip only when there are zero correctable findings — never because *all*
     of an agent's findings are correctable (verify.md "When to skip").
 - Apply severity calibration (LLM judgment on findings severity)
@@ -1096,7 +1115,7 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Mode: {code | spec} ({reason})
 - Effort: {quick | standard | deep}
 - Branch: {branch name}
-- Base: {main | master}
+- Base: {main | master | none (explicit range)}
 - Language: {language}
 - Framework: {framework | none}
 - Review root: {. | path}

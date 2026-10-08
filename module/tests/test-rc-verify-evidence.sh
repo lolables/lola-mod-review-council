@@ -761,9 +761,11 @@ echo "Test 30: an exact duplicate from another agent credits that agent"
 # severity and discard everything else about the duplicate, so the second
 # reviewer's angle vanished with nothing anywhere recording that it existed.
 #
-# Dedup keeps the survivor's own description and credits the loser's, so which
-# angle lands where is decided by the order the verdicts are ingested in — and
-# that order comes straight off `find`, which reports directory order.
+# Between equal severities dedup keeps the first-ingested finding's description
+# and credits the other's, so which angle lands where is decided by the order
+# the verdicts are ingested in — and that order comes straight off `find`, which
+# reports directory order. The two findings below are therefore equally severe:
+# between unequal ones the more severe survives whatever the order (Test 30b).
 #
 # Directory order is the filesystem's business: creation order on XFS, hash
 # order on ext4, neither on APFS. Writing the alphabetically later agent first
@@ -798,13 +800,12 @@ MOCKFIND
 chmod +x "$bin/find"
 echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
-	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
+	'[{"severity":"MEDIUM","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
-	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
+	'[{"severity":"MEDIUM","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
 result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s")
 assert_json_field "$result" "verified" "1" "duplicate merged to one finding"
 assert_jq "$s/verdicts/findings.json" '.duplicates_consolidated' "1" "counted as consolidated"
-assert_jq "$s/verdicts/findings.json" '.verified[0].severity' "HIGH" "severity escalated to the max"
 assert_jq "$s/verdicts/findings.json" \
 	'[.verified[0].provenance.consolidated_from[]?.agent] | length' "1" \
 	"the losing duplicate is credited"
@@ -813,6 +814,32 @@ assert_jq "$s/verdicts/findings.json" '.verified[0].agent' \
 assert_jq "$s/verdicts/findings.json" \
 	'.verified[0].provenance.consolidated_from[0].angle // "missing"' \
 	"no test covers the boundary" "the credited entry carries the other agent's angle"
+rm -rf "$s" "$src" "$bin"
+
+echo "Test 30b: between unequal duplicates the more severe survives whole (RC-068)"
+# Raising the first finding's severity alone shipped one defect's text at the
+# other's severity. Under the same adverse ingestion order as Test 30, the
+# HIGH finding must survive with its own description, crediting the LOW one.
+s=$(new_session)
+src=$(mktemp -d)
+bin=$(mktemp -d)
+cat >"$bin/find" <<MOCKFIND
+#!/usr/bin/env bash
+"$real_find" "\$@" | LC_ALL=C sort -z -r
+MOCKFIND
+chmod +x "$bin/find"
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
+	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
+result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s")
+assert_jq "$s/verdicts/findings.json" \
+	'.verified[0] | [.agent, .severity, .description] | join("|")' \
+	"divisor-testing-code|HIGH|no test covers the boundary" "the HIGH finding survives with its own text"
+assert_jq "$s/verdicts/findings.json" \
+	'.verified[0].provenance.consolidated_from[0] | [.agent, .severity] | join("|")' \
+	"divisor-adversary-code|LOW" "the LOW finding is credited at its own severity"
 rm -rf "$s" "$src" "$bin"
 
 echo "Test 31: a same-agent duplicate is not credited to itself"
@@ -855,6 +882,24 @@ assert_jq_str "$result" '.missing_verdicts // [] | tojson' \
 assert_jq "$s/verdicts/findings.json" '[.missing_verdicts[]] | join(",")' \
 	"divisor-guard-code,divisor-sre-code" "recorded in findings.json for the report"
 rm -rf "$s" "$src"
+
+echo "Test 32b: a wrong-shaped manifest claims no missing verdicts (RC-070)"
+# The extractor already treats a manifest that parses but holds no list of
+# names as no manifest (RC-062). Verification read the same file and died on
+# it — a string `council` or a top-level array aborted the script before
+# findings.json was written, one stage after extraction had handled it.
+for body in '{"council":"divisor-guard-code"}' '[1,2]' '{"council":["divisor-guard-code",3]}' '{"council":null,"agents":7}'; do
+	s=$(new_session)
+	src=$(mktemp -d)
+	echo 'if exp < now' >"$src/token.go"
+	printf '%s\n' "$body" >"$s/session-manifest.json"
+	agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+		'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]'
+	result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null) || result='{"status":"crashed"}'
+	assert_json_field "$result" "status" "ok" "manifest $body: verification completes"
+	assert_jq_str "$result" '.missing_verdicts // "absent" | tojson' '[]' "manifest $body: no missing verdicts claimed"
+	rm -rf "$s" "$src"
+done
 
 echo "Test 33: a complete council reports no missing verdicts"
 s=$(new_session)
@@ -921,7 +966,7 @@ assert_jq_str "$(<"$fj")" '[.verified[], .correctable[], .stripped[] | .id] | (l
 	"no id repeats"
 rm -rf "$s" "$src"
 
-echo "Test 37: a previous iteration's validator reply is discarded"
+echo "Test 37: a previous iteration's validator and correction replies are discarded"
 # Ids restart at F1 every run, so a reply saved for the last run's F1 would
 # otherwise be applied to this run's unrelated F1.
 s=$(new_session)
@@ -930,14 +975,17 @@ echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d1","recommendation":"r"}]'
 printf '{"results":[]}' >"$s/verdicts/_meta/validation.json"
+printf '{"results":[]}' >"$s/verdicts/_meta/corrections.json"
 (cd "$src" && bash "$SCRIPT" "$s" >/dev/null)
-if [[ ! -e "$s/verdicts/_meta/validation.json" ]]; then
-	echo "  PASS: stale validation.json removed"
-	PASS=$((PASS + 1))
-else
-	echo "  FAIL: stale validation.json survived a re-verification"
-	FAIL=$((FAIL + 1))
-fi
+for reply in validation corrections; do
+	if [[ ! -e "$s/verdicts/_meta/$reply.json" ]]; then
+		echo "  PASS: stale $reply.json removed"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: stale $reply.json survived a re-verification"
+		FAIL=$((FAIL + 1))
+	fi
+done
 rm -rf "$s" "$src"
 
 echo ""

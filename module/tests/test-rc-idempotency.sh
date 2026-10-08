@@ -161,6 +161,21 @@ assert_idempotent "rc-apply-validation.sh --final --dispute" "$s/verdicts/findin
 	bash "$SCRIPTS/rc-apply-validation.sh" "$s" --final --dispute F1
 rm -rf "$s"
 
+echo "Test 8: rc-apply-corrections.sh is idempotent"
+s=$(new_session)
+root=$(mktemp -d)
+printf 'x := 1\ny := 2\n' >"$root/a.go"
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[],"correctable":[
+ {"id":"F1","agent":"divisor-guard-code","severity":"HIGH","file":"a.go","line":1,"evidence":"x = 1","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"correctable","reason":"EVIDENCE_NOT_FOUND","provenance":{}},
+ {"id":"F2","agent":"divisor-sre-code","severity":"LOW","file":"a.go","line":2,"evidence":"y = 2","description":"d","recommendation":"r","verdict":"APPROVE","status":"correctable","reason":"EVIDENCE_NOT_FOUND","provenance":{}}
+],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{}}
+FJ
+printf '%s' '{"results":[{"id":"F1","outcome":"CORRECTED","evidence":"x := 1"}]}' >"$s/verdicts/_meta/corrections.json"
+assert_idempotent "rc-apply-corrections.sh" "$s/verdicts/findings.json" \
+	bash "$SCRIPTS/rc-apply-corrections.sh" "$s" "$root"
+rm -rf "$s" "$root"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

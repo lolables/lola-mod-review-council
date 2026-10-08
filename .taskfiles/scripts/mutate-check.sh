@@ -162,7 +162,7 @@ check_mutation "RC-1  consolidation ident scoping" \
 
 # Multi-line evidence was searched as N independent literals by `grep -F`.
 check_mutation "RC-2  contiguous evidence matching" \
-	rc-verify-evidence.sh \
+	lib/evidence.sh \
 	's#^[[:space:]]*occurrences=\$(evidence_lines.*#occurrences=$(grep -nF -- "$ev" "$fpath" | cut -d: -f1)#' \
 	test-rc-verify-evidence.sh
 
@@ -176,7 +176,7 @@ check_mutation "RC-2  contiguous evidence matching" \
 # passes, so that form of the mutation is scored `caught` while proving nothing
 # about the abort this entry exists to guard.
 check_mutation "RC-3  full matcher output" \
-	rc-verify-evidence.sh \
+	lib/evidence.sh \
 	's#^[[:space:]]*occurrences=\$(evidence_lines.*#occurrences=$(evidence_lines "$fpath" "$ev" | head -1)#' \
 	test-rc-verify-evidence.sh
 
@@ -208,7 +208,7 @@ check_mutation "RC-7  exact enum membership" \
 
 # Findings citing a path outside the review root were verified, not stripped.
 check_mutation "RC-8  review-root containment" \
-	rc-verify-evidence.sh \
+	lib/evidence.sh \
 	's/^[[:space:]]*if ! path_in_root "\$fpath"; then$/if false; then/' \
 	test-rc-verify-evidence.sh
 
@@ -304,7 +304,7 @@ check_mutation "RC-19 absent persona roster" \
 # consolidation, describing the same event, preserved it in consolidated_from.
 check_mutation "RC-20 dedup credits the other agent" \
 	jq/dedup-findings.jq \
-	's#^[[:space:]]*( if \$x\.agent != \.\[\$idx\]\.agent$#\t    ( if false#' \
+	's#^[[:space:]]*elif \$x\.agent != \.\[\$idx\]\.agent then$#\t  elif false then#' \
 	test-rc-jq-programs.sh
 
 # --mode accepted any string and fell through to a `code` default, so `--mode
@@ -948,6 +948,135 @@ check_mutation "RC-061 a planning-document name is a spec only as a whole word" 
 	lib/prepare-target.sh \
 	's#(.|/|\[-_.\])(spec|plan#(spec|plan#' \
 	test-rc-prepare-mode-scope.sh
+
+# --- RC-062: a total collection loss read as "reviewers returned nothing" ----
+#
+# Every reviewer returned a verdict, the orchestrator wrote none of them to
+# verdicts/, and extraction's bare nothing_to_do sent the run to a stop with
+# the responses still in hand. Each mutation drops one part of the diagnosis.
+check_mutation "RC-062 nothing_to_do names the expected council" \
+	rc-extract-verdict.sh \
+	's/\[\[ -f "\$manifest" \]\] && extra=/false \&\& extra=/' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 expected is the council, not the discovered roster" \
+	rc-extract-verdict.sh \
+	's#(.council // .agents)#(.agents // .council)#' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 a manifest without council falls back to agents" \
+	rc-extract-verdict.sh \
+	's#(.council // .agents)#(.council)#' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 a wrong-shaped manifest claims no council" \
+	rc-extract-verdict.sh \
+	's/if type == "array" and all(type == "string") then/if true then/' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 nothing_to_do says the orchestrator owns the write" \
+	rc-extract-verdict.sh \
+	's/the orchestrator writes each one/someone writes each one/' \
+	test-rc-extract-verdict.sh
+
+# --- RC-063: an explicit range refused for a missing main/master -------------
+#
+# `HEAD~1..HEAD` in a single-branch clone stopped at preparation with "main and
+# master both not found", although a range never diffs against a base branch.
+check_mutation "RC-063 a range prepares without main or master" \
+	lib/prepare-repo.sh \
+	's/^elif \[\[ "\$input_type" == "ref_range" \]\]; then$/elif false; then/' \
+	test-rc-prepare-git-edges.sh
+
+check_mutation "RC-063 only a range is labelled as having no base" \
+	lib/prepare-emit.sh \
+	's/ && "\$input_type" == "ref_range" \]\] && display_base/ ]] \&\& display_base/' \
+	test-rc-prepare-git-edges.sh
+
+# --- RC-064: a range value smuggled a git option ------------------------------
+#
+# `--scope-value --output=<path>` reached `git diff` as an option and overwrote
+# the named file with the diff, then reported "No changes to review".
+check_mutation "RC-064 a range beginning with - is refused" \
+	lib/prepare-args.sh \
+	's/if \[\[ "\$scope_value" == -\* \]\]; then/if false; then/' \
+	test-rc-prepare-git-edges.sh
+
+# --- RC-065: one reviewer's verdict filed under another's name ---------------
+#
+# A response written to the wrong reviewer's path passed extraction and
+# verification: the misfiled reviewer's coverage vanished, unreported.
+check_mutation "RC-065 a block naming another agent is refused" \
+	rc-extract-verdict.sh \
+	's/if \[\[ "\$claimed" != "\$agent" \]\]; then/if false; then/' \
+	test-rc-extract-verdict.sh
+
+# --- RC-067: raw-file inputs that are not a reviewer's verdict ---------------
+#
+# A stray *.raw.md under verdicts/_meta was extracted as a verdict, a leading
+# byte-order mark hid the fence and cost a re-dispatch, and a file named just
+# `.raw.md` was told to re-emit as agent ".raw.md".
+check_mutation "RC-067 _meta is never searched for verdicts" \
+	rc-extract-verdict.sh \
+	's# -path "\$vdir/_meta" -prune -o##' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-067 a leading byte-order mark is dropped" \
+	rc-extract-verdict.sh \
+	's/^[[:space:]]*NR == 1 && index(\$0, ENVIRON\["RC_BOM"\]) == 1 .*$//' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-067 a nameless raw file is told to move" \
+	rc-extract-verdict.sh \
+	's/if \[\[ -z "\$agent" \]\]; then/if false; then/' \
+	test-rc-extract-verdict.sh
+
+# --- RC-068: a merged duplicate carried one defect's text at another's severity
+#
+# Two reviewers quoting one line for different defects merged into the first
+# finding's text raised to the second's severity.
+check_mutation "RC-068 the more severe duplicate survives whole" \
+	jq/dedup-findings.jq \
+	's#^[[:space:]]*elif sevrank(\$x\.severity) > sevrank(\.\[\$idx\]\.severity) then$#\t  elif false then#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-068 carried credits never name the survivor's author" \
+	jq/dedup-findings.jq \
+	's#^\([[:space:]]*\)| map(select(\.agent != \$x\.agent))))$#\1))#' \
+	test-rc-jq-programs.sh
+
+# --- RC-069: the correction round moved findings by hand, unchecked ------------
+#
+# Orchestrators promoted corrected findings by editing findings.json, so a
+# corrected quote that still missed the source shipped as verified evidence.
+check_mutation "RC-069 a correction is re-checked before it is verified" \
+	rc-apply-corrections.sh \
+	's/if \[\[ "\$check" == "verified" \]\]; then/if true; then/' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-069 a correction must name a correctable finding" \
+	rc-apply-corrections.sh \
+	's/elif (\$ids | index(\$r.id)) == null then/elif false then/' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-069 promoted findings are deduplicated" \
+	rc-apply-corrections.sh \
+	's#jq -f "\$(dirname "\$0")/jq/dedup-findings.jq" "\$work/merged.json"#cat "\$work/merged.json"#' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-069 verification discards a stale correction reply" \
+	rc-verify-evidence.sh \
+	's# "\$vdir/_meta/corrections.json"##' \
+	test-rc-verify-evidence.sh
+
+# --- RC-070: verification died on a manifest extraction had handled ----------
+#
+# A string `council` or a top-level array aborted rc-verify-evidence.sh one
+# stage after rc-extract-verdict.sh had treated the same file as no manifest.
+check_mutation "RC-070 a wrong-shaped manifest claims no missing verdicts" \
+	rc-verify-evidence.sh \
+	's/if (\$c | type) == "array" and (\$c | all(type == "string"))$/if true/' \
+	test-rc-verify-evidence.sh
 
 total=$((caught + missed + broken))
 echo ""

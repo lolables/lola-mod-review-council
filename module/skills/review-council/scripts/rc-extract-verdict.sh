@@ -22,9 +22,13 @@ vdir="$session_dir/verdicts"
 	exit 0
 }
 
-# Extract the first fenced ```json ... ``` block from a file to stdout.
+# Extract the first fenced ```json ... ``` block from a file to stdout. A
+# leading UTF-8 byte-order mark is dropped first: it is an artifact of how the
+# file was written, and left in place it hides a fence on line 1. LC_ALL=C so
+# substr() counts the mark's three bytes rather than one character.
 extract_block() { # file
-	awk '
+	LC_ALL=C RC_BOM=$'\xef\xbb\xbf' awk '
+		NR == 1 && index($0, ENVIRON["RC_BOM"]) == 1 { $0 = substr($0, length(ENVIRON["RC_BOM"]) + 1) }
 		/^```json[[:space:]]*$/ && !inb { inb=1; next }
 		/^```[[:space:]]*$/ && inb { exit }
 		inb { print }
@@ -231,9 +235,10 @@ invalid_json="[]"
 valid_count=0
 raw_files=()
 while IFS= read -r -d '' f; do raw_files+=("$f"); done \
-	< <(find "$vdir" -name '*.raw.md' -type f -print0 2>/dev/null || true)
+	< <(find "$vdir" -path "$vdir/_meta" -prune -o -name '*.raw.md' -type f -print0 2>/dev/null || true)
 for raw in "${raw_files[@]}"; do
-	agent=$(basename "$raw" .raw.md)
+	agent=$(basename "$raw")
+	agent="${agent%.raw.md}"
 	rel="${raw#"$session_dir"/}"
 	block=$(extract_block "$raw")
 	if [[ -z "$block" ]] || ! echo "$block" | jq -e . >/dev/null 2>&1; then
@@ -245,6 +250,20 @@ for raw in "${raw_files[@]}"; do
 	if ! validate "$block"; then
 		detail=$(validate_error "$block")
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "SCHEMA_INVALID" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		continue
+	fi
+	# Downstream keys each reviewer by filename, so a block whose `agent` names
+	# someone else is one reviewer's verdict standing in for another's: that
+	# reviewer's coverage vanishes and nothing reports it missing.
+	claimed=$(jq -r '.agent' <<<"$block")
+	if [[ -z "$agent" ]]; then
+		detail="This file's name holds no agent, so the verdict cannot be attributed. Its block names \"${claimed}\": if that is right, move it to $(dirname "$rel")/${claimed}.raw.md."
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "AGENT_MISMATCH" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		continue
+	fi
+	if [[ "$claimed" != "$agent" ]]; then
+		detail="This file is ${agent}'s, but its verdict block names agent \"${claimed}\". If the orchestrator wrote another reviewer's response here, rewrite the file with ${agent}'s own response. If ${agent} misnamed itself, ask it to re-emit the same block with \"agent\": \"${agent}\"."
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "AGENT_MISMATCH" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
 	fi
 	# verdict-schema.json constrains `verdict` and `severity` independently and
@@ -327,8 +346,18 @@ REM
 	exit 0
 fi
 
+# Reaching here with zero valid blocks means no .raw.md exists at all — any
+# file present would have landed in invalid[] above. Reviewers are read-only
+# and return their verdicts; writing them is the orchestrator's job, so name
+# the dispatched council (same `council // agents` read as rc-verify-evidence.sh)
+# and say whose write is missing. No manifest, no claim about who was expected.
 [[ "$valid_count" -eq 0 ]] && {
-	json_output "nothing_to_do" "No verdict blocks found."
+	extra="{}"
+	manifest="$session_dir/session-manifest.json"
+	# A manifest that parses but holds no list of names claims nothing either.
+	[[ -f "$manifest" ]] && extra=$(jq -c 'if type == "object" then (.council // .agents) else null end
+		| if type == "array" and all(type == "string") then {expected: .} else {} end' "$manifest")
+	json_output "nothing_to_do" "No verdict blocks found: no .raw.md file exists under verdicts/. Reviewers return their verdicts; the orchestrator writes each one verbatim to its .raw.md path. If those responses are still held, write them and re-run extraction instead of re-dispatching." "$extra"
 	exit 0
 }
 payload=$(jq -n --argjson v "$valid_count" '{valid:$v}')

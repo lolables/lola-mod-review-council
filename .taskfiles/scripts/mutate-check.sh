@@ -1069,6 +1069,15 @@ check_mutation "RC-069 verification discards a stale correction reply" \
 	's# "\$vdir/_meta/corrections.json"##' \
 	test-rc-verify-evidence.sh
 
+# --- RC-070: verification died on a manifest extraction had handled ----------
+#
+# A string `council` or a top-level array aborted rc-verify-evidence.sh one
+# stage after rc-extract-verdict.sh had treated the same file as no manifest.
+check_mutation "RC-070 a wrong-shaped manifest claims no missing verdicts" \
+	rc-verify-evidence.sh \
+	's/if (\$c | type) == "array" and (\$c | all(type == "string"))$/if true/' \
+	test-rc-verify-evidence.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

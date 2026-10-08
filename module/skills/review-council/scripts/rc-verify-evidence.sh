@@ -71,13 +71,20 @@ while IFS= read -r -d '' f; do agent_files+=("$f"); done \
 # three-state model exists to prevent, and the direction that turns a cheaper
 # review into an apparent failure. `// .agents` covers a manifest written before
 # the key existed, where the two sets were the same by definition.
+#
+# A manifest that parses but holds no list of names claims nothing, exactly as
+# rc-extract-verdict.sh treats it: a string `council` or a top-level array used
+# to abort this script one stage after extraction had handled the same file.
 missing_json='[]'
 manifest="$session_dir/session-manifest.json"
 if [[ -f "$manifest" ]]; then
 	found_json=$(printf '%s\n' "${agent_files[@]}" |
 		sed 's|.*/||; s|\.json$||' | sort -u | jq -R . | jq -s .)
 	missing_json=$(jq -n --slurpfile m "$manifest" --argjson found "$found_json" \
-		'[ ($m[0].council // $m[0].agents // [])[] | select(. as $a | ($found | index($a)) | not) ]')
+		'if ($m[0] | type) != "object" then [] else
+		 ($m[0].council // $m[0].agents // []) as $c
+		 | if ($c | type) == "array" and ($c | all(type == "string"))
+		   then [ $c[] | select(. as $a | ($found | index($a)) | not) ] else [] end end')
 fi
 
 # Merge all findings into one array, tagging each with its agent and verdict.

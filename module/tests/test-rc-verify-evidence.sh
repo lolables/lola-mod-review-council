@@ -883,6 +883,24 @@ assert_jq "$s/verdicts/findings.json" '[.missing_verdicts[]] | join(",")' \
 	"divisor-guard-code,divisor-sre-code" "recorded in findings.json for the report"
 rm -rf "$s" "$src"
 
+echo "Test 32b: a wrong-shaped manifest claims no missing verdicts (RC-070)"
+# The extractor already treats a manifest that parses but holds no list of
+# names as no manifest (RC-062). Verification read the same file and died on
+# it — a string `council` or a top-level array aborted the script before
+# findings.json was written, one stage after extraction had handled it.
+for body in '{"council":"divisor-guard-code"}' '[1,2]' '{"council":["divisor-guard-code",3]}' '{"council":null,"agents":7}'; do
+	s=$(new_session)
+	src=$(mktemp -d)
+	echo 'if exp < now' >"$src/token.go"
+	printf '%s\n' "$body" >"$s/session-manifest.json"
+	agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+		'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]'
+	result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null) || result='{"status":"crashed"}'
+	assert_json_field "$result" "status" "ok" "manifest $body: verification completes"
+	assert_jq_str "$result" '.missing_verdicts // "absent" | tojson' '[]' "manifest $body: no missing verdicts claimed"
+	rm -rf "$s" "$src"
+done
+
 echo "Test 33: a complete council reports no missing verdicts"
 s=$(new_session)
 src=$(mktemp -d)

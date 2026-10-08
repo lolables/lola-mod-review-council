@@ -714,9 +714,10 @@ All notable changes to the Review Council module are documented here.
 - A `--scope range` value beginning with `-` is refused. It reached `git diff`
   as an option, so `--output=<path>` overwrote that file with the diff and the
   run then reported "No changes to review". No ref name can begin with `-`.
-- `rc-extract-verdict.sh` claims no `expected` council from a manifest that
-  parses but holds no list of names: a string `council` came back as a string,
-  and a top-level array aborted the script.
+- `rc-extract-verdict.sh` and `rc-verify-evidence.sh` claim nothing from a
+  manifest that parses but holds no list of names. In the extractor a string
+  `council` came back as a string `expected`, and in both scripts a string
+  `council` or a top-level array aborted the run.
 - The correction round is applied by `rc-apply-corrections.sh` instead of by
   hand. Orchestrators moved corrected findings from `correctable` to `verified`
   by editing `findings.json`, and nothing re-checked the new quote, so a

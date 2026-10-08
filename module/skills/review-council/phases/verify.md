@@ -308,6 +308,37 @@ Send agent focused correction prompt:
 - Agent provides evidence still not matching: **stripped**.
 - Agent does not respond or times out: **stripped**.
 
+**Apply the round with `rc-apply-corrections.sh` — never by editing
+`findings.json`.** A hand edit moves a finding to `verified` without testing
+the new quote, so a correction that still misses the source would ship as
+verified evidence. Record each agent's reply, keyed on the finding `id`, in
+`${session_dir}/verdicts/_meta/corrections.json`:
+
+```json
+{"results": [
+  {"id": "F2", "outcome": "CORRECTED", "evidence": "exact quote from the file", "line": 41},
+  {"id": "F3", "outcome": "WITHDRAWN"}
+]}
+```
+
+`evidence` is the agent's corrected quote, verbatim; `line` is optional and
+replaces the cited line. Omit a finding the agent did not answer — the script
+strips it as `NO_CORRECTION`. Then run
+`bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}`, prefixed with
+`REVIEW_ROOT="<review_root>"` exactly as the evidence check was. It checks each
+correction with the matcher `rc-verify-evidence.sh` used, applies the rules
+above, and deduplicates promoted findings against the verified set.
+
+- `ok` — applied. Its `verified`, `stripped`, `withdrawn` and `unanswered`
+  arrays name the ids for the `CORRECTION ROUND` section of
+  `verification.txt`; a stripped correction keeps its attempt and the check it
+  failed under `provenance.correction`.
+- `correction_error` — `corrections.json` is missing or malformed, or names a
+  finding that is not correctable. Nothing was applied: fix the file as the
+  message says and re-run. To strip every correctable finding as unanswered,
+  write `{"results": []}`.
+- `nothing_to_do` — no correctable findings remain (a re-run after `ok`).
+
 **Efficiency**: batch all correctable findings for same agent into single correction prompt. Do not dispatch separate rounds per finding.
 
 **When to skip**: skip only when there are zero correctable findings. Do NOT

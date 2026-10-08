@@ -22,7 +22,7 @@ conditional:
 | **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
-| **Verify**            | `rc-verify-evidence.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
+| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
 | **Disposition**       | `phases/disposition.md` (re-review only)                           | Triage untrusted PR-conversation replies against findings |
 | **Report**            | `rc-render-report.sh` + `phases/report.md`                         | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
@@ -203,6 +203,7 @@ flowchart TD
   del["Delegate: reviewer agents"]
   extr["Extract: rc-extract-verdict.sh"]
   vevi["Verify: rc-verify-evidence.sh"]
+  vcor["Verify: rc-apply-corrections.sh"]
   vcon["Verify: rc-consolidate.sh"]
   vval["Verify: rc-apply-validation.sh"]
   vorc["Verify: orchestrator write-up"]
@@ -222,6 +223,7 @@ flowchart TD
       vtxt["verification.txt"]
       clus["clusters.json"]
       valj["validation.json"]
+      corj["corrections.json"]
       dtxt["disposition.txt"]
     end
   end
@@ -233,6 +235,9 @@ flowchart TD
   vjson --> vevi
   vevi --> vmap
   vevi --> find
+  find --> vcor
+  corj --> vcor
+  vcor -->|"corrections applied in place"| find
   find --> vcon
   vcon --> clus
   vval --> valj
@@ -250,9 +255,9 @@ flowchart TD
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
   classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
-  class vevi,vcon,vval,vorc,dsp sysC
+  class vevi,vcor,vcon,vval,vorc,dsp sysC
   class rrep sysD
-  class extr,raw,vjson,vmap,find,vtxt,clus,valj,dtxt,meta1,learn sysE
+  class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,meta1,learn sysE
 ```
 
 Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>/` containing:

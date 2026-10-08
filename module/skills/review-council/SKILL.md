@@ -222,6 +222,7 @@ stateDiagram-v2
     Verify --> Render: nothing_to_do (no findings file)
     Verify --> Correction: correctable>0
     Verify --> Calibrate: correctable=0
+    Correction --> Correction: correction_error (fix corrections.json)
     Correction --> Calibrate
     Calibrate --> Validate: verified>0 & not all LOW
     Calibrate --> Render: nothing to validate & no conversation
@@ -797,9 +798,17 @@ these in this order:
     verify.md's correction prompt verbatim.
   - Batch all of one agent's correctable findings into a single dispatch;
     do not dispatch a round per finding.
-  - Corrected evidence that matches the file is upgraded to **verified**; a
-    withdrawal removes the finding; evidence that still does not match, or no
-    reply at all, is **stripped**. There is no second attempt.
+  - **Apply the replies with the script — SCRIPT-OWNED, never by editing
+    `findings.json`.** Record each reply in
+    `${session_dir}/verdicts/_meta/corrections.json` per verify.md Step 1,
+    then run `bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}`
+    (prefixed with `REVIEW_ROOT="<review_root>"` exactly as the evidence check
+    above was). It re-checks every corrected quote with the same matcher:
+    a match is **verified** under its own id; a quote that still does not
+    match, or no reply at all, is **stripped**; a withdrawal is removed.
+    There is no second attempt. Branch on `status`: `ok` or `nothing_to_do`
+    → continue; `correction_error` → fix `corrections.json` as the message
+    says and re-run (nothing was applied).
   - Skip only when there are zero correctable findings — never because *all*
     of an agent's findings are correctable (verify.md "When to skip").
 - Apply severity calibration (LLM judgment on findings severity)

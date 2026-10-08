@@ -948,7 +948,7 @@ assert_jq_str "$(<"$fj")" '[.verified[], .correctable[], .stripped[] | .id] | (l
 	"no id repeats"
 rm -rf "$s" "$src"
 
-echo "Test 37: a previous iteration's validator reply is discarded"
+echo "Test 37: a previous iteration's validator and correction replies are discarded"
 # Ids restart at F1 every run, so a reply saved for the last run's F1 would
 # otherwise be applied to this run's unrelated F1.
 s=$(new_session)
@@ -957,14 +957,17 @@ echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d1","recommendation":"r"}]'
 printf '{"results":[]}' >"$s/verdicts/_meta/validation.json"
+printf '{"results":[]}' >"$s/verdicts/_meta/corrections.json"
 (cd "$src" && bash "$SCRIPT" "$s" >/dev/null)
-if [[ ! -e "$s/verdicts/_meta/validation.json" ]]; then
-	echo "  PASS: stale validation.json removed"
-	PASS=$((PASS + 1))
-else
-	echo "  FAIL: stale validation.json survived a re-verification"
-	FAIL=$((FAIL + 1))
-fi
+for reply in validation corrections; do
+	if [[ ! -e "$s/verdicts/_meta/$reply.json" ]]; then
+		echo "  PASS: stale $reply.json removed"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: stale $reply.json survived a re-verification"
+		FAIL=$((FAIL + 1))
+	fi
+done
 rm -rf "$s" "$src"
 
 echo ""

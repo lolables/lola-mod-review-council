@@ -717,6 +717,15 @@ All notable changes to the Review Council module are documented here.
 - `rc-extract-verdict.sh` claims no `expected` council from a manifest that
   parses but holds no list of names: a string `council` came back as a string,
   and a top-level array aborted the script.
+- The correction round is applied by `rc-apply-corrections.sh` instead of by
+  hand. Orchestrators moved corrected findings from `correctable` to `verified`
+  by editing `findings.json`, and nothing re-checked the new quote, so a
+  correction that still missed the source shipped as verified evidence. The
+  replies go in `verdicts/_meta/corrections.json`, keyed on finding id; each
+  corrected quote meets the same matcher `rc-verify-evidence.sh` ran, now
+  shared through `scripts/lib/evidence.sh`. A failed correction is stripped as
+  `CORRECTION_FAILED` and an unanswered one as `NO_CORRECTION`; a malformed
+  reply refuses the pass with `findings.json` unchanged.
 - When two reviewers quote the same line, the more severe finding now
   survives whole. Exact deduplication kept the first finding's title and
   description and raised only its severity, so two different defects on one

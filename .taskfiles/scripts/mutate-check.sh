@@ -162,7 +162,7 @@ check_mutation "RC-1  consolidation ident scoping" \
 
 # Multi-line evidence was searched as N independent literals by `grep -F`.
 check_mutation "RC-2  contiguous evidence matching" \
-	rc-verify-evidence.sh \
+	lib/evidence.sh \
 	's#^[[:space:]]*occurrences=\$(evidence_lines.*#occurrences=$(grep -nF -- "$ev" "$fpath" | cut -d: -f1)#' \
 	test-rc-verify-evidence.sh
 
@@ -176,7 +176,7 @@ check_mutation "RC-2  contiguous evidence matching" \
 # passes, so that form of the mutation is scored `caught` while proving nothing
 # about the abort this entry exists to guard.
 check_mutation "RC-3  full matcher output" \
-	rc-verify-evidence.sh \
+	lib/evidence.sh \
 	's#^[[:space:]]*occurrences=\$(evidence_lines.*#occurrences=$(evidence_lines "$fpath" "$ev" | head -1)#' \
 	test-rc-verify-evidence.sh
 
@@ -208,7 +208,7 @@ check_mutation "RC-7  exact enum membership" \
 
 # Findings citing a path outside the review root were verified, not stripped.
 check_mutation "RC-8  review-root containment" \
-	rc-verify-evidence.sh \
+	lib/evidence.sh \
 	's/^[[:space:]]*if ! path_in_root "\$fpath"; then$/if false; then/' \
 	test-rc-verify-evidence.sh
 
@@ -1044,6 +1044,30 @@ check_mutation "RC-068 carried credits never name the survivor's author" \
 	jq/dedup-findings.jq \
 	's#^\([[:space:]]*\)| map(select(\.agent != \$x\.agent))))$#\1))#' \
 	test-rc-jq-programs.sh
+
+# --- RC-069: the correction round moved findings by hand, unchecked ------------
+#
+# Orchestrators promoted corrected findings by editing findings.json, so a
+# corrected quote that still missed the source shipped as verified evidence.
+check_mutation "RC-069 a correction is re-checked before it is verified" \
+	rc-apply-corrections.sh \
+	's/if \[\[ "\$check" == "verified" \]\]; then/if true; then/' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-069 a correction must name a correctable finding" \
+	rc-apply-corrections.sh \
+	's/elif (\$ids | index(\$r.id)) == null then/elif false then/' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-069 promoted findings are deduplicated" \
+	rc-apply-corrections.sh \
+	's#jq -f "\$(dirname "\$0")/jq/dedup-findings.jq" "\$work/merged.json"#cat "\$work/merged.json"#' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-069 verification discards a stale correction reply" \
+	rc-verify-evidence.sh \
+	's# "\$vdir/_meta/corrections.json"##' \
+	test-rc-verify-evidence.sh
 
 total=$((caught + missed + broken))
 echo ""

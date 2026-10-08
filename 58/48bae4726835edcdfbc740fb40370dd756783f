@@ -1,0 +1,21 @@
+module/tests/test-rc-portability.sh
+  s_77180c9d22bbf6::t_601895daeadba9 78-81
+module/tests/test-rc-doc-guards.sh
+  s_77180c9d22bbf6::t_26d0a666a3b560 2056
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5848bae4726835edcdfbc740fb40370dd756783f",
+  "prompts": {},
+  "sessions": {
+    "s_77180c9d22bbf6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "673f54a3-39de-43ee-9767-d3762a8dc77c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

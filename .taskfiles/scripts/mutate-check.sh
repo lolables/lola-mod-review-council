@@ -949,6 +949,65 @@ check_mutation "RC-061 a planning-document name is a spec only as a whole word" 
 	's#(.|/|\[-_.\])(spec|plan#(spec|plan#' \
 	test-rc-prepare-mode-scope.sh
 
+# --- RC-062: a total collection loss read as "reviewers returned nothing" ----
+#
+# Every reviewer returned a verdict, the orchestrator wrote none of them to
+# verdicts/, and extraction's bare nothing_to_do sent the run to a stop with
+# the responses still in hand. Each mutation drops one part of the diagnosis.
+check_mutation "RC-062 nothing_to_do names the expected council" \
+	rc-extract-verdict.sh \
+	's/\[\[ -f "\$manifest" \]\] && extra=/false \&\& extra=/' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 expected is the council, not the discovered roster" \
+	rc-extract-verdict.sh \
+	's#(.council // .agents)#(.agents // .council)#' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 a manifest without council falls back to agents" \
+	rc-extract-verdict.sh \
+	's#(.council // .agents)#(.council)#' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 a wrong-shaped manifest claims no council" \
+	rc-extract-verdict.sh \
+	's/if type == "array" and all(type == "string") then/if true then/' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-062 nothing_to_do says the orchestrator owns the write" \
+	rc-extract-verdict.sh \
+	's/the orchestrator writes each one/someone writes each one/' \
+	test-rc-extract-verdict.sh
+
+# --- RC-065: one reviewer's verdict filed under another's name ---------------
+#
+# A response written to the wrong reviewer's path passed extraction and
+# verification: the misfiled reviewer's coverage vanished, unreported.
+check_mutation "RC-065 a block naming another agent is refused" \
+	rc-extract-verdict.sh \
+	's/if \[\[ "\$claimed" != "\$agent" \]\]; then/if false; then/' \
+	test-rc-extract-verdict.sh
+
+# --- RC-067: raw-file inputs that are not a reviewer's verdict ---------------
+#
+# A stray *.raw.md under verdicts/_meta was extracted as a verdict, a leading
+# byte-order mark hid the fence and cost a re-dispatch, and a file named just
+# `.raw.md` was told to re-emit as agent ".raw.md".
+check_mutation "RC-067 _meta is never searched for verdicts" \
+	rc-extract-verdict.sh \
+	's# -path "\$vdir/_meta" -prune -o##' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-067 a leading byte-order mark is dropped" \
+	rc-extract-verdict.sh \
+	's/^[[:space:]]*NR == 1 && index(\$0, ENVIRON\["RC_BOM"\]) == 1 .*$//' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-067 a nameless raw file is told to move" \
+	rc-extract-verdict.sh \
+	's/if \[\[ -z "\$agent" \]\]; then/if false; then/' \
+	test-rc-extract-verdict.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

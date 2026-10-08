@@ -213,8 +213,10 @@ stateDiagram-v2
     Triage --> Delegate: ok (grid narrowed or intact)
     Triage --> Delegate: nothing_to_do (not deep, or disabled)
     Triage --> Delegate: triage_error (grid intact, reported)
-    Delegate --> Extract: raw verdicts written
+    Delegate --> Extract: every returned verdict written
     Extract --> Delegate: extract_error (re-dispatch <=1)
+    Extract --> Extract: nothing_to_do (write held responses)
+    Extract --> [*]: nothing_to_do, none held (stop)
     Extract --> Verify: ok
     Verify --> Render: effort=quick
     Verify --> Render: nothing_to_do (no findings file)
@@ -667,11 +669,14 @@ Step 1's `agents` array):
   (e.g., "divisor-guard-code") — mechanism varies by host;
   see `${PHASES_DIR}/delegate.md` Dispatch Mechanism section
 - Collect the agent's raw output verbatim, write to
-  `${session_dir}/verdicts/{agent-name}.raw.md`
+  `${session_dir}/verdicts/{agent-name}.raw.md` — the orchestrator's write,
+  never the reviewer's: reviewers are read-only and return their verdict
 
 Dispatch all agents in parallel for speed.
 
-**Extract and validate verdicts.** Once all raw output is collected, run:
+**Extract and validate verdicts.** Once every returned response has its
+`.raw.md` on disk (the collection check in `${PHASES_DIR}/delegate.md`
+**Verdict Collection**), run:
 
 `bash ${SCRIPTS_DIR}/rc-extract-verdict.sh ${session_dir}`
 
@@ -685,9 +690,14 @@ writes `${session_dir}/verdicts/{agent-name}.json` on success.
   `${PHASES_DIR}/delegate.md` **Verdict Collection**, then re-run the
   script. If an agent still fails after that one attempt, log it loudly
   and surface it in the report — never a silent zero.
-- `status: "nothing_to_do"` — zero verdict blocks were produced
-  session-wide (a delegation failure, not a per-agent "no findings"
-  signal). Stop and report a configuration issue.
+- `status: "nothing_to_do"` — no `.raw.md` exists session-wide (a
+  delegation failure, not a per-agent "no findings" signal). If you hold
+  reviewer responses, write them verbatim to their paths and re-run the
+  script; the `expected` array names the dispatched council. Otherwise stop
+  and report a configuration issue. Never proceed to Step 4 on this status.
+
+The script exits 0 on every status, so a shell `&&` cannot route between
+stages — read `status` and branch.
 
 **Effort-conditional behavior:**
 - **quick / standard**: Delegate once over whole changeset as above.

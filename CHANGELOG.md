@@ -682,6 +682,36 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- A run whose reviewers all returned verdicts no longer stops as if they had
+  returned nothing. The orchestrator had asked read-only reviewers to write
+  their own `.raw.md` files, so none was written, and extraction's
+  `nothing_to_do` led only to a stop. The docs now say the orchestrator writes
+  every raw file, require a collection check before extraction, and route
+  `nothing_to_do` to "write the responses you hold and re-run" before any
+  stop. They also say every stage exits 0 whatever its status, so `&&` cannot
+  route between stages. `rc-extract-verdict.sh`'s `nothing_to_do` now names
+  the dispatched council in `expected` and says whose write is missing.
+  "Verbatim" also now says to undo a host's transport encoding (`&amp;` for
+  `&`) before writing, since an encoded character breaks every evidence
+  quote that holds it.
+- `verify.md` no longer reports a reviewer whose response the orchestrator
+  holds as having returned nothing. A `missing_verdicts` entry is first checked
+  against the responses in hand; a held one is a collection gap, written and
+  re-extracted rather than disclosed as a silent reviewer.
+- A verdict filed under the wrong reviewer's name is refused. Extraction and
+  verification key reviewers by filename, so one reviewer's response written
+  to another's `.raw.md` counted the first twice and dropped the second with
+  nothing reported missing. `rc-extract-verdict.sh` now rejects a block whose
+  `agent` differs from its filename as `AGENT_MISMATCH`, and its `detail`
+  distinguishes a misfiled write (rewrite it, no dispatch) from a reviewer
+  that misnamed itself.
+- `rc-extract-verdict.sh` claims no `expected` council from a manifest that
+  parses but holds no list of names: a string `council` came back as a string,
+  and a top-level array aborted the script.
+- `rc-extract-verdict.sh` no longer collects a `*.raw.md` under
+  `verdicts/_meta/` as a verdict, drops a leading byte-order mark instead of
+  reading it as a missing JSON block, and tells a file named just `.raw.md`
+  which filename its block belongs in.
 - `/review-council-debug` exercises `rc-prepare.sh`'s success path again. Its
   Step 1 ran the script without `AGENTS_DIR`, so every run answered
   `status: "skip"` and fell back to the mock, leaving preparation untested. The

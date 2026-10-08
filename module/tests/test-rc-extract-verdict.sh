@@ -627,6 +627,177 @@ fi
 rm -rf "$s"
 rm -rf "$maskdir"
 
+# --- RC-062: a total collection loss names who was expected -----------------
+# A run stopped with all five reviewers' responses in hand: the orchestrator
+# never wrote them to verdicts/, and the bare "No verdict blocks found" read as
+# "the reviewers returned nothing". Naming the dispatched council, and whose job
+# the write is, turns the stop into a recoverable step.
+echo "Test: nothing_to_do names the dispatched council and the missing write (RC-062)"
+s=$(mk)
+jq -n '{agents:["divisor-guard-spec","divisor-sre-spec","divisor-envoy"],
+	council:["divisor-guard-spec","divisor-sre-spec"],
+	deselected:[{agent:"divisor-envoy",reason:"r",source:"select"}]}' >"$s/session-manifest.json"
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "nothing_to_do" "status nothing_to_do"
+expected=$(jq -c '.expected' <<<"$result")
+if [[ "$expected" == '["divisor-guard-spec","divisor-sre-spec"]' ]]; then
+	echo "  PASS: expected lists the council, not the deselected persona"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected is $expected"
+	FAIL=$((FAIL + 1))
+fi
+if jq -r '.message' <<<"$result" | grep -qiE 'orchestrator.*writ|writ.*orchestrator'; then
+	echo "  PASS: message says the orchestrator owns the raw-file write"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: message does not name who writes the raw files"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a manifest predating council selection falls back to agents (RC-062)"
+s=$(mk)
+jq -n '{agents:["divisor-guard-spec","divisor-sre-spec"]}' >"$s/session-manifest.json"
+result=$(bash "$SCRIPT" "$s")
+expected=$(jq -c '.expected' <<<"$result")
+if [[ "$expected" == '["divisor-guard-spec","divisor-sre-spec"]' ]]; then
+	echo "  PASS: expected falls back to the discovered roster"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected is $expected"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: nothing_to_do without a manifest claims no expected council (RC-062)"
+s=$(mk)
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "nothing_to_do" "status nothing_to_do"
+has_expected=$(jq 'has("expected")' <<<"$result")
+if [[ "$has_expected" == "false" ]]; then
+	echo "  PASS: no manifest, no expected field"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: expected emitted with no manifest to read it from"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a wrong-shaped manifest claims no expected council (RC-062)"
+# `expected` is an array of persona names or absent. A string `council` came
+# back as a bare string and a number as a number, and a top-level array
+# aborted the script; none of those is a council the orchestrator can check.
+for body in '{"council":"divisor-guard-spec"}' '{"council":null,"agents":7}' \
+	'{"council":["divisor-guard-spec",3]}' '[1,2]'; do
+	s=$(mk)
+	printf '%s\n' "$body" >"$s/session-manifest.json"
+	result=$(bash "$SCRIPT" "$s")
+	assert_json_field "$result" "status" "nothing_to_do" "manifest $body: still nothing_to_do"
+	has_expected=$(jq 'has("expected")' <<<"$result")
+	if [[ "$has_expected" == "false" ]]; then
+		echo "  PASS: manifest $body: no expected field"
+		PASS=$((PASS + 1))
+	else
+		got=$(jq -c '.expected' <<<"$result")
+		echo "  FAIL: manifest $body: expected is $got"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$s"
+done
+
+echo "Test: a raw file holding another reviewer's verdict is refused (RC-065)"
+# Writing one reviewer's response to another's path passed both extraction and
+# verification: rc-verify-evidence.sh keys reviewers by filename, so the
+# missing reviewer's coverage vanished and the other counted twice. The same
+# check refuses a reviewer that misnames itself (`batch-1-divisor-...`).
+s=$(mk)
+write_raw "$s" divisor-sre-code '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[]}'
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[]}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "misfiled verdict is an extract_error"
+entry=$(jq -c '[.invalid[] | select(.reason == "AGENT_MISMATCH")]' <<<"$result")
+entry_path=$(jq -r '.[0].path' <<<"$entry")
+entry_count=$(jq 'length' <<<"$entry")
+if [[ "$entry_path" == "verdicts/divisor-sre-code.raw.md" && "$entry_count" == "1" ]]; then
+	echo "  PASS: AGENT_MISMATCH names the misfiled path, and only it"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: AGENT_MISMATCH entries are $entry"
+	FAIL=$((FAIL + 1))
+fi
+if jq -r '.[0].detail' <<<"$entry" | grep -qF 'divisor-guard-code'; then
+	echo "  PASS: detail names the agent the block claims to be"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail does not name the claimed agent"
+	FAIL=$((FAIL + 1))
+fi
+if [[ ! -f "$s/verdicts/divisor-sre-code.json" ]]; then
+	echo "  PASS: no verdict JSON written for the misfiled path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: misfiled block was extracted anyway"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+# --- RC-067: raw-file inputs that are not a reviewer's verdict --------------
+echo "Test: verdicts/_meta is orchestrator bookkeeping, never a verdict (RC-067)"
+# The extractor recursed into _meta/, so a stray *.raw.md there was extracted
+# as a reviewer's verdict and its JSON written beside it.
+s=$(mk)
+mkdir -p "$s/verdicts/_meta"
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n%s\n```\n' '{"agent":"notes","files_read":[],"verdict":"APPROVE","findings":[]}' >"$s/verdicts/_meta/notes.raw.md"
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "nothing_to_do" "a raw file under _meta is not counted"
+if [[ ! -e "$s/verdicts/_meta/notes.json" ]]; then
+	echo "  PASS: nothing extracted into _meta"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: _meta/notes.raw.md was extracted"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a byte-order mark before the fence is not a missing block (RC-067)"
+# A BOM is an artifact of how the file was written, not of what the reviewer
+# said; reading it as NO_JSON_BLOCK spends a re-dispatch on an encoding.
+s=$(mk)
+{
+	printf '\xef\xbb\xbf'
+	# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+	printf '```json\n%s\n```\n' '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[]}'
+} >"$s/verdicts/divisor-guard-code.raw.md"
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "a BOM-prefixed raw file extracts"
+rm -rf "$s"
+
+echo "Test: a raw file whose name holds no agent gets advice that can work (RC-067)"
+# `.raw.md` read as agent ".raw.md", and the repair advice told the reviewer to
+# re-emit as that name. The fix is the filename, so the detail must say so.
+s=$(mk)
+write_raw "$s" "" '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[]}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "a nameless raw file is refused"
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'divisor-guard-code.raw.md' <<<"$detail" && ! grep -qF '"agent": ".raw.md"' <<<"$detail"; then
+	echo "  PASS: detail names the file the block belongs in"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail is: $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: an empty raw file is an extract_error, not a collection loss (RC-062)"
+s=$(mk)
+: >"$s/verdicts/divisor-guard-spec.raw.md"
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "extract_error" "empty raw file routes to repair"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

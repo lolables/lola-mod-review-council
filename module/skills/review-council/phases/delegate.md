@@ -433,16 +433,32 @@ Instruct agents to review listed spec artifacts (not code), plus project context
 
 ## Verdict Collection
 
-Write each agent's RAW output verbatim to `${session_dir}/verdicts/{agent-name}.raw.md`
+Reviewers are read-only: each returns its verdict in its response and writes no
+file, so never ask one to. The orchestrator writes each agent's RAW output
+verbatim to `${session_dir}/verdicts/{agent-name}.raw.md`
 (deep mode: `${session_dir}/verdicts/{subsystem}/{agent-name}.raw.md`; a batched
 run: `${session_dir}/verdicts/batch{N}/{agent-name}.raw.md`). Do NOT
-summarize or reformat. An agent that ran more than once — per subsystem, per
+summarize or reformat. Verbatim means the reviewer's own text: if the host
+delivered the response under a transport encoding (markup entities such as
+`&amp;` for `&`), undo that encoding before writing, or every evidence quote
+holding the encoded character stops matching the source. An agent that ran more than once — per subsystem, per
 batch, or both — owes one file per run, and each is verbatim. Composing them
 into a single file is the one write that cannot be verbatim, and it destroys
-the only record of what each round actually returned.
+the only record of what each round actually returned. `verdicts/_meta/` holds
+the orchestrator's bookkeeping and is never searched for verdicts, so a raw
+file written there is not collected.
+
+Before running the extractor, confirm that every reviewer that returned a
+response has its `.raw.md` on disk — one file per dispatch, so a persona run
+per subsystem or per batch is checked at each of its paths. Write any that are
+missing from the response you still hold; a response already returned is never
+a reason to re-dispatch. Only a reviewer that crashed or timed out without
+returning anything may lack a file.
 
 Then run `scripts/rc-extract-verdict.sh ${session_dir}` to extract and
 schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.json`.
+Every stage script exits 0 whatever its status, so branch on the `status`
+below — never chain the next stage with `&&`.
 
 - On `status: "ok"`, proceed to Verification.
 - On `status: "extract_error"`, re-dispatch each `invalid[]` entry ONCE, keyed
@@ -480,6 +496,11 @@ schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.js
     validator's precise error, so the agent can fix the exact field — and for
     `VERDICT_INCOHERENT`, where the block is schema-valid but declares APPROVE
     over a CRITICAL or HIGH finding, and the detail names the remedies).
+  - For `AGENT_MISMATCH` entries, read the `detail` before re-dispatching:
+    the file holds a block naming another agent. If you wrote another
+    reviewer's response to that path, rewrite it with this reviewer's own
+    response and re-run the extractor — no dispatch is needed. Only a reviewer
+    that misnamed itself is asked to re-emit with the correct `agent`.
   - For `NO_JSON_BLOCK` entries (no `detail`), tell the agent it emitted no
     fenced ```json block at all. Instruct it to re-emit only the JSON block,
     then re-run the extractor.
@@ -489,9 +510,13 @@ schema-validate each agent's fenced ```json block into `verdicts/{agent-name}.js
     `phases/verify.md` — "Step 0 — Format Gate": the re-dispatch overwrites
     `{agent}.raw.md`, so an agent that resolves the gate by withdrawing its
     own CRITICAL leaves no other trace.
-- On `status: "nothing_to_do"`, the whole session produced zero verdict blocks
-  (no agent wrote a `.raw.md` at all) — this is the "all agents fail" case
-  below, not a per-agent signal: stop and report a configuration issue.
+- On `status: "nothing_to_do"`, no `.raw.md` exists anywhere under
+  `verdicts/`. Its `expected` array, present when the session has a manifest,
+  names the council that was dispatched. If you hold any of those reviewers'
+  responses, this is a collection failure, not a reviewer failure: write each
+  one verbatim to its path and re-run the extractor. Only when no reviewer
+  returned anything is this the "all agents fail" case below: stop and report
+  a configuration issue. Never run evidence verification on this status.
 
 **Deep mode paths:** When effort is `deep`, write verdicts to
 `${session_dir}/verdicts/{subsystem-name}/{agent-name}.raw.md` instead
@@ -499,7 +524,7 @@ of `${session_dir}/verdicts/{agent-name}.raw.md`. Subsystem name
 matches `name` field from `subsystems.json`.
 
 **Handling agent failures**:
-- Agent crashes, times out, or never produces a `.raw.md` file: treat as **warning**, continue collecting from remaining agents.
+- Agent crashes or times out without returning a response: treat as **warning**, continue collecting from remaining agents. An agent that returned a response has not failed even if its `.raw.md` is missing — that gap is the orchestrator's, closed by the check above.
 - Agent returns `verdict: "REQUEST CHANGES"` with an empty `findings` array: flag as malformed response.
 - **All** agents fail: **stop immediately** and report:
   > "All reviewer agents failed to return a verdict. This may indicate a configuration issue."

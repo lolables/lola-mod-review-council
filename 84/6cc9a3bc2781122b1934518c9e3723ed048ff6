@@ -1,0 +1,39 @@
+module/tests/test-rc-prepare-framework.sh
+  s_3847f935160a27::t_ffb18c0b3d43f3 221,224-225
+CHANGELOG.md
+  s_3847f935160a27::t_5486f9edbdeffd 46-55
+README.md
+  s_3847f935160a27::t_5486f9edbdeffd 372-381
+module/tests/test-rc-clone-target.sh
+  s_3847f935160a27::t_89cf12782b37cb 612-615,624-629,635,643,646-722,724-792,796-807,810-813,815-817,822-844,849-906
+  s_3847f935160a27::t_392eedb71cf7d0 430-434,437-438,446-447,449,451-454,496,498-499,536,1047
+  s_3847f935160a27::t_98cfe6545102ed 793-795,808-809,814,818-819
+  s_3847f935160a27::t_4fe0b9c9c15c2d 723,820-821,845-846
+  s_3847f935160a27::t_d409587e6762a1 847-848
+  s_3847f935160a27::t_cf5b0d1e76f1db 907
+module/skills/review-council/references/forge-adapters.md
+  s_3847f935160a27::t_f8eb91dd4b04a7 523-548,551-579,582-597,605-607,620
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_3847f935160a27::t_ce5453345a2480 36,79
+  s_3847f935160a27::t_1d4342976566c7 80
+  s_3847f935160a27::t_db762f400c4d36 84-115,322-333,338,351-370,378-384,398-399,404-406,408,415-425,427-450,453-455,457-466,468,470-491,493-496,499-500,511
+  s_3847f935160a27::t_4fe0b9c9c15c2d 467,469,492,603-606
+  s_3847f935160a27::t_b142bc71716867 589-590,596,599-602
+  s_3847f935160a27::t_51b2e71a8354d0 371,376-377,390-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "846cc9a3bc2781122b1934518c9e3723ed048ff6",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

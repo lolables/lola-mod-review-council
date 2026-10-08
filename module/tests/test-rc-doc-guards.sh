@@ -2053,7 +2053,7 @@ if ! grep -qiE 'nothing_to_do.{0,200}`expected`' <<<"$rc062_collect" ||
 	echo "  missing: delegate.md's nothing_to_do branch has no collection recovery"
 	rc062_missing=$((rc062_missing + 1))
 fi
-if ! grep -qiE 'nothing_to_do.{0,300}write them verbatim[^.]*re-run' <<<"$verify_flat"; then
+if ! grep -qiE 'nothing_to_do.{0,250}write them verbatim[^.]*re-run' <<<"$verify_flat"; then
 	echo "  missing: verify.md's format gate still stops on nothing_to_do"
 	rc062_missing=$((rc062_missing + 1))
 fi

@@ -75,6 +75,10 @@ forbid '(grep|sed)[^#]*\\[|swdb+<>]' \
 	"no GNU regex escapes in grep/sed patterns" \
 	"BSD regex reads \\| \\s \\w \\+ as literals; use -E with POSIX [[:class:]]"
 
+forbid '(grep|sed)[^#]*\{([0-9]*,)?(25[6-9]|2[6-9][0-9]|[3-9][0-9][0-9]|[1-9][0-9][0-9][0-9]+)\}' \
+	"no regex interval bound above 255" \
+	"POSIX guarantees RE_DUP_MAX of only 255 and macOS stops there: BSD grep exits 2 with \"maximum repetition exceeds 255\", which an 'if ! grep -q' guard reads as no match; keep every {m,n} bound at 255 or below"
+
 forbid 'touch[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-d([[:space:]]|$)' \
 	"no free-form 'touch -d' timestamps" \
 	"BSD touch -d demands strict ISO-8601; use POSIX 'touch -t CCYYMMDDhhmm'"

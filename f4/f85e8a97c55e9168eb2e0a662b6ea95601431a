@@ -1,0 +1,28 @@
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_07d1db2011bc18::t_85065466150a0d 25-28,30-31,238,240-241,259-263
+.taskfiles/scripts/mutate-check.sh
+  s_07d1db2011bc18::t_c4c118c160615e 1014-1032
+  s_07d1db2011bc18::t_35f56b4b7880ab 1033
+module/tests/test-rc-extract-verdict.sh
+  s_07d1db2011bc18::t_90a599847d120f 745-793
+module/skills/review-council/phases/delegate.md
+  s_07d1db2011bc18::t_66aba078f2dbb4 447-449
+CHANGELOG.md
+  s_07d1db2011bc18::t_66aba078f2dbb4 720-723
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4f85e8a97c55e9168eb2e0a662b6ea95601431a",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

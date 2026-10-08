@@ -1,0 +1,23 @@
+docs/batch-reviewing-prs.md
+  s_3847f935160a27::t_29a6dea719a84f 527-529
+docs/dev/pr-queue-gates.md
+  s_3847f935160a27::t_21511947547e42 133-142
+scripts/lib/forge-gitlab.sh
+  s_3847f935160a27::t_a82ba360c20a52 184-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59ed584c17703f78fea64846ad056fb86eeec022",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

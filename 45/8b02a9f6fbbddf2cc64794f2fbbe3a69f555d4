@@ -1,0 +1,33 @@
+module/tests/test-review-open-prs.sh
+  s_3847f935160a27::t_92a6e3872c186a 134,142-143,218,242-244,306,311,315-316,1466,1479,1486,1492-1496,1498-1499,1501,1503-1518,1540-1543
+module/tests/test-review-pr-status.sh
+  s_3847f935160a27::t_33871cf736ca83 123,142-143,229-230,278-279,1508,1515-1516,1520-1534,1539,1564-1567
+module/tests/test-scripts-forge-gitlab.sh
+  s_3847f935160a27::t_eec9a3d32378a3 50-54,60,67-71,124,140,144,510-511,535,542,544,550-560,581-613
+module/tests/test-scripts-lib.sh
+  s_3847f935160a27::t_1446180f25c4da 397,408-417
+scripts/lib/forge-gitlab.sh
+  s_3847f935160a27::t_9fc830fd3ba2ae 33-61,67,82,94-109,111,116-121,123-124,127,151,234,293
+scripts/lib/target.sh
+  s_3847f935160a27::t_c5f6055a9e9f5a 82,135-137,139-143,146-148,246,250
+scripts/review-open-prs.sh
+  s_3847f935160a27::t_c6b3cb652f69a1 14-21,290-291,854-858,860-864
+scripts/review-pr-status.sh
+  s_3847f935160a27::t_88a89f1487ec82 20-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "458b02a9f6fbbddf2cc64794f2fbbe3a69f555d4",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

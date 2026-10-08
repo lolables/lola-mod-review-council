@@ -1,0 +1,41 @@
+README.md
+  s_3847f935160a27::t_1e8583f864e428 353-354,360-361,365-367,375-380
+CHANGELOG.md
+  s_3847f935160a27::t_f8477611279749 9-47,496-507
+  s_3847f935160a27::t_ea1c8c2ca9ef4f 445-446
+scripts/review-open-prs.sh
+  s_3847f935160a27::t_167ee82cfbaf98 28
+  s_3847f935160a27::t_f449ce7d0532a5 29-30
+scripts/lib/forge-gitlab.sh
+  s_3847f935160a27::t_0dcaa79d6410ab 53-55
+docs/dev/pr-queue-gates.md
+  s_3847f935160a27::t_78312a1718f9c0 108-119,121-136
+  s_3847f935160a27::t_c21fca5916c04d 120
+docs/batch-reviewing-prs.md
+  s_3847f935160a27::t_9cb6cb23d07da9 527-528,834
+  s_3847f935160a27::t_5bedd67b02a800 431-526,529-553,561-563,579-580,695-698,708-712,725-726,761-762,833,853-858
+  s_3847f935160a27::t_8940f078fccd3c 3-5,13-16,39-40,48-50,70,76,113-114,279,326-327,405-407
+module/skills/review-council/references/forge-adapters.md
+  s_3847f935160a27::t_5bf7e7498751c8 112-160,171-172,195-196,536-538
+scripts/review-pr-status.sh
+  s_3847f935160a27::t_167ee82cfbaf98 33
+  s_3847f935160a27::t_f449ce7d0532a5 34-35
+scripts/lib/common.sh
+  s_3847f935160a27::t_0dcaa79d6410ab 103-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa82b11862ff3cf1a17174e6b505e2d2722e5e43",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_07d1db2011bc18::t_6155fa12b2c9e0 74-77,84-87
+module/tests/test-rc-verify-evidence.sh
+  s_07d1db2011bc18::t_88193816264674 886-903
+.taskfiles/scripts/mutate-check.sh
+  s_07d1db2011bc18::t_0914d00fbd942d 1072-1080
+CHANGELOG.md
+  s_07d1db2011bc18::t_adfb06adf1f346 717-720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ec7b30317cbf14b2669278ef24d6b5eee0f25cf",
+  "prompts": {},
+  "sessions": {
+    "s_07d1db2011bc18": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "44a343a9-3bd8-40e8-b20c-8436745d6186",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

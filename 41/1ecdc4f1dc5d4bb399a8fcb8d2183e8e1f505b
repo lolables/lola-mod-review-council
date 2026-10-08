@@ -1,0 +1,27 @@
+module/tests/test-rc-prepare-owner.sh
+  s_3847f935160a27::t_0a6a0ffb14ed9a 13-14,16,27,58,60,102,108,270-370
+  s_3847f935160a27::t_4c068344205dd0 133
+  s_3847f935160a27::t_c566322043255c 371
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_3847f935160a27::t_147c0f6699b3c9 62
+module/skills/review-council/scripts/lib/prepare-repo.sh
+  s_3847f935160a27::t_4d72f911f97d56 116-123
+  s_3847f935160a27::t_242efbb5ab82e1 88-92,96-98,101-108,110-112,114,124,137,211,226-227,254
+  s_3847f935160a27::t_5bde4399ebf7f5 174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "411ecdc4f1dc5d4bb399a8fcb8d2183e8e1f505b",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

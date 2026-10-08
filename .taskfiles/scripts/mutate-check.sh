@@ -992,6 +992,16 @@ check_mutation "RC-063 only a range is labelled as having no base" \
 	lib/prepare-emit.sh \
 	's/ && "\$input_type" == "ref_range" \]\] && display_base/ ]] \&\& display_base/' \
 	test-rc-prepare-git-edges.sh
+
+# --- RC-064: a range value smuggled a git option ------------------------------
+#
+# `--scope-value --output=<path>` reached `git diff` as an option and overwrote
+# the named file with the diff, then reported "No changes to review".
+check_mutation "RC-064 a range beginning with - is refused" \
+	lib/prepare-args.sh \
+	's/if \[\[ "\$scope_value" == -\* \]\]; then/if false; then/' \
+	test-rc-prepare-git-edges.sh
+
 # --- RC-065: one reviewer's verdict filed under another's name ---------------
 #
 # A response written to the wrong reviewer's path passed extraction and

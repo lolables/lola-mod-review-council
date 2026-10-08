@@ -222,6 +222,29 @@ else
 fi
 rm -rf "$work"
 
+echo "Test 11: a range value cannot smuggle a git option (RC-064)"
+# The range is passed to `git diff` as its first argument, so `--output=<path>`
+# was read as an option: git wrote the diff over any file the user could write,
+# and the run then reported "No changes to review". No ref name may begin with
+# `-`, so refusing that prefix costs nothing legitimate.
+work=$(mktemp -d)
+setup_single_commit_repo "$work" main
+(cd "$work" && echo "// second" >>a.go && git commit -qam second)
+target="$work/clobbered"
+for v in "--output=$target" "-p"; do
+	result=$(prepare_in "$work" --scope range --scope-value "$v")
+	assert_json_field "$result" "status" "skip" "range '$v' is refused"
+	assert_message_matches "$result" '[Oo]ption' "refusal for '$v' says it reads as an option"
+done
+if [[ -e "$target" ]]; then
+	echo "  FAIL: git wrote $target through the range value"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no file was written through the range value"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$work"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -711,6 +711,9 @@ All notable changes to the Review Council module are documented here.
   `agent` differs from its filename as `AGENT_MISMATCH`, and its `detail`
   distinguishes a misfiled write (rewrite it, no dispatch) from a reviewer
   that misnamed itself.
+- A `--scope range` value beginning with `-` is refused. It reached `git diff`
+  as an option, so `--output=<path>` overwrote that file with the diff and the
+  run then reported "No changes to review". No ref name can begin with `-`.
 - `rc-extract-verdict.sh` claims no `expected` council from a manifest that
   parses but holds no list of names: a string `council` came back as a string,
   and a top-level array aborted the script.

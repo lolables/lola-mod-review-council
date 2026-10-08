@@ -761,9 +761,11 @@ echo "Test 30: an exact duplicate from another agent credits that agent"
 # severity and discard everything else about the duplicate, so the second
 # reviewer's angle vanished with nothing anywhere recording that it existed.
 #
-# Dedup keeps the survivor's own description and credits the loser's, so which
-# angle lands where is decided by the order the verdicts are ingested in — and
-# that order comes straight off `find`, which reports directory order.
+# Between equal severities dedup keeps the first-ingested finding's description
+# and credits the other's, so which angle lands where is decided by the order
+# the verdicts are ingested in — and that order comes straight off `find`, which
+# reports directory order. The two findings below are therefore equally severe:
+# between unequal ones the more severe survives whatever the order (Test 30b).
 #
 # Directory order is the filesystem's business: creation order on XFS, hash
 # order on ext4, neither on APFS. Writing the alphabetically later agent first
@@ -798,13 +800,12 @@ MOCKFIND
 chmod +x "$bin/find"
 echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
-	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
+	'[{"severity":"MEDIUM","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
-	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
+	'[{"severity":"MEDIUM","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
 result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s")
 assert_json_field "$result" "verified" "1" "duplicate merged to one finding"
 assert_jq "$s/verdicts/findings.json" '.duplicates_consolidated' "1" "counted as consolidated"
-assert_jq "$s/verdicts/findings.json" '.verified[0].severity' "HIGH" "severity escalated to the max"
 assert_jq "$s/verdicts/findings.json" \
 	'[.verified[0].provenance.consolidated_from[]?.agent] | length' "1" \
 	"the losing duplicate is credited"
@@ -813,6 +814,32 @@ assert_jq "$s/verdicts/findings.json" '.verified[0].agent' \
 assert_jq "$s/verdicts/findings.json" \
 	'.verified[0].provenance.consolidated_from[0].angle // "missing"' \
 	"no test covers the boundary" "the credited entry carries the other agent's angle"
+rm -rf "$s" "$src" "$bin"
+
+echo "Test 30b: between unequal duplicates the more severe survives whole (RC-068)"
+# Raising the first finding's severity alone shipped one defect's text at the
+# other's severity. Under the same adverse ingestion order as Test 30, the
+# HIGH finding must survive with its own description, crediting the LOW one.
+s=$(new_session)
+src=$(mktemp -d)
+bin=$(mktemp -d)
+cat >"$bin/find" <<MOCKFIND
+#!/usr/bin/env bash
+"$real_find" "\$@" | LC_ALL=C sort -z -r
+MOCKFIND
+chmod +x "$bin/find"
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
+	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
+result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s")
+assert_jq "$s/verdicts/findings.json" \
+	'.verified[0] | [.agent, .severity, .description] | join("|")' \
+	"divisor-testing-code|HIGH|no test covers the boundary" "the HIGH finding survives with its own text"
+assert_jq "$s/verdicts/findings.json" \
+	'.verified[0].provenance.consolidated_from[0] | [.agent, .severity] | join("|")' \
+	"divisor-adversary-code|LOW" "the LOW finding is credited at its own severity"
 rm -rf "$s" "$src" "$bin"
 
 echo "Test 31: a same-agent duplicate is not credited to itself"

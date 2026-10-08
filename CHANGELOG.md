@@ -717,6 +717,10 @@ All notable changes to the Review Council module are documented here.
 - `rc-extract-verdict.sh` claims no `expected` council from a manifest that
   parses but holds no list of names: a string `council` came back as a string,
   and a top-level array aborted the script.
+- When two reviewers quote the same line, the more severe finding now
+  survives whole. Exact deduplication kept the first finding's title and
+  description and raised only its severity, so two different defects on one
+  line merged into one defect's text at the other's severity.
 - `rc-extract-verdict.sh` no longer collects a `*.raw.md` under
   `verdicts/_meta/` as a verdict, drops a leading byte-order mark instead of
   reading it as a missing JSON block, and tells a file named just `.raw.md`

@@ -8,10 +8,12 @@
 # The window exists because a citation may be slightly off and still verify;
 # matching on the exact line would leave those unmerged.
 #
-# On merge the survivor keeps the MOST SEVERE severity, so a HIGH citing the
-# same line as a LOW is never silently downgraded, and the outcome does not
-# depend on the order agents happened to be dispatched in. Every other field
-# stays from the first occurrence.
+# On merge the MOST SEVERE finding survives whole, so a HIGH citing the same
+# line as a LOW is never silently downgraded, and the outcome does not depend
+# on the order agents happened to be dispatched in. Whole, not just its
+# severity: two reviewers can quote one line for different defects, and
+# raising the first finding's severity alone shipped one defect's text under
+# the other's severity (RC-068). On a tie the first occurrence survives.
 #
 # The loser is folded into the survivor's provenance.consolidated_from in the
 # shape consolidate-clusters.jq writes, so the report's "Also flagged by" list
@@ -29,6 +31,8 @@
 # never displace a genuine CRITICAL.
 def sevrank(s): {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}[s] // 0;
 
+def credit: {agent, severity, angle: .description, recommendation};
+
 reduce .[] as $x ([];
 	( [ range(0; length) as $j
 	    | select(.[$j].file == $x.file and .[$j].evidence == $x.evidence and
@@ -37,14 +41,16 @@ reduce .[] as $x ([];
 	          ((.[$j].line - $x.line | if . < 0 then -. else . end) <= 5))))
 	    | $j ] | first) as $idx
 	| if $idx == null then . + [$x]
-	  else
-	    ( if $x.agent != .[$idx].agent
-	      then .[$idx].provenance.consolidated_from =
-	        ((.[$idx].provenance.consolidated_from // [])
-	         + [{agent: $x.agent, severity: $x.severity,
-	             angle: $x.description, recommendation: $x.recommendation}])
-	      else . end )
-	    | ( if sevrank($x.severity) > sevrank(.[$idx].severity)
-	        then .[$idx].severity = $x.severity
-	        else . end )
-	  end)
+	  elif sevrank($x.severity) > sevrank(.[$idx].severity) then
+	    # $x displaces the survivor: the old one becomes a credit, and credits it
+	    # carried move across, minus any naming $x's own author.
+	    .[$idx] as $old
+	    | .[$idx] = ($x | .provenance.consolidated_from =
+	        ([($x.provenance.consolidated_from // [])[],
+	          ($old.provenance.consolidated_from // [])[],
+	          ($old | credit)]
+	         | map(select(.agent != $x.agent))))
+	  elif $x.agent != .[$idx].agent then
+	    .[$idx].provenance.consolidated_from =
+	      ((.[$idx].provenance.consolidated_from // []) + [$x | credit])
+	  else . end)

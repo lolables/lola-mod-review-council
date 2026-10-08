@@ -304,7 +304,7 @@ check_mutation "RC-19 absent persona roster" \
 # consolidation, describing the same event, preserved it in consolidated_from.
 check_mutation "RC-20 dedup credits the other agent" \
 	jq/dedup-findings.jq \
-	's#^[[:space:]]*( if \$x\.agent != \.\[\$idx\]\.agent$#\t    ( if false#' \
+	's#^[[:space:]]*elif \$x\.agent != \.\[\$idx\]\.agent then$#\t  elif false then#' \
 	test-rc-jq-programs.sh
 
 # --mode accepted any string and fell through to a `code` default, so `--mode
@@ -1030,6 +1030,20 @@ check_mutation "RC-067 a nameless raw file is told to move" \
 	rc-extract-verdict.sh \
 	's/if \[\[ -z "\$agent" \]\]; then/if false; then/' \
 	test-rc-extract-verdict.sh
+
+# --- RC-068: a merged duplicate carried one defect's text at another's severity
+#
+# Two reviewers quoting one line for different defects merged into the first
+# finding's text raised to the second's severity.
+check_mutation "RC-068 the more severe duplicate survives whole" \
+	jq/dedup-findings.jq \
+	's#^[[:space:]]*elif sevrank(\$x\.severity) > sevrank(\.\[\$idx\]\.severity) then$#\t  elif false then#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-068 carried credits never name the survivor's author" \
+	jq/dedup-findings.jq \
+	's#^\([[:space:]]*\)| map(select(\.agent != \$x\.agent))))$#\1))#' \
+	test-rc-jq-programs.sh
 
 total=$((caught + missed + broken))
 echo ""

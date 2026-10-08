@@ -99,8 +99,8 @@ cross='[
 ]'
 out=$(run_jq dedup-findings.jq "$cross")
 assert_jq_str "$out" '.[0].provenance.consolidated_from | length' "1" "cross-agent duplicate credited"
-assert_jq_str "$out" '.[0].provenance.consolidated_from[0].agent' "y" "credit names the other agent"
-assert_jq_str "$out" '.[0].provenance.consolidated_from[0].angle' "untested" "credit carries the angle"
+assert_jq_str "$out" '.[0].provenance.consolidated_from[0].agent' "x" "credit names the other agent"
+assert_jq_str "$out" '.[0].provenance.consolidated_from[0].angle' "boundary" "credit carries the angle"
 self='[
  {"file":"a.go","line":1,"evidence":"e","severity":"LOW","agent":"x","description":"first","recommendation":"r"},
  {"file":"a.go","line":1,"evidence":"e","severity":"HIGH","agent":"x","description":"second","recommendation":"r"}
@@ -108,6 +108,29 @@ self='[
 out=$(run_jq dedup-findings.jq "$self")
 assert_jq_str "$out" '(.[0].provenance.consolidated_from // []) | length' "0" "self-duplicate not credited"
 assert_jq_str "$out" '.[0].severity' "HIGH" "self-duplicate still escalates severity"
+
+echo "Test 7b: the survivor's text is the text of the severity it carries (RC-068)"
+# Merging kept the first finding's title and description and raised only its
+# severity, so a LOW "boundary" note shipped as a HIGH carrying an unrelated
+# defect's severity. The more severe finding now survives whole; the other is
+# credited with its own severity and angle.
+out=$(run_jq dedup-findings.jq "$cross")
+assert_jq_str "$out" '[.[0].agent, .[0].severity, .[0].description] | join("|")' "y|HIGH|untested" "low first — the HIGH finding survives whole"
+assert_jq_str "$out" '.[0].provenance.consolidated_from[0].severity' "LOW" "the credit keeps its own severity"
+reversed=$(jq -c 'reverse' <<<"$cross")
+out=$(run_jq dedup-findings.jq "$reversed")
+assert_jq_str "$out" '[.[0].agent, .[0].severity, .[0].description] | join("|")' "y|HIGH|untested" "high first — the same survivor"
+# Credits gathered before the survivor changes move with it, minus any naming
+# the new survivor's own author.
+chain='[
+ {"file":"a.go","line":1,"evidence":"e","severity":"LOW","agent":"x","description":"dx","recommendation":"r"},
+ {"file":"a.go","line":1,"evidence":"e","severity":"LOW","agent":"y","description":"dy","recommendation":"r"},
+ {"file":"a.go","line":1,"evidence":"e","severity":"LOW","agent":"w","description":"dw","recommendation":"r"},
+ {"file":"a.go","line":1,"evidence":"e","severity":"HIGH","agent":"y","description":"dy2","recommendation":"r"}
+]'
+out=$(run_jq dedup-findings.jq "$chain")
+assert_jq_str "$out" '[.[0].agent, .[0].description] | join("|")' "y|dy2" "the latest, most severe finding survives"
+assert_jq_str "$out" '[.[0].provenance.consolidated_from[].agent] | sort | join(",")' "w,x" "earlier credits carried, the survivor's own dropped"
 
 echo "Test 8: an empty input yields an empty array, not null"
 out=$(run_jq dedup-findings.jq '[]')

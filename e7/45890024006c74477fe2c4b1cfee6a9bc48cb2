@@ -1,0 +1,25 @@
+module/tests/test-scripts-lib.sh
+  s_3847f935160a27::t_29619130c69990 409-428
+  s_3847f935160a27::t_2423e2a2ad6fb2 408
+scripts/lib/target.sh
+  s_3847f935160a27::t_bb9af8153aa4d0 82,174-181,183,187,189-191,193,197-199
+module/tests/test-review-open-prs.sh
+  s_3847f935160a27::t_29619130c69990 37-42,599-608
+  s_3847f935160a27::t_d64a33d654a711 609
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e745890024006c74477fe2c4b1cfee6a9bc48cb2",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

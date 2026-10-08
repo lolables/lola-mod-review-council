@@ -1,0 +1,28 @@
+module/tests/test-scripts-lib.sh
+  s_3847f935160a27::t_69878b5f414dd5 252-256,314-315,323-324,334,338,343,355,372-373,384-406,453-460
+  s_3847f935160a27::t_5d38343e864e66 379-383
+  s_3847f935160a27::t_5818110462746f 430
+  s_3847f935160a27::t_0bcdd1e88ffedf 223-225
+scripts/lib/target.sh
+  s_3847f935160a27::t_5d38343e864e66 65-70,156-157
+module/tests/test-review-open-prs.sh
+  s_3847f935160a27::t_4080b3ecc0a9c8 595-606
+module/tests/test-review-pr-status.sh
+  s_3847f935160a27::t_fac66785f3d883 39-43,683-705
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16edc68d4f5599792e864ff424e182cf87385e35",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

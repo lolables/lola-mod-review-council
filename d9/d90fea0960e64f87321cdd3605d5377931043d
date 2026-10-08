@@ -1,0 +1,22 @@
+scripts/lib/target.sh
+  s_3847f935160a27::t_5d38343e864e66 65-70,156-157
+module/tests/test-scripts-lib.sh
+  s_3847f935160a27::t_5d38343e864e66 368-372
+  s_3847f935160a27::t_5818110462746f 396
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9d90fea0960e64f87321cdd3605d5377931043d",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

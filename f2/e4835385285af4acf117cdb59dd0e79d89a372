@@ -1,0 +1,47 @@
+module/skills/review-council/references/forge-adapters.md
+  s_3847f935160a27::t_b722b7cbdc16c8 23,26-31,176-177,265-272
+  s_3847f935160a27::t_ed760e77aa846a 518-522
+module/tests/test-rc-clone-target.sh
+  s_3847f935160a27::t_c63d0d139ddc78 545-576
+  s_3847f935160a27::t_166f5f480bed12 577
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_3847f935160a27::t_4b1307fb89c377 36
+  s_3847f935160a27::t_bd47b02647ffe5 98-101
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_3847f935160a27::t_4b1307fb89c377 143-146
+module/tests/test-rc-prepare-framework.sh
+  s_3847f935160a27::t_2b0a1820020d9f 33,150-154,214,238-244
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_3847f935160a27::t_bd47b02647ffe5 16,27-30,39,66-69,99-103,270-281
+module/tests/test-rc-forge-adapters.sh
+  s_3847f935160a27::t_097b308e3b5b26 721-761,764,767-769
+  s_3847f935160a27::t_4f79e11738f294 762-763,765-766
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_3847f935160a27::t_bd47b02647ffe5 68-70
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_3847f935160a27::t_63b58cc60c9f91 257
+  s_3847f935160a27::t_e874abc77390ac 298-309,313-315,318,321-323
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_3847f935160a27::t_4b1307fb89c377 13-14,71,80-82
+CHANGELOG.md
+  s_3847f935160a27::t_f7eb20d3369d04 729-735
+module/tests/test-rc-render-comment.sh
+  s_3847f935160a27::t_4f79e11738f294 1570-1574
+  s_3847f935160a27::t_df856bb357838c 1542-1569,1575-1615
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f2e4835385285af4acf117cdb59dd0e79d89a372",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

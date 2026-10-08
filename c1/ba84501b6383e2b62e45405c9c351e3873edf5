@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_3847f935160a27::t_e86fd709f04067 257,312-321
+module/tests/test-rc-render-comment.sh
+  s_3847f935160a27::t_77f1b696745723 1504-1541
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c1ba84501b6383e2b62e45405c9c351e3873edf5",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

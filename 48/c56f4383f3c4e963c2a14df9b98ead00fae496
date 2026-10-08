@@ -1,0 +1,24 @@
+module/tests/test-review-pr-status.sh
+  s_3847f935160a27::t_ed51cfbb82ece2 109-167,170,175-183,235-238,242,244,253,274-277,289-296,320,333,343
+  s_3847f935160a27::t_8cac311c6a81d1 887-888,1314-1464,1466-1467,1469-1493
+  s_3847f935160a27::t_c81df1804271e8 10-11,168-169,171-174,1465,1468
+  s_3847f935160a27::t_bc5e92be7f9d15 1494
+scripts/review-pr-status.sh
+  s_3847f935160a27::t_1d3fac26850952 5-10,17-37,58,95-96,175-176,180,216-217,227-235,254-256,268,286,482-483,485-488,490-494,496,525-526,530,536,718-719,726-727,765,819
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48c56f4383f3c4e963c2a14df9b98ead00fae496",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

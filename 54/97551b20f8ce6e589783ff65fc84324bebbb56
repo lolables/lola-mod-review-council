@@ -1,0 +1,25 @@
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_3847f935160a27::t_775c26f6f22b62 44-61
+module/skills/review-council/scripts/rc-prepare.sh
+  s_3847f935160a27::t_6b07e0e03424b5 54-64
+module/skills/review-council/scripts/lib/prepare-repo.sh
+  s_3847f935160a27::t_7c9db811b4e696 105-122,126-131,133-147,149-165,180,185,187-194,196-197,202,209-216,219
+module/tests/test-rc-prepare-owner.sh
+  s_3847f935160a27::t_6dc10ccd2eea90 57-63,67-68,76-81,107-120,122,169-199,320-323,325-326,328,340-348,350-353,355-356,390-394,396-398,428-498
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5497551b20f8ce6e589783ff65fc84324bebbb56",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -181,6 +181,47 @@ result=$(prepare_in "$work" --scope range --scope-value 'main..feature-head')
 assert_json_field "$result" "status" "ok" "valid range prepares a session"
 rm -rf "$work"
 
+echo "Test 10: an explicit range needs no main or master (RC-063)"
+# A range names both of its own ends, so nothing is diffed against a base
+# branch. Refusing it for a missing `main` stopped a live review of
+# HEAD~1..HEAD in a single-branch clone. Test 6 keeps `changed` refusing,
+# because base...HEAD is exactly what that scope diffs.
+work=$(mktemp -d)
+setup_single_commit_repo "$work" topic
+(cd "$work" && echo "// second" >>a.go && git commit -qam second)
+for m in auto code; do
+	args=(--scope range --scope-value 'HEAD~1..HEAD')
+	[[ "$m" == code ]] && args=(--mode code "${args[@]}")
+	result=$(prepare_in "$work" "${args[@]}")
+	assert_json_field "$result" "status" "ok" "mode $m: range prepares without a base branch"
+	session=$(jq -r '.session_dir' <<<"$result")
+	if grep -qE '^Base: +none \(explicit range\)$' "$session/session.txt"; then
+		echo "  PASS: mode $m: session.txt says the range has no base"
+		PASS=$((PASS + 1))
+	else
+		base_line=$(grep '^Base:' "$session/session.txt" || echo "no Base line")
+		echo "  FAIL: mode $m: session.txt Base line is '$base_line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+result=$(prepare_in "$work" --scope range --scope-value 'no-such-ref..HEAD')
+assert_json_field "$result" "status" "skip" "an unresolvable range is still refused"
+assert_message_lacks "$result" '[Bb]ase branch' "refused for the range, not the base branch"
+rm -rf "$work"
+# Other scopes also leave the base empty; only a range may be labelled one.
+work=$(mktemp -d)
+echo "package main" >"$work/a.go"
+result=$(prepare_in "$work" --scope paths --scope-value a.go)
+session=$(jq -r '.session_dir' <<<"$result")
+if [[ -f "$session/session.txt" ]] && ! grep -q 'explicit range' "$session/session.txt"; then
+	echo "  PASS: a no-git paths review is not labelled a range"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no-git paths session mislabelled or missing ($result)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

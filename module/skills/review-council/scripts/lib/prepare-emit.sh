@@ -36,6 +36,7 @@ iso_timestamp=$(date -Iseconds 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S+00:00)
 # local workspace branch (which is unrelated when reviewing a remote PR).
 display_branch="$current_branch"
 display_base="$base_branch"
+[[ -z "$base_branch" && "$input_type" == "ref_range" ]] && display_base="none (explicit range)"
 if [[ "$input_type" == "pr_number" || "$input_type" == "url" ]]; then
 	[[ -n "${pr_head:-}" ]] && display_branch="$pr_head"
 	[[ -n "${pr_base:-}" ]] && display_base="$pr_base"

@@ -694,6 +694,12 @@ All notable changes to the Review Council module are documented here.
   "Verbatim" also now says to undo a host's transport encoding (`&amp;` for
   `&`) before writing, since an encoded character breaks every evidence
   quote that holds it.
+- A `--scope range` review no longer needs a local `main` or `master`. Base
+  detection ran before the scope was considered, so `HEAD~1..HEAD` in a
+  single-branch clone stopped with "main and master both not found", although
+  a range names both of its own ends and is never diffed against a base.
+  Such a session now reports `Base: none (explicit range)`. `changed` scope,
+  which does diff `base...HEAD`, still refuses.
 - `verify.md` no longer reports a reviewer whose response the orchestrator
   holds as having returned nothing. A `missing_verdicts` entry is first checked
   against the responses in hand; a held one is a collection gap, written and

@@ -979,6 +979,19 @@ check_mutation "RC-062 nothing_to_do says the orchestrator owns the write" \
 	's/the orchestrator writes each one/someone writes each one/' \
 	test-rc-extract-verdict.sh
 
+# --- RC-063: an explicit range refused for a missing main/master -------------
+#
+# `HEAD~1..HEAD` in a single-branch clone stopped at preparation with "main and
+# master both not found", although a range never diffs against a base branch.
+check_mutation "RC-063 a range prepares without main or master" \
+	lib/prepare-repo.sh \
+	's/^elif \[\[ "\$input_type" == "ref_range" \]\]; then$/elif false; then/' \
+	test-rc-prepare-git-edges.sh
+
+check_mutation "RC-063 only a range is labelled as having no base" \
+	lib/prepare-emit.sh \
+	's/ && "\$input_type" == "ref_range" \]\] && display_base/ ]] \&\& display_base/' \
+	test-rc-prepare-git-edges.sh
 # --- RC-065: one reviewer's verdict filed under another's name ---------------
 #
 # A response written to the wrong reviewer's path passed extraction and

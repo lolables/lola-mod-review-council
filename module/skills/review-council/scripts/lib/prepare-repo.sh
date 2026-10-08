@@ -276,6 +276,8 @@ elif git rev-parse --verify main >/dev/null 2>&1; then
 	base_branch="main"
 elif git rev-parse --verify master >/dev/null 2>&1; then
 	base_branch="master"
+elif [[ "$input_type" == "ref_range" ]]; then
+	: # a range names both of its own ends; nothing is diffed against a base
 else
 	json_output "skip" "Cannot determine base branch (main and master both not found)."
 	exit 0

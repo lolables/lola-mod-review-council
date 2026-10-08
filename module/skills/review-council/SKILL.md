@@ -1106,7 +1106,7 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - Mode: {code | spec} ({reason})
 - Effort: {quick | standard | deep}
 - Branch: {branch name}
-- Base: {main | master}
+- Base: {main | master | none (explicit range)}
 - Language: {language}
 - Framework: {framework | none}
 - Review root: {. | path}

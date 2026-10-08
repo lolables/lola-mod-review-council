@@ -1,0 +1,21 @@
+scripts/lib/forge-gitlab.sh
+  s_3847f935160a27::t_432e09ef0e3cf9 42,46-50,54-55,68,112-125,127-132,140-150,154
+module/tests/test-scripts-forge-gitlab.sh
+  s_3847f935160a27::t_20ca09372d27f1 169-196,257-279,466,474,505-509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4da4612c678945ec7d6db1114a431babd7b80004",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

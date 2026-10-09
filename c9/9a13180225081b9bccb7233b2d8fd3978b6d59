@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/rc-post-comment-github.sh
+  s_4abe16d2900e31::t_95da087dc1644f 130-138
+module/tests/test-rc-post-comment-github.sh
+  s_4abe16d2900e31::t_95da087dc1644f 21-23,114-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c99a13180225081b9bccb7233b2d8fd3978b6d59",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

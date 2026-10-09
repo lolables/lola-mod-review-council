@@ -1,0 +1,44 @@
+module/tests/test-rc-render-comment.sh
+  s_4abe16d2900e31::t_42be7a99d988bb 1616-1671
+module/skills/review-council/scripts/rc-post-comment-gitlab.sh
+  s_4abe16d2900e31::t_c844cd8069fc03 186-192
+module/tests/test-rc-state-vocab.sh
+  s_4abe16d2900e31::t_4583d14d1a2202 54
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_4abe16d2900e31::t_c844cd8069fc03 252-262,268-271,722-724
+  s_4abe16d2900e31::t_5a612104292d48 263-267
+  s_4abe16d2900e31::t_fbbb29ef8c3822 725-726
+module/skills/review-council/SKILL.md
+  s_4abe16d2900e31::t_4583d14d1a2202 885-890
+module/tests/test-rc-post-comment-gitlab.sh
+  s_4abe16d2900e31::t_c844cd8069fc03 568
+  s_4abe16d2900e31::t_9d3869995d6eb6 1234-1244
+module/tests/test-rc-post-comment-github.sh
+  s_4abe16d2900e31::t_c844cd8069fc03 392
+  s_4abe16d2900e31::t_9d3869995d6eb6 1209-1226
+.taskfiles/scripts/mutate-check.sh
+  s_4abe16d2900e31::t_fd2964f317b01d 1180
+  s_4abe16d2900e31::t_4583d14d1a2202 1174-1179,1181-1182
+CHANGELOG.md
+  s_4abe16d2900e31::t_4583d14d1a2202 738-742
+module/skills/review-council/references/pipeline-states.md
+  s_4abe16d2900e31::t_6bfe2f6ed67c66 21
+module/skills/review-council/scripts/rc-post-comment-github.sh
+  s_4abe16d2900e31::t_c844cd8069fc03 213-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "456e8decac9cadb217b52034e5aa663f7866cf0f",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

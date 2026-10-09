@@ -1,0 +1,27 @@
+scripts/lib/comments.sh
+  s_4abe16d2900e31::t_82eb94f53df5b1 42-50,61-62,71-85
+  s_4abe16d2900e31::t_23555cc9ec573b 86-87
+scripts/review-open-prs.sh
+  s_4abe16d2900e31::t_82eb94f53df5b1 930-933,942-945
+module/tests/test-review-open-prs.sh
+  s_4abe16d2900e31::t_3dc37ceaa8372c 229-240,1514,1530,1547-1562,1580-1608
+docs/batch-reviewing-prs.md
+  s_4abe16d2900e31::t_3dc37ceaa8372c 429-432
+  s_4abe16d2900e31::t_7172091872f573 433-434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9582a66deadafac6cfd74426540d440fc2598fb4",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+module/tests/test-review-open-prs.sh
+  s_4abe16d2900e31::t_e368a3814867fd 881-882,888,1360
+docs/batch-reviewing-prs.md
+  s_4abe16d2900e31::t_0a0b012866e0bf 430-432
+  s_4abe16d2900e31::t_4de90229a131d1 434-436
+module/skills/review-council/references/forge-adapters.md
+  s_4abe16d2900e31::t_0a0b012866e0bf 304,314-320
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_4abe16d2900e31::t_dccc90315fe958 380-386,390-391,679-680,682-684
+  s_4abe16d2900e31::t_c4eddbf6017433 387-389
+module/tests/test-rc-render-comment.sh
+  s_4abe16d2900e31::t_1e8b412c66ee1d 1372-1406
+  s_4abe16d2900e31::t_91540bed8f7605 899,1131
+module/tests/test-rc-prepare-conversation.sh
+  s_4abe16d2900e31::t_45e09dd3507a10 179-180,187
+  s_4abe16d2900e31::t_d7ee22f622e62f 219-225
+module/tests/test-rc-post-comment-gitlab.sh
+  s_4abe16d2900e31::t_dcde6fe6e0652d 393-420
+  s_4abe16d2900e31::t_91540bed8f7605 963
+scripts/review-open-prs.sh
+  s_4abe16d2900e31::t_0a0b012866e0bf 932-934
+module/tests/test-rc-post-comment-github.sh
+  s_4abe16d2900e31::t_3d1309d7ed1230 377-404
+  s_4abe16d2900e31::t_91540bed8f7605 1153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7556f551e5026902b0121dd6e6ebcb0edf7fa18f",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

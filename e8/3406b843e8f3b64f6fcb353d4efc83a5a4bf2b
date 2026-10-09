@@ -1,0 +1,23 @@
+module/skills/review-council/references/forge-adapters.md
+  s_4abe16d2900e31::t_3f957f9f7c9a88 64-66
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_4abe16d2900e31::t_418e7f403ec5a5 149
+module/tests/test-rc-forge-adapters.sh
+  s_4abe16d2900e31::t_3f957f9f7c9a88 317-318,326,376-377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e83406b843e8f3b64f6fcb353d4efc83a5a4bf2b",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

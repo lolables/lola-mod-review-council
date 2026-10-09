@@ -1,0 +1,59 @@
+module/skills/review-council/scripts/rc-decide-verdict.sh
+  s_4abe16d2900e31::t_e97a2cc53b3b0e 1-42
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_4abe16d2900e31::t_463c0edcb986ec 272-286,737
+module/skills/review-council/phases/report.md
+  s_4abe16d2900e31::t_57356265da2c5e 444-455
+  s_4abe16d2900e31::t_bb9705f8afd0da 457-459
+  s_4abe16d2900e31::t_bbdc78b59f3675 456
+module/tests/test-rc-pipeline.sh
+  s_4abe16d2900e31::t_1680f4615b0bad 98-100
+CHANGELOG.md
+  s_4abe16d2900e31::t_8534002ddca0b6 745-749
+module/skills/review-council/scripts/rc-post-comment-github.sh
+  s_4abe16d2900e31::t_463c0edcb986ec 214
+module/skills/review-council/scripts/rc-post-comment-gitlab.sh
+  s_4abe16d2900e31::t_463c0edcb986ec 187
+module/skills/review-council/references/pipeline-states.md
+  s_4abe16d2900e31::t_560b9efcb20440 22
+  s_4abe16d2900e31::t_73a1f0e8077d66 21,23
+module/tests/test-rc-render-comment.sh
+  s_4abe16d2900e31::t_a5c59c100e68b7 1701-1731
+  s_4abe16d2900e31::t_0bc66a2d6f19b9 1244,1660-1669
+module/tests/test-rc-render-report.sh
+  s_4abe16d2900e31::t_4f1ab13334ab78 1302-1356
+  s_4abe16d2900e31::t_25eb1ba48de9e3 424
+  s_4abe16d2900e31::t_8b17e90c7f0553 65,287,352,388,405-409,423,425-429,435,468,495-497,832-833,835
+module/tests/e2e/lib/rc-pipeline.yml
+  s_4abe16d2900e31::t_1680f4615b0bad 61-63
+module/skills/review-council/scripts/rc-lib.sh
+  s_4abe16d2900e31::t_8f0bae1dd3b394 40-72
+docs/dev/pipeline.md
+  s_4abe16d2900e31::t_560b9efcb20440 27
+module/tests/test-rc-state-vocab.sh
+  s_4abe16d2900e31::t_890f3b76329322 49-51
+module/skills/review-council/SKILL.md
+  s_4abe16d2900e31::t_bb9705f8afd0da 961-969,977-981
+.taskfiles/scripts/mutate-check.sh
+  s_4abe16d2900e31::t_8534002ddca0b6 1213-1226
+module/skills/review-council/scripts/rc-render-report.sh
+  s_4abe16d2900e31::t_17c879963f8ccd 107-117,191,193-194,221-223
+module/tests/test-rc-decide-verdict.sh
+  s_4abe16d2900e31::t_e97a2cc53b3b0e 1-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "800a055be120aea67307386f5cdb9e72d3c3d1cf",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

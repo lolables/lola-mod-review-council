@@ -1,0 +1,25 @@
+docs/dev/pipeline.md
+  s_4abe16d2900e31::t_2a574f7d391e7a 263,283
+module/skills/review-council/scripts/lib/prepare-repo.sh
+  s_4abe16d2900e31::t_8760f67c5e8602 314,320-329,355-357
+module/tests/test-rc-prepare-session-cache.sh
+  s_4abe16d2900e31::t_2a574f7d391e7a 212-219
+  s_4abe16d2900e31::t_8760f67c5e8602 150-151,187-211,220
+  s_4abe16d2900e31::t_8d847d99aba26e 221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77e9e70a594d529f1a55f51f7f73f9c96da428e9",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

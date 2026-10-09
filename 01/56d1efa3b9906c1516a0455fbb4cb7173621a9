@@ -1,0 +1,134 @@
+scripts/lib/prs.sh
+  s_3847f935160a27::t_b1bbd4491f8bc1 12-13,30,146,148,260-262
+  s_3847f935160a27::t_80aea95e0c7b9b 7-8,58,64,72,78,81-83,85,90,120,125,157,273,277
+scripts/lib/forge-github.sh
+  s_3847f935160a27::t_615c4e5bf5e37f 1-16,22-143
+  s_3847f935160a27::t_42da5447fcfc1c 19
+  s_3847f935160a27::t_2ba010a3feaa3d 17-18,20-21
+module/tests/test-review-pr-status.sh
+  s_3847f935160a27::t_fac66785f3d883 39-43,683-705
+scripts/review-pr-status.sh
+  s_3847f935160a27::t_15129ac812b019 442,445-446,448-457,464
+  s_3847f935160a27::t_80aea95e0c7b9b 459
+  s_3847f935160a27::t_53a119ab4b7a78 304-305,309-312,352-373
+  s_3847f935160a27::t_37432140b1acf3 458
+  s_3847f935160a27::t_49ab17d92138f9 463
+  s_3847f935160a27::t_dc90b701bdfc82 444,460-462
+scripts/review-open-prs.sh
+  s_3847f935160a27::t_80aea95e0c7b9b 506,724,734
+  s_3847f935160a27::t_15129ac812b019 454-455,457-469,511
+  s_3847f935160a27::t_53a119ab4b7a78 290-291,295-298,411-432
+  s_3847f935160a27::t_2ba010a3feaa3d 722-723
+  s_3847f935160a27::t_dc90b701bdfc82 456,507-509
+scripts/lib/target.sh
+  s_3847f935160a27::t_42e4e7c444b65c 30-34
+  s_3847f935160a27::t_f3805974b48040 25,147-149,154,203-221,225-252,255-257,266-270,278
+  s_3847f935160a27::t_fe2e91a3e96055 1-16,20-22,26-29,35-38,41-65,68-71,79-80,83-141,150,152-153,155-167,222-224,253-254,258-264,265,271-277,279-288
+  s_3847f935160a27::t_5d38343e864e66 72-73,202
+  s_3847f935160a27::t_6f62e0c829d9d1 39-40,66-67,74-76
+  s_3847f935160a27::t_24457043c3c5c0 77-78
+  s_3847f935160a27::t_dc90b701bdfc82 17-19,23-24
+  s_b66592ad9093d9::t_02b1901f999986 81,142-146,151,168-173,182,184-186,188,192,194-196,200-201
+  s_3847f935160a27::t_bb9af8153aa4d0 82,174-181,183,187,189-191,193,197-199
+module/tests/test-scripts-lib.sh
+  s_3847f935160a27::t_5d38343e864e66 379-383
+  s_3847f935160a27::t_5818110462746f 451
+  s_3847f935160a27::t_754fd0e86331cf 248-251
+  s_3847f935160a27::t_9eefb12fdb653f 460-473,482
+  s_3847f935160a27::t_cb24568232062d 316-322,325-331,333,335-337,339-342,344,346-354,356-371,374-375,407,429-450,452-459,483-489
+  s_3847f935160a27::t_69878b5f414dd5 252-256,314-315,323-324,334,338,343,355,372-373,384-406,474-481
+  s_3847f935160a27::t_80aea95e0c7b9b 217-218,599,612
+  s_3847f935160a27::t_f91d5d7d8c9b24 207-214
+  s_3847f935160a27::t_7e102b51d735f5 271,292,302,309
+  s_3847f935160a27::t_4ea58c9e65d6f9 332,345
+  s_3847f935160a27::t_0bcdd1e88ffedf 223-225
+  s_3847f935160a27::t_42e4e7c444b65c 376-378
+  s_3847f935160a27::t_5075872e1ac6a9 220
+  s_3847f935160a27::t_6dd60d9015589a 221-222,586
+  s_3847f935160a27::t_49d2e3b3e4e771 219
+  s_3847f935160a27::t_29619130c69990 409-428
+  s_3847f935160a27::t_2423e2a2ad6fb2 408
+module/tests/test-review-open-prs.sh
+  s_3847f935160a27::t_4080b3ecc0a9c8 610-621
+  s_3847f935160a27::t_29619130c69990 37-42,599-608
+  s_3847f935160a27::t_d64a33d654a711 609
+module/tests/test-rc-prepare-owner.sh
+  s_3847f935160a27::t_6dc10ccd2eea90 264
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_3847f935160a27::t_95697252535d63 40,42-43
+  s_3847f935160a27::t_b45a658e605cbd 24
+module/tests/test-rc-post-comment-gitlab.sh
+  s_3847f935160a27::t_030723c660ef4c 50,52,54,58-59,61-62
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_3847f935160a27::t_31c2d35be4f6d6 168
+  s_3847f935160a27::t_bd47b02647ffe5 19,168
+  s_3847f935160a27::t_b259c0f0670b34 169
+  s_4abe16d2900e31::t_1032f0384fcaea 204,206-208
+  s_4abe16d2900e31::t_25b780b6b28238 176,177
+module/tests/test-rc-clone-target.sh
+  s_36df828748d9c5::t_21a0917303a656 420
+  s_36df828748d9c5::t_0555a118e79b91 420
+  s_4abe16d2900e31::t_1032f0384fcaea 420
+module/skills/review-council/scripts/rc-post-comment-github.sh
+  s_4abe16d2900e31::t_95da087dc1644f 107-115
+docs/dev/pipeline.md
+  s_4abe16d2900e31::t_f746e020dcc5ce 290
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_4abe16d2900e31::t_73eb99272e5941 50,162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0156d1efa3b9906c1516a0455fbb4cb7173621a9",
+  "prompts": {},
+  "sessions": {
+    "s_36df828748d9c5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92f21bef-3e0d-4f74-9b15-eb594eb5e1ce",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    },
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_965ff4370956f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9d370094b3b5d417",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_9ef4eef63d405b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a84b6c4be614fb502",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_b66592ad9093d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a7779c474febd77d2",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

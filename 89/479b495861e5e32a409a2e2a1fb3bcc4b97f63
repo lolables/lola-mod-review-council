@@ -1,0 +1,25 @@
+.taskfiles/scripts/mutate-check.sh
+  s_4abe16d2900e31::t_0fe3941167f62e 1149-1173
+module/tests/test-gh-list-pagination.sh
+  s_4abe16d2900e31::t_b077beee7615c9 82
+  s_4abe16d2900e31::t_0407157519f3e3 45
+  s_4abe16d2900e31::t_0fe3941167f62e 1-24,27-44,46-81,84-105
+  s_4abe16d2900e31::t_4cb546c72bbb73 83
+  s_4abe16d2900e31::t_c90e5d3683e7b2 25-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89479b495861e5e32a409a2e2a1fb3bcc4b97f63",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,67 @@
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_4abe16d2900e31::t_b6852aba38b43a 35-37
+module/tests/test-rc-forge-adapters.sh
+  s_4abe16d2900e31::t_166e8ebf59cc1a 961,963
+  s_4abe16d2900e31::t_1ca8895a796e85 902-960,962,964-1032
+module/skills/review-council/scripts/lib/symlinks.sh
+  s_4abe16d2900e31::t_b58b4a33bf2e20 4
+  s_4abe16d2900e31::t_901b3b57f96c12 5-6
+  s_4abe16d2900e31::t_a3cac3c210aa07 7-9
+  s_4abe16d2900e31::t_e854084c917559 16-22,30,38,42,49-59,95-97,111-112,117
+module/skills/review-council/scripts/rc-prepare.sh
+  s_4abe16d2900e31::t_b6852aba38b43a 70-75
+docs/dev/pipeline.md
+  s_4abe16d2900e31::t_a87794379ef8c7 296-301
+  s_4abe16d2900e31::t_508d49b2f84d77 289
+module/tests/test-rc-state-vocab.sh
+  s_4abe16d2900e31::t_7f36cf0419d155 18,21
+README.md
+  s_4abe16d2900e31::t_3b0a92e57f39aa 398-401
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_4abe16d2900e31::t_08a0cce8af50dc 101-102
+  s_4abe16d2900e31::t_03008404a34987 231-232,250,254-255
+  s_4abe16d2900e31::t_05e989c12c5ada 103-104
+  s_4abe16d2900e31::t_4469580402bc36 216-230,233-249,251-253,256-258
+module/skills/review-council/references/forge-adapters.md
+  s_4abe16d2900e31::t_dd09065c1745be 59,114-140,152-154,163
+module/tests/test-rc-check-symlinks.sh
+  s_4abe16d2900e31::t_6c052e5ac5d5c3 198-200,205,243-351
+  s_4abe16d2900e31::t_785779ec7ad17a 352
+module/tests/test-rc-symlinks-lib.sh
+  s_4abe16d2900e31::t_0794b2992e6aed 93-98,104-105
+  s_4abe16d2900e31::t_0f39bfa59e4f05 76-92,99-103,106
+module/tests/test-rc-prepare-git-edges.sh
+  s_4abe16d2900e31::t_0663f5b5ccc7fd 301-330
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_4abe16d2900e31::t_44b9368f442730 249,275-279
+  s_4abe16d2900e31::t_8a5ca191cccf5c 236-248,250-274,280-287
+module/skills/review-council/scripts/rc-check-symlinks.sh
+  s_4abe16d2900e31::t_84fdfed5b9fce8 10-12,17-23,31-47,51,54-55,62-64,76,166-167,211-213,216,222,227,230
+  s_4abe16d2900e31::t_06426a3d5254c6 207-210,214-215,228-229,232
+  s_4abe16d2900e31::t_3199f8ee76786b 344
+  s_4abe16d2900e31::t_0005c855a9e48e 124-125,289-291,356,411-413
+  s_4abe16d2900e31::t_fbde67a849ca12 394-396
+  s_4abe16d2900e31::t_8623af9109e517 200-202,205,258-288,292-306,308-309,314-320,323,327,336-343,345-349,352-355,357-360,369-370,373-379,382,384-386,388-393,397-406,410,414,416,423-424
+  s_4abe16d2900e31::t_f3fd3047d764ea 206
+module/skills/review-council/scripts/lib/prepare-links.sh
+  s_4abe16d2900e31::t_8d19dd641ae5f7 1-86,95
+  s_4abe16d2900e31::t_4637f59615bd41 87-94
+module/skills/review-council/phases/delegate.md
+  s_4abe16d2900e31::t_3644d2df144ff5 274-278,445-449
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a49f8dafce18cd73d1af81789ce2cf1de0d15f7d",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

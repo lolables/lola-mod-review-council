@@ -1,0 +1,37 @@
+module/skills/review-council/scripts/lib/symlinks.sh
+  s_4abe16d2900e31::t_972ed6a46155f7 69-70,74-75
+  s_4abe16d2900e31::t_975a5bd88bf8c6 14-19
+  s_4abe16d2900e31::t_416477bafb2511 48
+  s_4abe16d2900e31::t_d94cf2b5085842 49,52-55,60-65,68,71,76,81
+module/tests/test-rc-symlinks-lib.sh
+  s_4abe16d2900e31::t_cf7647c0f568bf 52-75
+module/tests/test-rc-check-symlinks.sh
+  s_4abe16d2900e31::t_8b386bda118aa7 186
+  s_4abe16d2900e31::t_28fc8bafae9f20 109-112,120-121,124,154-174,176-185,187-199,201-227
+  s_4abe16d2900e31::t_4d3a1058e7f4c6 175,200
+module/skills/review-council/scripts/rc-check-symlinks.sh
+  s_4abe16d2900e31::t_7b24bb9c47017c 273-274
+  s_4abe16d2900e31::t_975a5bd88bf8c6 22-34
+  s_4abe16d2900e31::t_bb6a5728abbbe4 99-116,120-134,136-139,141,144-152,158-170,175-179,183,204,207-209,228-232,235-237,250-259,262,266,268
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_4abe16d2900e31::t_96baa96ade6abc 183,229,344
+  s_4abe16d2900e31::t_b5bdfd59ffee2b 33-37,168,182,228,260,339
+module/tests/test-rc-prepare-git-edges.sh
+  s_4abe16d2900e31::t_8d679e0e7ee194 272-323
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cabea317564a3291bc026d78b3b26eaf27a5a994",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

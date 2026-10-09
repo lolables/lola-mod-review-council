@@ -1,0 +1,19 @@
+CHANGELOG.md
+  s_ddb9d0cd691df9::t_ced876f6e130a5 821-823
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55d50fa2617085edf36eb7afd39bb32e8813d64d",
+  "prompts": {},
+  "sessions": {
+    "s_ddb9d0cd691df9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b105b3d0-ebeb-4d39-9e98-6cf49c327e26",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+module/skills/review-council/phases/disposition.md
+  s_3847f935160a27::t_6271eba00e330e 252-261
+module/skills/review-council/references/forge-adapters.md
+  s_3847f935160a27::t_de3230010861d8 648
+  s_3847f935160a27::t_32635fd2a0abf7 549-551
+docs/dev/pipeline.md
+  s_3847f935160a27::t_6271eba00e330e 72,289
+README.md
+  s_3847f935160a27::t_32635fd2a0abf7 386-389
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac2d8dcf1e7d210b347268c11aa69c2e24e5e7e5",
+  "prompts": {},
+  "sessions": {
+    "s_3847f935160a27": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "33a4b336-fceb-4a98-8eb3-20869eb031cb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

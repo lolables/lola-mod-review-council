@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_36df828748d9c5::t_0555a118e79b91 697-701,704-706
+module/tests/test-rc-clone-target.sh
+  s_36df828748d9c5::t_0555a118e79b91 1523-1542
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5e8a8c08b9f900e5bf1b903acfe162ba5a8ebfe",
+  "prompts": {},
+  "sessions": {
+    "s_36df828748d9c5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "92f21bef-3e0d-4f74-9b15-eb594eb5e1ce",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

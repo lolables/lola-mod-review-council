@@ -1,0 +1,70 @@
+module/skills/review-council/phases/delegate.md
+  s_4abe16d2900e31::t_7e0d589fc4ff68 522-525
+module/tests/test-rc-verify-evidence.sh
+  s_4abe16d2900e31::t_977eb77118cbc1 1018-1021,1025-1035,1039-1043,1046-1060
+  s_4abe16d2900e31::t_ea1b179345cb23 1036-1038,1044-1045
+module/tests/test-rc-apply-corrections.sh
+  s_4abe16d2900e31::t_fcee6202897dfd 195-226
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_4abe16d2900e31::t_e8a65bfb3ab11d 243-254
+module/skills/review-council/phases/disposition.md
+  s_4abe16d2900e31::t_875ae506d59eb6 88
+module/skills/review-council/scripts/rc-render-report.sh
+  s_4abe16d2900e31::t_5009b574b702f6 109-111,116
+docs/dev/pipeline.md
+  s_4abe16d2900e31::t_875ae506d59eb6 298-323
+module/tests/test-rc-jq-programs.sh
+  s_4abe16d2900e31::t_668c378a35cf2f 150-151
+  s_4abe16d2900e31::t_a932e94e2ca480 139-149,152-156,203-223
+  s_4abe16d2900e31::t_cbe59564e08621 224
+module/skills/review-council/scripts/jq/dedup-findings.jq
+  s_4abe16d2900e31::t_d17cec1272ae24 29-36,44-45,47,49,67
+module/skills/review-council/phases/verify.md
+  s_4abe16d2900e31::t_875ae506d59eb6 363,528
+  s_4abe16d2900e31::t_7e0d589fc4ff68 215,235-239,242-243
+module/skills/review-council/scripts/jq/consolidate-clusters.jq
+  s_4abe16d2900e31::t_4a64e7de874446 74-76,81
+  s_4abe16d2900e31::t_fc11fede976b6c 14-20,27,33,72-73,79-80
+module/tests/test-rc-consolidate.sh
+  s_4abe16d2900e31::t_93ce31a90146fa 434-449
+module/tests/test-rc-extract-verdict.sh
+  s_4abe16d2900e31::t_420c93db5343b0 814,816
+  s_4abe16d2900e31::t_f1145f23a08e2c 801-813,815,817-826
+module/tests/test-rc-render-comment.sh
+  s_4abe16d2900e31::t_e25543cc9f4b70 1722-1726
+module/tests/test-rc-render-report.sh
+  s_4abe16d2900e31::t_e25543cc9f4b70 1316-1319,1321-1322
+  s_4abe16d2900e31::t_c0f94d6f718d5d 1320
+.taskfiles/scripts/mutate-check.sh
+  s_4abe16d2900e31::t_aa4baefe80b8cb 1195-1200,1203-1216
+  s_4abe16d2900e31::t_2828f0216bf803 1217
+CHANGELOG.md
+  s_4abe16d2900e31::t_875ae506d59eb6 13-20
+module/skills/review-council/SKILL.md
+  s_4abe16d2900e31::t_875ae506d59eb6 917
+module/skills/review-council/scripts/rc-lib.sh
+  s_4abe16d2900e31::t_5009b574b702f6 61-64,67
+  s_4abe16d2900e31::t_875ae506d59eb6 35-41
+module/skills/review-council-debug/SKILL.md
+  s_4abe16d2900e31::t_7e0d589fc4ff68 224-225
+module/tests/test-rc-check-symlinks.sh
+  s_4abe16d2900e31::t_671dddca4dab53 61-63,65-72,79
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_4abe16d2900e31::t_73eb99272e5941 50-64,94,104-130,140,169,174,197-198,206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00039e312cc789b9f111b36a27562a538cedb4e6",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

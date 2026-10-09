@@ -1,0 +1,21 @@
+module/tests/test-gh-list-pagination.sh
+  s_4abe16d2900e31::t_fbc690717fe740 16-21,41-43,49
+  s_4abe16d2900e31::t_87ab8cd6e4a93e 81,106-110
+  s_4abe16d2900e31::t_60db2b97e47e0a 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2a31035050814812dcf9e9fbf9e45d182648620",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+module/tests/test-rc-post-comment-gitlab.sh
+  s_ee7dc0cd1ca0e3::t_939ab5ef7d1751 895-897,899-904,909-910,913
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_ee7dc0cd1ca0e3::t_9a7ddb4743dacd 627
+  s_ee7dc0cd1ca0e3::t_b7cff7ad4be6f2 590,594-598,601
+module/tests/test-rc-post-comment-github.sh
+  s_ee7dc0cd1ca0e3::t_770fef1a85ae70 1007-1011,1013-1015,1017-1019,1024-1025
+  s_ee7dc0cd1ca0e3::t_7296636c0f77be 1028
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd615cad393cd6d590243abe155dafd279b15a10",
+  "prompts": {},
+  "sessions": {
+    "s_ee7dc0cd1ca0e3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "09554f46-0bf9-4805-889f-d29d3a69d2bf",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

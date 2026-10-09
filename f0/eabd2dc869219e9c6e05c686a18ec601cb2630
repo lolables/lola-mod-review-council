@@ -1,0 +1,50 @@
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_4abe16d2900e31::t_ffff40ef2932c5 808
+  s_4abe16d2900e31::t_abd6acb52c47b1 752-754,760-761
+  s_4abe16d2900e31::t_9283885eec0daa 29-32,37-39
+  s_4abe16d2900e31::t_8da7d352ecfacd 788-794
+  s_4abe16d2900e31::t_4bc04f430c1ee7 821-824
+  s_4abe16d2900e31::t_25b780b6b28238 679-693,698-711,717-718,723-741,746-747
+  s_4abe16d2900e31::t_bbe8e3ca80c703 762,836-839,841-850
+  s_4abe16d2900e31::t_19bc947df682bf 809-810
+module/tests/test-rc-clone-target.sh
+  s_4abe16d2900e31::t_0a20dd4a4a42c4 24-25
+  s_4abe16d2900e31::t_cc6251a9e14932 102-103,106
+  s_4abe16d2900e31::t_6e7156b7d83a5d 1495-1496
+  s_4abe16d2900e31::t_5168804f834477 189-190,193,199-203
+  s_4abe16d2900e31::t_9d49c7744394d6 446,459
+  s_4abe16d2900e31::t_34b212661914c6 61-62,71-73,79-94
+  s_4abe16d2900e31::t_0cc84e5fce3c7e 1552-1556
+  s_4abe16d2900e31::t_859e4be57d44d7 27
+  s_4abe16d2900e31::t_633cc644cd60ac 433-434,449-450,452,460,464,467
+  s_4abe16d2900e31::t_9b980000709f2b 1575,1579-1581,1599-1600,1610-1611,1623-1624,1628-1632,1640-1651,1661-1662,1666-1667,1672,1674-1682,1686-1690,1695-1697,1701-1703,1731-1785,1787-1788
+  s_4abe16d2900e31::t_2ccb47a3524344 1601,1786
+  s_4abe16d2900e31::t_035e4ecc0238d7 1494,1509,1511,1539
+README.md
+  s_4abe16d2900e31::t_6ca09d8b2bf8ef 365-368,389-390,396
+  s_4abe16d2900e31::t_1a5bcddb556416 372-375
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_4abe16d2900e31::t_c0a0550ae500cc 112-116
+module/tests/test-rc-prepare-framework.sh
+  s_4abe16d2900e31::t_fa043ef7af8272 25-27,29-30,36,156,291
+module/skills/review-council/references/forge-adapters.md
+  s_4abe16d2900e31::t_8d0e221eae7b61 769-770
+  s_4abe16d2900e31::t_69c24bf967868a 514,543-560,563-566,688-698,708-710,716-720
+  s_4abe16d2900e31::t_821762a5464cac 484-486
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0eabd2dc869219e9c6e05c686a18ec601cb2630",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

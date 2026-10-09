@@ -1,0 +1,28 @@
+module/skills/review-council/references/forge-adapters.md
+  s_4abe16d2900e31::t_a1bbc3ec308e6d 64-65
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_4abe16d2900e31::t_ee37b6b34707dd 132-152,156,173,192
+module/tests/test-rc-prepare-conversation.sh
+  s_4abe16d2900e31::t_be80242d18067b 19-22,57-58,103,105,820,822
+module/tests/test-rc-forge-adapters.sh
+  s_4abe16d2900e31::t_ee37b6b34707dd 247,251-254,259-265
+  s_4abe16d2900e31::t_a87f6bcfe962eb 313-376
+CHANGELOG.md
+  s_4abe16d2900e31::t_05128791bf070f 738-742
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02ab21651310c6ba937efb34499824ab1eaf4172",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

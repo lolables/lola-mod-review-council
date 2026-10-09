@@ -1,0 +1,21 @@
+.taskfiles/scripts/mutate-check.sh
+  s_4abe16d2900e31::t_49d4c3731c270c 1309-1334
+CHANGELOG.md
+  s_4abe16d2900e31::t_1b3d1fad8edc3a 750-759,808-810
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a89425759ff2159b72a48d739d39c26af009b5ee",
+  "prompts": {},
+  "sessions": {
+    "s_4abe16d2900e31": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "67bf783c-be35-479a-999f-00dcf6b0bc38",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -309,13 +309,14 @@ Script creates session directory, captures changeset and diff, discovers
 agents, detects forge/framework/language, fetches CI status, linked
 issues, prior reviews (if PR), initializes tracking file.
 
-**Review root / target materialization.** For `pr`/`url` scope on GitHub,
-rc-prepare.sh materializes the PR head (via `rc-clone-target.sh`) when the
-current working tree is not already that repo at that branch, and returns
+**Review root / target materialization.** For `pr`/`url` scope,
+rc-prepare.sh materializes the PR or MR head (via `rc-clone-target.sh`) when
+the current working tree is not already that repo at that branch, and returns
 `review_root` (the checkout path, or `.`). Reviewers and evidence verification
 read files under `review_root` (see `delegate.md` "Review root" and pass
 `REVIEW_ROOT` to `rc-verify-evidence.sh` in Step 4). When materialization is
-skipped (non-GitHub forge, missing `gh` for a private repo, or clone failure),
+skipped (a forge other than GitHub or GitLab, no credentials for a private
+repo, or clone failure),
 `review_root` stays `.` and review proceeds from the diff — note this to the
 user, since grounding is weaker.
 
@@ -1083,16 +1084,19 @@ there is nothing to post to and stop.
      confirmation or standing auto-send — never pre-emptively, never exported
      for the whole session.
    - If the script returns `status: rendered` with a "post manually" message
-     (`gh` absent or unsupported forge), relay the body and instruction to the
-     user instead of claiming it was posted.
+     (`gh`/`glab` absent or unsupported forge), relay the body and instruction
+     to the user instead of claiming it was posted.
    - If it returns `status: error` (the forge query, create, or update failed),
      tell the user the post did NOT succeed and why — never report a comment as
      created/updated when the script reported an error.
    - The action may be `created`, `updated`, or `unchanged` (same commit,
-     nothing changed); a `created` on a new commit also supersedes and hides the
-     prior commit's comment, every part of it. Relay the action and `superseded`
+     nothing changed); a `created` on a new commit also supersedes the prior
+     commit's comment, every part of it (banner-stamped, and hidden where the
+     forge can hide comments). Relay the action and `superseded`
      count faithfully. On a chained verdict the action summarises the whole
      chain, with per-part `created`/`updated`/`unchanged` counts alongside it.
+     A non-zero `retire_failed` (GitLab) means that many older verdicts could
+     not be marked obsolete and still read as current — tell the user.
 
 5. **Report the outcome**: state whether the comment was created, updated, or
    left for manual posting — and, when the verdict was split or trimmed, say

@@ -159,6 +159,28 @@ for script in rc-prepare.sh rc-clone-target.sh rc-post-comment-github.sh; do
 done
 rm -rf "$maskdir"
 
+# A forge-supplied value (a PR title, a branch name) is written into the
+# line-oriented session files, where one holding a newline would add a line of
+# its own choosing — `Head SHA: <fake>` — that rc_parse_kv then reads.
+echo "Test: rc_single_line turns every control character into a space"
+while IFS='|' read -r label raw want; do
+	# The sentinel keeps a trailing newline that $( ) would otherwise strip.
+	input=$(printf '%bX' "$raw")
+	got=$(rc_single_line "${input%X}")
+	assert_equals "$got" "$want" "$label"
+done <<'SINGLELINE'
+plain text is unchanged|Add gin route|Add gin route
+newline|a\nHead SHA: x|a Head SHA: x
+carriage return|a\rb|a b
+tab|a\tb|a b
+NUL-adjacent C0 (ESC)|a\033[31mb|a [31mb
+DEL|a\177b|a b
+C1 (U+0085 NEL)|a\302\205b|a b
+C1 (U+009B CSI)|a\302\233b|a b
+non-control UTF-8 is kept|caf\303\251 \342\200\224 ok|café — ok
+trailing newline|a\n|a 
+SINGLELINE
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

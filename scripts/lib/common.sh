@@ -96,3 +96,20 @@ for entry in ${IGNORE_EMAILS//,/ }; do
 done
 set +f
 unset entry
+
+# glab's host and token policy (glab_env_bound_host, glab_env_token_bound and
+# the variable lists) is shared with the council, so it is read from this
+# clone's module source rather than kept here as a second copy. target.sh and
+# forge-gitlab.sh both rely on it: which host an origin remote or a bare
+# --forge gitlab run means, and which host glab's environment tokens belong to,
+# must agree with each other and with glab, or a token is handed to a host it
+# was not minted for. A copy of scripts/ without module/ beside it cannot
+# answer either question, so it stops here.
+_rc_glab_env="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/module/skills/review-council/scripts/lib/glab-env.sh"
+[[ -f "$_rc_glab_env" ]] || {
+	echo "Incomplete checkout: ${_rc_glab_env} not found; run the scripts from a clone of this repository." >&2
+	exit 1
+}
+# shellcheck source=module/skills/review-council/scripts/lib/glab-env.sh
+source "$_rc_glab_env"
+unset _rc_glab_env

@@ -189,24 +189,24 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 		} >"${session_dir}/prior-reviews.txt"
 
 		prior_reviews_count=$review_count
+	fi
 
-		# --- RE-review: fetch replies to the council's own prior verdict ---
-		# The council posts its verdict as an issue comment carrying a
-		# `review-council:marker` marker (see rc-render-comment.sh). If that
-		# marker already exists in the PR's issue-comments timeline, this is a
-		# RE-review: fetch replies posted at/after the council's most recent
-		# marker comment and write them as UNTRUSTED data for the (separate)
-		# Disposition step to consume later. This block only fetches and
-		# writes the file — it never reads or acts on the conversation.
-		#
-		# Separately guarded from the prior-reviews calls above: a forge may
-		# expose submitted reviews without exposing the comment timeline the
-		# marker lookup needs, and the review still proceeds without the
-		# Disposition input.
-		conversation_json="[]"
-		if declare -F rc_forge_fetch_conversation >/dev/null; then
-			conversation_json=$(rc_forge_fetch_conversation "$pr_number" "$forge_owner" "$forge_repo")
-		fi
+	# --- RE-review: fetch replies to the council's own prior verdict ---
+	# The council posts its verdict as an issue comment carrying a
+	# `review-council:marker` marker (see rc-render-comment.sh). If that
+	# marker already exists in the PR's issue-comments timeline, this is a
+	# RE-review: fetch replies posted at/after the council's most recent
+	# marker comment and write them as UNTRUSTED data for the (separate)
+	# Disposition step to consume later. This block only fetches and
+	# writes the file — it never reads or acts on the conversation.
+	#
+	# Independent of the prior-reviews calls above, in both directions: a
+	# forge may expose submitted reviews without the comment timeline the
+	# marker lookup needs, or the timeline without submitted reviews — GitLab,
+	# whose approvals carry no body and no timestamp. Each artifact is written
+	# when its own capability exists.
+	if declare -F rc_forge_fetch_conversation >/dev/null; then
+		conversation_json=$(rc_forge_fetch_conversation "$pr_number" "$forge_owner" "$forge_repo")
 
 		# Who does the council post as? Identity is marker AND author, never the
 		# marker alone: it is public, and GitHub's "Quote reply" copies the
@@ -216,12 +216,12 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 		# silently, because the file is still written, just short.
 		#
 		# Two ways to end up without a login, and they are not the same
-		# problem: the adapter may not implement the call at all (GitLab
-		# today), or it may implement it and the call may fail — on GitHub, a
-		# token without the `read:user` scope. The disclosure below tells them
-		# apart, because "implement the function" and "fix the token" are
-		# different repairs and the artifact is the only place the reader
-		# learns which one they need.
+		# problem: the adapter may not implement the call at all, or it may
+		# implement it and the call may fail — on GitHub, a token without the
+		# `read:user` scope; on GitLab, a host glab cannot reach. The
+		# disclosure below tells them apart, because "implement the function"
+		# and "fix the token" are different repairs and the artifact is the
+		# only place the reader learns which one they need.
 		council_login=""
 		identity_lookup="absent"
 		if declare -F rc_forge_current_user >/dev/null; then
@@ -350,9 +350,10 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 			fi
 		fi
 	fi
-	# A forge whose adapter implements neither call writes no prior-reviews and
-	# no conversation file, and the review proceeds from the diff. GitLab is
-	# that case today: a documented gap by design, not a silent failure. It
-	# closes by adding the two functions to lib/forge/gitlab.sh — nothing here
-	# changes.
+	# A forge whose adapter implements none of these calls writes no
+	# prior-reviews and no conversation file, and the review proceeds from the
+	# diff. GitLab implements the conversation but not the review pair, so it
+	# gets pr-conversation.txt and no prior-reviews.txt: a documented gap by
+	# design, not a silent failure. It closes by adding the two functions to
+	# lib/forge/gitlab.sh — nothing here changes.
 fi

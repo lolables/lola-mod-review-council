@@ -588,6 +588,76 @@ fi
 rm -rf "$work" "$bindir" ${sess:+"$sess"}
 
 echo ""
+# The conversation is its own capability. GitLab's adapter reads the MR's notes
+# but has no equivalent of GitHub's submitted reviews (an approval carries no
+# body and no timestamp), so it declares rc_forge_fetch_conversation without
+# the two review calls. Nested under the prior-reviews gate, the conversation
+# was never fetched for it, and a re-review on GitLab reached Disposition
+# looking like a first review.
+echo "Test: an adapter with a conversation but no review calls still writes it"
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+cat >"$bindir/glab" <<'GLAB'
+#!/usr/bin/env bash
+case "$*" in
+"auth status --hostname gitlab.com") exit 0 ;;
+"mr view 7 -R gitlab.com/acme/widgets --output json")
+	echo '{"title":"Add feature","description":"Body","target_branch":"main","source_branch":"feature-head","web_url":"https://gitlab.com/acme/widgets/-/merge_requests/7","state":"opened"}'
+	;;
+"mr diff 7 -R gitlab.com/acme/widgets --raw")
+	printf 'diff --git a/foo.go b/foo.go\nindex 0000000..1111111 100644\n--- a/foo.go\n+++ b/foo.go\n@@ -0,0 +1,2 @@\n+package main\n+func main() {}\n'
+	;;
+"api --hostname gitlab.com --paginate projects/acme%2Fwidgets/merge_requests/7/notes?"*)
+	cat <<'JSON'
+[{"author":{"username":"alice"},"created_at":"2026-01-01T00:00:00.100Z","body":"GL_OLDER_MARKER before the verdict","system":false},
+ {"author":{"username":"review-council-bot"},"created_at":"2026-01-02T00:00:00.200Z","body":"<!-- review-council:marker sha=abc123 -->\n\nAPPROVE","system":false}]
+[{"author":{"username":"ghost"},"created_at":"2026-01-02T12:00:00.000Z","body":"GL_SYSTEM_MARKER added 1 commit","system":true},
+ {"author":{"username":"bob"},"created_at":"2026-01-02T20:00:00.300-05:00","body":"GL_REPLY_MARKER please recheck","system":false}]
+JSON
+	;;
+"api --hostname gitlab.com user") echo '{"username":"review-council-bot"}' ;;
+*) exit 1 ;;
+esac
+GLAB
+chmod +x "$bindir/glab"
+setup_repo "$work"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" \
+	bash "$SCRIPT" --mode code --scope url \
+	--scope-value "https://gitlab.com/acme/widgets/-/merge_requests/7" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(echo "$result" | jq -r '.session_dir // empty')
+convo="$sess/pr-conversation.txt"
+if [[ -f "$convo" ]] && grep -q "GL_REPLY_MARKER" "$convo"; then
+	echo "  PASS: the post-verdict reply reaches pr-conversation.txt"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no pr-conversation.txt with the reply (session_dir='$sess')"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -f "$convo" ]] && ! grep -qE "GL_OLDER_MARKER|GL_SYSTEM_MARKER|^    APPROVE" "$convo"; then
+	echo "  PASS: the earlier note, the system note and the verdict stay out"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a note outside the reply window leaked into the conversation"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -f "$convo" ]] && grep -qx "Timestamp: 2026-01-03T01:00:00Z" "$convo"; then
+	echo "  PASS: the reply's offset timestamp is shown in UTC"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the reply's timestamp was not normalised to UTC"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -n "$sess" ]] && [[ ! -e "$sess/prior-reviews.txt" ]]; then
+	echo "  PASS: no prior-reviews.txt without the review calls"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: prior-reviews.txt written for an adapter with no review calls"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work" "$bindir" ${sess:+"$sess"}
+
+echo ""
 echo "Test 2: first review (no marker yet) writes no conversation file"
 work=$(mktemp -d)
 bindir=$(mktemp -d)

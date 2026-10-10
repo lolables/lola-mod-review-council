@@ -1,13 +1,18 @@
 # Batch-reviewing every open PR
 
-`scripts/review-open-prs.sh` points the council at every open PR in a repository
-rather than one at a time. It is an operator tool you run yourself — the module
+`scripts/review-open-prs.sh` points the council at every open PR in a GitHub
+repository, or every open merge request in a GitLab project, rather than one at
+a time. It is an operator tool you run yourself — the module
 does not ship it and no phase of the pipeline calls it, so `lola install` does
 not put it on your disk.
 
 Its read-only companion, `scripts/review-pr-status.sh`, reports where every open
 PR already stands without reviewing anything. See
 [Seeing where every PR stands](#seeing-where-every-pr-stands).
+
+Both scripts work the same way on GitLab; [GitLab merge
+requests](#gitlab-merge-requests) covers what differs. Elsewhere on this page,
+"PR" covers a merge request too.
 
 ## Setting up a first run
 
@@ -31,8 +36,8 @@ PR already stands without reviewing anything. See
    ./scripts/review-open-prs.sh --help
    ```
 
-4. Install the dependencies: Bash 4+ (the script uses associative arrays), `gh`,
-   `jq`, and one of the two agent CLIs the council is installed for — `claude`
+4. Install the dependencies: Bash 4+ (the script uses associative arrays), `gh`
+   (or `glab` for GitLab), `jq`, and one of the two agent CLIs the council is installed for — `claude`
    or `opencode`. macOS ships Bash 3.2, so install a current one, as the
    README's [Prerequisites](../README.md#prerequisites) section describes.
 
@@ -40,7 +45,9 @@ PR already stands without reviewing anything. See
    brew install bash jq
    ```
 
-5. Authenticate `gh`. The script refuses to start otherwise.
+5. Authenticate `gh`. The script refuses to start otherwise. For GitLab, log
+   `glab` in to the instance instead, as [Logging glab
+   in](#logging-glab-in) describes.
 
    ```bash
    gh auth status
@@ -60,12 +67,13 @@ PR already stands without reviewing anything. See
 
 7. Read the plan. Nothing runs and nothing is posted until you pass `--run`. The
    repository is taken from a PR URL argument first, then `--repo owner/name`,
-   then the GitHub remote of the current directory — which, from the clone, is
+   then the origin remote of the current directory — which, from the clone, is
    this module's own repository. Name the one you mean:
 
    ```
    $ ./scripts/review-open-prs.sh --repo ovh/venom
    Repository: ovh/venom
+   Forge: github (github.com)
    Agent CLI: claude
    Unreviewed: 929 927 917 914
    Re-review (new commits): (none)
@@ -102,7 +110,8 @@ already-reviewed check — and the hourly cap on comment-requested re-reviews
 behind it — while naming a PR by number or URL jumps the **ignore list**
 instead, so a named PR that is unchanged and already reviewed needs `--force`
 too. Collapsing a verdict comment on GitHub forces a fresh review of that PR by
-hand.
+hand; GitLab cannot collapse a note, so see [Forcing a fresh review on
+GitLab](#forcing-a-fresh-review-on-gitlab).
 
 The gate-by-gate reasoning, the flowchart, and what the driver accepts as a
 prior verdict of its own are in
@@ -267,7 +276,7 @@ addresses are dropped before they reach the queue and listed on the
 `Ignored (author email)` line.
 
 GitHub puts no email on the pull request itself, so the addresses compared are
-the commit authors' — and a PR is ignored only when it has at least one commit
+the commit authors' (on GitLab, each MR commit's `author_email`) — and a PR is ignored only when it has at least one commit
 author and *every* one of them is on the list:
 
 | PR contents                                  | Result   |
@@ -314,7 +323,8 @@ The value read is GitHub's own `reviewDecision`, and only `APPROVED` counts:
 
 The last three rows are one rule: anything that is not an approval is a PR that
 still wants attention, and an unreadable answer costs you a redundant review
-rather than a silent miss.
+rather than a silent miss. GitLab has no `reviewDecision`; what counts as
+approved there is in [How GitHub notions map](#how-github-notions-map).
 
 Two things the flag deliberately does not do:
 
@@ -392,7 +402,9 @@ same act as agreeing to publish one.
 ## Watching a batch run
 
 With `--run`, PRs are reviewed one at a time, each transcript tee'd to
-`./.review-council-logs/<owner>-<repo>-pr-<n>.log`. A PR whose review exits
+`./.review-council-logs/<owner>-<repo>-pr-<n>.log`. A GitLab log is prefixed
+with its host and takes one segment per group:
+`<host>-<group>-<subgroup>-<project>-pr-<n>.log`. A PR whose review exits
 non-zero is recorded and the batch continues; the script exits 1 at the end and
 names every PR that failed.
 
@@ -416,6 +428,133 @@ comes from claude's exit status.
 Set `EXTRA_CLAUDE_ARGS="--output-format json"` to choose a different format;
 that replaces the streaming default and the progress rendering along with it.
 
+## GitLab merge requests
+
+Both scripts review and report on GitLab merge requests through `glab`, on
+gitlab.com or a self-hosted instance. Queueing, effort tiers, the ignore list,
+the hourly cap and the confirmation prompt all work as described above; this
+section covers what differs. A merge request is written `!7` in the output, as
+GitLab writes it.
+
+```console
+$ ./scripts/review-open-prs.sh --host git.example.org --repo group/sub/project
+Repository: group/sub/project
+Forge: gitlab (git.example.org)
+Agent CLI: claude
+Unreviewed: 2 1
+...
+MR !2 -> env -u GITLAB_API_HOST -u GITLAB_URI -u GL_HOST -u GLAB_ENABLE_CI_AUTOLOGIN -u GITLAB_TOKEN -u GITLAB_ACCESS_TOKEN -u OAUTH_TOKEN GITLAB_HOST=git.example.org claude -p /review-council\ https://git.example.org/group/sub/project/-/merge_requests/2\ ...
+```
+
+### Which forge a run targets
+
+The first of these that applies decides the forge and the host:
+
+| Source                               | Result                                                         |
+|--------------------------------------|----------------------------------------------------------------|
+| a PR or MR URL argument              | `https://github.com/o/r/pull/N` is GitHub; `https://<host>/<group…>/<project>/-/merge_requests/N` is GitLab on that host |
+| `--forge github\|gitlab`, `--host <name>` | the named forge; `--host` implies `--forge gitlab`        |
+| the origin remote's host             | `github.com` is GitHub; `gitlab.com`, or glab's default host, is GitLab |
+| an origin remote on any other host   | GitHub only if it is an SSH alias `gh` places on github.com for that same repository; otherwise refused until you pass `--forge` |
+| no origin remote                     | GitHub through `gh`                                            |
+
+With an unrecognised origin host, `--forge gitlab` uses that host and
+`--forge github` targets github.com. GitHub Enterprise is not supported.
+
+A URL that disagrees with `--forge`, `--host` or `--repo` beside it is an
+error. On GitLab, `--repo` takes the project's full path, subgroups included
+(`group/sub/project`).
+
+### Logging glab in
+
+A GitLab host is contacted only when it is in glab's config, meaning
+`glab auth status --hostname <host>` passes. Any other host is refused before
+the first request, so a pasted MR URL or a remote on an unfamiliar host never
+receives your credentials. Add each instance once:
+
+```bash
+glab auth login --hostname git.example.org
+glab auth login --hostname git.example.org --stdin < tokenfile   # non-interactive
+```
+
+A host named with a port is refused, because glab addresses a host by name
+only. Give the port to glab at login, then name the host without it:
+
+```bash
+glab auth login --hostname git.example.org --api-host git.example.org:8443
+./scripts/review-open-prs.sh --host git.example.org --repo group/project
+```
+
+### Which credentials reach which host
+
+glab's default host is the first of `GITLAB_API_HOST`, `GITLAB_HOST`,
+`GITLAB_URI` and `GL_HOST` that is set and non-empty, else gitlab.com. It does
+two jobs here: an origin remote on it is read as GitLab, and it is the `--host`
+when nothing else names one.
+
+It also decides where environment tokens go. `GITLAB_TOKEN`,
+`GITLAB_ACCESS_TOKEN` and `OAUTH_TOKEN` are sent only to that default host.
+With none of the four variables set, that is gitlab.com, so a self-hosted
+instance uses the login `glab auth login` stored for it. A variable that names
+no usable host (a URL with no host, a path, or a scheme or path in
+`GITLAB_API_HOST`, which glab takes literally) binds the tokens to no host at
+all, and a run that would otherwise default to it stops and asks for `--host`.
+
+| Variable                                   | Treatment                                              |
+|--------------------------------------------|--------------------------------------------------------|
+| `GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN`, `OAUTH_TOKEN` | passed to glab only for glab's default host  |
+| `GITLAB_API_HOST`, `GLAB_ENABLE_CI_AUTOLOGIN` | never passed to glab: each redirects an explicitly addressed call to another instance |
+
+The agent CLI that runs each review gets the same treatment, and the preview
+line shows it: `GITLAB_HOST` is set to the resolved host, `GITLAB_API_HOST`,
+`GITLAB_URI`, `GL_HOST` and `GLAB_ENABLE_CI_AUTOLOGIN` are removed, and the
+tokens are removed unless they belong to that host.
+
+### How GitHub notions map
+
+| On GitHub                          | On GitLab                                                         |
+|------------------------------------|-------------------------------------------------------------------|
+| admin or write permission (re-review requests) | the Developer role or higher in the project, inherited group membership included |
+| `reviewDecision` is `APPROVED` (`--ignore-approved`) | approved, with at least one approver. GitLab reports an MR with no approval rule as approved with no approvers, and that does not count |
+| a collapsed verdict comment        | a verdict note whose first line is the retire banner (below)      |
+| a bot author (`quick` tier)        | the MR author's `bot` flag                                        |
+| `changedFiles`                     | the MR's `changes_count`; GitLab's `1000+` is read as 1000        |
+| a login (`BY`, `--account`)        | the GitLab username                                               |
+
+Note timestamps are converted to UTC before they are compared, because a
+self-hosted instance answers in its own time zone.
+
+### Forcing a fresh review on GitLab
+
+GitLab cannot collapse a note. To force a fresh review of an MR already reviewed
+at its head, either delete the council's verdict note, or edit it so this is its
+**first** line, exactly, starting at column 0. GitLab lets a note's author, or
+anyone with the Maintainer or Owner role in the project, edit or delete it:
+
+```text
+> **Obsolete.** Superseded by the [current Review Council verdict](<url>) for commit `<sha>`. <!-- review-council:obsolete -->
+```
+
+That is the banner the council itself puts on a verdict it supersedes, and
+both scripts read a note that starts with it as collapsed. The same line
+anywhere else in the note does not count.
+
+### Examples
+
+```bash
+# one merge request on gitlab.com, by URL
+./scripts/review-open-prs.sh https://gitlab.com/group/project/-/merge_requests/7 --run
+
+# every open MR of a project on a self-hosted instance
+./scripts/review-open-prs.sh --host git.example.org --repo group/sub/project --run
+
+# a checkout whose origin is on a host the scripts do not recognise
+./scripts/review-open-prs.sh --forge gitlab --run
+
+# where every MR stands
+./scripts/review-pr-status.sh --host git.example.org --repo group/sub/project
+```
+
 ## Common invocations
 
 ```
@@ -423,6 +562,9 @@ that replaces the streaming default and the progress rendering along with it.
 ./scripts/review-open-prs.sh --run                  # the repo of the current directory
 ./scripts/review-open-prs.sh --repo owner/name --run  # a different repository
 ./scripts/review-open-prs.sh 123 --run              # one PR
+./scripts/review-open-prs.sh https://gitlab.com/group/project/-/merge_requests/7 --run  # one MR
+./scripts/review-open-prs.sh --host git.example.org --repo group/sub/project --run  # self-hosted GitLab
+./scripts/review-open-prs.sh --forge gitlab --run   # origin on a host the script does not recognise
 ./scripts/review-open-prs.sh --run --yes            # unattended, no confirmation
 ./scripts/review-open-prs.sh --requests-per-hour 3 --run  # cap comment-requested re-reviews
 ./scripts/review-open-prs.sh --cli opencode --run   # review through opencode
@@ -438,7 +580,8 @@ that replaces the streaming default and the progress rendering along with it.
 without working through any of it. It posts no comment, launches no agent CLI
 and spends nothing — every call it makes is a read, which is what makes it safe
 to run on a timer, against somebody else's repository, or while a batch review
-is already in flight. It needs `gh` and `jq`, and nothing else.
+is already in flight. It needs `gh` (or `glab` for GitLab) and `jq`, and nothing
+else.
 
 Both scripts classify PRs through the same code, so this is the driver's own
 opinion rather than a second one about it. A PR reported here as `unreviewed` is
@@ -553,8 +696,10 @@ look identical from the timeline, and neither is something to trust. One that
 
 | Flag                     | Effect                                                        |
 |--------------------------|---------------------------------------------------------------|
-| `123` or a PR URL        | report on that one PR; a URL also fixes the repository        |
-| `--repo owner/name`      | a repository other than the current directory's               |
+| `123` or a PR/MR URL     | report on that one PR; a URL also fixes the forge, host and repository |
+| `--repo owner/name`      | a repository other than the current directory's; on GitLab, the full project path |
+| `--forge github\|gitlab` | the forge, when no URL or origin remote settles it            |
+| `--host <name>`          | a GitLab host, without a port; implies `--forge gitlab`       |
 | `--account <login>\|all\|self` | whose verdicts count (default `all`)                    |
 | `--json`                 | one machine-readable envelope instead of the table            |
 | `--tsv`                  | one tab-separated line per PR, no header; refuses `--json`    |
@@ -564,7 +709,11 @@ look identical from the timeline, and neither is something to trust. One that
 | `-h`, `--help`           | the full reference, which is the file's own header            |
 
 The repository is resolved from a PR URL argument first, then `--repo`, then the
-GitHub remote of the current directory — the same order the driver uses. A
+origin remote of the current directory — the same order the driver uses, with
+the forge chosen as [Which forge a run targets](#which-forge-a-run-targets)
+describes. On GitLab the header names the host
+(`review-council status — group/sub/project on git.example.org`) and the `PR`
+column reads `!7`; `--json` and `--tsv` carry the bare number on both forges. A
 `--repo` that disagrees with the URL beside it is an error, not a silent winner.
 
 ### `--json`
@@ -577,6 +726,8 @@ and no footnote. That is what makes it safe to pipe into `jq`.
 $ ./scripts/review-pr-status.sh --repo acme/widgets 240 --json
 {
   "repo": "acme/widgets",
+  "forge": "github",
+  "host": "github.com",
   "generated_at": "2026-08-23T03:16:46Z",
   "account_scope": "all",
   "window": {
@@ -611,7 +762,8 @@ Three things to know about the shape:
   `WOULD RUN`. The rename fixed a label; renaming the key would have broken
   every reader for no gain.
 
-`window.limit` is `null` when `REREVIEW_PER_HOUR` is unset.
+`window.limit` is `null` when `REREVIEW_PER_HOUR` is unset. `forge` is `github`
+or `gitlab`, and `host` is the forge host the report was read from.
 
 ### `--tsv`
 
@@ -682,8 +834,8 @@ failure: the script exits 0 whenever it produced one.
 |------|-------------------------------------------------------------------------|
 | `0`  | reported; with `--exit-code`, nothing is `unreviewed`, `stale` or `requested` |
 | `10` | `--exit-code` only: reported, and at least one PR is pending             |
-| `1`  | a hard failure — `gh` unauthenticated, the repository unresolvable, a named PR that does not exist, or a listing that would not answer |
-| `2`  | a usage or configuration error — an unknown flag, a `--repo` that disagrees with the PR URL beside it, a non-numeric `DEEP_FILES` |
+| `1`  | a hard failure — `gh` or `glab` unauthenticated, a GitLab host missing from glab's config, the repository unresolvable, a named PR that does not exist, or a listing that would not answer |
+| `2`  | a usage or configuration error — an unknown flag, a `--repo` that disagrees with the PR URL beside it or is not a usable project path, an origin remote on an unrecognised host without `--forge`, a GitLab host with a port, a non-numeric `DEEP_FILES` |
 
 `up-to-date` and `ignored` PRs are never pending, so a repository whose every
 open PR is current or bot-authored exits 0 under `--exit-code` too.
@@ -702,9 +854,12 @@ in both scripts.
 
 ### Both scripts share `scripts/lib/`
 
-`common.sh`, `comments.sh` and `prs.sh` hold the process setup, the marker
-readers and the PR classification that the driver and the status script both
-use. Neither script is a single file you can copy on its own any more — it needs
+`common.sh`, `target.sh`, `comments.sh` and `prs.sh` hold the process setup,
+the forge and project resolution, the marker readers and the PR classification
+that the driver and the status script both use. `forge-github.sh` and
+`forge-gitlab.sh` are the two forge adapters: every `gh` or `glab` call lives in
+one of them, behind the same functions, and each run sources the one its forge
+needs. Neither script is a single file you can copy on its own any more — it needs
 `lib/` beside it.
 
 Each one finds `lib/` by resolving its own path through every symlink hop, so a

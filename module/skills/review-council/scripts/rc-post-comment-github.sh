@@ -103,7 +103,9 @@ source "$(dirname "$0")/rc-render-comment.sh"
 # `sha=unknown` (see sha_key below), and a capture insisting on hex would read
 # nothing out of those markers — every part of a chain would fall back to part 1,
 # and the sweep would read an empty sha for comments it had just posted.
-RC_MARKER_LINE_JQ="((.body | split(\"\\n\") | map(select(startswith(\"${RC_MARKER_OPEN}\"))) | last) // \"\")"
+#
+# The jq that binds that line is RC_MARKER_LINE_JQ in rc-lib.sh, shared with the
+# GitLab poster so the two forges cannot read a marker differently.
 
 # Every council comment already posted for THIS commit, one TSV row per part,
 # ordered by part number. A verdict too large for one comment is chained across

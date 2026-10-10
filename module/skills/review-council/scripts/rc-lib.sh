@@ -8,6 +8,7 @@
 #   - json_output()  — structured JSON output helper
 #   - build_repo_flag() — constructs --repo flag for gh/glab CLI
 #   - parse_remote() — splits a git remote into host / owner / repo
+#   - project_path_ok() — gates an owner/repo project path segment by segment
 #   - rc_timeout() — runs a command under the resolved GNU timeout binary
 
 # Guard: skip if already loaded
@@ -36,9 +37,17 @@ RC_MARKER_KEY="review-council:marker"
 # separates a verdict from a quote of one — the only test that works when there
 # is no author to compare against. One definition for the same reason the key
 # has one: the poster and preparation drifted apart once already.
-# shellcheck disable=SC2034 # read by rc-post-comment-github.sh (RC_MARKER_LINE_JQ)
-# and by prepare-context.sh (the re-review anchor and exclusion).
+# shellcheck disable=SC2034 # read by RC_MARKER_LINE_JQ below and by
+# prepare-context.sh (the re-review anchor and exclusion).
 RC_MARKER_OPEN="<!-- ${RC_MARKER_KEY} sha="
+
+# A jq expression, evaluated against one comment object, yielding the LAST line
+# of its `.body` that opens a marker at column 0, or "" when none does. Both
+# post scripts select council comments through this and nothing else; why the
+# last such line and never the body at large is at the top of the listing
+# helpers in rc-post-comment-github.sh.
+# shellcheck disable=SC2034 # read by rc-post-comment-github.sh and rc-post-comment-gitlab.sh.
+RC_MARKER_LINE_JQ="((.body | split(\"\\n\") | map(select(startswith(\"${RC_MARKER_OPEN}\"))) | last) // \"\")"
 
 # Delegation batching budgets, as phases/delegate.md applies them: a batch
 # closes when either would be breached. Bytes are primary, because context is
@@ -113,7 +122,7 @@ build_repo_flag() {
 	fi
 }
 
-# Split a git remote into rc_remote_{host,owner,repo}. Three return values is
+# Split a git remote into rc_remote_{host,owner,repo,path}. Four return values is
 # why these are set rather than printed: reading them back from a command
 # substitution would put the parse in a subshell for no gain. Every call site —
 # the origin in rc-prepare.sh, and both the origin and an explicit --url in
@@ -125,10 +134,12 @@ build_repo_flag() {
 # reduce to owner/repo still names the host it points at. That covers a remote
 # carrying extra path segments (a nested GitLab subgroup): the host is real and
 # both callers ask about it first, while owner/repo stay blank because two
-# segments cannot express it.
+# segments cannot express it. rc_remote_path carries the whole path instead,
+# `.git` stripped, for the GitLab caller that can: a GitLab project is every
+# segment, and the caller validates each one before using any.
 #
 # A port is the one thing the host group refuses outright: `:` followed by
-# digits leaves all three blank rather than yielding a host with the port shaved
+# digits leaves all four blank rather than yielding a host with the port shaved
 # off. The port is part of the endpoint — `ghe.corp.net:8443` and
 # `ghe.corp.net` are two different services — so dropping it would make unequal
 # endpoints compare equal, which is exactly the identity confusion the host is
@@ -137,7 +148,7 @@ build_repo_flag() {
 # digits are an owner; that ambiguity is worth resolving the day a caller can
 # actually name a ported host.
 #
-# So a port, a filesystem path, and a bare hostname all leave the three blank.
+# So a port, a filesystem path, and a bare hostname all leave the four blank.
 # That is safe in both callers, but for different reasons, and each is a
 # separate claim about a different consequence:
 #   - rc-clone-target.sh compares the host to decide whether the checkout it is
@@ -149,12 +160,12 @@ build_repo_flag() {
 #     none, so the session degrades to forge=local — also safe, but a heavier
 #     consequence than a lost fast path, since the review then covers the branch
 #     diff rather than the pull request the caller asked about.
-rc_remote_host="" rc_remote_owner="" rc_remote_repo=""
-# shellcheck disable=SC2034 # the three are this function's return values, read
+rc_remote_host="" rc_remote_owner="" rc_remote_repo="" rc_remote_path=""
+# shellcheck disable=SC2034 # the four are this function's return values, read
 # by the scripts that source this library rather than anywhere inside it.
-parse_remote() { # url -> sets rc_remote_host / rc_remote_owner / rc_remote_repo
+parse_remote() { # url -> sets rc_remote_host / rc_remote_owner / rc_remote_repo / rc_remote_path
 	local host sep path
-	rc_remote_host="" rc_remote_owner="" rc_remote_repo=""
+	rc_remote_host="" rc_remote_owner="" rc_remote_repo="" rc_remote_path=""
 	[[ "$1" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*://)?([^@/]+@)?([^/:]+)([:/]+)(.+)$ ]] || return 0
 	# Read every group out before the next `=~`, which overwrites BASH_REMATCH.
 	host="${BASH_REMATCH[3]}"
@@ -163,11 +174,41 @@ parse_remote() { # url -> sets rc_remote_host / rc_remote_owner / rc_remote_repo
 	# Ambiguous port or digit-owner: refuse the whole parse, host included.
 	[[ "$sep" == *:* ]] && [[ "$path" =~ ^[0-9]+(/|$) ]] && return 0
 	rc_remote_host="$host"
+	rc_remote_path="${path%.git}"
 	if [[ "$path" =~ ^([^/:]+)/([^/]+)$ ]]; then
 		rc_remote_owner="${BASH_REMATCH[1]}"
 		# `[^/]+` is greedy, so a trailing `.git` lands inside the repo group.
 		rc_remote_repo="${BASH_REMATCH[2]%.git}"
 	fi
+}
+
+# Status 0 when <owner>/<repo> is a project path safe to hand a forge CLI.
+# Every path segment is validated on its own. The character class alone admits
+# `.` and `..`, and an owner may legitimately carry `/` (a GitLab subgroup), so
+# checking the pair as two flat strings would let a traversal segment through.
+# A segment may not start with `-` either: it would read as an option to the
+# forge CLI, and `-` alone is GitLab's route separator, so a project path
+# holding one is a repeated route, not a project. This is a security control,
+# not a tidiness check: build_repo_flag's output is expanded UNQUOTED at four
+# `gh` call sites, so a segment carrying whitespace or a shell metacharacter
+# would land as extra argv words. The whole-string check runs first because
+# `read` stops at a newline and would leave everything after one unchecked.
+# <repo> is the final segment, so it may not hold a `/` itself: `read` drops a
+# trailing empty field, and `p/` would otherwise pass as `p`.
+#
+# Shared by rc-prepare.sh, which gates a project before any forge call, and
+# rc-clone-target.sh, which gates it again before the path reaches a clone URL
+# and a cache directory name. One definition, so the two cannot disagree about
+# what a safe project path is.
+project_path_ok() { # owner repo
+	local segments segment
+	[[ -n "$1" ]] && [[ -n "$2" ]] && [[ "$2" != */* ]] &&
+		[[ "${1}/${2}" =~ ^[a-zA-Z0-9._/-]+$ ]] || return 1
+	IFS='/' read -r -a segments <<<"${1}/${2}"
+	for segment in "${segments[@]}"; do
+		[[ "$segment" =~ ^[a-zA-Z0-9._][a-zA-Z0-9._-]*$ ]] &&
+			[[ "$segment" != "." ]] && [[ "$segment" != ".." ]] || return 1
+	done
 }
 
 # GNU timeout bounds every forge call, so a hung `gh`/`git` cannot stall a
@@ -176,14 +217,15 @@ parse_remote() { # url -> sets rc_remote_host / rc_remote_owner / rc_remote_repo
 # in an un-PATHed libexec/gnubin. Accept either name so `brew install coreutils`
 # is sufficient without PATH surgery.
 #
-# Called by the three scripts that make forge calls — rc-prepare.sh,
-# rc-clone-target.sh, rc-post-comment-github.sh — and by nobody else. It used to
-# run at source time, which gated all eight sourcing scripts on a dependency
-# five of them never touch: on a macOS host without coreutils, evidence
-# verification, consolidation, verdict extraction and comment rendering each
-# printed a skip and did nothing, for want of a timeout none of them calls.
+# Called by the four scripts that make forge calls — rc-prepare.sh,
+# rc-clone-target.sh, rc-post-comment-github.sh, rc-post-comment-gitlab.sh —
+# and by nobody else. It used to run at source time, which gated all eight
+# sourcing scripts of the day on a dependency five of them never touch: on a
+# macOS host without coreutils, evidence verification, consolidation, verdict
+# extraction and comment rendering each printed a skip and did nothing, for
+# want of a timeout none of them calls.
 #
-# Called EAGERLY at the top of those three, not lazily from rc_timeout below.
+# Called EAGERLY at the top of those four, not lazily from rc_timeout below.
 # rc-prepare.sh does not reach its first forge call until it has created the
 # session directory and written several files into it; failing there would leave
 # a half-built session behind a message that reads like nothing happened.
@@ -213,6 +255,19 @@ rc_timeout() {
 # Read the value of a "- Key: value" or "Key: value" line from a file.
 # Returns the first match's value, trimmed. Empty string if not found.
 # Usage: value=$(rc_parse_kv "$file" "Forge")
+# <value> — <value> with every control character replaced by a space: C0
+# (newline, carriage return, tab, ESC ...), DEL, and C1 (U+0080-U+009F, two
+# bytes in UTF-8). Everything else, multi-byte text included, is kept. For a
+# forge-supplied value written into a line-oriented file such as session.txt:
+# one holding a newline would add a line of its author's choosing, and
+# rc_parse_kv reads the first match. Matched byte-wise (LC_ALL=C), so the
+# result does not depend on the caller's locale.
+rc_single_line() {
+	local LC_ALL=C value="$1"
+	value="${value//$'\xc2'[$'\x80'-$'\x9f']/ }"
+	printf '%s' "${value//[[:cntrl:]]/ }"
+}
+
 rc_parse_kv() {
 	local file="$1" key="$2"
 	[[ -f "$file" ]] || return 0

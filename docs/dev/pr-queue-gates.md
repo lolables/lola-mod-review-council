@@ -105,3 +105,38 @@ A marker posted by any other account is named in the plan output and the PR is
 reviewed anyway. A token that rotated between runs and a forged marker look
 identical from the timeline, and reviewing is the safe answer to both — the
 worst a forgery achieves is a review that was going to happen regardless.
+
+## The same gates on GitLab
+
+Every gate above runs unchanged on a GitLab merge request. `prs.sh` and
+`comments.sh` work on one GitHub-shaped comment timeline, and
+`scripts/lib/forge-gitlab.sh` translates GitLab's answers into it, so the
+forgery rules and the queue logic exist once. What each gate reads differs:
+
+| Gate                              | GitHub reads                          | GitLab reads                                                        |
+|-----------------------------------|---------------------------------------|---------------------------------------------------------------------|
+| Named explicitly                  | the PR number or URL                  | the MR number (`iid`) or URL                                        |
+| Commit-author lookup, ignore list | `.commits[].authors[].email`          | `author_email` of each MR commit                                    |
+| Already reviewed at head          | the marker in PR comments, against `headRefOid` | the marker in MR notes, against the MR's `sha`; system notes are dropped |
+| Authored by us                    | `viewerDidAuthor`                     | the note author's numeric id equals the id of the account glab is logged in as |
+| Not collapsed                     | `isMinimized`                         | the note's first line is exactly the retire banner, since GitLab cannot collapse a note |
+| Re-review request by write access | admin or write permission             | effective role Developer (access level 30) or higher, inherited group membership included; fails closed |
+| Hourly cap                        | verdict comment timestamps            | note timestamps, converted to UTC first                             |
+| `--force`                         | unchanged                             | unchanged                                                           |
+
+Two consequences of the translation:
+
+- **Every note's `authorAssociation` reads `MEMBER`.** GitLab reports no
+  per-note association, so the cheap first check on a re-review request always
+  passes and the role lookup is the real gate. That lookup fails closed, as it
+  does on GitHub.
+- **Who can add the banner to a verdict.** GitLab lets a note's author, or
+  anyone with the Maintainer or Owner role in the project, edit it. A
+  Maintainer can therefore force a fresh review by putting the banner on the
+  council's verdict, and could equally rewrite the verdict's marker `sha=` to
+  suppress one. That is within the authority a Maintainer already has (they
+  can merge), and it is the same trust GitHub gives accounts that can edit
+  other people's comments. Anyone else (Developer or below, or a non-member)
+  can alter only their own notes: a banner on a note that is not a verdict
+  changes nothing, and one on a verdict they posted queues the MR for review,
+  so both fail toward reviewing.

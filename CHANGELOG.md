@@ -6,6 +6,56 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- `scripts/review-open-prs.sh` and `scripts/review-pr-status.sh` work on GitLab
+  merge requests through `glab`, on gitlab.com or a self-hosted instance. The
+  forge comes from a PR/MR URL, else `--forge github|gitlab` and `--host <name>`
+  (`--host` implies GitLab), else the origin remote; `--repo` takes a nested
+  group path on GitLab. Re-review requests need the Developer role or higher,
+  `--ignore-approved` counts an MR only when it has at least one approver, and
+  a verdict note whose first line is the council's retire banner counts as
+  collapsed, since GitLab cannot collapse a note. Each review's agent CLI runs
+  with `GITLAB_HOST` set to the resolved host, and GitLab logs are named
+  `<host>-<group>-…-pr-<n>.log`. See `docs/batch-reviewing-prs.md`
+- The scripts send GitLab credentials only where they belong. A GitLab host
+  is contacted only when `glab auth status --hostname <host>` passes, so a
+  host absent from glab's config is refused before the first request. The
+  environment tokens `GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN` and `OAUTH_TOKEN`
+  reach only glab's default host (the first of `GITLAB_API_HOST`,
+  `GITLAB_HOST`, `GITLAB_URI`, `GL_HOST`, else gitlab.com), and to no host
+  when the variable set names no usable one; any other host uses its own
+  `glab auth login`. `GITLAB_API_HOST` and
+  `GLAB_ENABLE_CI_AUTOLOGIN` are never passed to glab, because each redirects
+  an explicitly addressed call to another instance. The council's GitLab
+  adapter and poster apply the same three rules
+- The council posts its verdict to GitLab merge requests.
+  `rc-post-comment-gitlab.sh` is a port of the GitHub poster: it creates,
+  updates in place and supersedes notes per head SHA and part, selects its own
+  notes by the numeric id of the account `glab` is logged in as, and retires a
+  superseded note with the same obsolete banner, which stays expanded because
+  GitLab has nothing like minimize
+- `--scope url` accepts a GitLab merge request URL on any host, not only
+  gitlab.com, provided `glab` is logged in to that host; otherwise the run
+  stops with a terminal `skip` before any glab call. The host is recorded in
+  `session.txt` as `Host:`, and the GitLab adapter, the clone, the permalinks
+  and the poster all address that host and project explicitly. A GitLab URL
+  with a port is refused
+- On GitLab, preparation reads the merge request's notes into
+  `pr-conversation.txt` and names the posting account, so re-review
+  disposition works there too. GitLab approvals are not imported as prior
+  reviews. `rc-clone-target.sh` materializes the merge request from its
+  repository archive at the head sha, downloaded through `glab` so private
+  projects work and cached in an entry keyed `<host>+<group>+…+<repo>`. Each
+  run unpacks the archive into a tree of its own and fetches that MR's changed
+  files into it as their exact blobs, so `export-ignore` or
+  `export-subst` in the MR's own `.gitattributes` cannot hide or rewrite them.
+  Archives naming a path outside their tree, or over the size, entry and
+  changed-file caps (`REVIEW_COUNCIL_ARCHIVE_MAX_BYTES`,
+  `REVIEW_COUNCIL_ARCHIVE_MAX_UNPACKED_BYTES`,
+  `REVIEW_COUNCIL_ARCHIVE_MAX_ENTRIES`, `REVIEW_COUNCIL_MAX_CHANGED_FILES`), are
+  refused. Symlinks, hard links and special files are deleted (counted as
+  `special_files_removed`), so a finding anchored at a file the MR commits as
+  a symlink is no longer verifiable on GitLab
+
 - Validator outcomes are now applied by `rc-apply-validation.sh`, keyed on a
   finding `id` that `rc-verify-evidence.sh` assigns (`F1`, `F2`, ...). Each
   outcome echoes its finding's file; one that names an unknown or duplicate id,
@@ -211,16 +261,6 @@ All notable changes to the Review Council module are documented here.
   hook means no limit, which keeps the standalone manual-paste fallback at full
   fidelity instead of trimming it to satisfy an API it never reaches.
   `references/forge-adapters.md` carries it with the other hooks
-- `rc-post-comment-gitlab.sh` — a per-forge script that defines GitLab's three
-  hooks, renders, and stops. It never writes upstream, with or without `--send`,
-  which is accepted and ignored: the upsert, supersede and identity policy in
-  `rc-post-comment-github.sh` has no `glab` equivalent yet, and a half-built
-  poster that creates a note but cannot find its own on the next run leaves
-  duplicate verdicts on the merge request. It exists rather than letting the
-  router fall through to the standalone renderer because the hooks live in
-  per-forge post scripts — without one, a GitLab review renders deep-link-free
-  bodies against no size budget at all, and "the limit is per-forge" stays a
-  comment rather than a testable claim
 - The council-comment marker carries `part=<n> of=<m>` beside its `sha=`; an
   unsplit verdict is `part=1 of=1`. The GitHub poster matches per part within a
   head SHA, so a re-run on the same commit updates each part in place rather
@@ -413,7 +453,8 @@ All notable changes to the Review Council module are documented here.
   comment already exists on a PR, `rc-prepare.sh` fetches the issue-comments
   timeline and writes replies posted at/after the marker to
   `pr-conversation.txt` as UNTRUSTED data. First reviews and non-GitHub
-  forges write no file; SECTION 13's no-op `gitlab` branch marks the gap
+  forges write no file; SECTION 13's no-op `gitlab` branch marks the gap.
+  GitLab has since gained this too (see the GitLab entries above)
 - Disposition step (`phases/disposition.md`, SKILL.md Step 4.5): the one
   chokepoint that reads `pr-conversation.txt`, gated on that file existing
   and effort not `quick`. A fresh-context subagent receives the untrusted
@@ -463,6 +504,18 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- Behaviour changes in the batch scripts for existing GitHub users:
+  - An origin remote on a host that is neither github.com, gitlab.com nor
+    glab's default host is refused until `--forge` is given. Before, the run
+    went to GitHub. An SSH alias that `gh` places on github.com for the same
+    repository is still accepted.
+  - `--repo` values are validated: a GitHub value must be exactly
+    `owner/name`, and a segment that is empty, dot-only, starts with `-` or
+    holds anything outside `[A-Za-z0-9._-]` exits 2.
+  - The plan prints a `Forge: <forge> (<host>)` line after `Repository:`.
+  - The `--json` envelope of `review-pr-status.sh` gains `forge` and `host`.
+- A malformed GitHub pull request URL under `--scope url` is now a terminal
+  `skip` naming the expected URL shape.
 - Severity calibration downgrades three kinds of finding that blocked clean
   changesets without being defects in them. A CRITICAL or HIGH that rests on a
   claim nobody can check from the changeset or the repository (whether a
@@ -682,6 +735,18 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The posted marker names the PR/MR head the forge reported. The renderer read
+  it from the checkout under review, which a GitLab archive tree does not have
+  (`sha=unknown`, so the batch scripts re-reviewed the MR on every run), and a
+  PR or URL review standing in `.` stamped the launch checkout's `HEAD`, a
+  commit nobody reviewed. The adapters now set `pr_head_sha`, preparation
+  records it as `Head SHA:` in `session.txt`, and a PR or URL review with no
+  recorded head writes `sha=unknown` rather than a wrong commit
+- A PR or MR title, branch name, URL or state holding a line break can no
+  longer add lines to `session.txt`, `tracking.md` or `pr-metadata.txt`. A
+  title carrying `Head SHA:` or `Review root:` lines could otherwise name the
+  commit the marker records or the directory findings are verified against.
+  Control characters in those values now become spaces
 - A run whose reviewers all returned verdicts no longer stops as if they had
   returned nothing. The orchestrator had asked read-only reviewers to write
   their own `.raw.md` files, so none was written, and extraction's

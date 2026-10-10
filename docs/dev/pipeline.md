@@ -69,7 +69,7 @@ flowchart TD
   ext["Extract: schema-validate each reviewer's JSON verdict"]
   ver["Verify: format gate, correction, calibration, strip, merge-base advisories, consolidation, validation gate"]
   dispgate{"Re-review conversation to triage? (not quick effort)"}
-  disp["Disposition: triage untrusted PR conversation (GitHub only)"]
+  disp["Disposition: triage untrusted PR conversation (GitHub and GitLab)"]
   report["Report: determine verdict, render artifacts, record learnings"]
   iter{"Findings remain, effort limit not reached, session interactive?"}
   postgate{"Post intent recorded?"}
@@ -286,7 +286,7 @@ behind. The session a run is currently using is never evicted, whatever the cap.
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
 and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
-is added too — untrusted replies posted since that marker, GitHub only for now.
+is added too — untrusted replies posted since that marker, on GitHub and GitLab.
 
 ## What spec mode reviews
 

@@ -51,6 +51,17 @@ if [[ -f "$RC_LIB_DIR/forge/${forge}.sh" ]]; then
 	source "$RC_LIB_DIR/forge/${forge}.sh"
 fi
 
+# A host the user named in a URL is untrusted until the adapter says otherwise:
+# a forge CLI may hand its credentials to any host it is aimed at. Asked here,
+# before the first stage that calls the forge, and terminal when refused.
+if [[ "$input_type" == "url" ]] && declare -F rc_forge_host_refusal >/dev/null; then
+	host_refusal=$(rc_forge_host_refusal "$forge_host")
+	if [[ -n "$host_refusal" ]]; then
+		json_output "skip" "$host_refusal"
+		exit 0
+	fi
+fi
+
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-target.sh
 source "$RC_LIB_DIR/prepare-target.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-changes.sh

@@ -10,8 +10,8 @@
 #
 # Contract:
 #   rc_forge_fetch_pr <pr> <owner> <repo>
-#       Sets pr_title, pr_body, pr_base, pr_head, pr_url, pr_state and
-#       pr_status_checks. Leaves them untouched when the PR cannot be read, so
+#       Sets pr_title, pr_body, pr_base, pr_head, pr_head_sha, pr_url, pr_state
+#       and pr_status_checks. Leaves them untouched when the PR cannot be read, so
 #       the caller's "did we get a title" test still decides whether metadata
 #       was obtained.
 #
@@ -68,7 +68,7 @@ rc_forge_fetch_pr() {
 
 	# shellcheck disable=SC2086 # repo_flag is a two-token flag or empty.
 	pr_json=$(rc_timeout 30 gh pr view "$pr_number" $repo_flag \
-		--json number,title,body,baseRefName,headRefName,url,state,statusCheckRollup \
+		--json number,title,body,baseRefName,headRefName,headRefOid,url,state,statusCheckRollup \
 		2>/dev/null || echo "")
 
 	[[ -n "$pr_json" ]] || return 0
@@ -77,6 +77,9 @@ rc_forge_fetch_pr() {
 	pr_body=$(echo "$pr_json" | jq -r '.body // ""')
 	pr_base=$(echo "$pr_json" | jq -r '.baseRefName // ""')
 	pr_head=$(echo "$pr_json" | jq -r '.headRefName // ""')
+	# The commit the posted marker names; only a full commit id is kept.
+	pr_head_sha=$(echo "$pr_json" | jq -r '.headRefOid // ""')
+	[[ "$pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || pr_head_sha=""
 	pr_url=$(echo "$pr_json" | jq -r '.url // ""')
 	pr_state=$(echo "$pr_json" | jq -r '.state // ""')
 	pr_status_checks=$(echo "$pr_json" | jq -r "$RC_FORGE_GH_STATUS_CHECKS_JQ")

@@ -254,7 +254,7 @@ _rc_section() { # level start end -> _RC_OUT
 # forge-specific links (e.g. #issuecomment-<id>). ---
 rc_render_comment_body() { # session_dir body_file
 	local session_dir="$1" body_file="$2"
-	local owner repo effort rr origin host
+	local owner repo effort rr origin host forge_host recorded_head input_type
 	local verdict="APPROVE" v emoji tldr models_bullets=""
 	local stamp commit_url repo_url
 	local c_crit c_high c_med c_low
@@ -295,21 +295,44 @@ rc_render_comment_body() { # session_dir body_file
 		done <<<"$model_ids"
 	fi
 
-	# Neutral facts: head SHA (materialized checkout or working tree) and forge
-	# web host (parsed from the origin remote — GitHub Enterprise safe). Empty
-	# head SHA degrades links to plain spans via the hooks.
+	# Neutral facts: head SHA and forge web host (parsed from the origin remote
+	# — GitHub Enterprise safe). Empty head SHA degrades links to plain spans
+	# via the hooks, and the marker to `sha=unknown`.
+	#
+	# The head is, in order: the PR/MR head the forge reported ("Head SHA:",
+	# recorded by prepare-emit.sh), the materialized checkout's HEAD, else the
+	# working tree's HEAD — but only for a local review. A review by PR number
+	# or URL ("Input:" pr_number/url) standing in "." was launched from some
+	# checkout that need not be the PR's, so its HEAD would stamp the marker
+	# with a commit nobody reviewed; it stays unknown instead. A GitLab
+	# review_root is an extracted archive with no .git, so only the recorded
+	# head names it.
 	RC_HEAD_SHA=""
 	RC_FORGE_WEB=""
 	rr=$(rc_parse_kv "$session_dir/session.txt" "Review root")
+	recorded_head=$(rc_parse_kv "$session_dir/session.txt" "Head SHA")
+	input_type=$(rc_parse_kv "$session_dir/session.txt" "Input")
+	[[ "$recorded_head" =~ ^[0-9a-f]{40}$ ]] && RC_HEAD_SHA="$recorded_head"
 	origin=""
 	if [[ -n "$rr" && "$rr" != "." && -d "$rr/.git" ]]; then
-		RC_HEAD_SHA=$(git -C "$rr" rev-parse HEAD 2>/dev/null || echo "")
+		[[ -n "$RC_HEAD_SHA" ]] || RC_HEAD_SHA=$(git -C "$rr" rev-parse HEAD 2>/dev/null || echo "")
 		origin=$(git -C "$rr" remote get-url origin 2>/dev/null || echo "")
 	elif [[ "$rr" == "." ]]; then
-		RC_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+		if [[ -z "$RC_HEAD_SHA" && "$input_type" != "pr_number" && "$input_type" != "url" ]]; then
+			RC_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+		fi
 		origin=$(git remote get-url origin 2>/dev/null || echo "")
 	fi
-	if [[ -n "$owner" && -n "$repo" ]]; then
+	# A review run by MR/PR URL from outside the target checkout has an
+	# unrelated origin remote, so prefer the host prepare-emit.sh recorded in
+	# session.txt. Anything that is not a plain DNS name, or an owner/repo that
+	# is not a safe project path, falls through to the origin derivation below.
+	forge_host=$(rc_parse_kv "$session_dir/session.txt" "Host")
+	if [[ "$forge_host" != "none" && "$owner" != "none" && "$repo" != "none" ]] &&
+		[[ "$forge_host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] &&
+		project_path_ok "$owner" "$repo"; then
+		RC_FORGE_WEB="https://${forge_host}/${owner}/${repo}"
+	elif [[ -n "$owner" && -n "$repo" ]]; then
 		host=$(printf '%s' "$origin" | sed -E 's#^git@([^:]+):.*#\1#; s#^https?://([^/]+)/.*#\1#')
 		# A host that failed to parse (empty, or unchanged from the raw origin)
 		# leaves RC_FORGE_WEB empty rather than guessing a forge -- this

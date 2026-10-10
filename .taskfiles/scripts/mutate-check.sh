@@ -527,7 +527,7 @@ check_mutation "RC-041 the cut reserves what it re-appends" \
 # the LAST line. Widest of the five: it takes the ordinary single-comment upsert
 # down with it, which is what Test 9 reports.
 check_mutation "RC-042 marker read from its own line" \
-	rc-post-comment-github.sh \
+	rc-lib.sh \
 	's/^RC_MARKER_LINE_JQ=.*$/RC_MARKER_LINE_JQ=".body"/' \
 	test-rc-post-comment-github.sh
 
@@ -537,9 +537,21 @@ check_mutation "RC-042 marker read from its own line" \
 # forgery — with the subject and both patterns otherwise intact, which is why
 # this is guarded apart from the entry above.
 check_mutation "RC-042 the last marker line wins" \
-	rc-post-comment-github.sh \
+	rc-lib.sh \
 	's/^\(RC_MARKER_LINE_JQ=.*\)| last)/\1| first)/' \
 	test-rc-post-comment-github.sh
+
+# The same two reads, through the GitLab poster: RC_MARKER_LINE_JQ is shared,
+# so a defect there lands on both forges and each suite must see it.
+check_mutation "RC-042 marker read from its own line (GitLab)" \
+	rc-lib.sh \
+	's/^RC_MARKER_LINE_JQ=.*$/RC_MARKER_LINE_JQ=".body"/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-042 the last marker line wins (GitLab)" \
+	rc-lib.sh \
+	's/^\(RC_MARKER_LINE_JQ=.*\)| last)/\1| first)/' \
+	test-rc-post-comment-gitlab.sh
 
 # The selector. "Is this comment part of the verdict for the commit under
 # review?" answered by searching the body for `sha=<head>` adopts a PRIOR
@@ -1077,6 +1089,62 @@ check_mutation "RC-070 a wrong-shaped manifest claims no missing verdicts" \
 	rc-verify-evidence.sh \
 	's/if (\$c | type) == "array" and (\$c | all(type == "string"))$/if true/' \
 	test-rc-verify-evidence.sh
+
+# --- RC-071: a stale GitLab verdict was never retired ------------------------
+#
+# The GitLab poster took any note containing `review-council:obsolete` as
+# already retired, so a verdict quoting the tag in its evidence was never
+# bannered — and GitLab cannot hide a note, so it stayed live for good. Only
+# the first line decides, as it does for the batch scripts. A retire that
+# could not read or rewrite the note was swallowed and still counted.
+check_mutation "RC-071 retired means a banner first line, not a substring" \
+	rc-post-comment-gitlab.sh \
+	's/split("\\n")\[0\] | test(\$re)/test("review-council:obsolete")/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-071 a failed banner write is not counted as superseded" \
+	rc-post-comment-gitlab.sh \
+	's/^\([[:space:]]*gl_update "\$id" "\$supersede_file"\)$/\1 || true/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-071 an unreadable note is not bannered blind" \
+	rc-post-comment-gitlab.sh \
+	's/old_body=\$(gl_get_body "\$id") || return 1/old_body=$(gl_get_body "$id") || true/' \
+	test-rc-post-comment-gitlab.sh
+
+# --- RC-072: GitLab note selection and identity ------------------------------
+#
+# The GitLab poster's half of RC-042's contract. Each entry removes one of the
+# checks that keep its writes on the council's own notes, or keep a listing it
+# could not read from passing as "nothing posted yet".
+check_mutation "RC-072 GitLab listings require the viewer as author" \
+	rc-post-comment-gitlab.sh \
+	's/select(.author.id == \\\$viewer and /select(/g' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-072 the GitLab sweep skips the notes it just created" \
+	rc-post-comment-gitlab.sh \
+	'/\[\[ -n "\${created_ids\[\$id\]:-}" \]\] && continue/d' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-072 the GitLab viewer id must be a positive integer" \
+	rc-post-comment-gitlab.sh \
+	's/^if \[\[ ! "\$viewer_id" =~ \^\[1-9\]\[0-9\]\*\$ \]\]; then$/if false; then/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-072 a notes page that is not an array is an error" \
+	rc-post-comment-gitlab.sh \
+	's/if length > 0 and all(.\[\]; type == "array")/if length > 0/' \
+	test-rc-post-comment-gitlab.sh
+
+# --- RC-073: the GitLab poster asks the credential gate first ----------------
+#
+# glab sends its stored token to any host it is pointed at. The poster must
+# not contact the recorded host until rc_forge_glab_admits has passed it.
+check_mutation "RC-073 the GitLab poster refuses a host glab is not logged in to" \
+	rc-post-comment-gitlab.sh \
+	's/^if ! rc_forge_glab_admits /if false \&\& ! rc_forge_glab_admits /' \
+	test-rc-post-comment-gitlab.sh
 
 total=$((caught + missed + broken))
 echo ""

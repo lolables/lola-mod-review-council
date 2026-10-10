@@ -893,6 +893,12 @@ claims about it change finding disposition. It exists
 only for re-reviews; a first-time review has no prior verdict to have drawn
 replies.
 
+The gate is enforced at render time: `rc-render-comment.sh` and both post
+scripts refuse with `status: "error"`, writing and posting nothing, when
+`pr-conversation.txt` and `verdicts/findings.json` exist, effort is not
+`quick`, and `verdicts/_meta/disposition.txt` is missing. On that error, run
+this phase, then render again.
+
 **Read `${PHASES_DIR}/disposition.md`** for the full procedure. Dispatch a
 single fresh-context subagent (has not seen prior review phases) using **the
 verbatim prompt from `disposition.md`'s "Step 3 — Subagent Prompt" section —

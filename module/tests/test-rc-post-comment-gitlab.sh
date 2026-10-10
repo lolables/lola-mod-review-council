@@ -565,6 +565,7 @@ bash "$SCRIPT" "$sess" >/dev/null 2>&1
 prior=$(cat "$sess/comment-body.md")
 jq -n --arg b "$prior" "${GL_NOTE_DEF}"'[note(900; $b)]' >"$st/notes.json"
 printf 'reply from @bootc: finding 3 is wrong, the guard is two lines up.\n' >"$sess/pr-conversation.txt"
+printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt" # Disposition ran (RC-075 gate)
 result=$(post "$sess" "$st")
 assert_json_field "$result" "action" "created" "answering a conversation posts a new note"
 assert_json_field "$result" "superseded" "1" "the prior verdict is retired, the new one is not"
@@ -1229,6 +1230,17 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
+
+echo "Test D1: the poster refuses a re-review that skipped Disposition (RC-075)"
+sess=$(mktemp -d)
+st=$(mktemp -d)
+make_gl_session "$sess"
+make_glab "$st"
+printf 'reply\n' >"$sess/pr-conversation.txt"
+result=$(post "$sess" "$st")
+assert_json_field "$result" "status" "error" "status is error"
+no_writes "$st" "nothing written to the merge request"
+rm -rf "$sess" "$st"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

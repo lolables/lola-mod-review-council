@@ -249,6 +249,26 @@ _rc_section() { # level start end -> _RC_OUT
 	_RC_OUT="$out"
 }
 
+# Why the verdict may not be rendered yet, or nothing.
+#
+# SKILL.md Step 4.5 requires Disposition on a re-review — pr-conversation.txt
+# exists, and prepare-context.sh writes it only when there is a reply — at any
+# effort but quick, unless the evidence check found nothing (no findings.json).
+# The phase was an instruction and nothing more: live, a standard re-review
+# skipped it without a word. The findings were kept, so the outcome was safe,
+# but the replies it existed to answer were never weighed. Every posting path
+# renders through here, so this is where the phase is enforced. A session with
+# no recorded effort is held to the gate rather than excused from it.
+rc_disposition_gate() { # session_dir
+	local sdir="$1" effort
+	[[ -f "$sdir/pr-conversation.txt" ]] || return 0
+	[[ -f "$sdir/verdicts/findings.json" ]] || return 0
+	[[ -f "$sdir/verdicts/_meta/disposition.txt" ]] && return 0
+	effort=$(rc_parse_kv "$sdir/session.txt" "Effort")
+	[[ "$effort" == "quick" ]] && return 0
+	printf '%s' "Not rendering: this re-review has replies to weigh (pr-conversation.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
+}
+
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
 # RC_EVIDENCE (no `local`) so the sourcing per-forge script can build its own
 # forge-specific links (e.g. #issuecomment-<id>). ---
@@ -697,6 +717,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 	session_dir="${1:-}"
 	if [[ -z "$session_dir" || ! -d "$session_dir" ]]; then
 		json_output "skip" "Session directory not found."
+		exit 0
+	fi
+	gate_msg=$(rc_disposition_gate "$session_dir")
+	if [[ -n "$gate_msg" ]]; then
+		json_output "error" "$gate_msg"
 		exit 0
 	fi
 	body_file="$session_dir/comment-body.md"

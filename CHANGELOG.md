@@ -735,6 +735,11 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- A re-review that skipped the Disposition phase is no longer rendered or
+  posted. When the PR has replies since the last verdict and effort is not
+  `quick`, rendering refuses with an error naming the phase until
+  `verdicts/_meta/disposition.txt` exists; live, a standard re-review had
+  skipped it without a word.
 - On GitHub, the council now reads every page of a pull request's reviews,
   review comments and conversation. It used to read only the first 30 of each,
   so on a long thread the replies since the last verdict, the newest

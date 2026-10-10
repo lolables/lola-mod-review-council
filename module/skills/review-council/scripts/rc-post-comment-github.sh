@@ -210,6 +210,13 @@ if [[ -z "$pr" || "$pr" == "none" ]]; then
 	exit 0
 fi
 
+# Refused before rendering, so nothing is written and nothing is posted.
+gate_msg=$(rc_disposition_gate "$session_dir")
+if [[ -n "$gate_msg" ]]; then
+	json_output "error" "$gate_msg"
+	exit 0
+fi
+
 # --- Render (sets RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA) ---
 body_file="$session_dir/comment-body.md"
 rc_render_comment_body "$session_dir" "$body_file"

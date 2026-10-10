@@ -1613,6 +1613,62 @@ local review without an Input line|||dot|CWD
 HEADCASES
 rm -rf "$elsewhere"
 
+# --- Disposition gate (RC-075) -------------------------------------------------
+#
+# A re-review (pr-conversation.txt exists) at any effort but quick, whose
+# evidence check produced findings.json, must have run Disposition before the
+# verdict is rendered. Live, a standard re-review skipped it silently.
+set_effort() { # session effort ("" removes the line)
+	grep -v '^Effort:' "$1/session.txt" >"$1/session.next" || true
+	[[ -n "$2" ]] && printf 'Effort:       %s\n' "$2" >>"$1/session.next"
+	mv "$1/session.next" "$1/session.txt"
+}
+
+echo "Test D1: a re-review that skipped Disposition is refused (RC-075)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+printf 'reply from @bootc: finding 1 is fixed.\n' >"$sess/pr-conversation.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "render refused"
+if jq -r '.message' <<<"$result" | grep -q 'Disposition'; then
+	echo "  PASS: the message names the phase to run"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the message does not name Disposition"
+	FAIL=$((FAIL + 1))
+fi
+if [[ ! -e "$sess/comment-body.md" ]]; then
+	echo "  PASS: nothing written"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a body was written despite the refusal"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test D2: each gate input admits the render on its own (RC-075)"
+printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "Disposition ran: rendered"
+rm -f "$sess/verdicts/_meta/disposition.txt" "$sess/comment-body.md"
+set_effort "$sess" quick
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "quick effort: rendered"
+set_effort "$sess" standard
+mv "$sess/verdicts/findings.json" "$sess/findings.aside"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "no findings.json (nothing_to_do): rendered"
+mv "$sess/findings.aside" "$sess/verdicts/findings.json"
+rm -f "$sess/pr-conversation.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "first review, no conversation: rendered"
+
+echo "Test D3: an unrecorded effort is held to the gate (RC-075)"
+printf 'reply\n' >"$sess/pr-conversation.txt"
+set_effort "$sess" ""
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "missing Effort line: refused"
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

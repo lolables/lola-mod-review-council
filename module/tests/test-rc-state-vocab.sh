@@ -51,6 +51,7 @@ check_prepare "skip"
 check_prepare "empty"
 check "$S/rc-render-comment.sh" "rendered"
 check "$S/rc-render-comment.sh" "skip"
+check "$S/rc-render-comment.sh" "error"
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

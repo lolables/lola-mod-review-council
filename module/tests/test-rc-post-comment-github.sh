@@ -389,6 +389,7 @@ bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the body, whose marker carries t
 rbody=$(cat "$sess/comment-body.md")
 jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
 printf 'reply from @bootc: finding 3 is wrong, the guard is two lines up.\n' >"$sess/pr-conversation.txt"
+printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt" # Disposition ran (RC-075 gate)
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "created" "answering a conversation posts a new comment"
@@ -1203,6 +1204,24 @@ for node in NODE901 NODE902 NODE903; do
 	grep -q "$node" "$bin/log" && hidden_own=$((hidden_own + 1))
 done
 assert_equals "$hidden_own" "0" "no part of the current verdict was hidden as outdated"
+rm -rf "$sess" "$bin"
+
+echo "Test D1: the poster refuses a re-review that skipped Disposition (RC-075)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
+printf 'reply\n' >"$sess/pr-conversation.txt"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_NEWID="779" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "error" "status is error"
+if [[ ! -e "$bin/log" ]] || ! grep -q -- '-f body=' "$bin/log"; then
+	echo "  PASS: nothing posted"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: posted a verdict whose Disposition never ran"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess" "$bin"
 
 echo ""

@@ -1171,6 +1171,15 @@ check_mutation "RC-074 the adapter refuses a page that is not an array" \
 	's/ and all(\.\[0\]\[\]; type == "array")//' \
 	test-rc-forge-adapters.sh
 
+# --- RC-075: a re-review rendered without its Disposition phase --------------
+#
+# Disposition was an instruction only; a standard re-review skipped it and
+# posted anyway. The render refuses until disposition.txt exists.
+check_mutation "RC-075 rendering refuses a re-review that skipped Disposition" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || return 0$/return 0/' \
+	test-rc-render-comment.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

@@ -1,0 +1,19 @@
+module/tests/test-rc-render-report.sh
+  s_99ac666f9b5aed::t_856d384c3ecd8c 1454
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2737a8ccaefdf9edf2c32d90c43022b874c12ad7",
+  "prompts": {},
+  "sessions": {
+    "s_99ac666f9b5aed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d46a80-a5f8-416a-b55b-32030326344d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

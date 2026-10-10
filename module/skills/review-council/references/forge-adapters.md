@@ -301,7 +301,7 @@ The ladder and its terminal case are documented at the top of
 
 Every rendered body ends with a hidden tag carrying the reviewed commit SHA:
 
-    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> -->
+    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> run=<session-id> -->
 
 The `sha=` field identifies the exact commit reviewed. The renderer takes it,
 in order, from `session.txt`'s `Head SHA:` (the PR/MR head the forge reported),
@@ -311,7 +311,13 @@ the working tree's `HEAD`. A review by PR number or URL (`Input:` `pr_number` or
 than the launch checkout's `HEAD`, which need not be the PR's. A GitLab
 `review_root` is an extracted archive with no `.git`, so there the recorded head
 is the only source. `part`/`of` place the
-comment in a chain; an unsplit verdict carries `part=1 of=1`. Both GitHub and GitLab
+comment in a chain; an unsplit verdict carries `part=1 of=1`. `run=` is the
+session directory's name, so every run's body differs from the last one's and
+the poster edits the verdict even when the review rendered the same text. That
+is how a batch run tells a completed re-review from one that posted nothing.
+Re-posting the same session renders the same body and edits nothing. `run=` is
+always the last field and nothing parses it; a session name outside
+`[A-Za-z0-9._-]` is left off. Both GitHub and GitLab
 render HTML comments invisibly, so the marker is portable. The body also shows a
 visible `Reviewed at commit <short-sha>` line.
 

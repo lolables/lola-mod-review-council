@@ -66,6 +66,7 @@ pr\ list*)
 # that tells a verdict from a forgery lives in that program. A PR with no
 # fixture has no comments, the pre-existing "never reviewed" case.
 *--json\ comments*)
+	[[ ! -e "${MOCK_COMMENTS_DIR:-/nonexistent}/.unreadable" ]] || exit 1
 	if [[ -n "${MOCK_COMMENTS_DIR:-}" ]] && [[ -f "${MOCK_COMMENTS_DIR}/pr-$3.json" ]]; then
 		cat "${MOCK_COMMENTS_DIR}/pr-$3.json"
 	else
@@ -166,6 +167,7 @@ case "$args" in
 	;;
 # Notes as GitLab returns them. An MR with no fixture has no notes.
 */notes*)
+	[[ ! -e "${MOCK_COMMENTS_DIR:-/nonexistent}/.unreadable" ]] || exit 1
 	if [[ -n "${MOCK_COMMENTS_DIR:-}" ]] && [[ -f "${MOCK_COMMENTS_DIR}/mr-${mr}.json" ]]; then
 		cat "${MOCK_COMMENTS_DIR}/mr-${mr}.json"
 	else
@@ -221,6 +223,36 @@ echo "api_host=\${GITLAB_API_HOST-<unset>} uri=\${GITLAB_URI-<unset>} gl_host=\$
 # Stand in for what the agent writes to stdout, so a test can drive whatever
 # the driver renders from it. Silent unless the test asked for something.
 [[ -n "\${MOCK_CLI_STDOUT:-}" ]] && printf '%s\n' "\$MOCK_CLI_STDOUT"
+# Post the verdict the way the council would, into the fixture the forge mocks
+# serve, so the driver's after-run check finds it. MOCK_CLI_POSTS=0 is an agent
+# that exits 0 having posted nothing; MOCK_CLI_HIDES_COMMENTS=1 leaves the
+# timeline unreadable afterwards. MOCK_CLI_POSTS=edit is the poster's same-sha
+# upsert: the existing verdict is rewritten in place, keeping its sha and
+# creation stamp.
+if [[ "\${MOCK_CLI_RC:-0}" -eq 0 ]] && [[ "\${MOCK_CLI_POSTS:-1}" == edit ]] && [[ -n "\${MOCK_COMMENTS_DIR:-}" ]]; then
+	if [[ "\$*" =~ /pull/([0-9]+) ]]; then
+		f="\$MOCK_COMMENTS_DIR/pr-\${BASH_REMATCH[1]}.json"
+		jq '.comments[-1].body += "\n\nRe-reviewed."' "\$f" >"\$f.new" && mv "\$f.new" "\$f"
+	elif [[ "\$*" =~ /merge_requests/([0-9]+) ]]; then
+		f="\$MOCK_COMMENTS_DIR/mr-\${BASH_REMATCH[1]}.json"
+		jq '.[-1].body += "\n\nRe-reviewed." | .[-1].updated_at = "2099-01-01T00:00:00.000Z"' "\$f" >"\$f.new" && mv "\$f.new" "\$f"
+	fi
+elif [[ "\${MOCK_CLI_RC:-0}" -eq 0 ]] && [[ "\${MOCK_CLI_POSTS:-1}" == 1 ]] && [[ -n "\${MOCK_COMMENTS_DIR:-}" ]]; then
+	body='## Review Council: APPROVE
+<!-- review-council:marker sha=fffffff -->'
+	if [[ "\$*" =~ /pull/([0-9]+) ]]; then
+		f="\$MOCK_COMMENTS_DIR/pr-\${BASH_REMATCH[1]}.json"
+		[[ -f "\$f" ]] || echo '{"comments":[]}' >"\$f"
+		jq --arg b "\$body" '.comments += [{author: {login: "council"}, viewerDidAuthor: true,
+			isMinimized: false, createdAt: "2099-01-01T00:00:00Z", body: \$b}]' "\$f" >"\$f.new" && mv "\$f.new" "\$f"
+	elif [[ "\$*" =~ /merge_requests/([0-9]+) ]]; then
+		f="\$MOCK_COMMENTS_DIR/mr-\${BASH_REMATCH[1]}.json"
+		[[ -f "\$f" ]] || echo '[]' >"\$f"
+		jq --arg b "\$body" '. += [{id: 99999, system: false, author: {id: 42, username: "council"},
+			created_at: "2099-01-01T00:00:00Z", body: \$b}]' "\$f" >"\$f.new" && mv "\$f.new" "\$f"
+	fi
+fi
+[[ "\${MOCK_CLI_HIDES_COMMENTS:-0}" -eq 1 ]] && [[ -n "\${MOCK_COMMENTS_DIR:-}" ]] && touch "\$MOCK_COMMENTS_DIR/.unreadable"
 exit "\${MOCK_CLI_RC:-0}"
 MOCKCLI
 		chmod +x "$dir/$cli"
@@ -846,12 +878,14 @@ assert_contains "$OUT" "--ignore-approved" "usage lists --ignore-approved"
 
 echo ""
 echo "Test: a verdict at the current head is not re-reviewed"
+# The marker carries the run stamp the renderer appends, which must not leak
+# into the sha read out of it.
 reset_comments
 write_comments 2 <<'JSON'
 {"comments":[
  {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
   "isMinimized":false,"viewerDidAuthor":true,
-  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 run=20261009-101500-AbC123 -->"}
 ]}
 JSON
 run_case "__eof__" --repo acme/widgets
@@ -1323,7 +1357,7 @@ echo "Test: our verdict at head skips a GitLab MR"
 reset_comments
 write_notes 2 <<'JSON'
 [{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
-  "body":"## Review Council\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}]
+  "body":"## Review Council\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 run=20261009-101500-AbC123 -->"}]
 JSON
 run_case "__eof__" "${GL[@]}"
 assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "a verdict at head skips the MR"
@@ -1466,6 +1500,116 @@ run_case "__eof__" "${GL[@]}" --run --yes
 assert_contains "$LOGS" "git.example.org-g-p-pr-2.log" "the log name carries host and project"
 assert_contains "$OUT" "=== MR !2 : reviewing g/p" "the run line labels the MR"
 assert_contains "$OUT" "MR !2: done." "and so does the completion line"
+
+# An agent that exits 0 has not necessarily posted anything: the council may
+# decline (an unverifiable diff-only review is one live case), or stop short.
+# "done" means a verdict this account posted is on the PR now and was not
+# there before the run — compared against the verdict the PR was classified
+# on, never against a clock.
+echo ""
+echo "Test: an agent that exits 0 without posting is not reported done"
+reset_comments
+RUN_ENV=(MOCK_CLI_POSTS=0)
+run_case "__eof__" --repo acme/widgets 2 --run --yes
+RUN_ENV=()
+assert_not_contains "$OUT" "PR #2: done." "no completion is claimed"
+assert_contains "$OUT" "PR #2: claude exited 0 but posted no new or edited verdict" "the missing verdict is named"
+assert_equals "$RC" "1" "and the batch exits 1"
+
+echo ""
+echo "Test: an unchanged verdict from before the run does not count"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+RUN_ENV=(MOCK_CLI_POSTS=0)
+run_case "__eof__" --repo acme/widgets 2 --force --run --yes
+RUN_ENV=()
+assert_contains "$OUT" "PR #2: claude exited 0 but posted no new or edited verdict" "the old verdict is not this run's"
+assert_equals "$RC" "1" "and the batch exits 1"
+
+echo ""
+echo "Test: a new verdict replacing an old one is reported done"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+run_case "__eof__" --repo acme/widgets 2 --force --run --yes
+assert_contains "$OUT" "PR #2: done." "the fresh verdict completes the PR"
+assert_equals "$RC" "0" "and the batch exits 0"
+
+echo ""
+echo "Test: a verdict edited in place counts as posted"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"council"},"authorAssociation":"OWNER","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":true,
+  "body":"## Review Council\r\n\r\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+RUN_ENV=(MOCK_CLI_POSTS=edit)
+run_case "__eof__" --repo acme/widgets 2 --force --run --yes
+RUN_ENV=()
+assert_contains "$OUT" "PR #2: done." "the in-place update completes the PR"
+assert_equals "$RC" "0" "and the batch exits 0"
+
+echo ""
+echo "Test: a timeline unreadable after the run is not reported done"
+reset_comments
+RUN_ENV=(MOCK_CLI_HIDES_COMMENTS=1)
+run_case "__eof__" --repo acme/widgets 2 --run --yes
+RUN_ENV=()
+assert_not_contains "$OUT" "PR #2: done." "no completion is claimed"
+assert_contains "$OUT" "PR #2: could not read the comments to confirm a verdict was posted" "the unconfirmed state is named"
+assert_equals "$RC" "1" "and the batch exits 1"
+
+echo ""
+echo "Test: a GitLab agent that exits 0 without posting is not reported done"
+reset_comments
+RUN_ENV=(MOCK_CLI_POSTS=0)
+run_case "__eof__" "${GL[@]}" 2 --run --yes
+RUN_ENV=()
+assert_not_contains "$OUT" "MR !2: done." "no completion is claimed"
+assert_contains "$OUT" "MR !2: claude exited 0 but posted no new or edited verdict" "the missing verdict is named"
+assert_equals "$RC" "1" "and the batch exits 1"
+
+echo ""
+echo "Test: a GitLab verdict edited in place counts as posted"
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
+  "updated_at":"2026-08-20T10:00:00.123Z",
+  "body":"## Review Council\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}]
+JSON
+RUN_ENV=(MOCK_CLI_POSTS=edit)
+run_case "__eof__" "${GL[@]}" 2 --force --run --yes
+RUN_ENV=()
+assert_contains "$OUT" "MR !2: done." "the in-place update completes the MR"
+assert_equals "$RC" "0" "and the batch exits 0"
+
+echo ""
+echo "Test: a GitLab verdict left byte-identical is not reported done"
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
+  "body":"## Review Council\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}]
+JSON
+RUN_ENV=(MOCK_CLI_POSTS=0)
+run_case "__eof__" "${GL[@]}" 2 --force --run --yes
+RUN_ENV=()
+assert_not_contains "$OUT" "MR !2: done." "no completion is claimed"
+assert_contains "$OUT" "MR !2: claude exited 0 but posted no new or edited verdict" "the unchanged verdict is named"
+assert_equals "$RC" "1" "and the batch exits 1"
+reset_comments
 
 echo ""
 echo "Test: a GitLab host with a port is refused before glab is called"

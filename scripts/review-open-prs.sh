@@ -253,7 +253,8 @@
 #
 #   14:02:31 → Task divisor-adversary-code
 #   14:02:33   Dispatching 5 reviewers over 2 subsystems.
-#   14:41:08 done — $8.23, 57 turns
+#   14:41:08 turn ended — $8.23 so far, 57 turns
+#   PR #42: done.
 #
 # The log itself stays machine-readable, so a finished run can be re-read for
 # whatever the terminal did not show:
@@ -380,7 +381,7 @@ LOG_DIR="./.review-council-logs"
 # cost" are printed; the rest are dropped rather than scrolled past.
 # A result event closes a turn, not the run: the orchestrator ends a turn to wait
 # on background reviewers, so one run can emit several. Completion is reported
-# from the exit code after the pipeline returns.
+# after the pipeline returns, from the exit code and the verdict it posted.
 PROGRESS_FILTER='
 def clip: if (. | length) > 100 then .[0:100] + "…" else . end;
 def stamp: (now | strflocaltime("%H:%M:%S"));
@@ -921,9 +922,32 @@ for pr in "${QUEUE[@]}"; do
 	if [[ "$rc" -ne 0 ]]; then
 		echo "${pr_name}: ${AGENT_CLI} exited ${rc} (see ${log}); continuing with next ${PR_NOUN}." >&2
 		failures+=("$pr")
-	else
-		echo "${pr_name}: done."
+		continue
 	fi
+	# Exiting 0 is not posting: the council can decline, or stop short of the
+	# post. The run counts as done only when this account's newest verdict
+	# differs from the one the PR was classified on — compared against the
+	# forge's own record, never against a clock. A re-review of an unmoved head
+	# is posted by editing the verdict in place, which keeps its sha and
+	# createdAt, so the body is part of what is compared. The renderer stamps
+	# each run's session into the marker, so a completed re-review always
+	# changes the body; an unchanged one is no post at all, and is reported so.
+	after_json="$(forge_comments_for "$pr")"
+	if [[ -z "$after_json" ]]; then
+		echo "${pr_name}: could not read the comments to confirm a verdict was posted (see ${log}); continuing with next ${PR_NOUN}." >&2
+		failures+=("$pr")
+		continue
+	fi
+	verdict_before="$(council_verdict_for "${COMMENTS_JSON[$pr]:-}")"
+	verdict_after="$(council_verdict_for "$after_json")"
+	body_before="$(council_verdict_body_for "${COMMENTS_JSON[$pr]:-}")"
+	body_after="$(council_verdict_body_for "$after_json")"
+	if [[ -z "$verdict_after" ]] || { [[ "$verdict_after" == "$verdict_before" ]] && [[ "$body_after" == "$body_before" ]]; }; then
+		echo "${pr_name}: ${AGENT_CLI} exited 0 but posted no new or edited verdict (see ${log}); continuing with next ${PR_NOUN}." >&2
+		failures+=("$pr")
+		continue
+	fi
+	echo "${pr_name}: done."
 done
 
 # ---- Summary ---------------------------------------------------------------

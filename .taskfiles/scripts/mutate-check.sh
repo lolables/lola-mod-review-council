@@ -1343,6 +1343,16 @@ check_mutation "RC-080 a same-second preparation gets its own session directory"
 	's|mktemp -d "\${project_dir}/\${run_id}-XXXXXX"|mkdir -p "${project_dir}/${run_id}" \&\& echo "${project_dir}/${run_id}"|' \
 	test-rc-prepare-session-cache.sh
 
+# --- RC-081: a re-review rendering identical text edited nothing -------------
+#
+# The poster upserts a same-sha verdict only when the body differs, so a forced
+# re-review with unchanged findings left the comment untouched and the batch
+# driver reported it as never posted. The marker now carries the session id.
+check_mutation "RC-081 every part's marker carries the run that rendered it" \
+	rc-render-comment.sh \
+	's|of=\${2}\${run} -->|of=${2} -->|' \
+	test-rc-render-comment.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

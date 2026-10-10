@@ -390,6 +390,34 @@ else
 fi
 rm -rf "$sess" "$st"
 
+# Test 3's prior note, but rendered by an earlier session: same head, same
+# findings, a different session directory. Each run stamps its session into the
+# marker, so the bodies differ and the verdict is edited. Without that the edit
+# is skipped and a batch run cannot tell this completed re-review from one that
+# posted nothing.
+echo "Test 4a: a re-review from a new session at the same head edits the verdict"
+sess=$(mktemp -d)
+st=$(mktemp -d)
+make_gl_session "$sess"
+sess_new=$(mktemp -d)
+cp -R "$sess/." "$sess_new" # same checkout (Review root), findings and verdict
+make_glab "$st"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+jq -n --rawfile b "$sess/comment-body.md" "${GL_NOTE_DEF}"'[note(902; $b)]' >"$st/notes.json"
+result=$(post "$sess_new" "$st")
+assert_json_field "$result" "action" "updated" "the earlier session's verdict is edited in place"
+assert_json_field "$result" "superseded" "0" "an edit at the same head retires nothing"
+assert_log_has "$st" "-X PUT projects/acme%2Fwidgets/merge_requests/7/notes/902 --input" "PUT note 902"
+note_body "$st" 902
+if cmp -s "$st/note.902" "$sess_new/comment-body.md"; then
+	echo "  PASS: note 902 now carries the new session's body"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: note 902 was not updated to the new session's body"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$sess_new" "$st"
+
 echo "Test 5: a new commit supersedes the prior commit's note with the banner"
 sess=$(mktemp -d)
 st=$(mktemp -d)
@@ -864,18 +892,26 @@ sess=$(mktemp -d)
 st=$(mktemp -d)
 make_chained_gl_session "$sess"
 make_glab "$st"
+# The limit sits 64 bytes above the head as rendered: the packer fills part 1
+# with the same findings (it over-reserves only a few bytes for group counts),
+# and the links line, over 100 bytes, has no room. See the GitHub suite's twin.
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
-exact=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
-sed "s/^- Comment limit: .*/- Comment limit: ${exact}/" "$sess/tracking.md" >"$sess/t" && mv "$sess/t" "$sess/tracking.md"
+head_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
+limit=$((head_bytes + 64))
+sed "s/^- Comment limit: .*/- Comment limit: ${limit}/" "$sess/tracking.md" >"$sess/t" && mv "$sess/t" "$sess/tracking.md"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+packed_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
+assert_equals "$packed_bytes" "$head_bytes" \
+	"precondition: the head packs the same findings 64 bytes short of the limit"
 result=$(post "$sess" "$st")
 assert_json_field "$result" "parts" "3" "still a chain, so the links are still attempted"
 sent_body "$st" 3
 tight=$(wc -c <"$st/sent.3" | tr -d ' ')
-if [[ "$tight" -le "$exact" ]]; then
-	echo "  PASS: the head at the exact limit was not grown past it ($tight <= $exact)"
+if [[ "$tight" -le "$limit" ]]; then
+	echo "  PASS: the head near the limit was not grown past it ($tight <= $limit)"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: substitution pushed the head over the limit ($tight > $exact)"
+	echo "  FAIL: substitution pushed the head over the limit ($tight > $limit)"
 	FAIL=$((FAIL + 1))
 fi
 if grep -qF "review-council:part-links" "$st/sent.3" && ! grep -qF "[part 2](" "$st/sent.3"; then
@@ -932,7 +968,7 @@ rm -rf "$sess/checkout/.git"
 make_glab "$st"
 seed_chain "$sess" "$st"
 note_body "$st" 901
-if grep -qF '<!-- review-council:marker sha=unknown part=1 of=3 -->' "$st/note.901"; then
+if grep -qF '<!-- review-council:marker sha=unknown part=1 of=3 ' "$st/note.901"; then
 	echo "  PASS: the marker carries a non-hex sha"
 	PASS=$((PASS + 1))
 else

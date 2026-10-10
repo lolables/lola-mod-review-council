@@ -176,13 +176,15 @@ assert_file_has_line() {
 url="https://github.com/acme/widgets/pull/7"
 
 echo "Test 1: re-review (marker present) writes only replies at/after the marker"
+# The verdict carries the full marker the renderer writes today, run stamp and
+# all: the anchor and the exclusion both have to read past the trailing fields.
 work=$(mktemp -d)
 bindir=$(mktemp -d)
 make_fake_gh "$bindir"
 cat >"$bindir/issues-comments.json" <<'JSON'
 [
   {"user":{"login":"alice"},"created_at":"2026-01-01T00:00:00Z","body":"OLDER_REPLY_MARKER filed before the council ever weighed in"},
-  {"user":{"login":"review-council-bot"},"created_at":"2026-01-02T00:00:00Z","body":"<!-- review-council:marker sha=abc123 -->\n\nAPPROVE"},
+  {"user":{"login":"review-council-bot"},"created_at":"2026-01-02T00:00:00Z","body":"<!-- review-council:marker sha=abc123 part=1 of=1 run=20261009-101500-AbC123 -->\n\nAPPROVE"},
   {"user":{"login":"bob"},"created_at":"2026-01-03T00:00:00Z","body":"REPLY_A_MARKER can you also check the retry path"},
   {"user":{"login":"carol"},"created_at":"2026-01-04T00:00:00Z","body":"REPLY_B_MARKER agreed, please recheck that"}
 ]
@@ -212,6 +214,13 @@ if [[ -f "$convo" ]] && ! grep -q "OLDER_REPLY_MARKER" "$convo"; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: pre-marker reply leaked into the untrusted file"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -f "$convo" ]] && ! grep -qF "run=20261009-101500-AbC123" "$convo"; then
+	echo "  PASS: excludes the council's own verdict"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the council's verdict was read back as a reply"
 	FAIL=$((FAIL + 1))
 fi
 if [[ -f "$convo" ]] && head -n1 "$convo" | grep -qi "untrusted"; then

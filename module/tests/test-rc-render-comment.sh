@@ -896,7 +896,7 @@ fi
 # Anchored at column 0 and spelled out in full: the listings bind the last line
 # that STARTS with the marker opening, so a marker indented or run onto the end
 # of a kept line would not be found.
-if grep -qE '^<!-- review-council:marker sha=[^ ]+ part=1 of=1 -->$' "$sess/comment-body.md"; then
+if grep -qE '^<!-- review-council:marker sha=[^ ]+ part=1 of=1 run=[^ ]+ -->$' "$sess/comment-body.md"; then
 	echo "  PASS: the marker line survives the cut"
 	PASS=$((PASS + 1))
 else
@@ -1128,7 +1128,7 @@ echo "Test: an unsplit verdict still declares its place in the chain"
 sess=$(mktemp -d)
 make_review_session "$sess"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
-if grep -qF "part=1 of=1 -->" "$sess/comment-body.md"; then
+if grep -qF "part=1 of=1 run=${sess##*/} -->" "$sess/comment-body.md"; then
 	echo "  PASS: single-comment marker carries part=1 of=1"
 	PASS=$((PASS + 1))
 else
@@ -1368,6 +1368,45 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
+
+echo "Test: every part's marker ends with the run that rendered it"
+# The run stamp is what makes a re-review whose findings are unchanged still edit
+# the verdict, so the batch driver can see it completed. It goes last: every
+# reader anchors on the fields before it, and none of them reads past `of=`.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Max comments: 3\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '12000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+run_id="${sess##*/}"
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
+for part in 1 2 3; do
+	if [[ "$part" -eq 1 ]]; then part_file="$sess/comment-body.md"; else part_file="$sess/comment-body.part${part}.md"; fi
+	marker=$(tail -n 1 "$part_file")
+	assert_equals "$marker" \
+		"<!-- review-council:marker sha=${head_sha} part=${part} of=3 run=${run_id} -->" \
+		"part ${part}'s marker ends with run=${run_id}"
+done
+rm -rf "$sess"
+
+echo "Test: a session name outside the safe set is left off the marker"
+# The stamp comes from a path. A space would split it into two tokens and a `>`
+# could close the comment early, so a name carrying either is not written at all.
+parent=$(mktemp -d)
+sess="$parent/run one"
+make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
+marker=$(tail -n 1 "$sess/comment-body.md")
+assert_equals "$marker" \
+	"<!-- review-council:marker sha=${head_sha} part=1 of=1 -->" \
+	"the marker carries no run= for an unsafe session name"
+rm -rf "$parent"
 
 echo "Test: a re-render that needs fewer parts removes the stale ones"
 # A run that needed three comments followed by one that needs two must not leave

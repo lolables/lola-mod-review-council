@@ -377,6 +377,18 @@ rc_render_comment_body() { # session_dir body_file
 		[[ -n "$host" && "$host" != "$origin" ]] && RC_FORGE_WEB="https://${host}/${owner}/${repo}"
 	fi
 	RC_SHORT_SHA="${RC_HEAD_SHA:0:7}"
+	# The session directory's name identifies this run. Stamping it on the
+	# marker makes every run's body differ from the last one's, so the poster
+	# edits the verdict even when the review itself rendered byte-identical,
+	# and the batch driver can tell a completed re-review from one that posted
+	# nothing. Re-posting the same session still renders the same body. A
+	# name outside the safe set is left off rather than written into the
+	# marker, where a space or `-->` would break every parser downstream.
+	# Resolved first, so `.` names the session rather than stamping a dot;
+	# CDPATH is cleared because a cd it resolves also prints the directory.
+	_RC_RUN_ID=$(CDPATH='' cd "$session_dir" 2>/dev/null && pwd) || _RC_RUN_ID=""
+	_RC_RUN_ID="${_RC_RUN_ID##*/}"
+	[[ "$_RC_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || _RC_RUN_ID=""
 
 	# Severity counts from verified findings.
 	c_crit=$(sev_count CRITICAL)
@@ -575,13 +587,18 @@ _rc_pack() { # level keep limit max_parts
 	local level="$1" keep="$2" limit="$3" max_parts="$4"
 	local -a starts=() ends=()
 	local i j part=1 start=0 used=0 open_sev="" sev variant add extra
-	local disc prelude_len close_len n_sev
+	local disc prelude_len close_len marker_len n_sev
 	_rc_disclosure "$level" "$keep"
 	disc="$_RC_OUT"
 	close_len=$(_rc_bytes "$_RC_GROUP_CLOSE")
+	# Every part ends with the marker. Neither its part index nor its count is
+	# known yet, and neither is ever wider than max_parts, so costing it with
+	# max_parts for both can only over-reserve.
+	_rc_marker "$max_parts" "$max_parts"
+	marker_len=$(_rc_bytes "$_RC_OUT")
 
 	_rc_prelude 1 "$max_parts" "$disc"
-	used=$(_rc_bytes "${_RC_OUT}${_RC_FOOTER}")
+	used=$(($(_rc_bytes "${_RC_OUT}${_RC_FOOTER}") + marker_len))
 	for ((i = 0; i < keep; i++)); do
 		sev="${_RC_F_SEV[i]}"
 		variant=$(_rc_variant "$level" "$sev")
@@ -607,7 +624,7 @@ _rc_pack() { # level keep limit max_parts
 			start=$i
 			open_sev=""
 			_rc_prelude "$part" "$max_parts" "$disc"
-			prelude_len=$(_rc_bytes "${_RC_OUT}${_RC_FOOTER}")
+			prelude_len=$(($(_rc_bytes "${_RC_OUT}${_RC_FOOTER}") + marker_len))
 			_rc_group_open "$sev" "$n_sev"
 			extra=$(_rc_bytes "$_RC_OUT")
 			used=$prelude_len
@@ -664,8 +681,12 @@ _rc_prelude() { # part_index part_count disclosure -> _RC_OUT
 
 # The identity tag every part carries. `part`/`of` let the poster match a
 # re-render against the comments it wrote last time, one part at a time.
+# `run` goes last, after every key a parser anchors on, and is never parsed:
+# it exists so each run's body differs (see _RC_RUN_ID above).
 _rc_marker() { # part_index part_count -> _RC_OUT
-	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2} -->"$'\n'
+	local run=""
+	[[ -n "${_RC_RUN_ID:-}" ]] && run=" run=${_RC_RUN_ID}"
+	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2}${run} -->"$'\n'
 }
 
 # Last resort: keep whole lines until the limit is reached. Cutting on a line

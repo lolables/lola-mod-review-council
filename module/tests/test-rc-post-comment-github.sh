@@ -374,6 +374,34 @@ result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 assert_json_field "$result" "action" "unchanged" "real filter finds the sha-matched comment"
 rm -rf "$sess" "$bin"
 
+# Test 9a: Test 9's prior comment, but rendered by an earlier session: same head,
+# same findings, a different session directory. Each run stamps its session
+# into the marker, so the bodies differ and the verdict is edited. Without that
+# the edit is skipped and a batch run cannot tell this completed re-review from
+# one that posted nothing.
+echo "Test 9a: a re-review from a new session at the same head edits the verdict"
+sess=$(mktemp -d)
+make_review_session "$sess"
+sess_new=$(mktemp -d)
+cp -R "$sess/." "$sess_new" # same checkout (Review root), findings and verdict
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+rbody=$(cat "$sess/comment-body.md")
+jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess_new" --send 2>/dev/null)
+assert_json_field "$result" "action" "updated" "the earlier session's verdict is edited in place"
+assert_json_field "$result" "superseded" "0" "an edit at the same head retires nothing"
+if grep -q -- '-X PATCH' "$bin/log" && grep -q 'issues/comments/900' "$bin/log"; then
+	echo "  PASS: comment 900 was PATCHed"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: comment 900 was not edited"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$sess_new" "$bin"
+
 # Test 9b: same fixture as Test 9 — one prior verdict of ours carrying THIS head
 # sha — plus a non-empty pr-conversation.txt. prepare-context.sh writes that file
 # only when replies landed at or after our last verdict, so its presence means
@@ -976,23 +1004,29 @@ else
 fi
 # The invariant above holds whether or not the guard exists, because a head with
 # room to spare satisfies it either way. So drive the overflow itself: re-render
-# to recover the head as the renderer sized it, then re-run with the limit set to
-# exactly that. The packer fills part 1 identically — the finding that did not
-# fit the wider budget does not fit a tighter one — so the head comes back at the
-# limit to the byte, and the links have nowhere to go.
+# to recover the head as the renderer sized it, then re-run with the limit 64
+# bytes above that. The packer fills part 1 identically — the finding that did
+# not fit the wider budget does not fit a tighter one, and the few bytes the
+# packer over-reserves for group counts fit the 64 — so the head comes back with
+# 64 bytes to spare, and the links line, over 100 bytes, has nowhere to go.
 bash "$SCRIPT" "$sess" >/dev/null 2>&1 # dry-run: the head carries the placeholder again
-exact=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
-sed "s/^- Comment limit: .*/- Comment limit: ${exact}/" "$sess/tracking.md" >"$sess/tracking.next"
+head_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
+limit=$((head_bytes + 64))
+sed "s/^- Comment limit: .*/- Comment limit: ${limit}/" "$sess/tracking.md" >"$sess/tracking.next"
 mv "$sess/tracking.next" "$sess/tracking.md"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+packed_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
+assert_equals "$packed_bytes" "$head_bytes" \
+	"precondition: the head packs the same findings 64 bytes short of the limit"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log2" MOCK_FIND="" MOCK_NEWID_SEQ="$bin/seq2" MOCK_LIST="" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "parts" "3" "still a chain, so the links are still attempted"
 tight_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
-if [[ "$tight_bytes" -le "$exact" ]]; then
-	echo "  PASS: the head at the exact limit was not grown past it ($tight_bytes <= $exact)"
+if [[ "$tight_bytes" -le "$limit" ]]; then
+	echo "  PASS: the head near the limit was not grown past it ($tight_bytes <= $limit)"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: substitution pushed the head over the limit ($tight_bytes > $exact)"
+	echo "  FAIL: substitution pushed the head over the limit ($tight_bytes > $limit)"
 	FAIL=$((FAIL + 1))
 fi
 # Navigation is what yields: the parts are adjacent in the thread regardless,
@@ -1122,7 +1156,7 @@ rm -rf "$sess/checkout/.git" # no HEAD to resolve
 bin=$(mktemp -d)
 make_gh_realjq "$bin"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the parts a previous run posted
-if grep -qF '<!-- review-council:marker sha=unknown part=1 of=3 -->' "$sess/comment-body.md"; then
+if grep -qF '<!-- review-council:marker sha=unknown part=1 of=3 ' "$sess/comment-body.md"; then
 	echo "  PASS: the marker carries a non-hex sha"
 	PASS=$((PASS + 1))
 else

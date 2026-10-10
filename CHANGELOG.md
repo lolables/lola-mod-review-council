@@ -747,6 +747,13 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The council-comment marker now ends with `run=<session-id>`, the session
+  directory that rendered it. A re-review whose findings are unchanged therefore
+  still edits its verdict, and the batch driver reports it `done` instead of
+  "posted no new or edited verdict". Re-posting the same session renders the
+  same body and stays `unchanged`. No reader parses the token; a session name
+  outside `[A-Za-z0-9._-]` is left off.
+
 - Two preparations of one project started in the same second no longer share a
   session directory. It was named to the second and created non-exclusively,
   so concurrent `review-open-prs.sh` runs wrote into one session and the second
@@ -806,6 +813,15 @@ All notable changes to the Review Council module are documented here.
   comments. Past 100 comments an older verdict was never retired and a
   same-commit re-post created a duplicate instead of updating; a listing that
   fails partway now fails the post, as on GitLab.
+- `scripts/review-open-prs.sh` reports a PR `done` only when a verdict was
+  posted. It took the agent's exit status for the result, so a council that
+  declined to post — or stopped short of posting — was reported done and the
+  batch exited 0. After an agent exits 0, the driver now reads the PR's
+  comments again and needs a verdict from this account that was not there
+  when the PR was queued, or its existing verdict edited in place (a forced
+  re-review at an unchanged head updates rather than posts); otherwise the PR
+  is named as failed, as having posted no new or edited verdict, and the batch
+  exits 1
 - A private github.com repository is reviewed from a real checkout without
   `gh auth setup-git`. `gh repo clone` authenticated only the clone, so the
   fetch of `pull/N/head` and the blobless checkout after it had no credentials

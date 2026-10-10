@@ -405,7 +405,8 @@ With `--run`, PRs are reviewed one at a time, each transcript tee'd to
 `./.review-council-logs/<owner>-<repo>-pr-<n>.log`. A GitLab log is prefixed
 with its host and takes one segment per group:
 `<host>-<group>-<subgroup>-<project>-pr-<n>.log`. A PR whose review exits
-non-zero is recorded and the batch continues; the script exits 1 at the end and
+non-zero, or exits 0 without a new verdict from this account appearing on the
+PR, is recorded and the batch continues; the script exits 1 at the end and
 names every PR that failed.
 
 A review takes tens of minutes, so claude is asked for its structured event
@@ -422,8 +423,17 @@ PR #42: done.
 
 A `turn ended` line is not the end of the review. The orchestrator ends a turn
 to wait for reviewers running in the background, so one review can print
-several, each with the cost so far. `PR #<n>: done.` is the completion line; it
-comes from claude's exit status.
+several, each with the cost so far. `PR #<n>: done.` is the completion line,
+and it means a verdict was posted: after the agent exits 0 the driver reads the
+PR's comments again, and only a verdict from this account that was not there
+when the PR was queued counts. A re-review of an unmoved head edits the existing
+verdict in place, so a changed verdict body counts too. Each run stamps its own
+session into the verdict's hidden marker, so a completed re-review always
+changes the body, even when its findings are the same. An agent can exit 0
+having posted nothing — the council declines to post a review it could not
+verify — and that PR is reported as `exited 0 but posted no new or edited
+verdict`, or as `could not read the comments to confirm a verdict was posted`
+when the second read fails.
 
 Set `EXTRA_CLAUDE_ARGS="--output-format json"` to choose a different format;
 that replaces the streaming default and the progress rendering along with it.

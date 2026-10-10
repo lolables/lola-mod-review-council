@@ -1,0 +1,25 @@
+README.md
+  s_99ac666f9b5aed::t_64db8d2bae3e79 532-536
+module/agents/divisor-guard-code.md
+  s_99ac666f9b5aed::t_38d136b4774cbd 23
+module/skills/review-council/SKILL.md
+  s_99ac666f9b5aed::t_9369c24124019b 1277-1281
+module/skills/review-council/phases/delegate.md
+  s_99ac666f9b5aed::t_b8d091ea512e1a 135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "757782e9134499802cbf5b62839f491fabe39d27",
+  "prompts": {},
+  "sessions": {
+    "s_99ac666f9b5aed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d46a80-a5f8-416a-b55b-32030326344d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -260,7 +260,7 @@ flowchart TD
   class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,meta1,learn sysE
 ```
 
-Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>/` containing:
+Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>-<random>/` containing:
 
 - `session.txt` — human-readable run metadata
 - `tracking.md` — structured phase-by-phase state
@@ -280,6 +280,7 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 
+The directory is created exclusively (`mktemp -d`), so runs started in the same second never share a session.
 The newest `REVIEW_COUNCIL_SESSION_CACHE_MAX` sessions per project are kept (default 20); older ones are evicted on
 the next run, the same way clones are capped. Runs that produce nothing are capped too — the session directory is
 created before the changeset scan decides whether there is anything to review, so a no-op review still leaves one

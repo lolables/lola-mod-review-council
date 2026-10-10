@@ -109,9 +109,11 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 		clone_url_args=()
 		[[ -n "$forge_host" ]] &&
 			clone_url_args=(--url "https://${forge_host}/${forge_owner}/${forge_repo}.git")
-		# GitLab materializes the archive at the head commit; the adapter has
-		# already read (and validated) it, so the clone script need not ask.
-		[[ "$forge" == "gitlab" && -n "${pr_head_sha:-}" ]] &&
+		# The adapter has already read (and validated) the head commit. GitLab
+		# materializes the archive at it, so the clone script need not ask;
+		# GitHub checks it out, so the tree is the commit the diff was read at
+		# even when the pull request moves on before the fetch.
+		[[ -n "${pr_head_sha:-}" ]] &&
 			clone_url_args+=(--head-sha "$pr_head_sha")
 		clone_json=$(AGENTS_DIR="${AGENTS_DIR:-}" bash "$(dirname "$0")/rc-clone-target.sh" \
 			--forge "$forge" --owner "$forge_owner" --repo "$forge_repo" \

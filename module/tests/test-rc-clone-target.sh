@@ -21,9 +21,10 @@ case " \$* " in
 	;;
 esac
 # Detect the subcommand among args, not in "\$1": the real calls are
-# \`git -C DEST fetch\` / \`git -C DEST checkout\`, so "\$1" is -C.
-if [[ "$mode" == "checkoutfail" ]] && printf '%s\n' "\$@" | grep -qx 'checkout'; then exit 1; fi
+# \`git -C DEST fetch\` / \`git -C DEST worktree add\`, so "\$1" is -C.
+if [[ "$mode" == "worktreefail" ]] && printf '%s\n' "\$@" | grep -qx 'worktree'; then exit 1; fi
 if [[ "$mode" == "fetchfail" ]] && printf '%s\n' "\$@" | grep -qx 'fetch'; then exit 1; fi
+if [[ "\$1" == "-C" ]]; then shift 2; fi
 case "\$1" in
 	remote) echo "$remote" ;;
 	rev-parse)
@@ -35,8 +36,6 @@ case "\$1" in
 		# Create the destination dir (last non-flag arg).
 		for a in "\$@"; do dest="\$a"; done
 		mkdir -p "\$dest/.git" ;;
-	fetch) : ;;
-	checkout) : ;;
 	*) : ;;
 esac
 exit 0
@@ -59,7 +58,8 @@ assert_json_field "$result" "status" "in_place" "status is in_place"
 assert_json_field "$result" "review_root" "." "review_root is ."
 rm -rf "$bin"
 
-# Test 2: different branch -> materialize into cache, review_root = dest
+# Test 2: different branch -> materialize into cache, review_root = this run's
+# own worktree of the cache clone
 echo "Test 2: materialize into cache"
 bin=$(mktemp -d)
 make_mockbin "$bin" ok "main"
@@ -68,12 +68,29 @@ result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 root=$(echo "$result" | jq -r '.review_root')
-if [[ "$root" == "$cache/review-council/clones/github.com-acme-widgets" ]]; then
-	echo "  PASS: review_root points at cache clone"
+clones="$cache/review-council/clones"
+if [[ "$root" == "$clones/.runs/github@github.com-acme-widgets."* && -d "$root" ]]; then
+	echo "  PASS: review_root is this run's tree of the cache clone"
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: got '$root'"
 	FAIL=$((FAIL + 1))
+fi
+# The mock resolves every rev-parse to deadbeef.
+if grep -qxF "git -C $clones/github.com-acme-widgets worktree add -q --detach $root deadbeef" "$bin/git.log"; then
+	echo "  PASS: the tree is a detached worktree of the cache clone at the resolved head"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no detached worktree added at the resolved head"
+	FAIL=$((FAIL + 1))
+fi
+# FETCH_HEAD is whatever the clone's latest fetch wrote, another run's included.
+if grep -qF 'FETCH_HEAD' "$bin/git.log"; then
+	echo "  FAIL: FETCH_HEAD was read"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: FETCH_HEAD was never read"
+	PASS=$((PASS + 1))
 fi
 if grep -q 'blob:none' "$bin/git.log"; then
 	echo "  PASS: attempted blobless partial clone"
@@ -82,11 +99,11 @@ else
 	echo "  FAIL: no partial clone attempted"
 	FAIL=$((FAIL + 1))
 fi
-if grep -q 'pull/7/head' "$bin/git.log"; then
-	echo "  PASS: fetched PR head ref"
+if grep -qF 'fetch origin +pull/7/head:refs/review-council/pr-7' "$bin/git.log"; then
+	echo "  PASS: fetched PR head ref into the pull request's own ref"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: PR head not fetched"
+	echo "  FAIL: PR head not fetched into refs/review-council/pr-7"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$bin" "$cache"
@@ -132,7 +149,8 @@ for n in old1 old2 old3; do
 done
 PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" REVIEW_COUNCIL_CLONE_CACHE_MAX=2 \
 	bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 --head feature-x >/dev/null 2>&1
-remaining=$(find "$clones" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+# The cap counts clone entries; the hidden run trees under .runs/ are not one.
+remaining=$(find "$clones" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')
 if [[ "$remaining" -eq 2 ]]; then
 	echo "  PASS: cache pruned to cap (2)"
 	PASS=$((PASS + 1))
@@ -164,20 +182,26 @@ for case in "08:8" "abc:10"; do
 	done
 	PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" REVIEW_COUNCIL_CLONE_CACHE_MAX="$cap_value" \
 		bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 --head feature-x >/dev/null 2>&1
-	remaining=$(find "$clones" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+	remaining=$(find "$clones" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')
 	assert_equals "$remaining" "$want" "cap '$cap_value' keeps $want entries"
 	rm -rf "$bin" "$cache"
 done
 
-# Test 6: checkout of the PR head fails -> skip (no false-clean empty tree)
+# Test 6: checking the PR head out into the run's worktree fails -> skip (no
+# false-clean empty tree), and the empty tree does not outlive the run
 echo "Test 6: checkout failure falls back to skip"
 bin=$(mktemp -d)
-make_mockbin "$bin" checkoutfail "main"
+make_mockbin "$bin" worktreefail "main"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip on checkout failure"
 assert_json_field "$result" "review_root" "." "review_root falls back to ."
+assert_json_field "$result" "message" \
+	"Checkout of pull/7/head failed; reviewing from diff only." \
+	"message names the failed checkout"
+left=$(find "$cache/review-council/clones/.runs" -mindepth 1 | wc -l | tr -d ' ')
+assert_equals "$left" "0" "the failed run's tree is removed"
 rm -rf "$bin" "$cache"
 
 # Test 6b: fetch of the PR head fails -> skip (no false-clean empty tree)
@@ -407,6 +431,8 @@ done
 # the clone cache. The ported pair is the same claim for the endpoints
 # parse_remote refuses to name: they arrive with no host at all, and filing
 # them under one key would restore the collision for exactly those callers.
+# Every run gets a tree of its own, so the entry under test is the clone each
+# run's worktree was added from, read off the mock's log.
 echo "Test 12: cache entries are per target endpoint"
 while IFS='|' read -r label url_a url_b; do
 	bin=$(mktemp -d)
@@ -418,26 +444,28 @@ while IFS='|' read -r label url_a url_b; do
 		--url "$url_a" 2>/dev/null)
 	assert_json_field "$first" "status" "ok" "$label: first endpoint materialized"
 	root_a=$(echo "$first" | jq -r '.review_root')
+	entry_a=$(awk -v r="$root_a" '$4 == "worktree" && $8 == r { print $3 }' "$bin/git.log")
 	# Only ever write inside the cache: a skip would hand back "." and the
 	# marker would land in the working directory.
-	if [[ "$root_a" == "$cache"/* && -d "$root_a" ]]; then
-		echo first >"$root_a/FROM_FIRST_ENDPOINT"
+	if [[ "$entry_a" == "$cache"/* && -d "$entry_a" ]]; then
+		echo first >"$entry_a/FROM_FIRST_ENDPOINT"
 	else
-		echo "  FAIL: $label: first review_root is not a cache entry ('$root_a')"
+		echo "  FAIL: $label: first run's tree is not from a cache entry ('$entry_a')"
 		FAIL=$((FAIL + 1))
 	fi
 	second=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
 		--url "$url_b" 2>/dev/null)
 	root_b=$(echo "$second" | jq -r '.review_root')
-	if [[ "$root_b" != "$root_a" ]]; then
+	entry_b=$(awk -v r="$root_b" '$4 == "worktree" && $8 == r { print $3 }' "$bin/git.log")
+	if [[ -n "$entry_b" && "$entry_b" != "$entry_a" ]]; then
 		echo "  PASS: $label: the two endpoints got separate cache entries"
 		PASS=$((PASS + 1))
 	else
-		echo "  FAIL: $label: both endpoints shared '$root_b'"
+		echo "  FAIL: $label: both endpoints shared '$entry_b'"
 		FAIL=$((FAIL + 1))
 	fi
-	if [[ -e "$root_b/FROM_FIRST_ENDPOINT" ]]; then
+	if [[ -e "$entry_b/FROM_FIRST_ENDPOINT" ]]; then
 		echo "  FAIL: $label: reviewed the first endpoint's checkout"
 		FAIL=$((FAIL + 1))
 	else
@@ -1467,9 +1495,9 @@ rm -rf "$bin" "$cache"
 
 # Test 21: git authenticates to github.com through gh, without user config
 # `gh repo clone` hands gh's credential helper to the clone alone, so on a
-# private repository the later fetch of pull/N/head — and the checkout, which
-# in a blobless clone downloads the blobs it needs — had no credentials unless
-# the operator had run `gh auth setup-git`. Every git call of the github.com
+# private repository the later fetch of pull/N/head — and the worktree add,
+# which in a blobless clone downloads the blobs it needs — had no credentials
+# unless the operator had run `gh auth setup-git`. Every git call of the github.com
 # path is given gh as a credential helper through GIT_CONFIG_COUNT, scoped to
 # https://github.com and appended after any entries the caller set. The mock
 # asks the real git which helper it resolves, so the assertion is git's own
@@ -1482,8 +1510,9 @@ make_cred_mockbin() { # dir
 #!/usr/bin/env bash
 sub=""
 for a in "\$@"; do
-	case "\$a" in clone | fetch | checkout) sub="\$a"; break ;; esac
+	case "\$a" in clone | fetch | worktree) sub="\$a"; break ;; esac
 done
+if [[ "\$1" == "-C" ]]; then shift 2; fi
 case "\$1" in
 remote) echo "https://example.invalid/other/repo.git"; exit 0 ;;
 rev-parse) echo "main"; exit 0 ;;
@@ -1511,7 +1540,7 @@ while IFS='|' read -r label tc_url tc_env want_helper want_key0; do
 		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
 		"${url_args[@]}" 2>/dev/null)
 	assert_json_field "$result" "status" "ok" "$label: status is ok"
-	for sub in clone fetch checkout; do
+	for sub in clone fetch worktree; do
 		line=$(grep -m1 "^$sub " "$bin/cred.log" || echo "$sub missing")
 		assert_equals "$line" "$sub helper=$want_helper key0=$want_key0 prompt=0" \
 			"$label: $sub credential helper and prompt"
@@ -1524,10 +1553,11 @@ other host|https://ghe.example.com/acme/widgets.git|GIT_CONFIG_COUNT=0|none|unse
 CREDCASES
 
 # Test 22: a cache with no per-run trees is not a failure
-# Only GitLab makes trees under .runs, so a GitHub checkout routinely finds the
-# directory missing, or emptied by an earlier prune. Listing it then matched
-# nothing, and the error trap reported a failed command on stderr — which the
-# agent reading this script's output takes for a real one.
+# A GitHub run once found .runs missing or emptied by an earlier prune, since
+# only GitLab made trees there. Listing it then matched nothing, and the error
+# trap reported a failed command on stderr — which the agent reading this
+# script's output takes for a real one. Each run now makes its own tree there,
+# and either starting state must still leave stderr clean.
 echo "Test 22: no run trees means a clean stderr"
 for tc_runs in missing empty; do
 	bin=$(mktemp -d)
@@ -1546,12 +1576,13 @@ done
 # --- Symlinks in the GitHub checkout (RC-076) ---------------------------------
 #
 # These run real git against a local fixture: the wrapper only redirects the
-# clone URL, so the fetch of pull/7/head, the config and the checkout are
+# clone URL, so the fetch of pull/7/head, the config and the worktree add are
 # exactly what a review does.
 
 # A real git whose clones come from <fixture> instead of the network.
-# LATE_LINK, when set, is a path the wrapper makes a live link after each
-# checkout, standing in for a materialization that left one behind.
+# LATE_LINK, when set, is a name the wrapper makes a live link under in each
+# worktree it adds, standing in for a materialization that left one behind.
+# The worktree's path is the next-to-last argument of the script's call.
 make_fixture_git() { # bindir fixture
 	local dir="$1" fixture="$2" real_git
 	real_git=$(command -v git)
@@ -1569,8 +1600,9 @@ if printf '%s\n' "\$@" | grep -qx clone; then
 fi
 "$real_git" "\${args[@]}"
 rc=\$?
-if [[ -n "\${LATE_LINK:-}" ]] && printf '%s\n' "\$@" | grep -qx checkout; then
-	ln -s /etc/passwd "\$LATE_LINK"
+if [[ -n "\${LATE_LINK:-}" ]] && printf '%s\n' "\$@" | grep -qx worktree &&
+	printf '%s\n' "\$@" | grep -qx add; then
+	ln -s /etc/passwd "\${@: -2:1}/\$LATE_LINK"
 fi
 exit \$rc
 WRAP
@@ -1579,7 +1611,8 @@ WRAP
 	chmod +x "$dir/gh"
 }
 
-# A repository whose refs/pull/7/head adds an escaping link and an inside one.
+# A repository whose refs/pull/7/head adds an escaping link, an inside one and
+# only7.txt, and whose refs/pull/8/head adds only8.txt to the same base.
 make_link_fixture() { # dir canary
 	mkdir -p "$1"
 	(
@@ -1591,15 +1624,33 @@ make_link_fixture() { # dir canary
 		git commit -qm base
 		ln -s "$2" leak
 		ln -s ../README docs/readme-link
-		git add leak docs/readme-link
+		echo seven >only7.txt
+		git add leak docs/readme-link only7.txt
 		git commit -qm links
 		git update-ref refs/pull/7/head HEAD
+		git checkout -q --detach HEAD~1
+		echo eight >only8.txt
+		git add only8.txt
+		git commit -qm eight
+		git update-ref refs/pull/8/head HEAD
 		git checkout -q --detach HEAD~1
 	)
 }
 
 live_links() { # root -> count of symlinks outside .git
 	find "$1" -path "$1/.git" -prune -o -type l -print | wc -l | tr -d ' '
+}
+
+# <root> <label> — passes when <root> is a GitHub run tree of the cache under
+# $clones.
+assert_github_run_tree() {
+	if [[ "$1" == "$clones/.runs/github@github.com-acme-widgets."* && -d "$1" ]]; then
+		echo "  PASS: $2"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $2 (got '$1')"
+		FAIL=$((FAIL + 1))
+	fi
 }
 
 canary=$(mktemp)
@@ -1611,36 +1662,58 @@ make_fixture_git "$gbin" "$fixture/origin"
 
 echo "Test 23: GitHub checkout writes committed symlinks as inert files (RC-076)"
 cache=$(mktemp -d)
+clones="$cache/review-council/clones"
+clone="$clones/github.com-acme-widgets"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
-root="$cache/review-council/clones/github.com-acme-widgets"
-assert_json_field "$result" "review_root" "$root" "review_root is the cache clone"
-assert_equals "$(live_links "$root")" "0" "no live link in the review tree"
+root=$(echo "$result" | jq -r '.review_root')
+assert_github_run_tree "$root" "review_root is this run's tree"
+live=$(live_links "$root")
+assert_equals "$live" "0" "no live link in the review tree"
+# shellcheck disable=SC2312 # a missing file must fail this assertion, not abort the suite.
 assert_equals "$(cat "$root/leak" 2>/dev/null)" "$canary" "the link is a file holding its target text"
+# shellcheck disable=SC2312 # grep exits 1 on no match, and no match is what is asserted.
 assert_equals "$(grep -rl RC-CANARY-TEST --exclude-dir=.git "$root" | wc -l | tr -d ' ')" "0" \
 	"the target's content is nowhere in the tree"
-assert_equals "$(git -C "$root" config core.symlinks)" "false" "the cache clone's own config holds the setting"
+symlinks=$(git -C "$clone" config core.symlinks)
+assert_equals "$symlinks" "false" "the cache clone's own config holds the setting"
 
-echo "Test 24: links an earlier checkout left live are made inert (RC-076)"
-git -C "$root" config core.symlinks true
-git -C "$root" checkout -q -f FETCH_HEAD
-ln -s "$canary" "$root/planted"
-assert_equals "$(live_links "$root")" "2" "precondition: the cache holds live links"
+echo "Test 24: links the cache clone's own work tree holds are never reviewed (RC-076)"
+# An earlier layout checked out into the clone itself, and the shallow fallback
+# still clones with a work tree; either can hold live links, under a config an
+# operator may have flipped.
+git -C "$clone" config core.symlinks true
+git -C "$clone" checkout -q -f refs/review-council/pr-7
+ln -s "$canary" "$clone/planted"
+# shellcheck disable=SC2312 # a false test must fail this assertion, not abort the suite.
+assert_equals "$([[ -L "$clone/leak" && -L "$clone/planted" ]] && echo live)" "live" \
+	"precondition: the cache clone holds live links"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
-assert_equals "$(live_links "$root")" "0" "every live link is gone"
-assert_equals "$(cat "$root/leak" 2>/dev/null)" "$canary" "the tracked link is an inert file again"
+root=$(echo "$result" | jq -r '.review_root')
+assert_github_run_tree "$root" "review_root is this run's tree, not the clone"
+live=$(live_links "$root")
+assert_equals "$live" "0" "no live link in the review tree"
+# shellcheck disable=SC2312 # a missing file must fail this assertion, not abort the suite.
+assert_equals "$(cat "$root/leak" 2>/dev/null)" "$canary" "the tracked link is an inert file"
+symlinks=$(git -C "$clone" config core.symlinks)
+assert_equals "$symlinks" "false" "the setting is restored"
 rm -rf "$cache"
 
 echo "Test 25: a link that survives materializing fails closed (RC-076)"
 cache=$(mktemp -d)
-root="$cache/review-council/clones/github.com-acme-widgets"
-result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" LATE_LINK="$root/late" bash "$SCRIPT" \
+clones="$cache/review-council/clones"
+clone="$clones/github.com-acme-widgets"
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" LATE_LINK="late" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip"
 assert_json_field "$result" "review_root" "." "review falls back to the diff"
+left=$(find "$clones/.runs" -mindepth 1 | wc -l | tr -d ' ')
+assert_equals "$left" "0" "the refused tree is removed"
+worktrees=$(git -C "$clone" worktree list | wc -l | tr -d ' ')
+assert_equals "$worktrees" "1" "the clone keeps no metadata about the refused tree"
 rm -rf "$cache"
 
 echo "Test 26: a checkout tracking an escaping link is not reviewed in place (RC-076)"
@@ -1668,7 +1741,73 @@ git -C "$op/w" commit -qm "drop leak"
 result=$(cd "$op/w" && PATH="$gbin:$PATH" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
 assert_json_field "$result" "status" "in_place" "status is in_place"
-rm -rf "$op" "$fixture" "$gbin" "$canary"
+rm -rf "$op"
+
+# Test 27: two reviews of one repository never share a tree
+# Both reviews used the one cache clone's work tree, and each fetched and
+# checked out its pull request there: the second moved the first's tree to the
+# other pull request mid-review, and the first review's findings were stripped
+# FILE_NOT_FOUND, a false clean. Each run's tree is now its own, so PR 7's tree
+# still holds PR 7 after PR 8 is materialized from the same clone.
+echo "Test 27: concurrent reviews of one repository keep their own trees"
+cache=$(mktemp -d)
+clones="$cache/review-council/clones"
+clone="$clones/github.com-acme-widgets"
+sha7=$(git -C "$fixture/origin" rev-parse refs/pull/7/head)
+sha8=$(git -C "$fixture/origin" rev-parse refs/pull/8/head)
+base_sha=$(git -C "$fixture/origin" rev-parse 'refs/pull/7/head~1')
+result7=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+root7=$(echo "$result7" | jq -r '.review_root')
+result8=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 8 --head feature-y 2>/dev/null)
+root8=$(echo "$result8" | jq -r '.review_root')
+assert_github_run_tree "$root7" "PR 7 has a run tree"
+assert_github_run_tree "$root8" "PR 8 has a run tree"
+# shellcheck disable=SC2312 # a missing tree must fail this assertion, not abort the suite.
+assert_equals "$(git -C "$root7" rev-parse HEAD 2>/dev/null)" "$sha7" "PR 7's tree is still at PR 7's head"
+# shellcheck disable=SC2312 # a missing file must fail this assertion, not abort the suite.
+assert_equals "$(cat "$root7/only7.txt" 2>/dev/null)" "seven" "PR 7's tree still holds PR 7's file"
+# shellcheck disable=SC2312 # the false test is the outcome asserted.
+assert_equals "$([[ -e "$root7/only8.txt" ]] && echo present)" "" "PR 7's tree holds nothing of PR 8"
+# shellcheck disable=SC2312 # a missing tree must fail this assertion, not abort the suite.
+assert_equals "$(git -C "$root8" rev-parse HEAD 2>/dev/null)" "$sha8" "PR 8's tree is at PR 8's head"
+# --head-sha is the commit the diff was read at; the tree is pinned to it, not
+# to wherever the fetched ref points.
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x --head-sha "$base_sha" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "--head-sha: status is ok"
+root=$(echo "$result" | jq -r '.review_root')
+# shellcheck disable=SC2312 # a missing tree must fail this assertion, not abort the suite.
+assert_equals "$(git -C "$root" rev-parse HEAD 2>/dev/null)" "$base_sha" "--head-sha pins the tree to that commit"
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+	--head-sha 0123456789abcdef0123456789abcdef01234567 2>/dev/null)
+assert_json_field "$result" "status" "skip" "unknown --head-sha: status is skip"
+assert_json_field "$result" "review_root" "." "unknown --head-sha: review_root stays ."
+assert_json_field "$result" "message" \
+	"Head commit 0123456789abcdef0123456789abcdef01234567 of pull/7/head is not in the fetched history; reviewing from diff only." \
+	"unknown --head-sha: message names the missing commit"
+
+# Test 28: a GitHub run tree is pruned like a GitLab one, metadata and all
+# The tree is a git worktree, so removing its directory alone leaves the clone
+# holding metadata about a worktree that no longer exists.
+echo "Test 28: GitHub run tree age prune"
+stamp=$(stamp_ago $((7 * 3600)))
+touch -t "$stamp" "$root7"
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 8 --head feature-y 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+# shellcheck disable=SC2312 # the false test is the outcome asserted.
+assert_equals "$([[ -e "$root7" ]] && echo present)" "" "the seven-hour-old tree is removed"
+# shellcheck disable=SC2312 # a false test must fail this assertion, not abort the suite.
+assert_equals "$([[ -d "$root8" ]] && echo present)" "present" "a recent tree is kept"
+# shellcheck disable=SC2312 # the false test is the outcome asserted.
+assert_equals "$([[ -e "$clone/.git/worktrees/${root7##*/}" ]] && echo present)" "" \
+	"the clone's metadata about it is pruned"
+listed=$(git -C "$clone" worktree list --porcelain | awk -v w="worktree $root7" '$0 == w' | wc -l | tr -d ' ')
+assert_equals "$listed" "0" "git no longer lists it"
+rm -rf "$cache" "$fixture" "$gbin" "$canary"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

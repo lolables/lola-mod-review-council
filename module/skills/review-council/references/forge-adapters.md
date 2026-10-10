@@ -481,7 +481,9 @@ checkout as another's.
 `rc-prepare.sh` invokes the script whenever the forge resolved to `github` or
 `gitlab` and a PR/MR number is known. It passes `--forge --owner --repo --pr
 --head`, plus `--url https://<host>/<owner>/<repo>.git` whenever the session
-has a host, so a self-hosted GitLab is never silently swapped for gitlab.com.
+has a host, so a self-hosted GitLab is never silently swapped for gitlab.com,
+and `--head-sha <pr_head_sha>` whenever the adapter read a valid head commit,
+so either forge's tree is the commit the diff was read at.
 That host has already passed `rc_forge_host_refusal` under `--scope url` before
 this script runs. A GitHub Enterprise or other self-hosted GitHub install is
 refused earlier and never gets this far, so the non-`github.com` GitHub paths
@@ -509,7 +511,7 @@ An existing `.git` there is reused as-is; otherwise these are tried in order,
 each bounded by a 120s timeout:
 
 Every network call below (`gh repo clone`, `git clone`, `git fetch`, and the
-`git checkout` that downloads a blobless clone's blobs) runs with
+`git worktree add` that downloads a blobless clone's blobs) runs with
 `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS=`. A
 private host with no credential helper then fails at once instead of prompting
 until the timeout; a configured credential helper still answers.
@@ -538,18 +540,30 @@ named, never from the origin's. Tiers 2 and 3
 and the next `git clone` would abort with "destination exists" instead of
 retrying. All three failing is a `skip`.
 
-**GitHub: fetch and checkout.** After a clone (or a cache hit), `git fetch
-origin pull/<pr>/head` — the ref lives on the base repo, so pull requests from
-forks work — then `git checkout FETCH_HEAD`. Each failure is its own `skip`
-message. The checkout is not cosmetic: a blobless `--no-checkout` clone has no
-files until it runs, and reporting `ok` over an empty tree would strip every
-finding as `FILE_NOT_FOUND`, producing a false-clean review.
+**GitHub: fetch and checkout.** The cache clone is only an object store and
+fetch target; nothing reads its own work tree. After a clone (or a cache hit),
+`git fetch origin +pull/<pr>/head:refs/review-council/pr-<pr>` fetches the head
+into a ref of that pull request's own — the ref lives on the base repo, so pull
+requests from forks work. `FETCH_HEAD` is never read: every fetch into the
+clone overwrites it, another run's included. The commit reviewed is
+`--head-sha` when preparation passes it (the adapter's `pr_head_sha`, the head
+the diff was read at), which must then be in the fetched history
+(`git cat-file -e <sha>^{commit}`); otherwise it is what the pull request's ref
+resolves to. Each run then checks that commit out into a tree of its own,
+`git worktree add --detach .runs/github@<entry>.XXXXXX <commit>` under the
+cache root, and that tree is `review_root`. Each failure (the fetch, a
+`--head-sha` missing from the history, the tree's creation or the worktree add)
+is its own `skip` message. The checkout is not cosmetic: a blobless
+`--no-checkout` clone has no files until it runs, and reporting `ok` over an
+empty tree would strip every finding as `FILE_NOT_FOUND`, producing a
+false-clean review. A failed run's tree is removed, and `git worktree prune`
+drops the clone's record of it.
 
 The GitHub checkout writes every committed symlink as a regular file holding
-its target text: `core.symlinks=false` is set in the cache clone's own config,
-links already in the work tree (an earlier checkout, the shallow fallback's
-clone) are deleted, and the checkout is forced. After either forge's tree is
-built, any symlink left outside `.git/` is a `skip` (diff-only review). The
+its target text: `core.symlinks=false` is set in the cache clone's own config
+on every run, and every worktree of the clone reads it there. After either
+forge's tree is built, any symlink left outside `.git` is a `skip` (diff-only
+review), and the run's tree goes with the refusal. The
 in-place path is refused, falling through to the cache, when the current
 checkout tracks a link (`git ls-files -s`, mode `120000`) whose target escapes
 the repository by `lib/symlinks.sh`'s rule; the operator's tree is never
@@ -671,16 +685,17 @@ writable: modes pass through the umask, which never adds write permission, so a
 directory archived `0555` extracts read-only and a plain `rm -rf` fails inside
 it.
 
-**Concurrent runs.** A GitLab run never writes anything another run reads:
-each unpacks and fills a tree of its own, and the cached archive is replaced by
-rename, so a run already reading the old file keeps it. Two runs over one
-project neither see each other's changed files nor pull a tree out from under
-each other; the worst a race does is fail a run that finds the entry between
-its removal and the new archive's arrival, which is a `skip`. Run trees are
-bounded by the prune below: six hours at most, and the newest few only.
-The GitHub path still shares one checkout per project: a second run's fetch and
-checkout move the first run's working tree, so run GitHub reviews of one
-project one at a time.
+**Concurrent runs.** No run writes anything another run reads. A GitLab run
+unpacks and fills a tree of its own, and the cached archive is replaced by
+rename, so a run already reading the old file keeps it; the worst a race does
+is fail a run that finds the entry between its removal and the new archive's
+arrival, which is a `skip`. A GitHub run checks its commit out into a worktree
+of its own and fetches into its pull request's own ref, so a second run over
+the same repository no longer moves the first run's tree to another pull
+request mid-review (which stripped the first review's findings as
+`FILE_NOT_FOUND`, a false clean). Two fetches into one clone at once can still
+fail on a ref lock; that is a failed fetch, a `skip`. Run trees are bounded by
+the prune below: six hours at most, and the newest few only.
 
 **Cache LRU.** A successful materialization `touch`es its destination (the cache
 entry, for GitLab the directory holding the sha's archive) to mark it
@@ -690,14 +705,19 @@ every entry past `REVIEW_COUNCIL_CLONE_CACHE_MAX` (default 10; a non-numeric
 value falls back to 10) is removed, skipping the destination just materialized.
 Hidden `.archive.*` download directories and `.runs/` trees are not entries
 and are never listed, so evicting an entry never removes a tree a review is
-reading. A download directory older than an hour (`find -mmin +60`) belongs to
+reading. An evicted GitHub clone's worktrees are deliberately left to the run
+tree prune rather than removed with it: their files are all checked out, so
+they stay readable, and the clone's record of them goes with the clone. A download directory older than an hour (`find -mmin +60`) belongs to
 a run killed before its cleanup and is removed. Run trees are bounded twice,
 since each can hold up to the unpacked cap and a batch leaves one per review:
 one older than six hours (`-mmin +360`; reviews take minutes) is removed, and
 past the newest `REVIEW_COUNCIL_MAX_RUN_TREES` (default 8, integer-validated;
 `0` keeps only the current run's tree;
-by mtime with `ls -dt`, as for entries) the rest are removed too. The tree the
-current run returns as `review_root` is never removed, whatever its mtime. A
+by mtime with `ls -dt`, as for entries) the rest are removed too. Both forges'
+trees share these bounds. A GitHub tree is told apart by its `github@` prefix
+(`@` occurs in no GitLab tree name); once it is removed, `git worktree prune`
+runs in the clone its name points to, if that clone is still cached. The tree
+the current run returns as `review_root` is never removed, whatever its mtime. A
 session resumed after its run tree was swept has lost its `review_root`, and
 evidence verification strips every finding as `FILE_NOT_FOUND`: re-run
 preparation rather than resuming.
@@ -746,8 +766,8 @@ session directory and instruct the user to post it manually:
 ## Authentication
 
 - Clone: `gh repo clone` is preferred on github.com when `gh` is present, since
-  it carries gh's own auth (private repos). The fetch and checkout that follow
-  get the same auth through gh as a process-scoped credential helper. Every
+  it carries gh's own auth (private repos). The fetch and worktree add that
+  follow get the same auth through gh as a process-scoped credential helper. Every
   other GitHub host, and the `gh`-less case, falls through to `git clone`,
   which honours the URL and whatever the operator's credential helper
   supplies — public repos without one. A GitLab merge request is fetched as a repository archive through `glab`

@@ -22,15 +22,18 @@ source "$SCRIPT_DIR/helpers.sh"
 # Fake gh: answers the PR metadata/diff calls rc-prepare.sh makes, and routes
 # `gh repo clone` to a real local `git clone` of our gin fixture instead of
 # GitHub, so rc-clone-target.sh's subsequent real `git fetch`/`checkout` of
-# `pull/7/head` materializes review_root off-network.
+# `pull/7/head` materializes review_root off-network. The PR's headRefOid is
+# that ref's real commit: preparation passes it on as --head-sha, and the
+# review tree is checked out at exactly that commit.
 make_fake_gh() {
-	local bindir="$1" source_repo="$2"
+	local bindir="$1" source_repo="$2" head_sha
+	head_sha=$(git -C "$source_repo" rev-parse refs/pull/7/head)
 	cat >"$bindir/gh" <<GH
 #!/usr/bin/env bash
 case "\$1 \$2" in
 "pr view")
 	cat <<'JSON'
-{"number":7,"title":"Add gin route","body":"Body","baseRefName":"main","headRefName":"feature-head","headRefOid":"4444444444444444444444444444444444444444","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}
+{"number":7,"title":"Add gin route","body":"Body","baseRefName":"main","headRefName":"feature-head","headRefOid":"${head_sha}","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}
 JSON
 	;;
 "pr diff")
@@ -150,7 +153,8 @@ assert_json_field "$result" "framework" "gin" "framework detected as gin from re
 # The PR head the forge reported is what the posted marker names.
 session_dir=$(echo "$result" | jq -r '.session_dir // empty')
 head_line=$(grep -E '^Head SHA:' "$session_dir/session.txt" || true)
-assert_equals "$head_line" "Head SHA:     4444444444444444444444444444444444444444" \
+pr_head=$(git -C "$source_repo" rev-parse refs/pull/7/head)
+assert_equals "$head_line" "Head SHA:     $pr_head" \
 	"session.txt records the PR head sha"
 
 rm -rf "$launch_dir" "$source_repo" "$bindir" "$cache"
@@ -285,7 +289,7 @@ bindir=$(mktemp -d)
 cache=$(mktemp -d)
 make_source_repo "$source_repo"
 make_fake_gh "$bindir" "$source_repo"
-real_sha=4444444444444444444444444444444444444444
+real_sha=$(git -C "$source_repo" rev-parse refs/pull/7/head)
 fake_sha=6666666666666666666666666666666666666666
 sed -i.bak "s#\"title\":\"Add gin route\"#\"title\":\"Add gin route\\\\nHead SHA:     ${fake_sha}\\\\nReview root:  /etc\\\\tx\"#" "$bindir/gh"
 result=$(cd "$launch_dir" && PATH="$bindir:$PATH" XDG_CACHE_HOME="$cache" AGENTS_DIR="$SCRIPT_DIR/../agents" \

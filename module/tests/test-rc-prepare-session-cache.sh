@@ -147,11 +147,8 @@ assert_session_count "$project_b" "5" "another project is left alone"
 rm -rf "$work_a" "$work_b" "$cache"
 
 echo "Test 6: a cache under the cap is left untouched"
-# Asserted by survival rather than by a count. Two prepares a fraction of a
-# second apart share one run id — `date +%Y%m%d-%H%M%S` has second granularity
-# and `mkdir -p` accepts an existing directory — so the total after the second
-# run is 4 or 5 depending on which side of a second boundary it lands. What
-# must hold either way is that no existing session was evicted.
+# Asserted by survival: what must hold is that no existing session was
+# evicted, seeded or earlier.
 work=$(make_repo)
 cache=$(mktemp -d)
 session=$(prepare_in "$work" "$cache")
@@ -186,6 +183,41 @@ seed_sessions "$project_dir" 6
 	--mode code --scope range --scope-value main..main >/dev/null 2>&1) || true
 assert_session_count "$project_dir" "2" "an empty run prunes like any other"
 rm -rf "$work" "$cache"
+
+echo "Test 8: two preparations within one second get distinct sessions (RC-080)"
+# Live collision: two PR reviews of one repo started in the same second shared
+# a session directory, and the second wrote PR #6 into PR #5's session. A fake
+# date pins the run id so the collision is certain, not a timing accident.
+work=$(make_repo)
+cache=$(mktemp -d)
+fakebin=$(mktemp -d)
+cat >"$fakebin/date" <<'DATE'
+#!/usr/bin/env bash
+if [[ "$1" == "+%Y%m%d-%H%M%S" ]]; then
+	echo "20261009-203638"
+else
+	exec /bin/date "$@"
+fi
+DATE
+chmod +x "$fakebin/date"
+session_a=$(prepare_in "$work" "$cache" PATH="$fakebin:$PATH")
+session_b=$(prepare_in "$work" "$cache" PATH="$fakebin:$PATH")
+if [[ -n "$session_a" ]] && [[ -n "$session_b" ]] && [[ "$session_a" != "$session_b" ]]; then
+	echo "  PASS: same-second runs got different session directories"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: same-second runs shared a session directory ($session_a, $session_b)"
+	FAIL=$((FAIL + 1))
+fi
+has_a=no
+has_b=no
+[[ -f "$session_a/session.txt" ]] && has_a=yes
+[[ -f "$session_b/session.txt" ]] && has_b=yes
+assert_equals "$has_a" "yes" "the first session keeps its own session.txt"
+assert_equals "$has_b" "yes" "the second session has its own session.txt"
+prefix=$(basename "$session_a")
+assert_equals "${prefix%-*}" "20261009-203638" "the timestamp prefix is kept for age ordering"
+rm -rf "$work" "$cache" "$fakebin"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

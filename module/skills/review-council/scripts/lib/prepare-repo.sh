@@ -311,14 +311,22 @@ else
 	project_id=$(pwd 2>/dev/null | (sha256sum 2>/dev/null || shasum -a 256 2>/dev/null || md5sum 2>/dev/null) | head -c 12) || project_id="unknown" # DevSkim: ignore DS126858
 fi
 run_id=$(date +%Y%m%d-%H%M%S 2>/dev/null) || run_id="unknown"
-session_dir="${XDG_CACHE_HOME:-$HOME/.cache}/review-council/${project_id}/${run_id}"
+project_dir="${XDG_CACHE_HOME:-$HOME/.cache}/review-council/${project_id}"
 
 # verdicts/ holds per-agent verdict artifacts; verdicts/_meta/ holds the
 # pipeline state the orchestrator writes between phases. Splitting them is
 # what stops a phase artifact landing where a verdict glob will find it —
 # RC-4 was exactly that, clusters.json parsed as an agent verdict.
-if ! mkdir -p "${session_dir}/verdicts/_meta" 2>/dev/null; then
-	json_output "skip" "Cannot create session directory at ${session_dir}. Check permissions and disk space."
+#
+# The directory is made by mktemp, not mkdir -p: the run id has one-second
+# resolution and mkdir -p accepts an existing directory, so two preparations of
+# one project in the same second (two PR reviews launched together) shared a
+# session and the second overwrote the first's PR metadata (RC-080). mktemp -d
+# creates exclusively, and the timestamp prefix keeps names sorting by age.
+if ! mkdir -p "$project_dir" 2>/dev/null ||
+	! session_dir=$(mktemp -d "${project_dir}/${run_id}-XXXXXX" 2>/dev/null) ||
+	! mkdir -p "${session_dir}/verdicts/_meta" 2>/dev/null; then
+	json_output "skip" "Cannot create session directory under ${project_dir}. Check permissions and disk space."
 	exit 0
 fi
 
@@ -344,8 +352,9 @@ session_cap="${REVIEW_COUNCIL_SESSION_CACHE_MAX:-20}"
 [[ "$session_cap" =~ ^[0-9]+$ ]] || session_cap=20
 # shellcheck disable=SC2012,SC2312 # `find -printf` sorting is GNU-only and this
 # cap has to hold on macOS too, exactly as the clone LRU does. Entry names are
-# `date +%Y%m%d-%H%M%S` run ids, so the whitespace-in-filename hazard SC2012
-# warns about cannot arise, and mapfile splits on newlines. A project directory
+# `date +%Y%m%d-%H%M%S` run ids plus a mktemp suffix of [A-Za-z0-9], so the
+# whitespace-in-filename hazard SC2012 warns about cannot arise, and mapfile
+# splits on newlines. A project directory
 # holding only this session legitimately yields one entry.
 mapfile -t rc_sessions_by_age < <(ls -dt "$(dirname "${session_dir}")"/*/ 2>/dev/null | sed 's:/*$::')
 if [[ ${#rc_sessions_by_age[@]} -gt $session_cap ]]; then

@@ -747,6 +747,22 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- Two preparations of one project started in the same second no longer share a
+  session directory. It was named to the second and created non-exclusively,
+  so concurrent `review-open-prs.sh` runs wrote into one session and the second
+  PR's council found the first PR's metadata. The directory is now created
+  exclusively as `<timestamp>-XXXXXX`.
+
+- Concurrent reviews of one GitHub repository no longer corrupt each other's
+  tree. Each review fetched its PR head into the shared cache clone and checked
+  out `FETCH_HEAD` there, so a second review moved the first one's files
+  mid-review and its findings were stripped `FILE_NOT_FOUND` (a false-clean
+  review, seen live). Each PR is now fetched into `refs/review-council/pr-<N>`
+  and each review checks its commit out into its own detached git worktree
+  under `clones/.runs/`, pruned with GitLab's trees (six hours,
+  `REVIEW_COUNCIL_MAX_RUN_TREES`). Preparation passes `--head-sha` for GitHub
+  too, so the tree is the commit the diff was read at.
+
 - The symlink check no longer misses links that leave the repository through a
   diff it cannot read: a target holding a NUL byte (shown as a binary diff), a
   path containing a space, CRLF line endings, or an operator's own `git diff`

@@ -26,16 +26,17 @@ source "$(dirname "$0")/lib/symlinks.sh"
 #   origin is never a source for the host — see "Which host did the caller ask
 #   for?" below.
 #
-#   --head-sha is the merge request's head commit as preparation already read
-#   it. GitLab materializes the archive at that sha instead of looking the
-#   merge request up again; anything but a 40-hex commit id is refused.
+#   --head-sha is the PR/MR head commit as preparation already read it. GitLab
+#   materializes the archive at that sha instead of looking the merge request
+#   up again; GitHub checks that commit out, which must then be in the fetched
+#   history. Anything but a 40-hex commit id is refused.
 #
 # Output JSON:
 #   {"status":"in_place|ok|skip","review_root":"<path|.>","message":"..."}
 #     in_place  -> current working tree is the target at PR head; review_root "."
-#     ok        -> materialized into cache; review_root is the checkout path
-#                  (GitHub) or the extracted archive tree (GitLab), and GitLab
-#                  adds "special_files_removed":<n>
+#     ok        -> materialized into cache; review_root is this run's own tree
+#                  under clones/.runs/: a git worktree (GitHub) or the extracted
+#                  archive (GitLab), and GitLab adds "special_files_removed":<n>
 #     skip      -> not materialized (unsupported forge / clone failure); review_root "."
 
 forge="" owner="" repo="" pr="" head="" url="" head_sha=""
@@ -677,10 +678,37 @@ else
 		exit 0
 	fi
 
-	# Fetch the PR/MR head ref (works for forks on the base repo) and check it out.
-	if ! rc_timeout 120 "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" fetch origin "$head_ref" >/dev/null 2>&1; then
+	# --- What is shared, and what each run gets ---
+	# The clone is only an object store and fetch target; nothing reads its own
+	# work tree. Each run checks its commit out into a git worktree of its own
+	# under `.runs/`, beside GitLab's trees. Two runs over one repository
+	# shared that work tree once: the second run's fetch and checkout moved the
+	# first run's tree to another pull request mid-review, and the first
+	# review's findings were stripped FILE_NOT_FOUND, a false clean.
+	#
+	# The head is fetched into a ref of this pull request's own rather than
+	# read from FETCH_HEAD, which every fetch into the clone overwrites (the ref
+	# lives on the base repository, so pull requests from forks resolve too).
+	# Two runs fetching into one clone at once can still fail on a ref lock;
+	# that is a failed fetch like any other, and falls back to the diff.
+	pr_ref="refs/review-council/pr-${pr}"
+	if ! rc_timeout 120 "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" fetch origin "+${head_ref}:${pr_ref}" >/dev/null 2>&1; then
 		review_root="."
 		emit "skip" "Fetch of ${head_label} failed; reviewing from diff only."
+		exit 0
+	fi
+	# Preparation's --head-sha is the head the diff was read at, so the tree is
+	# pinned to it; the fetched ref may already have moved past it.
+	if [[ -n "$head_sha" ]]; then
+		if ! git -C "$dest" cat-file -e "${head_sha}^{commit}" >/dev/null 2>&1; then
+			review_root="."
+			emit "skip" "Head commit ${head_sha} of ${head_label} is not in the fetched history; reviewing from diff only."
+			exit 0
+		fi
+		head_commit="$head_sha"
+	elif ! head_commit=$(git -C "$dest" rev-parse --verify -q "${pr_ref}^{commit}" 2>/dev/null); then
+		review_root="."
+		emit "skip" "Fetch of ${head_label} left no commit to review; reviewing from diff only."
 		exit 0
 	fi
 	# A committed symlink is the author's to aim, at /etc/passwd or a
@@ -688,37 +716,51 @@ else
 	# content. With core.symlinks=false git writes each link as a regular file
 	# holding its target text: the path still exists for reviewers, and nothing
 	# behind it is reachable. The setting goes in the cache clone's own config,
-	# never the operator's. A link an earlier checkout (or the shallow
-	# fallback's clone) already wrote is deleted first and the checkout is
-	# forced, because git leaves a path it believes unchanged exactly as it is
-	# on disk.
-	if ! git -C "$dest" config core.symlinks false >/dev/null 2>&1 ||
-		! find "$dest" -path "$dest/.git" -prune -o -type l -exec rm -f {} + 2>/dev/null; then
+	# never the operator's, and every worktree of the clone reads it there.
+	if ! git -C "$dest" config core.symlinks false >/dev/null 2>&1; then
 		review_root="."
 		emit "skip" "Could not make the symlinks in the ${owner}/${repo} cache inert; reviewing from diff only."
 		exit 0
 	fi
-	# Checkout populates the working tree; a blobless --no-checkout clone has no
-	# files until this runs. If it fails, the tree is empty and every finding
-	# would be stripped FILE_NOT_FOUND (a false-clean review), so fall back to
-	# diff-only review instead of emitting a misleading "ok".
-	if ! "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" checkout -q -f FETCH_HEAD >/dev/null 2>&1; then
+	# The `github@` prefix names the forge, and `@` occurs in no GitLab tree
+	# name (a host slug, gated segments and `+`), so the prune below can tell a
+	# git worktree, whose clone keeps metadata about it, from an unpacked
+	# archive. `git worktree add` accepts the empty directory mktemp made.
+	if ! mkdir -p "${cache_root}/.runs" 2>/dev/null ||
+		! run_tree=$(mktemp -d "${cache_root}/.runs/github@${dest##*/}.XXXXXX" 2>/dev/null); then
+		run_tree=""
+		review_root="."
+		emit "skip" "Cannot create a review tree in the clone cache; reviewing from diff only."
+		exit 0
+	fi
+	# A blobless clone downloads the blobs it needs here. If the worktree cannot
+	# be populated, the tree is empty and every finding would be stripped
+	# FILE_NOT_FOUND (a false-clean review), so fall back to diff-only review
+	# instead of emitting a misleading "ok".
+	if ! "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" worktree add -q --detach "$run_tree" "$head_commit" >/dev/null 2>&1; then
+		rm_tree "$run_tree"
+		git -C "$dest" worktree prune >/dev/null 2>&1 || true
+		run_tree=""
 		review_root="."
 		emit "skip" "Checkout of ${head_label} failed; reviewing from diff only."
 		exit 0
 	fi
-	review_root="$dest"
-	ok_message="Materialized ${owner}/${repo} at ${head_label} into cache."
+	review_root="$run_tree"
+	ok_message="Materialized ${owner}/${repo} at ${head_label} (${head_commit}) into a tree for this run."
 fi
 
 # Fail closed. Whichever path built the tree, no reviewer may meet a live
 # symlink in it: GitHub writes links as plain files and GitLab deletes them,
-# and either going wrong lands here instead of in front of a reviewer. A
-# GitLab run tree is this run's alone, so it goes with the refusal.
+# and either going wrong lands here instead of in front of a reviewer. A run
+# tree is this run's alone, so it goes with the refusal, and a GitHub one's
+# worktree metadata with it.
 if ! live_links=$(find "$review_root" -path "$review_root/.git" -prune -o -type l -print 2>/dev/null) ||
 	[[ -n "$live_links" ]]; then
 	if [[ -n "${run_tree:-}" ]]; then
 		rm_tree "$run_tree" 2>/dev/null || true
+	fi
+	if [[ "$forge" == "github" ]]; then
+		git -C "$dest" worktree prune >/dev/null 2>&1 || true
 	fi
 	review_root="."
 	emit "skip" "A symlink survived materializing ${head_label}; reviewing from diff only."
@@ -745,6 +787,13 @@ cap=$(cap_from_env REVIEW_COUNCIL_CLONE_CACHE_MAX 10)
 # trees (`.runs/`) are hidden, so `*/` never lists them and evicting an entry
 # never pulls a tree out from under a running review. Everything is removed
 # with rm_tree: an extracted archive may hold read-only directories.
+#
+# Evicting a GitHub clone therefore leaves its worktrees behind, deliberately:
+# removing them with it would pull a tree out from under a review still
+# reading it, the one thing the run trees exist to prevent. Their files are
+# all checked out, so they stay readable without the clone, and the age and
+# count prune below removes them like any other run tree. The clone's
+# metadata about them goes with the clone.
 mapfile -t by_age < <(ls -dt "$cache_root"/*/ 2>/dev/null | sed 's:/*$::')
 if [[ ${#by_age[@]} -gt $cap ]]; then
 	for ((k = cap; k < ${#by_age[@]}; k++)); do
@@ -758,9 +807,9 @@ fi
 # abandoned, not another run's work in progress. -mmin is not POSIX but GNU
 # and BSD find both have it.
 abandoned=$(find "$cache_root" -mindepth 1 -maxdepth 1 -type d -name '.archive.*' -mmin +60 2>/dev/null || true)
-# A GitLab run's tree is review_root for as long as its review runs, and
-# nothing tells this script when that is over. Reviews take minutes, so a tree
-# is kept for six hours and then removed, as is a blob a killed run left staged
+# A run's tree is review_root for as long as its review runs, and nothing
+# tells this script when that is over. Reviews take minutes, so a tree is kept
+# for six hours and then removed, as is a blob a killed GitLab run left staged
 # beside its tree. The trade-off: a session resumed after that has lost its
 # review_root, and evidence checks strip its findings until preparation is run
 # again — accepted, against trees of up to the unpacked cap each sitting on
@@ -771,9 +820,10 @@ abandoned+=$'\n'$(find "$cache_root/.runs" -mindepth 1 -maxdepth 1 -mmin +360 2>
 # REVIEW_COUNCIL_MAX_RUN_TREES trees are kept, by mtime with `ls -dt` as in the
 # LRU above.
 max_run_trees=$(cap_from_env REVIEW_COUNCIL_MAX_RUN_TREES 8)
-# Only GitLab makes run trees, so on GitHub .runs is routinely missing or
-# empty. An unmatched glob stays literal and names no directory; listing it
-# would fail, and the error trap would report that as a broken command.
+# A concurrent run's prune can empty .runs, this run's tree included, before
+# it is listed here. An unmatched glob stays literal and names no directory;
+# listing it would fail, and the error trap would report that as a broken
+# command.
 runs_by_age=()
 run_trees=("$cache_root"/.runs/*/)
 # shellcheck disable=SC2012,SC2312 # as in the LRU above: run tree names are
@@ -785,9 +835,21 @@ for ((k = max_run_trees; k < ${#runs_by_age[@]}; k++)); do
 	abandoned+=$'\n'"${runs_by_age[$k]}"
 done
 # The tree this run has just returned as review_root is never removed, however
-# old its mtime reads or however many trees are newer.
+# old its mtime reads or however many trees are newer. A GitHub tree is a git
+# worktree: once its directory is gone, `worktree prune` drops the metadata its
+# clone keeps about it. The clone is named by the tree's own name, never by
+# its `.git` file; an evicted clone has nothing left to prune.
 while IFS= read -r stale; do
-	[[ -z "$stale" || "$stale" == "${run_tree:-}" ]] || rm_tree "$stale" 2>/dev/null || true
+	[[ -z "$stale" || "$stale" == "${run_tree:-}" ]] && continue
+	rm_tree "$stale" 2>/dev/null || true
+	stale_name="${stale##*/}"
+	if [[ "$stale_name" == github@* ]]; then
+		stale_clone="${cache_root}/${stale_name#github@}"
+		stale_clone="${stale_clone%.*}"
+		if [[ -d "$stale_clone/.git" ]]; then
+			git -C "$stale_clone" worktree prune >/dev/null 2>&1 || true
+		fi
+	fi
 done <<<"$abandoned"
 
 emit "ok" "${ok_message}${inplace_note}"

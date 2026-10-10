@@ -362,11 +362,17 @@ not already on that branch, the council materializes the PR head into a
 per-repo cache under `$XDG_CACHE_HOME/review-council/clones/` so reviewers read
 real files instead of only the diff. Your working tree is never touched. The
 cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX` (default 10)
-repositories.
+repositories. Each review reads a tree of its own under `clones/.runs/`; those
+trees, from both forges together, are kept for up to six hours and only the
+newest `REVIEW_COUNCIL_MAX_RUN_TREES` (default 8; `0` keeps only the current
+review's tree). Re-run a review rather than resuming one older than that.
 
 - **GitHub:** a blobless partial clone, with a shallow fallback. Cloning never
   prompts for credentials: a private repository needs `gh` (github.com) or a
-  configured git credential helper.
+  configured git credential helper. The clone is shared, but each review checks
+  the pull request's head out into a tree of its own under `clones/.runs/`, as
+  GitLab's reviews do, so concurrent reviews of one repository do not disturb
+  each other.
   Committed symbolic links are written as plain files holding their target
   text, so no reviewer reads through one; if a live link survives anyway, the
   review falls back to the diff. Your own checkout is not reviewed in place
@@ -380,18 +386,14 @@ repositories.
   every symbolic link, hard link and special file in the extracted tree is
   deleted so no reviewer reads a file outside it; a finding on a file the merge
   request commits as a symlink therefore cannot be verified. The cache keeps
-  the archive; each review unpacks a copy of its own (under
-  `clones/.runs/`; the newest `REVIEW_COUNCIL_MAX_RUN_TREES`, default 8, are
-  kept for up to six hours), so concurrent reviews of one project do not
-  disturb each other. Re-run a review rather than resuming one older than
-  that. Oversized
+  the archive; each review unpacks a copy of its own under `clones/.runs/`, so
+  concurrent reviews of one project do not disturb each other. Oversized
   archives fall back to the diff: the caps are `REVIEW_COUNCIL_ARCHIVE_MAX_BYTES`
   (default 200 MiB), `REVIEW_COUNCIL_ARCHIVE_MAX_UNPACKED_BYTES` (2 GiB),
   `REVIEW_COUNCIL_ARCHIVE_MAX_ENTRIES` (200000) and
   `REVIEW_COUNCIL_MAX_CHANGED_FILES` (300). A cap of `0` is accepted:
   `REVIEW_COUNCIL_MAX_CHANGED_FILES=0` makes every merge request fall back to
-  diff-only review, and `REVIEW_COUNCIL_MAX_RUN_TREES=0` keeps only the current
-  review's tree.
+  diff-only review.
 
 Whatever the forge, a change that adds or retargets a symlink leading out of
 the repository gets a HIGH finding from the built-in symlink check, shown as

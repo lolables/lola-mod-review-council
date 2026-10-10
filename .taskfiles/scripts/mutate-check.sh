@@ -1306,6 +1306,43 @@ check_mutation "RC-078 a local review lists the index" \
 	's/^\([[:space:]]*\)head_links_json=\$(rc_index_links) || head_links_json=""$/\1head_links_json=""/' \
 	test-rc-prepare-git-edges.sh
 
+# --- RC-079: concurrent GitHub reviews shared one tree ------------------------
+#
+# Every review of a repository fetched into the shared cache clone and checked
+# out FETCH_HEAD there; a second review moved the first one's files mid-review
+# (seen live: a false-clean review). Each review now gets its own worktree at
+# its own pinned commit.
+check_mutation "RC-079 each GitHub review gets its own tree" \
+	rc-clone-target.sh \
+	'/ worktree add -q --detach /,/^[[:space:]]*review_root="\$run_tree"$/ s/^\([[:space:]]*\)review_root="\$run_tree"$/\1review_root="$dest"/' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-079 the head is fetched into the pull request's own ref" \
+	rc-clone-target.sh \
+	's/ fetch origin "+\${head_ref}:\${pr_ref}" / fetch origin "${head_ref}" /' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-079 --head-sha pins the GitHub tree" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)if \[\[ -n "\$head_sha" \]\]; then$/\1if false; then/' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-079 a pruned GitHub tree's worktree metadata is pruned" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$stale_name" == github@\* \]\]; then$/\1if false; then/' \
+	test-rc-clone-target.sh
+
+# --- RC-080: two runs of one project shared a session directory -------------
+#
+# The session directory was named to the second and created non-exclusively,
+# so two preparations started together wrote into one session (seen live: the
+# second PR's orchestrator found the first PR's metadata). It is now created
+# exclusively with mktemp.
+check_mutation "RC-080 a same-second preparation gets its own session directory" \
+	lib/prepare-repo.sh \
+	's|mktemp -d "\${project_dir}/\${run_id}-XXXXXX"|mkdir -p "${project_dir}/${run_id}" \&\& echo "${project_dir}/${run_id}"|' \
+	test-rc-prepare-session-cache.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

@@ -1,0 +1,34 @@
+README.md
+  s_99ac666f9b5aed::t_13ef36b5d6dcf0 535
+module/agents/divisor-testing-spec.md
+  s_99ac666f9b5aed::t_7eb3d8c1fb037f 29
+module/agents/divisor-sre-spec.md
+  s_99ac666f9b5aed::t_7eb3d8c1fb037f 31
+module/agents/divisor-guard-code.md
+  s_99ac666f9b5aed::t_13ef36b5d6dcf0 91
+module/skills/review-council/references/reviewer-protocol.md
+  s_99ac666f9b5aed::t_13ef36b5d6dcf0 74,76
+module/skills/review-council/phases/delegate.md
+  s_99ac666f9b5aed::t_13ef36b5d6dcf0 134-135,144-147,185-197,229-230,433-434,439-440,445
+module/agents/divisor-guard-spec.md
+  s_99ac666f9b5aed::t_13ef36b5d6dcf0 23,29
+  s_99ac666f9b5aed::t_7eb3d8c1fb037f 110
+module/tests/test-rc-doc-guards.sh
+  s_99ac666f9b5aed::t_0dddd2a054185f 565,1631-1659
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9e885ede0a42a0609bb76a29d8eacf77aca344db",
+  "prompts": {},
+  "sessions": {
+    "s_99ac666f9b5aed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d46a80-a5f8-416a-b55b-32030326344d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

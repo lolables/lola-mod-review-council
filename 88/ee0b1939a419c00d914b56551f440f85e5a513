@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_99ac666f9b5aed::t_283c50429d973b 222,224-226
+module/tests/test-rc-prepare-config-source.sh
+  s_99ac666f9b5aed::t_283c50429d973b 290-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88ee0b1939a419c00d914b56551f440f85e5a513",
+  "prompts": {},
+  "sessions": {
+    "s_99ac666f9b5aed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d46a80-a5f8-416a-b55b-32030326344d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

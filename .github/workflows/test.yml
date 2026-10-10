@@ -5,12 +5,20 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The mutation layer runs here instead of on every push and pull request; see
+  # the matrix below. The schedule runs it against main, and a dispatch runs it
+  # against any branch: `gh workflow run test.yml --ref <branch>`.
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# The event is part of the group: the nightly run and a push to main share a
+# ref but run different layers, so neither may cancel the other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,13 +33,26 @@ jobs:
     # `degraded` and `mutate` are re-runs of the unit suites (three PATH
     # configurations, and one targeted suite per mutation), so they are the two
     # long poles; `unit` and `e2e` finish in a few minutes.
+    #
+    # `mutate` runs only on the schedule and on dispatch, and those events run
+    # nothing else. At 18–20 minutes per OS it was about twice the next-slowest
+    # layer, and a refactor that stops an entry's sed pattern matching fails it
+    # (BROKEN) with no defect present. Its lasting job is to notice a guard
+    # that has gone slack, which a nightly run does within a day; when an
+    # entry is written, run it locally with `task test:mutate`.
     strategy:
       # Always run every leg to completion: a failure in one layer or on one OS
       # should not cancel the others and hide whether it was platform-specific.
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        layer: [unit, e2e, degraded, mutate]
+        layer: >-
+          ${{ fromJSON(
+            (github.event_name == 'schedule'
+              || github.event_name == 'workflow_dispatch')
+            && '["mutate"]'
+            || '["unit", "e2e", "degraded"]'
+          ) }}
     name: ${{ matrix.layer }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Per layer, not per leg. The slowest layer runs well under half of this;

@@ -363,7 +363,10 @@ All notable changes to the Review Council module are documented here.
   against
 - CI runs the whole test matrix on Linux and macOS. It previously ran the unit
   layer only, so the e2e, degraded and mutation layers existed without ever
-  gating a merge. Both legs always run to completion, so a failure on one
+  running there. The unit, e2e and degraded layers gate every pull request;
+  the mutation layer runs nightly against `main` and on manual dispatch,
+  because at 18–20 minutes per OS it was the slowest layer by about two to one.
+  Both legs always run to completion, so a failure on one
   cannot hide whether the other was platform-specific. Venom is pinned by tag
   and by the SHA-256 of each published asset, since ovh/venom publishes no
   checksum file

@@ -1,0 +1,23 @@
+AGENTS.md
+  s_99ac666f9b5aed::t_f08c41509ee806 5-9
+GOVERNANCE.md
+  s_99ac666f9b5aed::t_4e9e8885ae649c 1
+run.sh
+  s_99ac666f9b5aed::t_2e716270710fb4 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a15245871f09b735591cd0ad7b5f84e9c1134806",
+  "prompts": {},
+  "sessions": {
+    "s_99ac666f9b5aed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d46a80-a5f8-416a-b55b-32030326344d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

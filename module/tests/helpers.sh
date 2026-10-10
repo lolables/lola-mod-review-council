@@ -32,6 +32,15 @@ export GIT_AUTHOR_EMAIL="review-council@test.invalid"
 export GIT_COMMITTER_NAME="Review Council Test"
 export GIT_COMMITTER_EMAIL="review-council@test.invalid"
 
+# No git transport but local paths. rc-clone-target.sh builds https clone URLs
+# for every PR/MR a prepare run names, and a suite that fakes the forge CLI
+# still runs the real git: without this, each GitLab prepare case would try to
+# clone from gitlab.com or a fixture host. Refused here, the clone fails at
+# once and the run falls back to diff-only review, as it does off-network. A
+# test that wants a real clone redirects the URL to a local repository with a
+# `url.<base>.insteadOf` rewrite, which git applies before this check.
+export GIT_ALLOW_PROTOCOL=file
+
 # GNU timeout, used by tests as a hang guard around scripts that may reach the
 # network. Resolved here rather than by sourcing rc-lib.sh: that library reports
 # a missing prerequisite by printing skip-JSON and calling `exit 0`, which in a

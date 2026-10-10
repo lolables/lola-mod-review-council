@@ -10,8 +10,8 @@
 #
 # Contract:
 #   rc_forge_fetch_pr <pr> <owner> <repo>
-#       Sets pr_title, pr_body, pr_base, pr_head, pr_url, pr_state and
-#       pr_status_checks. Leaves them untouched when the PR cannot be read, so
+#       Sets pr_title, pr_body, pr_base, pr_head, pr_head_sha, pr_url, pr_state
+#       and pr_status_checks. Leaves them untouched when the PR cannot be read, so
 #       the caller's "did we get a title" test still decides whether metadata
 #       was obtained.
 #
@@ -68,7 +68,7 @@ rc_forge_fetch_pr() {
 
 	# shellcheck disable=SC2086 # repo_flag is a two-token flag or empty.
 	pr_json=$(rc_timeout 30 gh pr view "$pr_number" $repo_flag \
-		--json number,title,body,baseRefName,headRefName,url,state,statusCheckRollup \
+		--json number,title,body,baseRefName,headRefName,headRefOid,url,state,statusCheckRollup \
 		2>/dev/null || echo "")
 
 	[[ -n "$pr_json" ]] || return 0
@@ -77,6 +77,9 @@ rc_forge_fetch_pr() {
 	pr_body=$(echo "$pr_json" | jq -r '.body // ""')
 	pr_base=$(echo "$pr_json" | jq -r '.baseRefName // ""')
 	pr_head=$(echo "$pr_json" | jq -r '.headRefName // ""')
+	# The commit the posted marker names; only a full commit id is kept.
+	pr_head_sha=$(echo "$pr_json" | jq -r '.headRefOid // ""')
+	[[ "$pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || pr_head_sha=""
 	pr_url=$(echo "$pr_json" | jq -r '.url // ""')
 	pr_state=$(echo "$pr_json" | jq -r '.state // ""')
 	pr_status_checks=$(echo "$pr_json" | jq -r "$RC_FORGE_GH_STATUS_CHECKS_JQ")
@@ -95,9 +98,10 @@ rc_forge_fetch_diff() {
 # Optional capabilities
 #
 # Everything below enriches a review rather than defining it, so an adapter may
-# omit any of them: prepare-context.sh tests `declare -F` before calling and
-# writes no artifact when the capability is absent. That is how a forge ships
-# partial support without a stub that pretends to work.
+# omit any of them: the calling stage (prepare-context.sh, prepare-links.sh)
+# tests `declare -F` before calling and writes no artifact when the capability
+# is absent. That is how a forge ships partial support without a stub that
+# pretends to work.
 #
 # Each returns NORMALIZED JSON on stdout, never the forge's own shape. That is
 # the whole point of the seam — the stage that renders these files must not
@@ -126,11 +130,31 @@ rc_forge_fetch_issue() {
 		<<<"$issue_json" 2>/dev/null || true
 }
 
+# Every item of a GitHub list endpoint, as one JSON array in API order.
+#
+# A list endpoint answers one page at a time, 30 items unless asked for more,
+# and `gh api` without --paginate returns that first page alone. A pull request
+# with 110 comments was read as its oldest 30, so the reply window after the
+# council's latest verdict held 25 of the 105 replies posted since, and none of
+# the newest. --slurp gathers the pages into one outer array (gh refuses it
+# beside --jq, so the merge happens here). A page that is not an array is an
+# error body, and a failed call is a truncated list: either yields [] rather
+# than the pages read so far, because a partial timeline can move the "latest
+# verdict" anchor the re-review path selects replies by.
+_rc_forge_gh_list() { # endpoint
+	local pages
+	pages=$(rc_timeout 60 gh api "$1?per_page=100" --paginate --slurp 2>/dev/null) || {
+		echo "[]"
+		return 0
+	}
+	jq -sc 'if length == 1 and (.[0] | type == "array") and all(.[0][]; type == "array") then .[0] | add // [] else [] end' \
+		<<<"$pages" 2>/dev/null || echo "[]"
+}
+
 # [{author, state, submitted_at, body}] — submitted reviews, oldest first.
 rc_forge_fetch_reviews() {
 	local pr_number="$1" owner="$2" repo="$3" reviews_json
-	reviews_json=$(rc_timeout 30 gh api \
-		"repos/${owner}/${repo}/pulls/${pr_number}/reviews" 2>/dev/null || echo "[]")
+	reviews_json=$(_rc_forge_gh_list "repos/${owner}/${repo}/pulls/${pr_number}/reviews")
 
 	jq -c '[.[]? | {
 		author: (.user.login // "unknown"),
@@ -147,8 +171,7 @@ rc_forge_fetch_reviews() {
 # addressable instead of rendering them at line "?".
 rc_forge_fetch_review_comments() {
 	local pr_number="$1" owner="$2" repo="$3" comments_json
-	comments_json=$(rc_timeout 30 gh api \
-		"repos/${owner}/${repo}/pulls/${pr_number}/comments" 2>/dev/null || echo "[]")
+	comments_json=$(_rc_forge_gh_list "repos/${owner}/${repo}/pulls/${pr_number}/comments")
 
 	jq -c '[.[]? | {
 		file: (.path // "?"),
@@ -167,8 +190,7 @@ rc_forge_fetch_review_comments() {
 # since. GitHub's issue-comments API is ascending by created_at.
 rc_forge_fetch_conversation() {
 	local pr_number="$1" owner="$2" repo="$3" conversation_json
-	conversation_json=$(rc_timeout 30 gh api \
-		"repos/${owner}/${repo}/issues/${pr_number}/comments" 2>/dev/null || echo "[]")
+	conversation_json=$(_rc_forge_gh_list "repos/${owner}/${repo}/issues/${pr_number}/comments")
 
 	jq -c '[.[]? | {
 		author: (.user.login // "unknown"),
@@ -190,4 +212,47 @@ rc_forge_fetch_conversation() {
 # or rate-limited forge must not abort preparation.
 rc_forge_current_user() {
 	rc_timeout 15 gh api user --jq '.login' 2>/dev/null || echo ""
+}
+
+# [{path, target}] — every symlink in the tree at <head_sha>, target null when
+# its blob could not be read or holds a NUL byte.
+#
+# Optional capability, and the one exception to "failure is empty output, exit
+# 0": a partial list would judge a change against links that are not all there,
+# so anything short of the complete list prints nothing and returns non-zero,
+# and rc-check-symlinks.sh then discloses that it judged from the diff alone.
+# That covers a tree GitHub reports as truncated (over 100,000 entries or 7 MB)
+# and more links than REVIEW_COUNCIL_MAX_HEAD_LINKS (default 500): each link
+# costs one blob request.
+#
+# The blob API returns base64 wrapped at 60 columns, which @base64d refuses
+# until the line breaks are removed.
+rc_forge_fetch_links() {
+	local owner="$2" repo="$3" head_sha="$4"
+	local max_links=500 tree_json link_rows row blob_sha blob_json entry entries=""
+	[[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+	# Base 10 is forced: a leading zero would otherwise read as octal.
+	[[ "${REVIEW_COUNCIL_MAX_HEAD_LINKS:-}" =~ ^[0-9]{1,18}$ ]] &&
+		max_links=$((10#$REVIEW_COUNCIL_MAX_HEAD_LINKS))
+	tree_json=$(rc_timeout 60 gh api "repos/${owner}/${repo}/git/trees/${head_sha}?recursive=1" 2>/dev/null) ||
+		return 1
+	link_rows=$(jq -c --argjson max "$max_links" '
+		if type == "object" and .truncated == false and (.tree | type) == "array"
+			and all(.tree[]; type == "object" and (.path | type) == "string" and (.mode | type) == "string")
+		then [.tree[] | select(.mode == "120000") | {path, sha}]
+			| if length <= $max then .[] else error("over the cap") end
+		else error("incomplete tree") end' <<<"$tree_json" 2>/dev/null) || return 1
+	while IFS= read -r row; do
+		[[ -n "$row" ]] || continue
+		blob_sha=$(jq -r '.sha' <<<"$row")
+		[[ "$blob_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+		blob_json=$(rc_timeout 30 gh api "repos/${owner}/${repo}/git/blobs/${blob_sha}" 2>/dev/null) || blob_json=""
+		entry=$(jq -c --arg blob "$blob_json" '{path, target: ([
+			$blob | fromjson? | select(type == "object" and .encoding == "base64" and (.content | type) == "string")
+			| .content | gsub("\\s"; "") | try @base64d catch empty
+			| select(explode | all(. != 0))
+		] | .[0])}' <<<"$row") || return 1
+		entries+="$entry"$'\n'
+	done <<<"$link_rows"
+	jq -sc '.' <<<"$entries"
 }

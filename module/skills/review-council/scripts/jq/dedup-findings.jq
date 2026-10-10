@@ -26,6 +26,14 @@
 # the agent deliberately, so one reviewer listing the same finding twice merges
 # here too — and folding that would publish "Also flagged by" naming the
 # survivor's own author.
+#
+# A script finding (provenance.validator.result == "SCRIPT", set by
+# rc-verify-evidence.sh as it gathers verdicts) is never merged: it is neither
+# a survivor nor folded into one, and passes through where it stands. Folded
+# under a more severe reviewer duplicate, it would live on only as a credit on
+# a finding validation may retract. This program runs twice — at verification
+# and again over the correction round's promotions — so the rule lives here,
+# where both callers get it.
 
 # Anything unlisted ranks 0, below every real severity, so a typo'd value can
 # never displace a genuine CRITICAL.
@@ -33,9 +41,12 @@ def sevrank(s): {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}[s] // 0;
 
 def credit: {agent, severity, angle: .description, recommendation};
 
+def script: .provenance.validator.result == "SCRIPT";
+
 reduce .[] as $x ([];
+	if ($x | script) then . + [$x] else
 	( [ range(0; length) as $j
-	    | select(.[$j].file == $x.file and .[$j].evidence == $x.evidence and
+	    | select((.[$j] | script | not) and .[$j].file == $x.file and .[$j].evidence == $x.evidence and
 	        ((.[$j].line == null and $x.line == null) or
 	         (.[$j].line != null and $x.line != null and
 	          ((.[$j].line - $x.line | if . < 0 then -. else . end) <= 5))))
@@ -53,4 +64,4 @@ reduce .[] as $x ([];
 	  elif $x.agent != .[$idx].agent then
 	    .[$idx].provenance.consolidated_from =
 	      ((.[$idx].provenance.consolidated_from // []) + [$x | credit])
-	  else . end)
+	  else . end end)

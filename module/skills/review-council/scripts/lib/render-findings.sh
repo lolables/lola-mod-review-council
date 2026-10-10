@@ -55,6 +55,12 @@ _persona_stem() { # agent-file-name -> stem
 
 # Reviewer persona label (emoji + focus + mode); host-agnostic.
 persona_label() { # agent-file-name
+	# The one script-authored verdict is a check, not a persona.
+	# shellcheck disable=SC2154 # set by rc-lib.sh, which every caller sources first.
+	if [[ "$1" == "$RC_SCRIPT_AGENT" ]]; then
+		echo "🔗 Symlink check"
+		return 0
+	fi
 	local p mode="" m=""
 	p=$(_persona_stem "$1")
 	# The same ERE the sed carried, run by bash itself. `[a-z]+` matches no

@@ -20,8 +20,21 @@ Both must exist or the adapter is not usable:
 
 | Function                                        | Sets / does                                                                  |
 |-------------------------------------------------|------------------------------------------------------------------------------|
-| `rc_forge_fetch_pr <pr> <owner> <repo>`         | `pr_title`, `pr_body`, `pr_base`, `pr_head`, `pr_url`, `pr_state`, `pr_status_checks` |
+| `rc_forge_fetch_pr <pr> <owner> <repo>`         | `pr_title`, `pr_body`, `pr_base`, `pr_head`, `pr_head_sha`, `pr_url`, `pr_state`, `pr_status_checks` |
 | `rc_forge_fetch_diff <pr> <owner> <repo> <out>` | Writes the PR diff to `<out>`                                                |
+
+`pr_head_sha` is the head commit the forge reports (GitHub `headRefOid`,
+GitLab `.sha`), kept only when it is a full 40-hex commit id and emptied
+otherwise. `prepare-emit.sh` records it in `session.txt` as `Head SHA:` (`none`
+when empty); it is the commit the posted marker names (see "Marker and reviewed
+commit"), and GitLab hands it to `rc-clone-target.sh` as `--head-sha`.
+
+`prepare-target.sh` passes every one-line value an adapter sets (`pr_title`,
+`pr_base`, `pr_head`, `pr_url`, `pr_state`) through `rc_single_line` before
+anything is written: each control character, line breaks included, becomes a
+space. The values are the PR author's text and land in line-oriented files read
+first match wins, so a title holding `\nHead SHA: <sha>` would otherwise add a
+line of its own. `Head SHA:` is also written before `PR:` in `session.txt`.
 
 `pr_status_checks` is one `<name>: <grade>` line per check. Grades use the
 vocabulary `prepare-emit.sh` Section 16 grades — GitHub's two enums are covered
@@ -43,10 +56,15 @@ stub that pretends to work.
 | `rc_forge_fetch_review_comments <pr> <owner> <repo>` | `[{file, line, author, body}]`           | `prior-reviews.txt`     |
 | `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, created_at, body}]`           | `pr-conversation.txt`   |
 | `rc_forge_current_user`                              | `<login>` (bare string, or empty)        | (no artifact; see below)|
+| `rc_forge_fetch_links <pr> <owner> <repo> <head_sha>` | `[{path, target}]`, target string or null | `head-links.json` (see below) |
 
 `prior-reviews.txt` needs both review functions and is skipped unless both
 exist, so a half-implemented adapter cannot report "no inline comments" for a
 call it never makes.
+
+GitHub's list endpoints (`pulls/<n>/reviews`, `pulls/<n>/comments`,
+`issues/<n>/comments`) are read with `gh api --paginate --slurp` and merged in
+order; a failed call or an error page yields `[]`, never a partial list.
 
 `rc_forge_current_user` names the account the council posts as. It writes no
 artifact; it decides whether the council's own verdict comment can be told apart
@@ -93,6 +111,33 @@ not write that puts a marker at the start of a line, which takes deliberate
 effort rather than clicking "Quote reply". On the fallback that comment is read
 as the verdict; with a login to compare against it is not.
 
+`rc_forge_fetch_links` lists every symlink in the tree at the head commit, so
+`rc-check-symlinks.sh` can judge a change against all of them: a pure rename
+(no target in the diff) and a chain through a link the change does not touch
+(`x -> sub/up/..` with `sub/up -> ..` already on the base) are invisible in the
+diff alone. Preparation (`lib/prepare-links.sh`) calls it when the diff came
+from the forge and the adapter reported a 40-hex `pr_head_sha`, and writes its
+output as `head-links.json`; a local review lists the operator's index instead.
+
+- **Contract.** Print the JSON array and return 0, or print nothing and return
+  non-zero. It is the one capability where failure is a non-zero exit: a partial
+  list would judge the change against links that are not all there, so anything
+  short of the complete list must say so. The check then judges from the diff
+  alone and discloses it in `symlinks.txt` and its `head_links: "unavailable"`
+  payload. `target` is null when the link's blob could not be read or holds a
+  NUL byte; such a link counts as escaping wherever a chain reaches it.
+- **Cap.** At most `REVIEW_COUNCIL_MAX_HEAD_LINKS` links (default 500), since
+  each costs one blob request; more is a failure, not a truncated list.
+- **GitHub.** `gh api repos/<owner>/<repo>/git/trees/<sha>?recursive=1`; a
+  response with `"truncated": true` (over 100,000 entries or 7 MB) is a
+  failure. Entries with `mode == "120000"` are links, and each target comes
+  from `git/blobs/<sha>`, base64 wrapped at 60 columns.
+- **GitLab.** Gated by `rc_forge_glab_admits` like every other call.
+  `glab api --paginate projects/<enc>/repository/tree?recursive=true&ref=<sha>&per_page=100`,
+  with the pages slurped and checked as for the conversation, and an empty
+  answer refused; each target is `repository/blobs/<id>/raw`, which glab copies
+  to stdout byte for byte.
+
 ### Why normalized shapes
 
 Adapters return the module's field names, never the forge's. The stages that
@@ -104,13 +149,62 @@ prevent.
 ### Degradation
 
 Every function returns empty output, or an empty array, on failure — never a
-non-zero exit. A forge that is down, rate-limiting or refusing auth costs the
-review its context, not its life.
+non-zero exit, except `rc_forge_fetch_links`, whose non-zero exit is how it says
+the list is incomplete. A forge that is down, rate-limiting or refusing auth
+costs the review its context, not its life.
 
 ### GitLab status
 
-`lib/forge/gitlab.sh` implements the required contract only, and reports no
-pipeline status. Closing either gap is editing that one file.
+| Capability                       | `lib/forge/gitlab.sh`                                                   |
+|----------------------------------|-------------------------------------------------------------------------|
+| Required contract                | implemented; `pr_status_checks` is left empty, so no pipeline status    |
+| `rc_forge_fetch_conversation`    | implemented: MR notes, oldest first, system notes dropped, timestamps normalised to UTC |
+| `rc_forge_current_user`          | implemented: the GitLab username of the account glab is logged in as    |
+| `rc_forge_fetch_links`           | implemented: repository tree at the MR head commit, raw blobs           |
+| `rc_forge_fetch_reviews` / `rc_forge_fetch_review_comments` | absent, so no `prior-reviews.txt` (known gap) |
+| `rc_forge_fetch_issue`           | absent                                                                  |
+
+The review gap is a missing source, not a missing translation: a GitLab
+approval carries no body and no timestamp, so filling it means choosing between
+approvals and "approved this merge request" system notes. The conversation does
+not wait on it.
+
+**Addressing.** Every call names its merge request by host and project:
+`--hostname <host>` plus the URL-encoded project path for `glab api`, `-R
+<host>/<group…>/<project>` for `glab mr`. Left unaddressed, glab picks the
+project from the launch directory's remotes and the host from its own default,
+and could read another project's MR with the same number. The host comes from
+`forge_host`, which `prepare-repo.sh` sets and `prepare-emit.sh` records in
+`session.txt` as `Host:`; the post script and the renderer read it back from
+there.
+
+**URL scope.** `--scope url` accepts a `github.com` pull request URL, or a
+GitLab merge request URL (`https://<host>/<group…>/<project>/-/merge_requests/N`)
+on any host. A GitHub Enterprise or other self-hosted GitHub URL is refused as
+an unsupported forge, and a GitLab URL with a port is refused, because glab
+addresses a host by name only. Both refusals, and a URL whose project or number
+cannot be read, are terminal `skip`s.
+
+**Host refusal gate.** Before any other forge call under `--scope url`,
+`rc-prepare.sh` runs `rc_forge_host_refusal <host>`, which passes only when
+`glab auth status --hostname <host>` does. For a host absent from glab's config
+that check fails locally, without contacting the host, so a pasted MR URL on a
+host the user never logged glab in to collects no credentials. Adapter
+functions ask again through `rc_forge_glab_admits` (cached per host for the
+process, failing closed) rather than trusting that preparation ran;
+`gitlab.com` is exempt there.
+
+**Token binding.** glab sends `GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN` and
+`OAUTH_TOKEN` to whichever host a call names. `rc_forge_glab` keeps them only
+when the call's host is glab's default host — the first non-empty of
+`GITLAB_API_HOST`, `GITLAB_HOST`, `GITLAB_URI`, `GL_HOST`, else `gitlab.com` —
+and removes them otherwise, so any other host gets its own stored login.
+
+**Variables stripped from every call.** `GITLAB_API_HOST` and
+`GLAB_ENABLE_CI_AUTOLOGIN` are removed from every glab call, set or not. Each
+redirects an explicitly addressed call to another instance (the second to the
+CI job's own, with the job token), which would aim the host gate at one host
+and the calls at another.
 
 ## Architecture: shared renderer + per-forge post script
 
@@ -120,8 +214,10 @@ API mechanics — while everything else is shared.
 - **`rc-render-comment.sh`** — the forge-NEUTRAL renderer. It owns ALL markdown
   assembly (verdict header, disclaimer, model provenance, reviewed-commit stamp,
   severity summary, reviewer table, findings `<details>`, footer, hidden marker,
-  em/en-dash sanitize) and computes the neutral facts itself (head SHA, forge
-  web host from the origin remote, severity counts, persona labels). It holds no
+  em/en-dash sanitize) and computes the neutral facts itself (head SHA — see "Marker and reviewed
+  commit" — forge
+  web host from the `Host:` recorded in `session.txt`, else the origin remote,
+  severity counts, persona labels). It holds no
   forge knowledge. It is a library-with-main:
   - **sourced:** `rc_render_comment_body <session_dir> <body_file>` renders the
     body and exports `RC_FORGE_WEB` / `RC_SHORT_SHA` / `RC_HEAD_SHA` back to the
@@ -132,18 +228,20 @@ API mechanics — while everything else is shared.
   three hooks (below), sources the renderer, then owns the auth gate, the upsert
   **policy**, and the forge API mechanics inline.
   - GitHub is implemented in full (`rc-post-comment-github.sh`).
-  - GitLab (`rc-post-comment-gitlab.sh`) declares its hooks and renders, but
-    does not post: the upsert, supersede and identity policy has no `glab`
-    equivalent yet, and a poster that creates a comment but cannot find its
-    own on the next run leaves duplicate verdicts on the merge request.
-  - It exists anyway because the hooks live here — without a post script a
-    GitLab review would get no permalinks and no size budget at all.
+  - GitLab (`rc-post-comment-gitlab.sh`) is a section-by-section port of it,
+    posting merge request notes through `glab api`. It sources
+    `lib/forge/gitlab.sh` and makes every call through that adapter's
+    `rc_forge_glab`, after `rc_forge_glab_admits` has passed the host recorded
+    in `session.txt` (`Host:`, default `gitlab.com`). Note bodies travel as a
+    JSON file (`--input`), never as an argv field, because a verdict can exceed
+    the 128 KiB a single argument may hold. The notes listing is paginated; a
+    failed call or a page that is not an array is an error, never "no notes".
 - **`rc-post-comment.sh`** — a thin router. Reads `Forge` and `PR` from
   `tracking.md`; skips when there is no PR; execs `rc-post-comment-<forge>.sh`
   (args passed through) when it exists, else execs the renderer standalone. It
   never writes upstream and never interprets `--send`.
-- **`rc-clone-target.sh`** — a separate materialization script (GitHub-only
-  today) invoked by `rc-prepare.sh`.
+- **`rc-clone-target.sh`** — a separate materialization script for GitHub
+  pull requests and GitLab merge requests, invoked by `rc-prepare.sh`.
 
 ## The three forge hooks
 
@@ -203,10 +301,23 @@ The ladder and its terminal case are documented at the top of
 
 Every rendered body ends with a hidden tag carrying the reviewed commit SHA:
 
-    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> -->
+    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> run=<session-id> -->
 
-The `sha=` field identifies the exact commit reviewed. `part`/`of` place the
-comment in a chain; an unsplit verdict carries `part=1 of=1`. Both GitHub and GitLab
+The `sha=` field identifies the exact commit reviewed. The renderer takes it,
+in order, from `session.txt`'s `Head SHA:` (the PR/MR head the forge reported),
+from the materialized checkout's `HEAD`, or — for a local review only — from
+the working tree's `HEAD`. A review by PR number or URL (`Input:` `pr_number` or
+`url`) that runs in `.` without a recorded head writes `sha=unknown` rather
+than the launch checkout's `HEAD`, which need not be the PR's. A GitLab
+`review_root` is an extracted archive with no `.git`, so there the recorded head
+is the only source. `part`/`of` place the
+comment in a chain; an unsplit verdict carries `part=1 of=1`. `run=` is the
+session directory's name, so every run's body differs from the last one's and
+the poster edits the verdict even when the review rendered the same text. That
+is how a batch run tells a completed re-review from one that posted nothing.
+Re-posting the same session renders the same body and edits nothing. `run=` is
+always the last field and nothing parses it; a session name outside
+`[A-Za-z0-9._-]` is left off. Both GitHub and GitLab
 render HTML comments invisibly, so the marker is portable. The body also shows a
 visible `Reviewed at commit <short-sha>` line.
 
@@ -246,7 +357,10 @@ lookup and the supersede listing) filter on `.user.login` against the account
 resolved from `gh api user`, and every id the update and hide calls act on comes
 out of one of those two listings. When that account cannot be resolved, or comes
 back in a shape that is not a login, the script emits an `error` status and posts
-nothing rather than fall back to marker-only selection.
+nothing rather than fall back to marker-only selection. `rc-post-comment-gitlab.sh`
+does the same on `.author.id` against the numeric `id` from `glab api user`,
+refusing anything but a positive integer. Both read the marker line through the
+one `RC_MARKER_LINE_JQ` in `rc-lib.sh`.
 
 ## Re-review policy (owned by each per-forge post script)
 
@@ -314,7 +428,10 @@ superseding first opens a window in which the PR carries no verdict at all.
 Retiring a comment is: edit an "Obsolete, superseded by …" banner above the
 original body (tagged `review-council:obsolete`, skipped when one is already
 there so a repeat run does not stack banners) and hide it as OUTDATED so the
-forge collapses it.
+forge collapses it. GitLab has no equivalent of hiding, so there the banner is
+the whole of it; its first line is byte-identical on both forges, because the
+batch status scripts read exactly that line as "collapsed". Nothing is ever
+deleted.
 
 Everything in this phase is **best-effort, and none of it is fatal** — the
 opposite of the find-by-SHA listing above, and for a reason an adapter has to
@@ -326,7 +443,11 @@ fails retires nothing and the run still reports `posted`; a body it cannot read
 gets no banner; and the banner edit and the hide are swallowed separately, so a
 comment can end up unbannered, uncollapsed, or both, and the run says nothing
 about it. The `superseded` count is therefore comments swept, not writes
-confirmed.
+confirmed. `rc-post-comment-gitlab.sh` is stricter, because GitLab cannot hide
+a note and a banner it failed to write leaves a stale verdict reading as
+current: it counts only notes it actually retired (or found already retired —
+the banner as the FIRST line, never the tag anywhere in the body), and reports
+the rest as `retire_failed`, with the status still `posted`.
 
 **What gets reported.** `action` is one word for the whole chain — `created` if
 any part was created, else `updated` if any was updated, else `unchanged` — so a
@@ -341,81 +462,287 @@ next to the shared rendering.
 
 ## Materializing the target repo (`rc-clone-target.sh`)
 
-`rc-prepare.sh` calls this to obtain a working tree at the PR head. It emits
-`{"status":"in_place|ok|skip","review_root":"…"}`; on every `skip` the
+`rc-prepare.sh` calls this to obtain a working tree at the PR or MR head. It
+emits `{"status":"in_place|ok|skip","review_root":"…"}`; on every `skip` the
 `review_root` stays `.` and reviewers work from the diff. A forge other than
-`github`, or an `owner`/`repo`/`pr` failing the `^[a-zA-Z0-9._-]+$` /
-`^[0-9]+$` character gate, skips before any git command runs.
+`github` or `gitlab`, or identifiers failing the gate, skip before any git
+or glab command runs. The gate is `^[a-zA-Z0-9._-]+$` on `owner` and `repo` for GitHub
+and `^[0-9]+$` on `pr` for both. A GitLab `owner` is a namespace that may nest
+subgroups (`group/subgroup`), so for GitLab every `/`-separated segment of
+`owner/repo` is gated on its own: the same character class, no leading `-`,
+and never empty, `.` or `..`. `repo` never holds a `/`. That is
+`project_path_ok` in `rc-lib.sh`, the same gate `rc-prepare.sh` applies.
 
 **Which host was asked for.** The target host is the host in `--url` when one is
-given, otherwise `github.com`.
+given, otherwise the forge's canonical host: `github.com` or `gitlab.com`.
 
-`--url` is part of this script's interface but no shipped caller passes it.
-`rc-prepare.sh` invokes the script only when the forge resolved to `github`, and
-passes `--forge --owner --repo --pr --head` and nothing else; under `--scope url`
-it emits a terminal `skip` for any host but `github.com` or `gitlab.com`, so a
-GitHub Enterprise or other self-hosted install never gets this far. Everything
-below describing non-`github.com` targets therefore documents the script's own
-contract, not a capability the module currently offers. Read it as the boundary
-a direct caller must respect, and as what would have to hold before enterprise
-hosts could be supported.
+A `--url` must name the same repository as `--owner`/`--repo`: its path,
+compared case-insensitively with any `.git` dropped, must equal
+`<owner>/<repo>`. Otherwise the script skips before any git or glab command
+runs.
+The URL decides what is cloned and owner/repo decide the cache entry and what
+the messages report, so a disagreement would file and report one project's
+checkout as another's.
 
-The origin remote is never a source for the target host: under
-URL scope the checkout we happen to be standing in has nothing to do with the PR
-being reviewed, and an `owner/repo` pair is one name collision away from a mirror
-— or from a host an attacker controls — serving the same two path segments.
+`rc-prepare.sh` invokes the script whenever the forge resolved to `github` or
+`gitlab` and a PR/MR number is known. It passes `--forge --owner --repo --pr
+--head`, plus `--url https://<host>/<owner>/<repo>.git` whenever the session
+has a host, so a self-hosted GitLab is never silently swapped for gitlab.com,
+and `--head-sha <pr_head_sha>` whenever the adapter read a valid head commit,
+so either forge's tree is the commit the diff was read at.
+That host has already passed `rc_forge_host_refusal` under `--scope url` before
+this script runs. A GitHub Enterprise or other self-hosted GitHub install is
+refused earlier and never gets this far, so the non-`github.com` GitHub paths
+below document the script's own contract, not a capability the module offers.
+
+The origin remote is never a source for the target host: under URL scope the
+checkout we happen to be standing in has nothing to do with the PR being
+reviewed, and an `owner/repo` pair is one name collision away from a mirror — or
+from a host an attacker controls — serving the same two path segments.
 
 **In place.** The current working tree is reused only when the origin remote's
-host, owner and repo all match the target (compared case-insensitively) **and**
-the current branch equals `--head`. Status is then `in_place` with `review_root`
-`.`. The host is part of the test, not an incidental detail: standing in a
-same-named repository on a different host is exactly when the tree must not be
-reused, because `review_root` would then point at foreign content that the
-verify phase grounds findings against as though it were the PR. (A `--url`
-carrying an explicit port parses to no host at all, so it never matches a
-portless origin — and it never reaches the `gh` tier below.)
+host and whole project path (`owner/repo`, subgroups included) match the target
+(compared case-insensitively) **and** the current branch equals `--head`. Status
+is then `in_place` with `review_root` `.`. The host is part of the test, not an
+incidental detail: standing in a same-named repository on a different host is
+exactly when the tree must not be reused, because `review_root` would then point
+at foreign content that the verify phase grounds findings against as though it
+were the PR. (A `--url` carrying an explicit port parses to no host at all, so
+it never matches a portless origin — and it never reaches the `gh` tier below.)
 
-**Clone tiers.** The destination is
-`${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones/<host>-<owner>-<repo>`.
+**GitHub: clone tiers.** The destination is
+`${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones/<key>`, keyed as "Cache
+key" below describes.
 An existing `.git` there is reused as-is; otherwise these are tried in order,
 each bounded by a 120s timeout:
 
+Every network call below (`gh repo clone`, `git clone`, `git fetch`, and the
+`git worktree add` that downloads a blobless clone's blobs) runs with
+`GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS=`. A
+private host with no credential helper then fails at once instead of prompting
+until the timeout; a configured credential helper still answers.
+
+On github.com, when `gh` is on PATH, the `git` calls also get gh as a
+credential helper for `https://github.com`, passed through
+`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` after any entries
+the caller set. `gh repo clone` authenticates only the clone it runs, so
+without this a private repository's `pull/N/head` fetch had no credentials
+unless the operator had run `gh auth setup-git`. Nothing is written to any git
+config file, and no other host ever asks gh for a token.
+
 1. `gh repo clone <owner>/<repo> -- --filter=blob:none --no-checkout` — only
-   when the target host is `github.com` and `gh` is on PATH. `gh repo clone`
+   for `--forge github` when the target host is `github.com` and `gh` is on
+   PATH. `gh repo clone`
    resolves `OWNER/REPO` against gh's own default host, so anywhere else it
    would clone a same-named repository from github.com rather than the one asked
    for.
-2. `git clone --filter=blob:none --no-checkout <clone-url>`.
-3. `git clone --depth 50 <clone-url>`.
+2. `git clone --filter=blob:none --no-checkout -- <clone-url>`.
+3. `git clone --depth 50 -- <clone-url>`.
 
-`<clone-url>` is `--url` verbatim, else `https://<target-host>/<owner>/<repo>.git`
-— built from the host the caller named, never from the origin's. Tiers 2 and 3
+`<clone-url>` is `--url` verbatim, else
+`https://<target-host>/<owner>/<repo>.git` — built from the host the caller
+named, never from the origin's. Tiers 2 and 3
 `rm -rf` the destination first: a failed clone leaves a partial directory behind
 and the next `git clone` would abort with "destination exists" instead of
 retrying. All three failing is a `skip`.
 
-**Fetch and checkout.** After a clone (or a cache hit), `git fetch origin
-pull/<pr>/head` — the ref lives on the base repo, so fork PRs work — then
-`git checkout FETCH_HEAD`. Each failure is its own `skip` message. The checkout
-is not cosmetic: a blobless `--no-checkout` clone has no files until it runs, and
-reporting `ok` over an empty tree would strip every finding as `FILE_NOT_FOUND`,
-producing a false-clean review.
+**GitHub: fetch and checkout.** The cache clone is only an object store and
+fetch target; nothing reads its own work tree. After a clone (or a cache hit),
+`git fetch origin +pull/<pr>/head:refs/review-council/pr-<pr>` fetches the head
+into a ref of that pull request's own — the ref lives on the base repo, so pull
+requests from forks work. `FETCH_HEAD` is never read: every fetch into the
+clone overwrites it, another run's included. The commit reviewed is
+`--head-sha` when preparation passes it (the adapter's `pr_head_sha`, the head
+the diff was read at), which must then be in the fetched history
+(`git cat-file -e <sha>^{commit}`); otherwise it is what the pull request's ref
+resolves to. Each run then checks that commit out into a tree of its own,
+`git worktree add --detach .runs/github@<entry>.XXXXXX <commit>` under the
+cache root, and that tree is `review_root`. Each failure (the fetch, a
+`--head-sha` missing from the history, the tree's creation or the worktree add)
+is its own `skip` message. The checkout is not cosmetic: a blobless
+`--no-checkout` clone has no files until it runs, and reporting `ok` over an
+empty tree would strip every finding as `FILE_NOT_FOUND`, producing a
+false-clean review. A failed run's tree is removed, and `git worktree prune`
+drops the clone's record of it.
 
-**Cache LRU.** A successful materialization `touch`es its destination to mark it
+The GitHub checkout writes every committed symlink as a regular file holding
+its target text: `core.symlinks=false` is set in the cache clone's own config
+on every run, and every worktree of the clone reads it there. After either
+forge's tree is built, any symlink left outside `.git` is a `skip` (diff-only
+review), and the run's tree goes with the refusal. The
+in-place path is refused, falling through to the cache, when the current
+checkout tracks a link (`git ls-files -s`, mode `120000`) whose target escapes
+the repository by `lib/symlinks.sh`'s rule; the operator's tree is never
+modified.
+
+**GitLab: the archive at the head sha.** A GitLab merge request is not cloned.
+An unauthenticated `git clone` of a private project fails, and the one
+credential bound to the host is glab's, which git cannot borrow safely:
+`glab auth git-credential get` answers with a token for any host it is asked
+about, and `glab repo clone` defaults to SSH. So the tree comes from the GitLab
+API through glab, every call made with `rc_forge_glab` after
+`rc_forge_glab_admits` (`lib/forge/gitlab.sh`; see "GitLab status" above):
+the configured-host gate, `rc_timeout`, environment tokens only
+for the host they are bound to, and `GITLAB_API_HOST` and
+`GLAB_ENABLE_CI_AUTOLOGIN` removed.
+
+1. The host is `--url`'s, lowercased, else `gitlab.com`. One that is empty (a
+   ported `--url`) or not a hostname is a `skip`: glab addresses a host by bare
+   name.
+2. `rc_forge_glab_admits` refuses a host glab is not logged in to; the `skip`
+   message carries its refusal. gitlab.com is exempt, as everywhere in the
+   adapter.
+3. The head sha is `--head-sha` when preparation passes it (the adapter's
+   `pr_head_sha`), else `glab api --hostname <host>
+   projects/<enc>/merge_requests/<pr>` reads it (`.sha`). Either way it must
+   match `^[0-9a-f]{40}$` — it names a cache directory and goes into the next
+   request — and a malformed one is a `skip`.
+4. **What is cached.** The cache entry holds the archive file itself,
+   `<sha>.tar.gz`, and nothing else; an archive at a sha never changes, so a
+   cached one cannot go stale. When the entry has no plain file for this sha,
+   `glab api … projects/<enc>/repository/archive.tar.gz?sha=<sha>` (120s)
+   downloads into a hidden `.archive.*` directory under the cache root, removed
+   on every exit until the archive is moved into the entry. The archive is
+   re-checked (steps 5-6) on every run, cached or not: the checks are what make
+   it safe to unpack, not a property of how it was fetched.
+5. The archive is bounded before anything is unpacked, each by an environment
+   cap whose value must be a plain integer (anything else falls back to the
+   default; a leading zero is decimal):
+
+   | Variable                                   | Bounds                                     | Default   |
+   |--------------------------------------------|--------------------------------------------|-----------|
+   | `REVIEW_COUNCIL_ARCHIVE_MAX_BYTES`          | the downloaded archive                     | 200 MiB   |
+   | `REVIEW_COUNCIL_ARCHIVE_MAX_ENTRIES`        | its member count                           | 200000    |
+   | `REVIEW_COUNCIL_ARCHIVE_MAX_UNPACKED_BYTES` | the bytes it unpacks to, plus step 10's files | 2 GiB  |
+   | `REVIEW_COUNCIL_MAX_CHANGED_FILES`          | step 10's changed-file list                | 300       |
+
+   `0` is valid: `REVIEW_COUNCIL_MAX_CHANGED_FILES=0` sends every MR with a
+   changed file to the diff-only fallback.
+
+   Every download is piped through `head -c <cap + 1>`, so an oversized
+   response stops one byte past its cap instead of filling the disk. The
+   unpacked size is measured by streaming every member through `tar -xzOf … |
+   head -c … | wc -c` rather than by summing the sizes `tar -tv` prints: GNU tar
+   and bsdtar lay that listing out differently, and an owner name holding
+   spaces shifts the column in either. Every `tar` run is bounded by
+   `rc_timeout`.
+6. The member list (`tar -tzf`) is streamed through `awk`, never held — a
+   listing of long paths runs to gigabytes — and stops at the first absolute
+   member or one with a `..` component, which refuses the whole archive, or at
+   the entry past the cap. The members are the MR author's to choose; GNU tar
+   and bsdtar both already refuse to extract outside the target by default, and
+   this refuses before either is asked. A listing that fails partway is a
+   failed read even if every member it reached was fine.
+7. **Each run's own tree.** A validated download replaces the whole entry (an
+   archive at an older sha, or a tree or clone left by an earlier layout of this
+   cache). The run then unpacks the archive into a fresh directory of its own,
+   `.runs/<entry>.XXXXXX` under the cache root, with `tar -xzf …
+   --strip-components=1 --no-same-owner --no-same-permissions` (flags common to
+   GNU tar and bsdtar): GitLab's `<repo>-<sha>-<sha>/` wrapper is dropped, no
+   owners are taken from the archive and modes pass through the umask. Neither
+   tar extracts through a symlink the archive created, and both refuse a hard
+   link whose target leaves the directory. That tree is `review_root`.
+8. Everything in the tree that is not a regular file or a directory is deleted
+   — symlinks of every shape, FIFOs, devices — and so is any regular file with
+   a second hard link (`find`, which does not follow links). A committed symlink
+   is the author's to aim, at `/etc/passwd` or a credentials file, and every
+   reviewer would read through it as though it were repository content; git
+   cannot commit a hard link, so one came from the archive. The count is
+   reported as `"special_files_removed": <n>` beside `review_root`, and in the
+   message. A consequence: a finding anchored at a file the MR commits as a
+   symlink cannot be verified on GitLab, and is stripped `FILE_NOT_FOUND`.
+9. GitLab builds the archive with `git archive`, which honours the commit's own
+   `.gitattributes`: `export-ignore` leaves a file out and `export-subst`
+   rewrites it with commit metadata. Both are the MR author's to set, and a
+   file left out strips every finding in it as `FILE_NOT_FOUND` — a false-clean
+   review of the author's choosing.
+10. So the files THIS merge request changes are listed
+    (`merge_requests/<pr>/diffs?per_page=100`, paginated) and each is fetched as
+    its exact blob at the head sha (`repository/files/<path, @uri-encoded>/raw?ref=<sha>`)
+    into this run's tree, on every run: two merge requests can share a head sha
+    (a second MR from the same source branch, or one retargeted) and change
+    different files. Deleted files (absent at the head) and submodule bumps
+    (mode `160000`, not a file) are skipped. Every listed path must be a string
+    with no control character, no leading `/`, and no empty, `.` or `..`
+    segment; every directory on its way must be a real directory and the path
+    itself must not be one. Each blob is staged beside the tree, bounded by
+    what is left of the unpacked cap. A listing that fails, is not a series of
+    arrays, holds an unsafe path or more files than the cap, any fetch that
+    fails, or the files outgrowing the unpacked cap, refuses the whole tree.
+11. An archive with no files is a `skip`, for the same false-clean reason as the
+    GitHub checkout.
+
+Two residuals are accepted. Files the merge request does not change can still
+be left out or rewritten by `export-ignore`/`export-subst`: they are context for
+the reviewers, not where findings are anchored, so the cost is weaker context,
+not a false clean. And the changed files are listed after the head sha is read,
+so a push landing in between can make the list describe a newer head than the
+one fetched; every file is still fetched at the recorded sha, so the tree is
+exact for that commit, at worst with one file too many or too few.
+
+Any failure — gate refusal, a failed lookup or download, a malformed sha, a cap
+exceeded, an unreadable or unsafe archive, an untrustworthy changed-file
+listing — is a `skip` with its own message and `review_root` `.`. No run tree,
+staged blob or download survives a failure; a refused archive is never cached.
+
+Every removal of a GitLab tree (replacing an entry, cleaning up a download
+directory or a failed run's tree, eviction) first makes its directories
+writable: modes pass through the umask, which never adds write permission, so a
+directory archived `0555` extracts read-only and a plain `rm -rf` fails inside
+it.
+
+**Concurrent runs.** No run writes anything another run reads. A GitLab run
+unpacks and fills a tree of its own, and the cached archive is replaced by
+rename, so a run already reading the old file keeps it; the worst a race does
+is fail a run that finds the entry between its removal and the new archive's
+arrival, which is a `skip`. A GitHub run checks its commit out into a worktree
+of its own and fetches into its pull request's own ref, so a second run over
+the same repository no longer moves the first run's tree to another pull
+request mid-review (which stripped the first review's findings as
+`FILE_NOT_FOUND`, a false clean). Two fetches into one clone at once can still
+fail on a ref lock; that is a failed fetch, a `skip`. Run trees are bounded by
+the prune below: six hours at most, and the newest few only.
+
+**Cache LRU.** A successful materialization `touch`es its destination (the cache
+entry, for GitLab the directory holding the sha's archive) to mark it
 most-recently-used. The clones directory is then listed by mtime with `ls -dt`
 (POSIX — `find -printf` is GNU-only and this cap has to hold on macOS too) and
 every entry past `REVIEW_COUNCIL_CLONE_CACHE_MAX` (default 10; a non-numeric
 value falls back to 10) is removed, skipping the destination just materialized.
+Hidden `.archive.*` download directories and `.runs/` trees are not entries
+and are never listed, so evicting an entry never removes a tree a review is
+reading. An evicted GitHub clone's worktrees are deliberately left to the run
+tree prune rather than removed with it: their files are all checked out, so
+they stay readable, and the clone's record of them goes with the clone. A download directory older than an hour (`find -mmin +60`) belongs to
+a run killed before its cleanup and is removed. Run trees are bounded twice,
+since each can hold up to the unpacked cap and a batch leaves one per review:
+one older than six hours (`-mmin +360`; reviews take minutes) is removed, and
+past the newest `REVIEW_COUNCIL_MAX_RUN_TREES` (default 8, integer-validated;
+`0` keeps only the current run's tree;
+by mtime with `ls -dt`, as for entries) the rest are removed too. Both forges'
+trees share these bounds. A GitHub tree is told apart by its `github@` prefix
+(`@` occurs in no GitLab tree name); once it is removed, `git worktree prune`
+runs in the clone its name points to, if that clone is still cached. The tree
+the current run returns as `review_root` is never removed, whatever its mtime. A
+session resumed after its run tree was swept has lost its `review_root`, and
+evidence verification strips every finding as `FILE_NOT_FOUND`: re-run
+preparation rather than resuming.
 
 **Cache key.** The entry is named for the endpoint, not for the repository
 alone: `<host>-<owner>-<repo>`, so `github.com-acme-widgets` and
 `ghe.corp.example-acme-widgets` are separate checkouts. Without the host, a
 clone of `acme/widgets` taken from one host would be served back for an
-`acme/widgets` named on another; the `git fetch origin pull/<pr>/head` above
+`acme/widgets` named on another; the head-ref fetch above
 then runs against the wrong origin and the review grounds every finding in a
 foreign repository while still reporting `ok`. That is the `in_place` host
-test's failure mode one layer down, and only a direct caller passing `--url`
-can name a second host in the first place.
+test's failure mode one layer down.
+
+GitLab entries are joined with `+` instead: `<host>+<segment>+…+<repo>`, so
+`gitlab.com+g+sub+p` for project `g/sub/p`, holding `<sha>.tar.gz`. A subgroup's `/` must not become a
+nested directory, and folding it into `-` would file group `g/sub` project `p`
+and group `g-sub` project `p` under one entry. Neither a gated segment nor a
+host slug can contain `+`, so the name splits back into exactly one host and
+path. GitHub keeps the `-` key so existing cache entries remain valid.
 
 The host is not character-gated the way `<owner>` and `<repo>` are, so it is
 lowercased and reduced to their alphabet (`[a-z0-9._-]`, everything else
@@ -445,12 +772,18 @@ session directory and instruct the user to post it manually:
 ## Authentication
 
 - Clone: `gh repo clone` is preferred on github.com when `gh` is present, since
-  it carries gh's own auth (private repos). Every other host, and the `gh`-less
-  case, falls through to `git clone`, which honours the URL and whatever the
-  operator's credential helper supplies — public repos without one. See
-  "Materializing the target repo".
+  it carries gh's own auth (private repos). The fetch and worktree add that
+  follow get the same auth through gh as a process-scoped credential helper. Every
+  other GitHub host, and the `gh`-less case, falls through to `git clone`,
+  which honours the URL and whatever the operator's credential helper
+  supplies — public repos without one. A GitLab merge request is fetched as a repository archive through `glab`
+  with glab's own auth, so private projects work wherever glab is logged in.
+  See "Materializing the target repo".
 - Comment: `rc-post-comment-github.sh` requires `gh` authenticated for the
   target repo. Absent `gh`, `--send` degrades to render-only.
+  `rc-post-comment-gitlab.sh` requires `glab` logged in to the recorded host,
+  checked by the same `rc_forge_glab_admits` gate as preparation. Absent `glab`,
+  `--send` degrades to render-only.
 
 ## Safety
 

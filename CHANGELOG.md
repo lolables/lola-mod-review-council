@@ -6,6 +6,68 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- A symlink check. Preparation reads `diff.patch` for every symlink the change
+  adds or retargets and resolves its target without following it. A link that
+  leaves the repository (an absolute target, one above the root, one into
+  `.git`, or a chain through such a link) becomes a HIGH finding from
+  "🔗 Symlink check", so the review requests changes until it is explained.
+  The finding is marked final as it is gathered, before anything can merge
+  it: neither exact dedup (at verification or after the correction round) nor
+  model-written consolidation folds it into a reviewer's finding, and
+  validation cannot retract it. It is read only from the script's own
+  `verdicts/rc-check-symlinks.json`, and an `rc-check-symlinks.raw.md` written
+  anywhere under `verdicts/` is refused rather than extracted. Reviewers also
+  get `symlinks.txt` listing every changed link.
+- `scripts/review-open-prs.sh` and `scripts/review-pr-status.sh` work on GitLab
+  merge requests through `glab`, on gitlab.com or a self-hosted instance. The
+  forge comes from a PR/MR URL, else `--forge github|gitlab` and `--host <name>`
+  (`--host` implies GitLab), else the origin remote; `--repo` takes a nested
+  group path on GitLab. Re-review requests need the Developer role or higher,
+  `--ignore-approved` counts an MR only when it has at least one approver, and
+  a verdict note whose first line is the council's retire banner counts as
+  collapsed, since GitLab cannot collapse a note. Each review's agent CLI runs
+  with `GITLAB_HOST` set to the resolved host, and GitLab logs are named
+  `<host>-<group>-…-pr-<n>.log`. See `docs/batch-reviewing-prs.md`
+- The scripts send GitLab credentials only where they belong. A GitLab host
+  is contacted only when `glab auth status --hostname <host>` passes, so a
+  host absent from glab's config is refused before the first request. The
+  environment tokens `GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN` and `OAUTH_TOKEN`
+  reach only glab's default host (the first of `GITLAB_API_HOST`,
+  `GITLAB_HOST`, `GITLAB_URI`, `GL_HOST`, else gitlab.com), and to no host
+  when the variable set names no usable one; any other host uses its own
+  `glab auth login`. `GITLAB_API_HOST` and
+  `GLAB_ENABLE_CI_AUTOLOGIN` are never passed to glab, because each redirects
+  an explicitly addressed call to another instance. The council's GitLab
+  adapter and poster apply the same three rules
+- The council posts its verdict to GitLab merge requests.
+  `rc-post-comment-gitlab.sh` is a port of the GitHub poster: it creates,
+  updates in place and supersedes notes per head SHA and part, selects its own
+  notes by the numeric id of the account `glab` is logged in as, and retires a
+  superseded note with the same obsolete banner, which stays expanded because
+  GitLab has nothing like minimize
+- `--scope url` accepts a GitLab merge request URL on any host, not only
+  gitlab.com, provided `glab` is logged in to that host; otherwise the run
+  stops with a terminal `skip` before any glab call. The host is recorded in
+  `session.txt` as `Host:`, and the GitLab adapter, the clone, the permalinks
+  and the poster all address that host and project explicitly. A GitLab URL
+  with a port is refused
+- On GitLab, preparation reads the merge request's notes into
+  `pr-conversation.txt` and names the posting account, so re-review
+  disposition works there too. GitLab approvals are not imported as prior
+  reviews. `rc-clone-target.sh` materializes the merge request from its
+  repository archive at the head sha, downloaded through `glab` so private
+  projects work and cached in an entry keyed `<host>+<group>+…+<repo>`. Each
+  run unpacks the archive into a tree of its own and fetches that MR's changed
+  files into it as their exact blobs, so `export-ignore` or
+  `export-subst` in the MR's own `.gitattributes` cannot hide or rewrite them.
+  Archives naming a path outside their tree, or over the size, entry and
+  changed-file caps (`REVIEW_COUNCIL_ARCHIVE_MAX_BYTES`,
+  `REVIEW_COUNCIL_ARCHIVE_MAX_UNPACKED_BYTES`,
+  `REVIEW_COUNCIL_ARCHIVE_MAX_ENTRIES`, `REVIEW_COUNCIL_MAX_CHANGED_FILES`), are
+  refused. Symlinks, hard links and special files are deleted (counted as
+  `special_files_removed`), so a finding anchored at a file the MR commits as
+  a symlink is no longer verifiable on GitLab
+
 - Validator outcomes are now applied by `rc-apply-validation.sh`, keyed on a
   finding `id` that `rc-verify-evidence.sh` assigns (`F1`, `F2`, ...). Each
   outcome echoes its finding's file; one that names an unknown or duplicate id,
@@ -211,16 +273,6 @@ All notable changes to the Review Council module are documented here.
   hook means no limit, which keeps the standalone manual-paste fallback at full
   fidelity instead of trimming it to satisfy an API it never reaches.
   `references/forge-adapters.md` carries it with the other hooks
-- `rc-post-comment-gitlab.sh` — a per-forge script that defines GitLab's three
-  hooks, renders, and stops. It never writes upstream, with or without `--send`,
-  which is accepted and ignored: the upsert, supersede and identity policy in
-  `rc-post-comment-github.sh` has no `glab` equivalent yet, and a half-built
-  poster that creates a note but cannot find its own on the next run leaves
-  duplicate verdicts on the merge request. It exists rather than letting the
-  router fall through to the standalone renderer because the hooks live in
-  per-forge post scripts — without one, a GitLab review renders deep-link-free
-  bodies against no size budget at all, and "the limit is per-forge" stays a
-  comment rather than a testable claim
 - The council-comment marker carries `part=<n> of=<m>` beside its `sha=`; an
   unsplit verdict is `part=1 of=1`. The GitHub poster matches per part within a
   head SHA, so a re-run on the same commit updates each part in place rather
@@ -311,7 +363,10 @@ All notable changes to the Review Council module are documented here.
   against
 - CI runs the whole test matrix on Linux and macOS. It previously ran the unit
   layer only, so the e2e, degraded and mutation layers existed without ever
-  gating a merge. Both legs always run to completion, so a failure on one
+  running there. The unit, e2e and degraded layers gate every pull request;
+  the mutation layer runs nightly against `main` and on manual dispatch,
+  because at 18–20 minutes per OS it was the slowest layer by about two to one.
+  Both legs always run to completion, so a failure on one
   cannot hide whether the other was platform-specific. Venom is pinned by tag
   and by the SHA-256 of each published asset, since ovh/venom publishes no
   checksum file
@@ -413,7 +468,8 @@ All notable changes to the Review Council module are documented here.
   comment already exists on a PR, `rc-prepare.sh` fetches the issue-comments
   timeline and writes replies posted at/after the marker to
   `pr-conversation.txt` as UNTRUSTED data. First reviews and non-GitHub
-  forges write no file; SECTION 13's no-op `gitlab` branch marks the gap
+  forges write no file; SECTION 13's no-op `gitlab` branch marks the gap.
+  GitLab has since gained this too (see the GitLab entries above)
 - Disposition step (`phases/disposition.md`, SKILL.md Step 4.5): the one
   chokepoint that reads `pr-conversation.txt`, gated on that file existing
   and effort not `quick`. A fresh-context subagent receives the untrusted
@@ -463,6 +519,18 @@ All notable changes to the Review Council module are documented here.
 
 ### Changed
 
+- Behaviour changes in the batch scripts for existing GitHub users:
+  - An origin remote on a host that is neither github.com, gitlab.com nor
+    glab's default host is refused until `--forge` is given. Before, the run
+    went to GitHub. An SSH alias that `gh` places on github.com for the same
+    repository is still accepted.
+  - `--repo` values are validated: a GitHub value must be exactly
+    `owner/name`, and a segment that is empty, dot-only, starts with `-` or
+    holds anything outside `[A-Za-z0-9._-]` exits 2.
+  - The plan prints a `Forge: <forge> (<host>)` line after `Repository:`.
+  - The `--json` envelope of `review-pr-status.sh` gains `forge` and `host`.
+- A malformed GitHub pull request URL under `--scope url` is now a terminal
+  `skip` naming the expected URL shape.
 - Severity calibration downgrades three kinds of finding that blocked clean
   changesets without being defects in them. A CRITICAL or HIGH that rests on a
   claim nobody can check from the changeset or the repository (whether a
@@ -682,6 +750,99 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The council-comment marker now ends with `run=<session-id>`, the session
+  directory that rendered it. A re-review whose findings are unchanged therefore
+  still edits its verdict, and the batch driver reports it `done` instead of
+  "posted no new or edited verdict". Re-posting the same session renders the
+  same body and stays `unchanged`. No reader parses the token; a session name
+  outside `[A-Za-z0-9._-]` is left off.
+
+- Two preparations of one project started in the same second no longer share a
+  session directory. It was named to the second and created non-exclusively,
+  so concurrent `review-open-prs.sh` runs wrote into one session and the second
+  PR's council found the first PR's metadata. The directory is now created
+  exclusively as `<timestamp>-XXXXXX`.
+
+- Concurrent reviews of one GitHub repository no longer corrupt each other's
+  tree. Each review fetched its PR head into the shared cache clone and checked
+  out `FETCH_HEAD` there, so a second review moved the first one's files
+  mid-review and its findings were stripped `FILE_NOT_FOUND` (a false-clean
+  review, seen live). Each PR is now fetched into `refs/review-council/pr-<N>`
+  and each review checks its commit out into its own detached git worktree
+  under `clones/.runs/`, pruned with GitLab's trees (six hours,
+  `REVIEW_COUNCIL_MAX_RUN_TREES`). Preparation passes `--head-sha` for GitHub
+  too, so the tree is the commit the diff was read at.
+
+- The symlink check no longer misses links that leave the repository through a
+  diff it cannot read: a target holding a NUL byte (shown as a binary diff), a
+  path containing a space, CRLF line endings, or an operator's own `git diff`
+  settings (colour, external diff, mnemonic or no prefixes, `diff.relative`,
+  textconv) on a local review. The attacker-chosen target is quoted only as the
+  finding's evidence, never in its description, and a very long target no
+  longer stalls preparation.
+- The symlink check judged a change from its diff alone, so a pure rename that
+  moves an inside link to where it escapes, or a new link that chains through a
+  link already on the base (`x -> sub/up/..` with `sub/up -> ..`), merged with
+  no finding. Preparation now lists every symlink in the head tree
+  (`head-links.json`), from the forge API through a new optional adapter
+  capability `rc_forge_fetch_links`, or from the index on a local review. The
+  check judges changed links against that list, and also reports an untouched
+  link that a change makes escape. When the forge cannot list the tree whole
+  (truncated, or more than `REVIEW_COUNCIL_MAX_HEAD_LINKS` links, default 500),
+  the check judges the diff alone and says so.
+
+- The council verdict is decided by `rc-decide-verdict.sh` from the verified
+  findings instead of by the model, and both renderers refuse a `verdict.txt`
+  the findings do not decide. A review that produced no findings file records
+  no verdict, and its PR comment is refused rather than posted as APPROVE.
+
+- The GitHub review tree no longer holds live symlinks. A pull request's
+  committed links are written as plain files holding their target, a link left
+  live by an earlier checkout is replaced, and any link that survives makes the
+  review fall back to the diff. A checkout tracking a link out of the
+  repository is no longer reviewed in place.
+
+- A re-review that skipped the Disposition phase is no longer rendered or
+  posted. When the PR has replies since the last verdict and effort is not
+  `quick`, rendering refuses with an error naming the phase until
+  `verdicts/_meta/disposition.txt` exists; live, a standard re-review had
+  skipped it without a word.
+- On GitHub, the council now reads every page of a pull request's reviews,
+  review comments and conversation. It used to read only the first 30 of each,
+  so on a long thread the replies since the last verdict, the newest
+  especially, never reached the Disposition phase. A listing that fails partway
+  is treated as no context rather than a partial one.
+- On GitHub, posting the verdict now reads every page of the pull request's
+  comments. Past 100 comments an older verdict was never retired and a
+  same-commit re-post created a duplicate instead of updating; a listing that
+  fails partway now fails the post, as on GitLab.
+- `scripts/review-open-prs.sh` reports a PR `done` only when a verdict was
+  posted. It took the agent's exit status for the result, so a council that
+  declined to post — or stopped short of posting — was reported done and the
+  batch exited 0. After an agent exits 0, the driver now reads the PR's
+  comments again and needs a verdict from this account that was not there
+  when the PR was queued, or its existing verdict edited in place (a forced
+  re-review at an unchanged head updates rather than posts); otherwise the PR
+  is named as failed, as having posted no new or edited verdict, and the batch
+  exits 1
+- A private github.com repository is reviewed from a real checkout without
+  `gh auth setup-git`. `gh repo clone` authenticated only the clone, so the
+  fetch of `pull/N/head` and the blobless checkout after it had no credentials
+  and the review fell back to the diff alone. Those `git` calls now get gh as
+  a credential helper for `https://github.com` through process-scoped
+  `GIT_CONFIG_*` variables; no git config file is written
+- The posted marker names the PR/MR head the forge reported. The renderer read
+  it from the checkout under review, which a GitLab archive tree does not have
+  (`sha=unknown`, so the batch scripts re-reviewed the MR on every run), and a
+  PR or URL review standing in `.` stamped the launch checkout's `HEAD`, a
+  commit nobody reviewed. The adapters now set `pr_head_sha`, preparation
+  records it as `Head SHA:` in `session.txt`, and a PR or URL review with no
+  recorded head writes `sha=unknown` rather than a wrong commit
+- A PR or MR title, branch name, URL or state holding a line break can no
+  longer add lines to `session.txt`, `tracking.md` or `pr-metadata.txt`. A
+  title carrying `Head SHA:` or `Review root:` lines could otherwise name the
+  commit the marker records or the directory findings are verified against.
+  Control characters in those values now become spaces
 - A run whose reviewers all returned verdicts no longer stops as if they had
   returned nothing. The orchestrator had asked read-only reviewers to write
   their own `.raw.md` files, so none was written, and extraction's

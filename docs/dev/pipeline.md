@@ -24,7 +24,7 @@ conditional:
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
 | **Disposition**       | `phases/disposition.md` (re-review only)                           | Triage untrusted PR-conversation replies against findings |
-| **Report**            | `rc-render-report.sh` + `phases/report.md`                         | Final report, learnings feedback                          |
+| **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
 | **Post**              | `rc-render-comment.sh` + `rc-post-comment.sh` (opt-in, PR only)    | Publish or update the verdict comment on the PR           |
 
@@ -69,7 +69,7 @@ flowchart TD
   ext["Extract: schema-validate each reviewer's JSON verdict"]
   ver["Verify: format gate, correction, calibration, strip, merge-base advisories, consolidation, validation gate"]
   dispgate{"Re-review conversation to triage? (not quick effort)"}
-  disp["Disposition: triage untrusted PR conversation (GitHub only)"]
+  disp["Disposition: triage untrusted PR conversation (GitHub and GitLab)"]
   report["Report: determine verdict, render artifacts, record learnings"]
   iter{"Findings remain, effort limit not reached, session interactive?"}
   postgate{"Post intent recorded?"}
@@ -260,7 +260,7 @@ flowchart TD
   class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,meta1,learn sysE
 ```
 
-Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>/` containing:
+Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>-<random>/` containing:
 
 - `session.txt` — human-readable run metadata
 - `tracking.md` — structured phase-by-phase state
@@ -273,20 +273,59 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   concrete model ID where the host exposes one, and appends the coordinator and validator roles it alone knows
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
   canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
+  and, when the change touches a symlink, the script verdict `rc-check-symlinks.json`
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
   the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render
   without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 
+The directory is created exclusively (`mktemp -d`), so runs started in the same second never share a session.
 The newest `REVIEW_COUNCIL_SESSION_CACHE_MAX` sessions per project are kept (default 20); older ones are evicted on
 the next run, the same way clones are capped. Runs that produce nothing are capped too — the session directory is
 created before the changeset scan decides whether there is anything to review, so a no-op review still leaves one
 behind. The session a run is currently using is never evicted, whatever the cap.
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
-and `ci-status.txt`. On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
-is added too — untrusted replies posted since that marker, GitHub only for now.
+`ci-status.txt`, `head-links.json` (every symlink in the head tree, when it could be listed whole; a local review lists its index) and `symlinks.txt` (written for any review whose diff changes a link). On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
+is added too — untrusted replies posted since that marker, on GitHub and GitLab.
+
+## Script-authored findings
+
+`rc-check-symlinks.sh` runs during Prepare and writes a verdict in the
+reviewers' schema, as agent `rc-check-symlinks`, with one HIGH finding per
+symlink the change adds, moves or retargets that resolves outside the repository,
+and per untouched link whose resolution now passes through one of those
+(judged lexically from `diff.patch` against `head-links.json`, every link in the
+head tree, `lib/symlinks.sh`). `lib/prepare-links.sh` writes that list from the
+forge adapter's `rc_forge_fetch_links`, or from the index on a local review;
+without it the check judges the diff alone and says so. No LLM phase may
+revise it, and the guarantee lives in the data rather than in each caller:
+
+- **Admitted from one file.** `rc-verify-evidence.sh` reads the script verdict
+  only as the top-level `verdicts/rc-check-symlinks.json`, apart from the
+  `divisor-*.json` search. Script-ness comes from that source file, never from
+  an agent name: a nested copy is ignored, and a reviewer file calling itself
+  `rc-check-symlinks` is evidence-checked like any other (reviewer findings
+  also lose any `provenance` they carry, which the verdict schema never allows).
+- **Marked before any merge.** As they are gathered, its findings get
+  `provenance.validator.result: "SCRIPT"` and skip the evidence check (a
+  diff-only review has no tree to find them in).
+- **Both reducers honour the mark.** `jq/dedup-findings.jq` passes a SCRIPT
+  finding through unmerged — it runs at verification and again in
+  `rc-apply-corrections.sh`, where a corrected reviewer CRITICAL at the same
+  line once absorbed the HIGH — and `jq/consolidate-clusters.jq` never makes it
+  a cluster member, primary or casualty, whatever shape the model-written
+  manifest takes.
+- **Final at validation.** `jq/apply-validation.jq` rejects any outcome for it
+  as `ALREADY_FINAL`; calibration and Disposition exclude it by instruction.
+- **Never extracted.** `rc-extract-verdict.sh` refuses an
+  `rc-check-symlinks.raw.md` anywhere under `verdicts/` as `RESERVED_AGENT` and
+  never writes its json, so a model-written file can neither overwrite the
+  script's verdict nor inject findings under its name.
+
+The verdict word therefore sees an unrevisable HIGH and the review is REQUEST
+CHANGES. The comment table shows the check as "🔗 Symlink check".
 
 ## What spec mode reviews
 

@@ -2,15 +2,60 @@
 #
 # review-pr-status.sh
 #
-# Report where every open pull request of a GitHub repository stands with
-# respect to Review Council — or just the one PR you name. The target
-# repository and PR are resolved from the arguments and the current directory,
-# so the script is not tied to any one project.
+# Report where every open pull request of a GitHub repository, or merge
+# request of a GitLab project, stands with respect to Review Council — or just
+# the one you name. The target repository and PR are resolved from the
+# arguments and the current directory, so the script is not tied to any one
+# project. Below, "PR" covers a GitLab merge request (MR) too unless a
+# paragraph says otherwise.
 #
 # THIS SCRIPT NEVER WRITES. It posts no comment, invokes no agent CLI and
 # spends nothing. Every call it makes is a read, and the report is the whole of
 # its output — which is what makes it safe to run on a timer, against someone
 # else's repository, or while a batch review is already going.
+#
+# Forges:
+#
+# GitHub is read through gh, GitLab through glab; every call is a read on
+# either. Only GitLab hosts present in glab's config are contacted; any other
+# is refused, so credentials are never sent to it. Add one with
+# `glab auth login --hostname <host>` (non-interactively,
+# `--stdin < tokenfile`); an instance served on a port also takes
+# `--api-host <host>:<port>` and is then named without it.
+#
+# glab's default host is the first of GITLAB_API_HOST, GITLAB_HOST,
+# GITLAB_URI and GL_HOST that is set and non-empty, else gitlab.com. An
+# environment token (GITLAB_TOKEN, GITLAB_ACCESS_TOKEN or OAUTH_TOKEN) is
+# only used for the host it belongs to, that default host; any other host
+# uses its own `glab auth login`. GITLAB_API_HOST and
+# GLAB_ENABLE_CI_AUTOLOGIN are never passed to glab: both redirect a call
+# away from the host it names.
+# With none of those four variables set, an environment token is
+# therefore bound to gitlab.com, and a self-hosted instance needs its own
+# `glab auth login --hostname <host>`.
+#
+# The forge is chosen from a PR/MR URL argument, else from --forge/--host, else
+# from the origin remote of the current directory: github.com is GitHub;
+# gitlab.com, or glab's default host, is GitLab. An SSH host alias
+# (git@github-work:o/r.git) counts as GitHub when gh confirms it names origin
+# on github.com. Any other host is refused until you
+# pass --forge: --forge gitlab then uses the remote's host, and --forge github
+# targets github.com. With no origin remote and no URL, --forge or --host, the
+# report is on GitHub through gh, as it was before GitLab was supported.
+#
+# On GitLab the GitHub notions below map as follows:
+#
+#   * write permission  the Developer role or higher in the project.
+#   * collapsed verdict GitLab cannot collapse a note. A verdict note counts
+#                       as collapsed when its FIRST line is the line below,
+#                       exactly and at column 0 (no leading spaces):
+#
+# > **Obsolete.** Superseded by the [current Review Council verdict](<url>) for commit `<sha>`. <!-- review-council:obsolete -->
+#
+#   * a login           the GitLab username, in the BY column and --account.
+#
+# A GitLab MR is labelled !N in the table and the messages, as GitLab writes it;
+# --json and --tsv carry the bare number on both forges.
 #
 # It is the companion to review-open-prs.sh and shares that script's
 # classification code (scripts/lib/), so what it reports is what the driver
@@ -32,7 +77,7 @@
 #
 # The table beneath the summary carries one row per PR:
 #
-#   PR         the pull request number
+#   PR         the pull request number, as the forge writes it (#123, !7)
 #   STATE      one of the words above
 #   VERDICT    the verdict word of the review the STATE was derived from
 #              ("APPROVE", "REQUEST CHANGES", ...), read from that same comment
@@ -69,6 +114,8 @@
 #
 #   {
 #     "repo": "owner/name",
+#     "forge": "github",
+#     "host": "github.com",
 #     "generated_at": "2026-08-23T14:00:00Z",
 #     "account_scope": "all",
 #     "window": {
@@ -147,12 +194,12 @@
 #                      council often posts from a bot account or from a second
 #                      machine, and a report counting only your own reads every
 #                      one of those PRs as unreviewed.
-#   --account self     only verdicts posted by the account gh is authenticated
-#                      as. The one scope under which STATE predicts the driver
-#                      exactly — review-open-prs.sh refuses a marker it did not
-#                      post — so it is the setting to use when you are
-#                      debugging that script's queue.
-#   --account <login>  only that account's verdicts.
+#   --account self     only verdicts posted by the account gh (or glab) is
+#                      authenticated as. The one scope under which STATE
+#                      predicts the driver exactly — review-open-prs.sh
+#                      refuses a marker it did not post — so it is the setting
+#                      to use when you are debugging that script's queue.
+#   --account <login>  only that account's verdicts (on GitLab, the username).
 #
 # Under any scope but self, STATE stops being a strict prediction of what your
 # own driver would do: a PR shown as up-to-date* is one the driver WOULD review
@@ -188,6 +235,10 @@
 #   ./review-pr-status.sh 123                   # just PR #123 (current repo)
 #   ./review-pr-status.sh https://github.com/owner/name/pull/123   # by URL
 #   ./review-pr-status.sh --repo owner/name     # a different repository
+#   ./review-pr-status.sh https://gitlab.com/group/project/-/merge_requests/7
+#                                               # a single GitLab MR, by URL
+#   ./review-pr-status.sh --host git.example.org --repo group/sub/project
+#                                               # self-hosted (--host implies GitLab)
 #   ./review-pr-status.sh --account self        # only your own account's reviews
 #   ./review-pr-status.sh --account council-bot # only that account's reviews
 #   ./review-pr-status.sh --ignore-email ci@corp.example   # also ignore CI's PRs
@@ -197,11 +248,15 @@
 #   ./review-pr-status.sh --exit-code           # exit 10 instead of 0 if anything is pending
 #
 # Target selection:
-#   * A positional argument may be a PR number (123) or a GitHub PR URL. Either
-#     restricts the report to that single PR; a URL also sets the repository.
-#   * The repository is taken from, in order: a PR URL argument, --repo, then the
-#     GitHub remote of the current directory. Run inside a checkout, or pass one
-#     of the first two, to report on any repository from anywhere.
+#   * A positional argument may be a PR/MR number (123), a GitHub PR URL or a
+#     GitLab MR URL. Each restricts the report to that single PR; a URL also
+#     sets the forge, host and repository.
+#   * The repository is taken from, in order: a PR/MR URL argument, --repo, then
+#     the origin remote of the current directory. Run inside a checkout, or pass
+#     one of the first two, to report on any repository from anywhere.
+#   * The forge and host are taken from a URL, else --forge github|gitlab and
+#     --host <gitlab-host>, else the origin remote (see Forges). --host implies
+#     --forge gitlab.
 #
 # Environment:
 #   DEEP_FILES          changedFiles at or above this are reported as deep
@@ -220,6 +275,10 @@
 #                       extending it; set it to the empty string to report
 #                       every PR on its own terms. --ignore-email appends to
 #                       whichever list is in effect.
+#   GITLAB_HOST         With GITLAB_API_HOST, GITLAB_URI and GL_HOST, names
+#                       glab's default host (see Forges). That host marks an
+#                       origin remote on it as GitLab, and is the default
+#                       --host when nothing else names one.
 #
 # Exit codes:
 #   Without --exit-code the script exits 0 whenever it produced a report — a
@@ -231,8 +290,9 @@
 #                         10  reported, and at least one PR is unreviewed,
 #                             stale or requested
 #
-#   1   a hard failure — gh unauthenticated, the repository unresolvable, a
-#       named PR that does not exist, or a listing that would not answer.
+#   1   a hard failure — gh or glab unauthenticated, the repository
+#       unresolvable, a named PR that does not exist, or a listing that would
+#       not answer.
 #       --exit-code does not change this: an outage must never come back as
 #       10 or as 0, both of which say the check itself succeeded.
 #   2   a usage or configuration error — an unknown flag, a --repo that
@@ -249,7 +309,7 @@
 #   up-to-date and ignored PRs are never pending, so a repository whose every
 #   open PR is current or bot-authored exits 0 under --exit-code too.
 #
-# Requirements: gh (authenticated) and jq.
+# Requirements: gh or glab (authenticated) and jq.
 
 # Below the blank line above, and so out of `usage`, which prints the header
 # verbatim up to that point — a lint directive is not help text.
@@ -301,11 +361,15 @@ trap "$ERR_TRAP" ERR
 # shellcheck source=scripts/lib/comments.sh
 source "$LIB_DIR/comments.sh"
 
+# shellcheck source=scripts/lib/target.sh
+source "$LIB_DIR/target.sh"
 # shellcheck source=scripts/lib/prs.sh
 source "$LIB_DIR/prs.sh"
 
-REPO=""   # owner/name; resolved below from URL arg, --repo, or the CWD repo
-TARGET="" # positional PR number or URL; empty => report on all open PRs
+FORGE=""      # --forge; empty => resolve_target works it out
+FORGE_HOST="" # --host; empty => resolve_target works it out
+REPO=""       # project path; resolved below from URL arg, --repo, or the CWD repo
+TARGET=""     # positional PR number or URL; empty => report on all open PRs
 # effort_for reads this as its override, and there is no --effort flag here to
 # set it: this report says what tier a PR would be given, and a flag that
 # changed that answer would only describe a run nobody is going to make.
@@ -343,6 +407,28 @@ while [[ "$#" -gt 0 ]]; do
 			exit 2
 		}
 		REPO="$2"
+		shift
+		;;
+	--forge)
+		[[ "$#" -ge 2 ]] || {
+			echo "--forge requires an argument (github|gitlab)" >&2
+			exit 2
+		}
+		case "$2" in
+		github | gitlab) FORGE="$2" ;;
+		*)
+			echo "--forge must be one of: github, gitlab" >&2
+			exit 2
+			;;
+		esac
+		shift
+		;;
+	--host)
+		[[ "$#" -ge 2 ]] || {
+			echo "--host requires an argument (a GitLab hostname)" >&2
+			exit 2
+		}
+		FORGE_HOST="$2"
 		shift
 		;;
 	--ignore-email)
@@ -413,15 +499,39 @@ if [[ "$JSON" -eq 1 ]] && [[ "$TSV" -eq 1 ]]; then
 	exit 2
 fi
 
-require_commands gh jq
+require_commands jq
 
-gh auth status >/dev/null 2>&1 || {
-	echo "gh is not authenticated. Run 'gh auth login' (or set GITHUB_TOKEN)." >&2
-	exit 1
-}
-
-# ---- Resolve target repository and (optional) single PR, then collect PRs --
+# ---- Resolve the forge, host and (optional) single PR ----------------------
+# Before the forge's own CLI is required, because which CLI that is depends on
+# the answer.
 resolve_target "$TARGET"
+# How this forge, its CLI and its PRs are named in what the operator reads. A
+# PR's own label ("#12" / "!12") comes from the adapter's forge_pr_label.
+if [[ "$FORGE" = "gitlab" ]]; then
+	FORGE_CLI="glab"
+	PR_NOUN="MR"
+	PR_NOUN_LONG="merge request"
+	HEADER_HOST=" on ${FORGE_HOST}"
+else
+	FORGE_CLI="gh"
+	PR_NOUN="PR"
+	PR_NOUN_LONG="pull request"
+	# GitHub is one host, so naming it would only lengthen the line.
+	HEADER_HOST=""
+fi
+require_commands "$FORGE_CLI"
+# The adapter is chosen at run time, so shellcheck is pointed at the GitHub one
+# as the representative: every adapter defines the same forge_* functions, and
+# that is the contract this script is checked against.
+# shellcheck source=scripts/lib/forge-github.sh
+source "$LIB_DIR/forge-${FORGE}.sh"
+
+forge_auth_check
+# After the auth check: without --repo the project is asked of the forge CLI,
+# and a logged-out one would surface as "repository unknown" instead.
+resolve_project
+
+# ---- Collect PRs -----------------------------------------------------------
 
 # collect_prs reports through its exit status, and the `|| collect_rc=$?` is
 # what makes that status readable: errexit does not reach into the command
@@ -438,17 +548,18 @@ prs_raw="$(collect_prs)" || collect_rc=$?
 case "$collect_rc" in
 0) ;;
 1)
-	echo "PR #${TARGET_PR} not found in ${REPO}." >&2
+	pr_name="${PR_NOUN} $(forge_pr_label "$TARGET_PR")"
+	echo "${pr_name} not found in ${REPO}." >&2
 	exit 1
 	;;
 *)
-	echo "Could not list the open pull requests in ${REPO}." >&2
+	echo "Could not list the open ${PR_NOUN_LONG}s in ${REPO}." >&2
 	echo "The lookup failed, which is not the same as there being nothing to report; no status was produced." >&2
 	exit 1
 	;;
 esac
 if [[ -z "$prs_raw" ]]; then
-	echo "No open pull requests found in ${REPO}."
+	echo "No open ${PR_NOUN_LONG}s found in ${REPO}."
 	exit 0
 fi
 
@@ -630,12 +741,16 @@ if [[ "$JSON" -eq 1 ]]; then
 
 	printf '%s' "$pr_objects" | jq -s \
 		--arg repo "$REPO" \
+		--arg forge "$FORGE" \
+		--arg host "$FORGE_HOST" \
 		--arg scope "$VERDICT_SCOPE" \
 		--arg window_start "$WINDOW_START" \
 		--argjson spent "$SPENT" \
 		--arg limit "${REQUESTS_PER_HOUR:-}" \
 		--arg next_slot "$NEXT_SLOT" \
 		'{repo: $repo,
+		  forge: $forge,
+		  host: $host,
 		  generated_at: (now | todate),
 		  account_scope: $scope,
 		  window: {start: $window_start, spent: $spent,
@@ -673,7 +788,7 @@ else
 	# and the table below it describing the same set of pull requests.
 	total=$((${#UNREVIEWED[@]} + ${#STALE[@]} + ${#REQUESTED[@]} + ${#SKIPPED[@]} + ${#IGNORED[@]}))
 
-	echo "review-council status — ${REPO}  (accounts: ${VERDICT_SCOPE})"
+	echo "review-council status — ${REPO}${HEADER_HOST}  (accounts: ${VERDICT_SCOPE})"
 	printf '%s open · %s need review · %s requested · %s current · %s ignored\n' \
 		"$total" "$((${#UNREVIEWED[@]} + ${#STALE[@]}))" "${#REQUESTED[@]}" \
 		"${#SKIPPED[@]}" "${#IGNORED[@]}"
@@ -727,7 +842,7 @@ else
 		else
 			effort="$(effort_for "$pr")"
 		fi
-		row_pr+=("#${pr}")
+		row_pr+=("$(forge_pr_label "$pr")")
 		row_state+=("$state")
 		row_verdict+=("$verdict")
 		row_by+=("$by")

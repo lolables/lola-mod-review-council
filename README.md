@@ -341,25 +341,68 @@ per-agent tables, findings in collapsible sections — and **shows it to you and
 asks before sending** (say "post without asking" to skip the prompt). Re-reviews
 edit the same comment (matched by a hidden marker) instead of posting new ones.
 
-GitHub is supported via `gh`. When `gh` is absent or the forge is not GitHub,
-the comment body is rendered to a file and you post it manually — nothing is
-sent silently.
+GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
+gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is
+absent or the forge is neither, the comment body is rendered to a file and you
+post it manually — nothing is sent silently. GitLab cannot hide a note, so a
+superseded GitLab verdict keeps an "Obsolete" banner but stays expanded.
 
 On a re-review, that same marker also tells Prepare where the council's prior
 verdict landed: it fetches PR conversation replies posted since then so the
 Disposition step (below) can triage maintainer follow-up against the surviving
-findings. GitHub only today, behind the forge seam — see [the pipeline
+findings. On GitLab those replies are the merge request's notes; GitLab
+approvals and review threads are not imported. See [the pipeline
 reference](docs/dev/pipeline.md) for what Disposition does with that
 conversation.
 
 ### Reviewing PRs you haven't checked out
 
-When you review a GitHub PR by number or URL and are not already on that
-branch, the council materializes the PR head (a blobless partial clone, shallow
-fallback) into a per-repo cache under `$XDG_CACHE_HOME/review-council/clones/`
-so reviewers read real files instead of only the diff. Your working tree is
-never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
-(default 10) repositories.
+When you review a GitHub PR or GitLab merge request by number or URL and are
+not already on that branch, the council materializes the PR head into a
+per-repo cache under `$XDG_CACHE_HOME/review-council/clones/` so reviewers read
+real files instead of only the diff. Your working tree is never touched. The
+cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX` (default 10)
+repositories. Each review reads a tree of its own under `clones/.runs/`; those
+trees, from both forges together, are kept for up to six hours and only the
+newest `REVIEW_COUNCIL_MAX_RUN_TREES` (default 8; `0` keeps only the current
+review's tree). Re-run a review rather than resuming one older than that.
+
+- **GitHub:** a blobless partial clone, with a shallow fallback. Cloning never
+  prompts for credentials: a private repository needs `gh` (github.com) or a
+  configured git credential helper. The clone is shared, but each review checks
+  the pull request's head out into a tree of its own under `clones/.runs/`, as
+  GitLab's reviews do, so concurrent reviews of one repository do not disturb
+  each other.
+  Committed symbolic links are written as plain files holding their target
+  text, so no reviewer reads through one; if a live link survives anyway, the
+  review falls back to the diff. Your own checkout is not reviewed in place
+  when it tracks a link leading out of the repository: the cached copy is
+  reviewed instead.
+- **GitLab:** the repository archive at the merge request's head commit,
+  downloaded through `glab` with the credentials glab holds for that host, so a
+  private project works wherever `glab auth login` has been run. Every file the
+  merge request changes is then fetched exactly, so `.gitattributes` cannot hide
+  or rewrite it. Archives naming paths outside their own tree are refused, and
+  every symbolic link, hard link and special file in the extracted tree is
+  deleted so no reviewer reads a file outside it; a finding on a file the merge
+  request commits as a symlink therefore cannot be verified. The cache keeps
+  the archive; each review unpacks a copy of its own under `clones/.runs/`, so
+  concurrent reviews of one project do not disturb each other. Oversized
+  archives fall back to the diff: the caps are `REVIEW_COUNCIL_ARCHIVE_MAX_BYTES`
+  (default 200 MiB), `REVIEW_COUNCIL_ARCHIVE_MAX_UNPACKED_BYTES` (2 GiB),
+  `REVIEW_COUNCIL_ARCHIVE_MAX_ENTRIES` (200000) and
+  `REVIEW_COUNCIL_MAX_CHANGED_FILES` (300). A cap of `0` is accepted:
+  `REVIEW_COUNCIL_MAX_CHANGED_FILES=0` makes every merge request fall back to
+  diff-only review.
+
+Whatever the forge, a change that adds or retargets a symlink leading out of
+the repository gets a HIGH finding from the built-in symlink check, shown as
+"🔗 Symlink check", whatever the reviewers conclude. Renames and chains through
+other links in the pull request's tree are judged too; when the forge cannot
+list that tree whole (more than `REVIEW_COUNCIL_MAX_HEAD_LINKS` links, default
+500), the check judges the diff alone and says so in its output.
+
+When materialization fails, the review falls back to the diff.
 
 ### Reviewing a whole repository at once
 
@@ -367,7 +410,12 @@ never touched. The cache keeps the newest `REVIEW_COUNCIL_CLONE_CACHE_MAX`
 rather than one at a time — classifying each PR's effort tier, skipping ones
 already reviewed at their current head, and dropping dependency-bot PRs before
 they cost anything. It is an operator tool you run from a clone of this
-repository; the module does not ship it.
+repository; the module does not ship it. It reviews GitLab merge requests too,
+through `glab`, on gitlab.com or any self-hosted host `glab` is logged in to:
+
+```bash
+./scripts/review-open-prs.sh https://gitlab.example.org/group/sub/project/-/merge_requests/7
+```
 
 See **[Batch-reviewing every open PR](docs/batch-reviewing-prs.md)** for the
 queue-admission rules, the tuning variables, the confirmation prompt, and how to

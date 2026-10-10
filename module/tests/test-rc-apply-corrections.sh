@@ -192,6 +192,38 @@ assert_json_field "$result" "status" "nothing_to_do" "no correctable findings le
 unchanged "$d" "$after" "findings.json unchanged on re-run"
 rm -rf "$d"
 
+echo "Test 9: a corrected CRITICAL at the symlink check's line does not absorb its HIGH (RC-076)"
+# The chain a reviewer proved: the check's HIGH is verified, a reviewer files a
+# CRITICAL on the same link with a bad quote, and the correction round fixes the
+# quote. It verifies, because the link checks out as a plain file holding its
+# target text. This round re-runs dedup over every verified finding, where the
+# more severe duplicate survives whole, so the HIGH lived on only as a credit on
+# the CRITICAL — and validation may retract a reviewer's CRITICAL.
+d=$(mktemp -d)
+mkdir -p "$d/session/verdicts/_meta" "$d/root"
+printf '/etc/passwd' >"$d/root/leak"
+cat >"$d/session/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"rc-check-symlinks","severity":"HIGH","file":"leak","line":1,
+  "evidence":"/etc/passwd","description":"d1","recommendation":"r1","verdict":"REQUEST CHANGES",
+  "status":"verified","provenance":{"validator":{"result":"SCRIPT","reason":"script"}}}],
+ "correctable":[
+ {"id":"F2","agent":"divisor-adversary-code","severity":"CRITICAL","file":"leak","line":1,
+  "evidence":"/etc/shadow","description":"d2","recommendation":"r2","verdict":"REQUEST CHANGES",
+  "status":"correctable","reason":"EVIDENCE_NOT_FOUND","provenance":{}}],
+ "stripped":[],
+ "total_findings":2,"duplicates_consolidated":0,"verdicts":{}}
+FJ
+corrections "$d" '{"results":[{"id":"F2","outcome":"CORRECTED","evidence":"/etc/passwd"}]}'
+result=$(apply "$d")
+assert_json_field "$result" "status" "ok" "the correction applies"
+assert_jq "$d/session/verdicts/findings.json" '[.verified[] | select(.id == "F1") | .provenance.validator.result] | join(",")' "SCRIPT" \
+	"the script HIGH is still verified, still final"
+assert_jq "$d/session/verdicts/findings.json" '[.verified[].provenance.consolidated_from[]? | select(.agent == "rc-check-symlinks")] | length' "0" \
+	"no finding carries the script HIGH as a credit"
+assert_jq "$d/session/verdicts/findings.json" '.duplicates_consolidated' "0" "nothing is counted as merged"
+rm -rf "$d"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

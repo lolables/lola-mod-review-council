@@ -59,6 +59,12 @@ fi
 	echo "Forge:        ${forge}"
 	echo "Owner:        ${forge_owner:-none}"
 	echo "Repo:         ${forge_repo:-none}"
+	echo "Host:         ${forge_host:-none}"
+	# The PR/MR head commit the forge reported: the commit the posted marker
+	# names (rc-render-comment.sh), whatever review_root holds. Written before
+	# the PR line, whose title is the PR author's text: rc_parse_kv reads the
+	# first match, so nothing after this line can stand in for it.
+	echo "Head SHA:     ${pr_head_sha:-none}"
 	if [[ -n "$pr_number" ]]; then
 		echo "PR:           #${pr_number} \"${pr_title}\" (${pr_url})"
 	else

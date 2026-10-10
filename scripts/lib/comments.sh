@@ -39,6 +39,16 @@ MARKER_OPEN='<!-- review-council:marker sha='
 # not by the council, not by the next person to read the thread.
 RATE_MARKER_OPEN='<!-- review-council:rate-limited until='
 
+# The comments this account authored that carry a live verdict marker, as a jq
+# prefix (leaves an array on the stream). Shared so that council_verdict_for and
+# council_verdict_body_for can never pick different comments as "newest".
+# shellcheck disable=SC2016 # a jq program; $open is jq's variable, not the shell's.
+_VERDICTS_BY_SELF_JQ='[ .comments[]?
+	| select(.viewerDidAuthor // false)
+	| select((.isMinimized // false) | not)
+	| select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
+] | '
+
 # council_verdict_for <comments-json> -> "<sha>\t<createdAt>" of the newest
 # verdict THIS account posted, or empty when there is none.
 #
@@ -49,18 +59,31 @@ RATE_MARKER_OPEN='<!-- review-council:rate-limited until='
 # and a trailing \r defeats both startswith() on a marker and the anchored
 # request match in rereview_requests_for.
 council_verdict_for() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" '
-		[ .comments[]?
-		  | select(.viewerDidAuthor // false)
-		  | select((.isMinimized // false) | not)
-		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
-		] | sort_by(.createdAt) | last as $v
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" "${_VERDICTS_BY_SELF_JQ}"'
+		sort_by(.createdAt) | last as $v
 		| if $v == null then "" else
 		    (($v.body | gsub("\r"; "") | split("\n") | map(select(startswith($open))) | last
 		      | ltrimstr($open) | split(" ")[0] | split("-->")[0])) as $sha
 		    | [$sha, $v.createdAt] | @tsv
 		  end
 	' 2>/dev/null || true
+}
+
+# council_verdict_body_for <comments-json> -> a checksum of the body of the
+# newest verdict THIS account posted, or empty when there is none.
+#
+# The completion check needs it because the poster edits a verdict in place when
+# the head has not moved: sha and createdAt then stay put, and only the body
+# changes. gh's comment JSON carries no last-edited stamp (only a boolean,
+# includesCreatedEdit), and GitLab's updated_at is not part of the normalised
+# shape, so the body is the one signal both forges share.
+council_verdict_body_for() {
+	local body
+	body="$(printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" "${_VERDICTS_BY_SELF_JQ}"'
+		sort_by(.createdAt) | last | if . == null then "" else .body end
+	' 2>/dev/null)" || return 0
+	[[ -n "$body" ]] || return 0
+	printf '%s' "$body" | cksum
 }
 
 # council_verdict_any_for <comments-json> <scope> ->

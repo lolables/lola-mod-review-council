@@ -145,7 +145,7 @@ to the format gate and the correction round.
 
 **When `rc-verify-evidence.sh` returns `status: "nothing_to_do"`**, it never
 reached the verification loop: the session directory is missing, `verdicts/`
-is missing, no `divisor-*.json` verdict file was found, or the review root
+is missing, no reviewer (`divisor-*.json`) or script (`rc-check-symlinks.json`) verdict file was found, or the review root
 does not resolve. All four sites return before `findings.json` is written, so
 there is no findings file — and Steps 1-4 and Step 6 below do not run, because
 there is nothing to correct, calibrate, consolidate, validate, or upgrade.
@@ -212,7 +212,7 @@ It short-circuits with:
 ```json
 { "status": "extract_error", "valid": 3,
   "invalid": [ { "agent": "...",
-  "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "AGENT_MISMATCH",
+  "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "AGENT_MISMATCH" | "RESERVED_AGENT",
   "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
@@ -232,11 +232,15 @@ coupling itself. Do not conflate the two: validating a `VERDICT_INCOHERENT`
 block against the schema by hand will show it passing. `AGENT_MISMATCH` means
 the block's `agent` names a different reviewer than its file does — usually
 one reviewer's response written to another's path, which would otherwise
-count the first twice and lose the second without a trace.
+count the first twice and lose the second without a trace. `RESERVED_AGENT`
+means a `rc-check-symlinks.raw.md` exists somewhere under `verdicts/`. That
+name belongs to the symlink check, which `rc-check-symlinks.sh` writes as
+`verdicts/rc-check-symlinks.json` directly; no reviewer writes it, so the file
+is never extracted. Delete it and re-run the extractor — nothing is re-dispatched.
 
 The one-round re-dispatch (remediation text plus, when present, that agent's
-`invalid[].detail` — set for `SCHEMA_INVALID`, `VERDICT_INCOHERENT` and
-`AGENT_MISMATCH`, absent
+`invalid[].detail` — set for `SCHEMA_INVALID`, `VERDICT_INCOHERENT`,
+`AGENT_MISMATCH` and `RESERVED_AGENT`, absent
 for `NO_JSON_BLOCK` — then re-run the extractor) happens in the Delegation
 phase — see
 `phases/delegate.md` — "Verdict Collection". By the time this phase starts,
@@ -355,6 +359,8 @@ let the correction-round rules decide each finding's fate.
 ## Step 2 — Severity Calibration
 
 **Effort gate:** If effort is `quick`, skip this step entirely.
+
+**Script findings are not calibrated.** Findings marked `provenance.validator.result: "SCRIPT"` (the `rc-check-symlinks` check's) were computed from the diff by a script; leave their severity as filed.
 
 For each **verified** finding (verified mechanically or upgraded during correction round), compare assigned severity against severity pack boundary definitions:
 
@@ -518,6 +524,8 @@ prompt — append:
 > {JSON contents of subsystems.json}
 
 After deduplication, dispatch fresh-context sub-agent for independent validation. Agent has NOT participated in any prior review phase — sees only surviving findings with access to source files.
+
+Do not send `rc-check-symlinks` findings to the validator. `rc-verify-evidence.sh` marks them `provenance.validator.result: "SCRIPT"` — that mark, not the agent name, is what identifies them — and `rc-apply-validation.sh` rejects any outcome for them as `ALREADY_FINAL`.
 
 ### Agent Profile
 
@@ -688,7 +696,7 @@ Format:
 {consolidated findings}
 
 === VALIDATION GATE ===
-{per-finding validator result: CONFIRMED/CORRECTED/RETRACTED/UNVALIDATED,
+{per-finding validator result: CONFIRMED/CORRECTED/RETRACTED/UNVALIDATED/SCRIPT,
  plus each rejected outcome as id:reason (UNKNOWN_ID, DISPUTED, ...)}
 
 === SUMMARY ===

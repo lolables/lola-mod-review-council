@@ -30,6 +30,11 @@ set -uo pipefail
 changeset_files=""
 diff_content=""
 has_diff=false
+# diff.patch must be git's plain format with a/ b/ prefixes whatever the
+# operator configured: color.diff=always, diff.external, diff.mnemonicPrefix,
+# diff.noprefix, diff.relative or a textconv driver would each hide a symlink
+# section from rc-check-symlinks.sh, or name it at the wrong path.
+git_diff_plain=(diff --no-color --no-ext-diff --no-textconv --no-relative --src-prefix=a/ --dst-prefix=b/)
 
 if [[ "$mode" == "code" ]]; then
 	if [[ "$input_type" == "all" ]] || $rc_no_git; then
@@ -160,7 +165,7 @@ if [[ "$mode" == "code" ]]; then
 	elif [[ "$input_type" == "ref_range" ]]; then
 		require_resolvable_range "$input_value"
 		changeset_files=$(git diff --name-only "$input_value" -- 2>/dev/null || echo "")
-		diff_content=$(git diff "$input_value" -- 2>/dev/null || echo "")
+		diff_content=$(git "${git_diff_plain[@]}" "$input_value" -- 2>/dev/null || echo "")
 		has_diff=true
 	else
 		# Local repo: base...HEAD + uncommitted (input_type == "auto" with code mode)
@@ -174,8 +179,8 @@ if [[ "$mode" == "code" ]]; then
 
 			changeset_files=$(git diff --name-only "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
 			changeset_files+=$'\n'$(git diff --name-only HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
-			diff_content=$(git diff "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
-			diff_content+=$'\n'$(git diff HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			diff_content=$(git "${git_diff_plain[@]}" "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git "${git_diff_plain[@]}" HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
 
 			# An entry naming an existing FILE is a target in its own right,
 			# taken from disk whatever git makes of it — untracked, ignored, or
@@ -220,8 +225,8 @@ if [[ "$mode" == "code" ]]; then
 			# Diffing the working tree against HEAD, not the index, is what
 			# includes staged changes: plain `git diff` saw unstaged edits only.
 			changeset_files+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
-			diff_content=$(git diff "${base_branch}...HEAD" 2>/dev/null || echo "")
-			diff_content+=$'\n'$(git diff HEAD 2>/dev/null || echo "")
+			diff_content=$(git "${git_diff_plain[@]}" "${base_branch}...HEAD" 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git "${git_diff_plain[@]}" HEAD 2>/dev/null || echo "")
 		fi
 		has_diff=true
 	fi
@@ -252,7 +257,7 @@ if [[ "$mode" == "code" ]]; then
 			# Re-generate diff for filtered paths only
 			if [[ "$input_type" == "ref_range" ]]; then
 				IFS=',' read -ra filter_paths <<<"$scope_dir"
-				diff_content=$(git diff "$input_value" -- "${filter_paths[@]}" 2>/dev/null || echo "")
+				diff_content=$(git "${git_diff_plain[@]}" "$input_value" -- "${filter_paths[@]}" 2>/dev/null || echo "")
 			fi
 		fi
 	fi
@@ -331,12 +336,12 @@ else
 		local_range="${input_value:-${base_branch}...HEAD}"
 		require_resolvable_range "$local_range"
 		changed=$(git diff --name-only "$local_range" -- 2>/dev/null || echo "")
-		diff_content=$(git diff "$local_range" -- 2>/dev/null || echo "")
+		diff_content=$(git "${git_diff_plain[@]}" "$local_range" -- 2>/dev/null || echo "")
 		if [[ -z "$input_value" ]]; then
 			# `--scope changed` promises staged and unstaged work too, as in
 			# code mode.
 			changed+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
-			diff_content+=$'\n'$(git diff HEAD 2>/dev/null || echo "")
+			diff_content+=$'\n'$(git "${git_diff_plain[@]}" HEAD 2>/dev/null || echo "")
 		fi
 		while IFS= read -r file; do
 			[[ -z "$file" ]] && continue

@@ -3,9 +3,56 @@
 # review-open-prs.sh
 #
 # Run the Claude Code `/review-council` command against the pull requests of a
-# GitHub repository that need attention — either every open PR, or a single PR
-# you name. The target repository and PR are resolved from the arguments and the
-# current directory, so the script is not tied to any one project.
+# GitHub repository, or the merge requests of a GitLab project, that need
+# attention — either every open one, or a single one you name. The target
+# repository and PR are resolved from the arguments and the current directory,
+# so the script is not tied to any one project. Below, "PR" covers a GitLab
+# merge request (MR) too unless a paragraph says otherwise.
+#
+# Forges:
+#
+# GitHub is reached through gh, GitLab through glab. Only GitLab hosts
+# present in glab's config are contacted; any other is refused, so
+# credentials are never sent to it. Add one with
+# `glab auth login --hostname <host>` (non-interactively,
+# `--stdin < tokenfile`); an instance served on a port also takes
+# `--api-host <host>:<port>` and is then named without it.
+#
+# glab's default host is the first of GITLAB_API_HOST, GITLAB_HOST,
+# GITLAB_URI and GL_HOST that is set and non-empty, else gitlab.com. An
+# environment token (GITLAB_TOKEN, GITLAB_ACCESS_TOKEN or OAUTH_TOKEN) is
+# only used for the host it belongs to, that default host; any other host
+# uses its own `glab auth login`. GITLAB_API_HOST and
+# GLAB_ENABLE_CI_AUTOLOGIN are never passed to glab: both redirect a call
+# away from the host it names.
+# With none of those four variables set, an environment token is
+# therefore bound to gitlab.com, and a self-hosted instance needs its own
+# `glab auth login --hostname <host>`.
+#
+# The forge is chosen from a PR/MR URL argument, else from --forge/--host, else
+# from the origin remote of the current directory: github.com is GitHub;
+# gitlab.com, or glab's default host, is GitLab. An SSH host alias
+# (git@github-work:o/r.git) counts as GitHub when gh confirms it names origin
+# on github.com. Any other host is refused until you pass --forge: --forge
+# gitlab then uses the remote's host, and --forge github targets github.com.
+# With no origin remote and no URL, --forge or --host, the run is GitHub
+# through gh, as it was before GitLab was supported.
+#
+# On GitLab the GitHub notions below map as follows:
+#
+#   * write permission  the Developer role or higher in the project.
+#   * approved          approved with at least one approver. GitLab reports an
+#                       MR with no approval rule as approved with no approvers,
+#                       and that is not counted.
+#   * collapsed verdict GitLab cannot collapse a note. To force a fresh review
+#                       of an MR already reviewed at head, delete the verdict
+#                       note, or make the line below, exactly and at column 0
+#                       (no leading spaces), the note's FIRST line:
+#
+# > **Obsolete.** Superseded by the [current Review Council verdict](<url>) for commit `<sha>`. <!-- review-council:obsolete -->
+#
+# A self-hosted GitLab project is handed to the council as its MR URL, which is
+# the form the council needs to find the instance.
 #
 # For each PR that needs review it invokes whichever agent CLI is installed:
 #
@@ -34,7 +81,7 @@
 # rules; it is never "no verification".)
 #
 # Effort tiering — so a one-line bump does not pay for a 25-agent deep review:
-# each queued PR is classified from its GitHub metadata and the matching effort
+# each queued PR is classified from its forge metadata and the matching effort
 # word is passed to the council. This is the deterministic half of a hybrid
 # design; the council was expected to gain its own cheap pre-review triage for
 # the ambiguous middle, which has not been built. Until it is, the middle tier
@@ -65,14 +112,14 @@
 #   <!-- review-council:marker sha=<full-head-sha> -->
 #
 # A PR is "already reviewed at head" when that marker's sha equals the PR's
-# current headRefOid. Three things have to hold before a comment counts as that
+# current head commit. Three things have to hold before a comment counts as that
 # review, because the marker above is public and anyone can type one:
 #
 #   * the marker starts a LINE, at column 0. GitHub's "Quote reply" copies it
 #     behind a "> " prefix, and a finding's evidence can quote a sha= of its own.
-#   * the comment was authored by the account gh is authenticated as.
+#   * the comment was authored by the account gh (or glab) is authenticated as.
 #   * the comment is not collapsed. Collapsing a verdict on GitHub is therefore
-#     a way to force a fresh review of that PR by hand.
+#     a way to force a fresh review of that PR by hand (on GitLab, see Forges).
 #
 # A marker posted by any other account is named in the plan output and the PR is
 # reviewed anyway: a token that rotated between runs and a forged marker look
@@ -94,8 +141,9 @@
 # review costs, and a requester does not choose it.
 #
 # A request is honoured only from an account with admin or write permission on
-# the repository. Requests are money, and an unreadable permission answer is
-# refused rather than assumed — the one lookup in this script that fails closed.
+# the repository (on GitLab, the Developer role or higher). Requests are
+# money, and an unreadable permission answer is refused rather than assumed —
+# the one lookup in this script that fails closed.
 #
 # --requests-per-hour <n> caps how many requested re-reviews a run will admit,
 # counting every verdict this account posted in the trailing hour. Requests are
@@ -113,12 +161,13 @@
 # Renovate, in both their GitHub App and self-hosted commit-author forms.
 #
 # GitHub exposes no email on the pull request itself, so the addresses compared
-# are the commit authors' (.commits[].authors[].email), matched case-
-# insensitively against the whole address. A PR is ignored only when it has at
-# least one commit author and EVERY one of them is on the list: a Renovate
+# are the commit authors' (.commits[].authors[].email; on GitLab, each MR
+# commit's author_email), matched case-insensitively against the whole
+# address. A PR is ignored only when it has at least one commit author and
+# EVERY one of them is on the list: a Renovate
 # branch that someone has pushed a fix onto contains human work and comes back
 # for review. The at-least-one requirement also keeps an authorship lookup that
-# returns nothing from being vacuously true — a transient gh failure fails open
+# returns nothing from being vacuously true — a transient CLI failure fails open
 # to reviewing, as everywhere else here.
 #
 # The list is batch triage, so it does not apply to a PR you name explicitly:
@@ -137,9 +186,10 @@
 #
 # The value read is GitHub's own reviewDecision, and only APPROVED counts:
 # CHANGES_REQUESTED and REVIEW_REQUIRED both mean the PR is still waiting on
-# someone, and a PR with no decision at all has been approved by nobody. A
-# lookup that cannot be read is not an approval either, so it fails open to
-# reviewing like every other per-PR lookup here.
+# someone, and a PR with no decision at all has been approved by nobody. On
+# GitLab the value read is the MR's approval state, counted only with at least
+# one approver (see Forges). A lookup that cannot be read is not an approval
+# either, so it fails open to reviewing like every other per-PR lookup here.
 #
 # It is off by default and has no environment default, because an approval says
 # what should happen to a PR rather than that this council has looked at it.
@@ -156,9 +206,9 @@
 # not invoke claude or post anything. Pass --run to execute.
 #
 # --run alone is not enough. Every review ends in a public comment on someone
-# else's pull request, posted by the account gh is authenticated with, so --run
-# describes the GitHub edits it is about to make and waits for you to type
-# "yes" against the queue you were just shown. Anything else — including no
+# else's pull request, posted by the account gh or glab is authenticated with,
+# so --run describes the forge edits it is about to make and waits for you to
+# type "yes" against the queue you were just shown. Anything else — including no
 # answer at all, as under cron or a closed stdin — aborts without posting.
 # Pass --yes (alias --no-confirm) to give that consent up front instead.
 #
@@ -168,6 +218,10 @@
 #   ./review-open-prs.sh 123 --run              # review only PR #123 (current repo)
 #   ./review-open-prs.sh https://github.com/owner/name/pull/123 --run  # by URL
 #   ./review-open-prs.sh --repo owner/name --run                       # a different repo
+#   ./review-open-prs.sh https://gitlab.com/group/project/-/merge_requests/7 --run
+#                                               # a single GitLab MR, by URL
+#   ./review-open-prs.sh --host git.example.org --repo group/sub/project --run
+#                                               # self-hosted (--host implies GitLab)
 #   ./review-open-prs.sh --force --run          # also re-review unchanged PRs
 #   ./review-open-prs.sh --effort deep --run    # force deep on every PR (old behavior)
 #   ./review-open-prs.sh --run --yes            # unattended: no confirmation prompt
@@ -178,11 +232,15 @@
 #   ./review-open-prs.sh --requests-per-hour 3 --run  # admit at most 3 requests/hour
 #
 # Target selection:
-#   * A positional argument may be a PR number (123) or a GitHub PR URL. Either
-#     restricts the run to that single PR; a URL also sets the repository.
-#   * The repository is taken from, in order: a PR URL argument, --repo, then the
-#     GitHub remote of the current directory. Run inside a checkout, or pass one
-#     of the first two, to target any repository from anywhere.
+#   * A positional argument may be a PR/MR number (123), a GitHub PR URL or a
+#     GitLab MR URL. Each restricts the run to that single PR; a URL also sets
+#     the forge, host and repository.
+#   * The repository is taken from, in order: a PR/MR URL argument, --repo, then
+#     the origin remote of the current directory. Run inside a checkout, or pass
+#     one of the first two, to target any repository from anywhere.
+#   * The forge and host are taken from a URL, else --forge github|gitlab and
+#     --host <gitlab-host>, else the origin remote (see Forges). --host implies
+#     --forge gitlab.
 #
 # Watching a run:
 #
@@ -195,7 +253,8 @@
 #
 #   14:02:31 → Task divisor-adversary-code
 #   14:02:33   Dispatching 5 reviewers over 2 subsystems.
-#   14:41:08 done — $8.23, 57 turns
+#   14:41:08 turn ended — $8.23 so far, 57 turns
+#   PR #42: done.
 #
 # The log itself stays machine-readable, so a finished run can be re-read for
 # whatever the terminal did not show:
@@ -203,6 +262,8 @@
 #   jq -Rr 'fromjson? | select(.type=="assistant") | .message.content[]?
 #           | select(.type=="tool_use") | .name' \
 #      .review-council-logs/<owner>-<repo>-pr-<n>.log
+#
+# A GitLab log is prefixed with its host as well: <host>-<group>-<project>-pr-<n>.log.
 #
 # -R because stderr is merged into the same file and is not JSON; reading the
 # log as a JSON stream stops at the first diagnostic in it.
@@ -234,8 +295,16 @@
 #                       and Renovate list rather than extending it; set it to
 #                       the empty string to consider every PR. --ignore-email
 #                       appends to whichever list is in effect.
+#   GITLAB_HOST         With GITLAB_API_HOST, GITLAB_URI and GL_HOST, names
+#                       glab's default host (see Forges). That host marks an
+#                       origin remote on it as GitLab, and is the default
+#                       --host when nothing else names one. Each review's
+#                       agent CLI runs with GITLAB_HOST set to the resolved
+#                       GitLab host, the other three and
+#                       GLAB_ENABLE_CI_AUTOLOGIN removed, and glab's
+#                       environment tokens only if they belong to that host.
 #
-# Requirements: gh (authenticated), jq, and one of claude or opencode.
+# Requirements: gh or glab (authenticated), jq, and one of claude or opencode.
 
 # Below the blank line above, and so out of `usage`, which prints the header
 # verbatim up to that point — a lint directive is not help text.
@@ -287,14 +356,18 @@ trap "$ERR_TRAP" ERR
 # shellcheck source=scripts/lib/comments.sh
 source "$LIB_DIR/comments.sh"
 
+# shellcheck source=scripts/lib/target.sh
+source "$LIB_DIR/target.sh"
 # shellcheck source=scripts/lib/prs.sh
 source "$LIB_DIR/prs.sh"
 
-REPO=""   # owner/name; resolved below from URL arg, --repo, or the CWD repo
-TARGET="" # positional PR number or URL; empty => review all open PRs
+FORGE=""      # --forge; empty => resolve_target works it out
+FORGE_HOST="" # --host; empty => resolve_target works it out
+REPO=""       # project path; resolved below from URL arg, --repo, or the CWD repo
+TARGET=""     # positional PR number or URL; empty => review all open PRs
 RUN=0
 FORCE=0
-YES=0 # consent to the GitHub edits given up front, so --run does not prompt
+YES=0 # consent to the forge edits given up front, so --run does not prompt
 FORCE_EFFORT=""
 FORCE_CLI=""      # --cli; empty => detect, preferring claude
 IGNORE_APPROVED=0 # --ignore-approved; read by classify_prs
@@ -308,7 +381,7 @@ LOG_DIR="./.review-council-logs"
 # cost" are printed; the rest are dropped rather than scrolled past.
 # A result event closes a turn, not the run: the orchestrator ends a turn to wait
 # on background reviewers, so one run can emit several. Completion is reported
-# from the exit code after the pipeline returns.
+# after the pipeline returns, from the exit code and the verdict it posted.
 PROGRESS_FILTER='
 def clip: if (. | length) > 100 then .[0:100] + "…" else . end;
 def stamp: (now | strflocaltime("%H:%M:%S"));
@@ -404,6 +477,28 @@ while [[ "$#" -gt 0 ]]; do
 		REPO="$2"
 		shift
 		;;
+	--forge)
+		[[ "$#" -ge 2 ]] || {
+			echo "--forge requires an argument (github|gitlab)" >&2
+			exit 2
+		}
+		case "$2" in
+		github | gitlab) FORGE="$2" ;;
+		*)
+			echo "--forge must be one of: github, gitlab" >&2
+			exit 2
+			;;
+		esac
+		shift
+		;;
+	--host)
+		[[ "$#" -ge 2 ]] || {
+			echo "--host requires an argument (a GitLab hostname)" >&2
+			exit 2
+		}
+		FORGE_HOST="$2"
+		shift
+		;;
 	-h | --help)
 		usage
 		exit 0
@@ -425,7 +520,31 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # ---- Preconditions ---------------------------------------------------------
-require_commands gh jq
+require_commands jq
+
+# ---- Resolve the forge, host and (optional) single PR ----------------------
+# Before the forge's own CLI is required, because which CLI that is depends on
+# the answer.
+resolve_target "$TARGET"
+# How this forge and its CLI are named in what the operator reads. A PR's own
+# label ("#12" / "!12") comes from the adapter's forge_pr_label.
+if [[ "$FORGE" = "gitlab" ]]; then
+	FORGE_NAME="GitLab"
+	FORGE_CLI="glab"
+	PR_NOUN="MR"
+	PR_NOUN_LONG="merge request"
+else
+	FORGE_NAME="GitHub"
+	FORGE_CLI="gh"
+	PR_NOUN="PR"
+	PR_NOUN_LONG="pull request"
+fi
+require_commands "$FORGE_CLI"
+# The adapter is chosen at run time, so shellcheck is pointed at the GitHub one
+# as the representative: every adapter defines the same forge_* functions, and
+# that is the contract this script is checked against.
+# shellcheck source=scripts/lib/forge-github.sh
+source "$LIB_DIR/forge-${FORGE}.sh"
 
 # Pick the agent CLI that will run the council. --cli is a demand, not a
 # preference: falling back to the other host would silently change which models
@@ -462,13 +581,12 @@ if [[ "$AGENT_CLI" = "opencode" ]] && [[ -n "${MAX_BUDGET_USD:-}" ]]; then
 	exit 2
 fi
 
-gh auth status >/dev/null 2>&1 || {
-	echo "gh is not authenticated. Run 'gh auth login' (or set GITHUB_TOKEN)." >&2
-	exit 1
-}
+forge_auth_check
+# After the auth check: without --repo the project is asked of the forge CLI,
+# and a logged-out one would surface as "repository unknown" instead.
+resolve_project
 
-# ---- Resolve target repository and (optional) single PR, then collect PRs --
-resolve_target "$TARGET"
+# ---- Collect PRs -----------------------------------------------------------
 
 # collect_prs reports through its exit status, and the `|| collect_rc=$?` is
 # what makes that status readable: errexit does not reach into the command
@@ -485,17 +603,18 @@ prs_raw="$(collect_prs)" || collect_rc=$?
 case "$collect_rc" in
 0) ;;
 1)
-	echo "PR #${TARGET_PR} not found in ${REPO}." >&2
+	pr_name="${PR_NOUN} $(forge_pr_label "$TARGET_PR")"
+	echo "${pr_name} not found in ${REPO}." >&2
 	exit 1
 	;;
 *)
-	echo "Could not list the open pull requests in ${REPO}." >&2
-	echo "The lookup failed, which is not the same as there being nothing to review; no PRs were queued." >&2
+	echo "Could not list the open ${PR_NOUN_LONG}s in ${REPO}." >&2
+	echo "The lookup failed, which is not the same as there being nothing to review; no ${PR_NOUN}s were queued." >&2
 	exit 1
 	;;
 esac
 if [[ -z "$prs_raw" ]]; then
-	echo "No open pull requests found in ${REPO}."
+	echo "No open ${PR_NOUN_LONG}s found in ${REPO}."
 	exit 0
 fi
 
@@ -558,6 +677,7 @@ done
 
 # ---- Report the plan -------------------------------------------------------
 echo "Repository: ${REPO}"
+echo "Forge: ${FORGE} (${FORGE_HOST})"
 echo "Agent CLI: ${AGENT_CLI}"
 echo "Unreviewed: ${UNREVIEWED[*]:-(none)}"
 echo "Re-review (new commits): ${STALE[*]:-(none)}"
@@ -599,13 +719,13 @@ echo
 if [[ "${#QUEUE[@]}" -eq 0 ]]; then
 	echo "Nothing to review."
 	if [[ "${#SKIPPED[@]}" -gt 0 ]]; then
-		echo "(${#SKIPPED[@]} PR(s) already reviewed at head; pass --force to re-review.)"
+		echo "(${#SKIPPED[@]} ${PR_NOUN}(s) already reviewed at head; pass --force to re-review.)"
 	fi
 	if [[ "${#IGNORED[@]}" -gt 0 ]]; then
-		echo "(${#IGNORED[@]} PR(s) skipped by author email; pass --no-ignore-emails to review them.)"
+		echo "(${#IGNORED[@]} ${PR_NOUN}(s) skipped by author email; pass --no-ignore-emails to review them.)"
 	fi
 	if [[ "${#IGNORED_APPROVED[@]}" -gt 0 ]]; then
-		echo "(${#IGNORED_APPROVED[@]} PR(s) skipped as approved; drop --ignore-approved to review them.)"
+		echo "(${#IGNORED_APPROVED[@]} ${PR_NOUN}(s) skipped as approved; drop --ignore-approved to review them.)"
 	fi
 	exit 0
 fi
@@ -615,11 +735,11 @@ if [[ "$RUN" -eq 0 ]]; then
 	echo
 fi
 
-# ---- Confirm the GitHub edits ----------------------------------------------
-# A --run batch is not a local operation. Each PR is handed to claude with
-# permissions bypassed and a prompt telling the council to post without asking,
-# so the first visible sign of a wrong repository or an unintended queue is a
-# public comment on somebody else's pull request. Say so, then make the
+# ---- Confirm the forge edits -----------------------------------------------
+# A --run batch is not a local operation. Each PR is handed to the agent CLI
+# with permissions bypassed and a prompt telling the council to post without
+# asking, so the first visible sign of a wrong repository or an unintended queue
+# is a public comment on somebody else's pull request. Say so, then make the
 # operator type it out against the queue printed above.
 #
 # The answer is read from stdin rather than from a terminal the script demands:
@@ -627,19 +747,19 @@ fi
 # pipe — is not an answer, so the silent path aborts instead of posting.
 if [[ "$RUN" -eq 1 ]] && [[ "$YES" -eq 0 ]]; then
 	cat >&2 <<CONFIRM
-WARNING: this makes visible edits on GitHub.
+WARNING: this makes visible edits on ${FORGE_NAME}.
 
-Reviewing ${#QUEUE[@]} pull request(s) in ${REPO}, each handed to ${AGENT_CLI}
+Reviewing ${#QUEUE[@]} ${PR_NOUN_LONG}(s) in ${REPO}, each handed to ${AGENT_CLI}
 with permissions bypassed:
 
   ${CLI_BYPASS}
 
 and a prompt telling the council to post its verdict without asking. Expect a
-public review comment on every PR in the queue above, authored by the account
-gh is authenticated with, plus the API spend of each review.
+public review comment on every ${PR_NOUN} in the queue above, authored by the account
+${FORGE_CLI} is authenticated with, plus the API spend of each review.
 
 A re-review request the hourly cap could not admit also draws a short reply on
-its own pull request explaining the limit — at most one per pull request per
+its own ${PR_NOUN_LONG} explaining the limit — at most one per ${PR_NOUN_LONG} per
 hour, and only for requests that were authorised in the first place.
 
 Re-run without --run to see the plan alone, or with --yes to skip this prompt.
@@ -679,8 +799,11 @@ if [[ "$RUN" -eq 1 ]] && [[ "${#DEFERRED[@]}" -gt 0 ]]; then
 			printf 'The next slot opens at %s. Nothing to do — ask again after then.\n\n' "$NEXT_SLOT"
 			printf '%s%s -->\n' "$RATE_MARKER_OPEN" "$NEXT_SLOT"
 		} >"$decline_body"
-		gh pr comment "$pr" --repo "$REPO" --body-file "$decline_body" >/dev/null 2>&1 ||
-			echo "PR #${pr}: could not post the rate-limit reply; continuing." >&2
+		pr_name="${PR_NOUN} $(forge_pr_label "$pr")"
+		# shellcheck disable=SC2310 # A failed post is reported and the batch
+		# carries on; suspending errexit for this one call is the intent.
+		forge_post_comment "$pr" "$decline_body" ||
+			echo "${pr_name}: could not post the rate-limit reply; continuing." >&2
 		rm -f "$decline_body"
 	done
 fi
@@ -689,7 +812,8 @@ fi
 failures=()
 
 for pr in "${QUEUE[@]}"; do
-	pr_url="https://github.com/${REPO}/pull/${pr}"
+	pr_url="$(forge_pr_url "$pr")"
+	pr_name="${PR_NOUN} $(forge_pr_label "$pr")"
 	# standard effort omits the keyword so the council applies its default
 	# (and, upstream, its own triage); quick/deep pass the word explicitly.
 	case "${EFFORT[$pr]}" in
@@ -739,17 +863,50 @@ for pr in "${QUEUE[@]}"; do
 			cmd+=(${EXTRA_CLAUDE_ARGS})
 		fi
 	fi
+	# The council's own glab calls default to glab's default host, so it is
+	# pointed at the host forge_auth_check has just verified rather than
+	# whatever the operator's environment names: GITLAB_HOST is set, and the
+	# variables that outrank it (GITLAB_API_HOST) or stand behind it
+	# (GITLAB_URI, GL_HOST) are removed, with GLAB_ENABLE_CI_AUTOLOGIN, which
+	# redirects even explicit addressing. Setting GITLAB_HOST also binds glab's
+	# environment tokens to the host inside the council, so tokens that belong
+	# to another host are removed, as the adapter's _gl removes them from its
+	# own calls. The binding is judged on the operator's environment, which this
+	# script never alters. Through env(1), so the preview shows it too.
+	#
+	# The lists are glab-env.sh's. The local addition is every host variable
+	# but GITLAB_HOST: the shared list strips only GITLAB_API_HOST, because a
+	# lone glab call is addressed explicitly, while the council's calls fall
+	# back to the default host this sets.
+	if [[ "$FORGE" = "gitlab" ]]; then
+		agent_env=(env)
+		for var in "${GLAB_ENV_HOST_VARS[@]}" "${GLAB_ENV_STRIPPED_VARS[@]}"; do
+			[[ "$var" = "GITLAB_HOST" ]] || [[ " ${agent_env[*]} " = *" ${var} "* ]] || agent_env+=(-u "$var")
+		done
+		# shellcheck disable=SC2310 # a predicate; its status is the answer.
+		if ! glab_env_token_bound "$FORGE_HOST"; then
+			for var in "${GLAB_ENV_TOKEN_VARS[@]}"; do
+				agent_env+=(-u "$var")
+			done
+		fi
+		cmd=("${agent_env[@]}" "GITLAB_HOST=${FORGE_HOST}" "${cmd[@]}")
+	fi
 
 	if [[ "$RUN" -eq 0 ]]; then
-		printf 'PR #%s -> %s\n' "$pr" "$(printf '%q ' "${cmd[@]}")"
+		printf '%s -> %s\n' "$pr_name" "$(printf '%q ' "${cmd[@]}")"
 		continue
 	fi
 
 	# Namespace logs by repo so the same PR number in two repos does not collide.
+	# GitLab instances are many, so its logs are namespaced by host as well
+	# (resolve_target has held FORGE_HOST to a bare hostname).
 	repo_slug="${REPO//\//-}"
+	if [[ "$FORGE" = "gitlab" ]]; then
+		repo_slug="${FORGE_HOST}-${repo_slug}"
+	fi
 	mkdir -p "$LOG_DIR"
 	log="${LOG_DIR}/${repo_slug}-pr-${pr}.log"
-	echo "=== PR #${pr} : reviewing ${REPO} at ${EFFORT[$pr]} effort (log: ${log}) ==="
+	echo "=== ${pr_name} : reviewing ${REPO} at ${EFFORT[$pr]} effort (log: ${log}) ==="
 
 	# A failure on one PR must not abort the whole batch. Lift BOTH errexit and
 	# the ERR trap around the invocation: the trap fires on a failed pipeline
@@ -763,18 +920,41 @@ for pr in "${QUEUE[@]}"; do
 	trap "$ERR_TRAP" ERR
 
 	if [[ "$rc" -ne 0 ]]; then
-		echo "PR #${pr}: claude exited ${rc} (see ${log}); continuing with next PR." >&2
+		echo "${pr_name}: ${AGENT_CLI} exited ${rc} (see ${log}); continuing with next ${PR_NOUN}." >&2
 		failures+=("$pr")
-	else
-		echo "PR #${pr}: done."
+		continue
 	fi
+	# Exiting 0 is not posting: the council can decline, or stop short of the
+	# post. The run counts as done only when this account's newest verdict
+	# differs from the one the PR was classified on — compared against the
+	# forge's own record, never against a clock. A re-review of an unmoved head
+	# is posted by editing the verdict in place, which keeps its sha and
+	# createdAt, so the body is part of what is compared. The renderer stamps
+	# each run's session into the marker, so a completed re-review always
+	# changes the body; an unchanged one is no post at all, and is reported so.
+	after_json="$(forge_comments_for "$pr")"
+	if [[ -z "$after_json" ]]; then
+		echo "${pr_name}: could not read the comments to confirm a verdict was posted (see ${log}); continuing with next ${PR_NOUN}." >&2
+		failures+=("$pr")
+		continue
+	fi
+	verdict_before="$(council_verdict_for "${COMMENTS_JSON[$pr]:-}")"
+	verdict_after="$(council_verdict_for "$after_json")"
+	body_before="$(council_verdict_body_for "${COMMENTS_JSON[$pr]:-}")"
+	body_after="$(council_verdict_body_for "$after_json")"
+	if [[ -z "$verdict_after" ]] || { [[ "$verdict_after" == "$verdict_before" ]] && [[ "$body_after" == "$body_before" ]]; }; then
+		echo "${pr_name}: ${AGENT_CLI} exited 0 but posted no new or edited verdict (see ${log}); continuing with next ${PR_NOUN}." >&2
+		failures+=("$pr")
+		continue
+	fi
+	echo "${pr_name}: done."
 done
 
 # ---- Summary ---------------------------------------------------------------
 if [[ "$RUN" -eq 1 ]]; then
 	if [[ "${#failures[@]}" -gt 0 ]]; then
-		echo "Completed with ${#failures[@]} failed PR(s): ${failures[*]}" >&2
+		echo "Completed with ${#failures[@]} failed ${PR_NOUN}(s): ${failures[*]}" >&2
 		exit 1
 	fi
-	echo "All ${#QUEUE[@]} PR review(s) completed."
+	echo "All ${#QUEUE[@]} ${PR_NOUN} review(s) completed."
 fi

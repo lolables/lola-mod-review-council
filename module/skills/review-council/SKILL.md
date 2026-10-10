@@ -309,13 +309,14 @@ Script creates session directory, captures changeset and diff, discovers
 agents, detects forge/framework/language, fetches CI status, linked
 issues, prior reviews (if PR), initializes tracking file.
 
-**Review root / target materialization.** For `pr`/`url` scope on GitHub,
-rc-prepare.sh materializes the PR head (via `rc-clone-target.sh`) when the
-current working tree is not already that repo at that branch, and returns
+**Review root / target materialization.** For `pr`/`url` scope,
+rc-prepare.sh materializes the PR or MR head (via `rc-clone-target.sh`) when
+the current working tree is not already that repo at that branch, and returns
 `review_root` (the checkout path, or `.`). Reviewers and evidence verification
 read files under `review_root` (see `delegate.md` "Review root" and pass
 `REVIEW_ROOT` to `rc-verify-evidence.sh` in Step 4). When materialization is
-skipped (non-GitHub forge, missing `gh` for a private repo, or clone failure),
+skipped (a forge other than GitHub or GitLab, no credentials for a private
+repo, or clone failure),
 `review_root` stays `.` and review proceeds from the diff — note this to the
 user, since grounding is weaker.
 
@@ -892,6 +893,12 @@ claims about it change finding disposition. It exists
 only for re-reviews; a first-time review has no prior verdict to have drawn
 replies.
 
+The gate is enforced at render time: `rc-render-comment.sh` and both post
+scripts refuse with `status: "error"`, writing and posting nothing, when
+`pr-conversation.txt` and `verdicts/findings.json` exist, effort is not
+`quick`, and `verdicts/_meta/disposition.txt` is missing. On that error, run
+this phase, then render again.
+
 **Read `${PHASES_DIR}/disposition.md`** for the full procedure. Dispatch a
 single fresh-context subagent (has not seen prior review phases) using **the
 verbatim prompt from `disposition.md`'s "Step 3 — Subagent Prompt" section —
@@ -918,6 +925,7 @@ After the subagent returns:
   findings are upgraded to `APPROVE` per `verify.md` Step 6's logic. Only
   `resolved` removals count toward that check — `suppressed-low` removals are
   verdict-neutral and do NOT (`disposition.md` Step 4).
+- Findings marked `provenance.validator.result: "SCRIPT"` (from `rc-check-symlinks`) are never handed to the subagent and never moved.
 - Write `${session_dir}/verdicts/_meta/disposition.txt` as the audit trail
   (`disposition.md` Step 5).
 
@@ -961,14 +969,15 @@ reached, and the session is interactive — present the verified findings and as
 
 ### Step 6: REPORT
 
-**First, determine the council verdict** (`APPROVE`, `REQUEST CHANGES`, or
-`APPROVE WITH ADVISORIES`) per the "Final Verdict Determination" rules in
-`${PHASES_DIR}/report.md`, and write it as the first line of
-`${session_dir}/verdict.txt`. The finding set is final for this iteration by the
-time you get here — an accepted offer at the end of Step 5 returns to Step 3 and
-runs this step again, overwriting it. Both the report renderer and the
-PR-comment renderer read this one file, so the report and the posted comment can
-never disagree about the outcome.
+**First, run `${SCRIPTS_DIR}/rc-decide-verdict.sh ${session_dir}`.** It decides
+the council verdict (`APPROVE`, `REQUEST CHANGES`, or `APPROVE WITH
+ADVISORIES`) from the verified findings, per the rule in `${PHASES_DIR}/report.md`
+"Final Verdict Determination", and writes it to `${session_dir}/verdict.txt`. Do
+not decide or edit the verdict yourself: both renderers refuse a `verdict.txt`
+the findings do not decide. The finding set is final for this iteration by the
+time you get here — an accepted offer at the end of Step 5 returns to Step 3
+and runs this step again, which re-records it. On `nothing_to_do` (no
+`findings.json`), no verdict is recorded and no PR comment can be posted.
 
 **Then run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}` and
 save its stdout to `${session_dir}/report.md`.** The script renders
@@ -976,9 +985,11 @@ structured report template (tables, counts, findings list, verdict)
 from tracking and verification data, and leaves the eight markers named
 in the EXECUTION-CONTRACT for the next step to fill or delete — see
 `${PHASES_DIR}/report.md`, "How Sections Reach the Report", for which
-procedure owns each one. If `verdict.txt` is missing or empty the
-Council Verdict section renders as "not recorded" rather than guessing —
-treat that in a rendered report as a bug in this step, not a council outcome.
+procedure owns each one. The Council Verdict section renders as "not
+recorded" only for an empty review (no `findings.json`, so no `verdict.txt`);
+a missing `verdict.txt` beside a `findings.json`, or one the findings do not
+decide, is refused with "**Not rendered.**" — run `rc-decide-verdict.sh` and
+render again.
 
 **Then, read `${PHASES_DIR}/report.md`** for narrative synthesis
 and learnings extraction guidance.
@@ -1083,16 +1094,19 @@ there is nothing to post to and stop.
      confirmation or standing auto-send — never pre-emptively, never exported
      for the whole session.
    - If the script returns `status: rendered` with a "post manually" message
-     (`gh` absent or unsupported forge), relay the body and instruction to the
-     user instead of claiming it was posted.
+     (`gh`/`glab` absent or unsupported forge), relay the body and instruction
+     to the user instead of claiming it was posted.
    - If it returns `status: error` (the forge query, create, or update failed),
      tell the user the post did NOT succeed and why — never report a comment as
      created/updated when the script reported an error.
    - The action may be `created`, `updated`, or `unchanged` (same commit,
-     nothing changed); a `created` on a new commit also supersedes and hides the
-     prior commit's comment, every part of it. Relay the action and `superseded`
+     nothing changed); a `created` on a new commit also supersedes the prior
+     commit's comment, every part of it (banner-stamped, and hidden where the
+     forge can hide comments). Relay the action and `superseded`
      count faithfully. On a chained verdict the action summarises the whole
      chain, with per-part `created`/`updated`/`unchanged` counts alongside it.
+     A non-zero `retire_failed` (GitLab) means that many older verdicts could
+     not be marked obsolete and still read as current — tell the user.
 
 5. **Report the outcome**: state whether the comment was created, updated, or
    left for manual posting — and, when the verdict was split or trimmed, say

@@ -87,3 +87,7 @@ check_mutation "RC-1  consolidation ident scoping" \
 
 Anchor the expression tightly and keep it POSIX BRE — one that no longer matches
 is reported as `BROKEN` rather than silently counted as caught.
+
+Run `task test:mutate` before you push. Pull requests do not run it; CI runs it
+nightly against `main`. Changing code an entry's expression matches breaks that
+entry, so update the expression in the same commit.

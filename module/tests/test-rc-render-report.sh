@@ -62,6 +62,7 @@ cat >"$session/verdicts/findings.json" <<'EVIDENCE'
   "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
 }
 EVIDENCE
+echo "REQUEST CHANGES" >"$session/verdict.txt"
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 if echo "$result" | grep -q "Review Council"; then
@@ -283,6 +284,7 @@ cat >"$session/verdicts/findings.json" <<'FJ'
   "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
 }
 FJ
+echo "REQUEST CHANGES" >"$session/verdict.txt"
 printf '{ not json' >"$session/models.json"
 
 set +e
@@ -347,6 +349,7 @@ cat >"$session/verdicts/findings.json" <<'EVIDENCE'
   "verdicts": {"divisor-adversary-code": "REQUEST CHANGES"}
 }
 EVIDENCE
+echo "REQUEST CHANGES" >"$session/verdict.txt"
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 if echo "$result" | grep -q "untested failure path"; then
@@ -382,6 +385,7 @@ cat >"$session/verdicts/findings.json" <<'EVIDENCE'
   "verdicts": {"divisor-guard-code": null}
 }
 EVIDENCE
+echo "APPROVE" >"$session/verdict.txt"
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 row=$(echo "$result" | grep 'Guard (code)' || true)
 if echo "$row" | grep -q 'UNKNOWN'; then
@@ -398,8 +402,11 @@ rm -rf "$session"
 # with one, and the EXECUTION-CONTRACT forbids the orchestrator from
 # hand-writing report sections — so the verdict cannot be the orchestrator's
 # job to append.
-mk_verdict_session() { # verdict_txt_contents|"" -> prints session dir
-	local s
+# The optional severities become verified findings, so a fixture can hold the
+# verdict its findings decide (rc_verdict_refusal, RC-077).
+mk_verdict_session() { # verdict_txt_contents|"" [severity...] -> prints session dir
+	local s verdict_txt="$1"
+	shift
 	s=$(mktemp -d)
 	mkdir -p "$s/verdicts"
 	write_verification_log "$s"
@@ -413,20 +420,19 @@ mk_verdict_session() { # verdict_txt_contents|"" -> prints session dir
 - Base: main
 - Agents discovered: 1
 TRACKING
-	cat >"$s/verdicts/findings.json" <<'FJ'
-{
-  "verified": [], "correctable": [], "stripped": [],
-  "total_findings": 0, "duplicates_consolidated": 0,
-  "verdicts": {"divisor-guard-code": "REQUEST CHANGES"}
-}
-FJ
-	[[ -n "$1" ]] && printf '%s' "$1" >"$s/verdict.txt"
+	jq -n --args '{
+		verified: [$ARGS.positional[] | {agent: "divisor-guard-code", severity: ., title: "t", file: "auth.go", line: 1, evidence: "x", description: "d", recommendation: "r"}],
+		correctable: [], stripped: [],
+		total_findings: ($ARGS.positional | length), duplicates_consolidated: 0,
+		verdicts: {"divisor-guard-code": "REQUEST CHANGES"}
+	}' "$@" >"$s/verdicts/findings.json"
+	[[ -n "$verdict_txt" ]] && printf '%s' "$verdict_txt" >"$s/verdict.txt"
 	echo "$s"
 }
 
 echo "Test 8: council verdict rendered from verdict.txt (RC-5)"
 session=$(mk_verdict_session 'REQUEST CHANGES
-')
+' HIGH)
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 if echo "$result" | grep -q "^## Council Verdict$"; then
 	echo "  PASS: Council Verdict section present"
@@ -459,7 +465,7 @@ fi
 rm -rf "$session"
 
 echo "Test 9: APPROVE WITH ADVISORIES rendered verbatim"
-session=$(mk_verdict_session 'APPROVE WITH ADVISORIES')
+session=$(mk_verdict_session 'APPROVE WITH ADVISORIES' MEDIUM)
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 verdict_section=$(echo "$result" | sed -n '/^## Council Verdict$/,/^## /p')
 if echo "$verdict_section" | grep -qF "APPROVE WITH ADVISORIES"; then
@@ -486,6 +492,9 @@ rm -rf "$session"
 
 echo "Test 11: missing verdict.txt degrades without aborting the render"
 session=$(mk_verdict_session '')
+# Only an empty review renders without a verdict; beside a findings.json a
+# missing verdict.txt is refused (RC-077).
+rm "$session/verdicts/findings.json"
 set +e
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 exit_code=$?
@@ -820,8 +829,10 @@ rm -rf "$session"
 echo "Test 19: the leading verdict still degrades to 'not recorded'"
 # Moving the section to the top must not cost it its fallback: with no
 # verdict.txt the report says so rather than guessing, and APPROVE is the
-# unsafe direction to guess in.
+# unsafe direction to guess in. Only an empty review (no findings.json) gets
+# there; beside a findings.json a missing verdict.txt is refused (RC-077).
 session=$(mk_verdict_session '')
+rm "$session/verdicts/findings.json"
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 verdict_section=$(echo "$result" | sed -n '/^## Council Verdict$/,/^## /p')
 t_line=$(line_of '^<!-- TLDR -->$')
@@ -1285,6 +1296,68 @@ if grep -q 'The LLM will' <<<"$result"; then
 else
 	echo "  PASS: no placeholder prose outlives the splice"
 	PASS=$((PASS + 1))
+fi
+rm -rf "$session"
+
+# --- Scripted verdict (RC-077) -------------------------------------------------
+# verdict.txt must be the verdict the verified findings decide; the renderer
+# refuses anything else rather than printing what the model wrote.
+echo "Test 21: a verdict the findings do not decide is not rendered (RC-077)"
+session=$(mk_verdict_session 'APPROVE' HIGH)
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "**Not rendered.**" <<<"$result" &&
+	grep -qF -- "the verified findings decide 'REQUEST CHANGES'" <<<"$result"; then
+	echo "  PASS: a hand-written APPROVE over a HIGH is refused (RC-077)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: an APPROVE over a verified HIGH was rendered (RC-077)"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qF -- "**Not rendered.** verdict.txt records 'APPROVE'" <<<"$result" && ! grep -qF -- "Not rendering:" <<<"$result"; then
+	echo "  PASS: the refusal is stated once"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the refusal is not stated exactly once"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test 22: the verdict the findings decide renders (RC-077)"
+session=$(mk_verdict_session 'REQUEST CHANGES' HIGH)
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "🔴 **REQUEST CHANGES**" <<<"$result" && ! grep -qF -- "**Not rendered.**" <<<"$result"; then
+	echo "  PASS: REQUEST CHANGES over a HIGH renders (RC-077)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the verdict the findings decide was not rendered (RC-077)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test 23: an empty review renders 'not recorded' (RC-077)"
+session=$(mk_verdict_session '')
+rm "$session/verdicts/findings.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+verdict_section=$(echo "$result" | sed -n '/^## Council Verdict$/,/^## /p')
+if grep -qi "not recorded" <<<"$verdict_section" && ! grep -qF -- "**Not rendered.**" <<<"$result"; then
+	echo "  PASS: no findings.json and no verdict.txt renders without a verdict (RC-077)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: an empty review did not render as 'not recorded' (RC-077)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test 24: a verdict with no findings.json is not rendered (RC-077)"
+session=$(mk_verdict_session 'APPROVE')
+rm "$session/verdicts/findings.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "**Not rendered.**" <<<"$result"; then
+	echo "  PASS: a hand-written verdict without findings is refused (RC-077)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a verdict with nothing to decide it from was rendered (RC-077)"
+	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session"
 

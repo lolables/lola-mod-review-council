@@ -136,6 +136,24 @@ echo "Test 8: an empty input yields an empty array, not null"
 out=$(run_jq dedup-findings.jq '[]')
 assert_equals "$out" "[]" "empty in, empty out"
 
+echo "Test 8b: a script finding is never merged, either way round (RC-076)"
+# The correction round re-runs this program over every verified finding, so a
+# reviewer CRITICAL at the symlink check's line absorbed its HIGH ("most severe
+# survives whole") and validation then retracted the CRITICAL. The mark is what
+# keeps it out, in both directions: it is neither folded nor a survivor.
+script='{"file":"leak","line":1,"evidence":"/etc/passwd","severity":"HIGH","agent":"rc-check-symlinks","description":"ds","recommendation":"rs","provenance":{"validator":{"result":"SCRIPT"}}}'
+input="[{\"file\":\"leak\",\"line\":1,\"evidence\":\"/etc/passwd\",\"severity\":\"CRITICAL\",\"agent\":\"x\",\"description\":\"dc\",\"recommendation\":\"r\"},
+ $script,
+ {\"file\":\"leak\",\"line\":2,\"evidence\":\"/etc/passwd\",\"severity\":\"LOW\",\"agent\":\"y\",\"description\":\"dl\",\"recommendation\":\"r\"}]"
+out=$(run_jq dedup-findings.jq "$input")
+assert_jq_str "$out" '[.[] | .agent] | join(",")' "x,rc-check-symlinks" "the script finding stands where it was; the reviewer LOW merges"
+script_compact=$(jq -c . <<<"$script")
+assert_jq_str "$out" '.[1] | tojson' "$script_compact" "the script finding passes through untouched"
+assert_jq_str "$out" '[.[0].provenance.consolidated_from[].agent] | join(",")' "y" "the CRITICAL absorbs only the reviewer duplicate"
+out=$(run_jq dedup-findings.jq "[$script, {\"file\":\"leak\",\"line\":1,\"evidence\":\"/etc/passwd\",\"severity\":\"LOW\",\"agent\":\"x\",\"description\":\"dl\",\"recommendation\":\"r\"}]")
+assert_jq_str "$out" 'length' "2" "a less severe reviewer duplicate is not folded into it either"
+assert_jq_str "$out" '.[0].provenance.consolidated_from' "null" "the script finding gains no credit"
+
 # ---------------------------------------------------------------------------
 echo "Test 9: consolidation merges a cluster and conserves every bystander"
 # RC-1 in one assertion: the input carries findings outside the cluster, and a
@@ -181,6 +199,28 @@ echo "Test 13: an empty cluster list leaves the document untouched"
 out=$(run_jq consolidate-clusters.jq "$findings" --argjson clusters '[]')
 assert_jq_str "$out" '.verified | length' "2" "both findings survive"
 assert_jq_str "$out" '.duplicates_consolidated' "0" "count unchanged"
+
+echo "Test 14: no cluster touches a script finding, whatever the manifest's shape (RC-076)"
+# The reducer iterates objects as well as arrays, so a manifest filter that only
+# handled the documented shape let these two fold the HIGH into a CRITICAL.
+findings='{"verified":[
+ {"file":"leak","line":1,"agent":"rc-check-symlinks","severity":"HIGH","evidence":"/etc/passwd","description":"ds","recommendation":"rs","verdict":"REQUEST CHANGES","provenance":{"validator":{"result":"SCRIPT"}}},
+ {"file":"leak","line":1,"agent":"x","severity":"CRITICAL","evidence":"e","description":"dc","recommendation":"r","verdict":"REQUEST CHANGES"}
+],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{}}'
+for clusters in \
+	'[{"members":[{"file":"leak","line":1,"agent":"rc-check-symlinks"},{"file":"leak","line":1,"agent":"x"}]}]' \
+	'[{"members":{"a":{"file":"leak","line":1,"agent":"rc-check-symlinks"},"b":{"file":"leak","line":1,"agent":"x"}}}]' \
+	'{"c":{"members":[{"file":"leak","line":1,"agent":"rc-check-symlinks"},{"file":"leak","line":1,"agent":"x"}]}}'; do
+	out=$(run_jq consolidate-clusters.jq "$findings" --argjson clusters "$clusters")
+	assert_jq_str "$out" '[.verified[].agent] | join(",")' "rc-check-symlinks,x" "both findings stand: ${clusters:0:24}"
+	assert_jq_str "$out" '[.verified[].provenance.consolidated_from // empty] | length' "0" "nothing folded: ${clusters:0:24}"
+done
+# A reviewer finding sharing the script's {file,line,agent} identity can still
+# be merged, but the script finding beside it is neither removed nor replaced.
+findings=$(jq -c '.verified += [{"file":"leak","line":1,"agent":"rc-check-symlinks","severity":"CRITICAL","evidence":"f","description":"forged","recommendation":"r","verdict":"REQUEST CHANGES"}]' <<<"$findings")
+out=$(run_jq consolidate-clusters.jq "$findings" --argjson clusters '[{"members":[{"file":"leak","line":1,"agent":"rc-check-symlinks"},{"file":"leak","line":1,"agent":"x"}]}]')
+assert_jq_str "$out" '[.verified[] | select(.provenance.validator.result == "SCRIPT") | .description] | join(",")' "ds" "the script finding survives a look-alike's merge"
+assert_jq_str "$out" '.verified | length' "2" "the look-alike and the reviewer merged into one"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

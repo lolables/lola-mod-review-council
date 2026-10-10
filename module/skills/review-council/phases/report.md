@@ -441,20 +441,22 @@ per-reviewer table, so nothing is hidden by aggregating this way.
 
 Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) do not affect verdict.
 
-**Recording it.** Write the verdict as the first line of
-`${session_dir}/verdict.txt` **before** running `rc-render-report.sh` (SKILL.md
-Step 6 states this as the first action of the phase). The renderer emits the
-`## Council Verdict` section from that file — at the head of the report, ahead
-of every table and the findings list — and `rc-render-comment.sh` reads the
-same file for the PR comment; deciding the verdict is this step's job,
-rendering it is not. Do not append a verdict section to `report.md` by hand:
-the EXECUTION-CONTRACT limits this step to filling the markers the renderer
-emits, the verdict is not one of them (see "How Sections Reach the Report"),
-and a hand-written section would duplicate the rendered one.
+**Recording it.** Run `${SCRIPTS_DIR}/rc-decide-verdict.sh ${session_dir}`
+**before** `rc-render-report.sh` (SKILL.md Step 6 states this as the first
+action of the phase). It applies the rule above to `verdicts/findings.json` and
+writes the verdict as the single line of `${session_dir}/verdict.txt`; do not
+decide or write the verdict yourself. Both renderers check `verdict.txt`
+against the same rule and refuse to render a verdict the findings do not
+decide, so a hand-written or stale verdict produces "Not rendered" rather than
+a report. When there is no `findings.json` (the evidence check returned
+`nothing_to_do`), nothing was reviewed: the script records no verdict, the
+report shows "not recorded", and no PR comment can be rendered. Do not append
+a verdict section to `report.md` by hand: the EXECUTION-CONTRACT limits this
+step to filling the markers the renderer emits.
 
-A report whose Council Verdict section reads "not recorded" means this step did
-not write `verdict.txt` before rendering. Fix the ordering and re-render rather
-than editing the rendered report.
+A report whose Council Verdict section reads "not recorded" is an empty review
+only when there is no `findings.json`; otherwise the renderer would have
+refused.
 
 ---
 

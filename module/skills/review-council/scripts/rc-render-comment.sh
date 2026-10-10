@@ -249,12 +249,47 @@ _rc_section() { # level start end -> _RC_OUT
 	_RC_OUT="$out"
 }
 
+# Why the verdict may not be rendered yet, or nothing.
+#
+# SKILL.md Step 4.5 requires Disposition on a re-review — pr-conversation.txt
+# exists, and prepare-context.sh writes it only when there is a reply — at any
+# effort but quick, unless the evidence check found nothing (no findings.json).
+# The phase was an instruction and nothing more: live, a standard re-review
+# skipped it without a word. The findings were kept, so the outcome was safe,
+# but the replies it existed to answer were never weighed. Every posting path
+# renders through here, so this is where the phase is enforced. A session with
+# no recorded effort is held to the gate rather than excused from it.
+rc_disposition_gate() { # session_dir
+	local sdir="$1" effort
+	[[ -f "$sdir/pr-conversation.txt" ]] || return 0
+	[[ -f "$sdir/verdicts/findings.json" ]] || return 0
+	[[ -f "$sdir/verdicts/_meta/disposition.txt" ]] && return 0
+	effort=$(rc_parse_kv "$sdir/session.txt" "Effort")
+	[[ "$effort" == "quick" ]] && return 0
+	printf '%s' "Not rendering: this re-review has replies to weigh (pr-conversation.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
+}
+
+# Why the PR comment may not be rendered, or nothing: the first refusal among
+# the render gates. Every comment entry point (standalone and both posters)
+# asks this one function, so a gate added later reaches all three. With no
+# findings.json nothing was reviewed: there is no verdict to post, and the
+# old fallback of rendering APPROVE would announce a review that never ran.
+rc_comment_refusal() { # session_dir
+	local msg
+	msg=$(rc_disposition_gate "$1")
+	[[ -n "$msg" ]] || msg=$(rc_verdict_refusal "$1")
+	if [[ -z "$msg" && ! -f "$1/verdicts/findings.json" ]]; then
+		msg="Not rendering: there is no verdicts/findings.json, so nothing was reviewed and there is no verdict to post."
+	fi
+	printf '%s' "$msg"
+}
+
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
 # RC_EVIDENCE (no `local`) so the sourcing per-forge script can build its own
 # forge-specific links (e.g. #issuecomment-<id>). ---
 rc_render_comment_body() { # session_dir body_file
 	local session_dir="$1" body_file="$2"
-	local owner repo effort rr origin host
+	local owner repo effort rr origin host forge_host recorded_head input_type
 	local verdict="APPROVE" v emoji tldr models_bullets=""
 	local stamp commit_url repo_url
 	local c_crit c_high c_med c_low
@@ -295,21 +330,44 @@ rc_render_comment_body() { # session_dir body_file
 		done <<<"$model_ids"
 	fi
 
-	# Neutral facts: head SHA (materialized checkout or working tree) and forge
-	# web host (parsed from the origin remote — GitHub Enterprise safe). Empty
-	# head SHA degrades links to plain spans via the hooks.
+	# Neutral facts: head SHA and forge web host (parsed from the origin remote
+	# — GitHub Enterprise safe). Empty head SHA degrades links to plain spans
+	# via the hooks, and the marker to `sha=unknown`.
+	#
+	# The head is, in order: the PR/MR head the forge reported ("Head SHA:",
+	# recorded by prepare-emit.sh), the materialized checkout's HEAD, else the
+	# working tree's HEAD — but only for a local review. A review by PR number
+	# or URL ("Input:" pr_number/url) standing in "." was launched from some
+	# checkout that need not be the PR's, so its HEAD would stamp the marker
+	# with a commit nobody reviewed; it stays unknown instead. A GitLab
+	# review_root is an extracted archive with no .git, so only the recorded
+	# head names it.
 	RC_HEAD_SHA=""
 	RC_FORGE_WEB=""
 	rr=$(rc_parse_kv "$session_dir/session.txt" "Review root")
+	recorded_head=$(rc_parse_kv "$session_dir/session.txt" "Head SHA")
+	input_type=$(rc_parse_kv "$session_dir/session.txt" "Input")
+	[[ "$recorded_head" =~ ^[0-9a-f]{40}$ ]] && RC_HEAD_SHA="$recorded_head"
 	origin=""
 	if [[ -n "$rr" && "$rr" != "." && -d "$rr/.git" ]]; then
-		RC_HEAD_SHA=$(git -C "$rr" rev-parse HEAD 2>/dev/null || echo "")
+		[[ -n "$RC_HEAD_SHA" ]] || RC_HEAD_SHA=$(git -C "$rr" rev-parse HEAD 2>/dev/null || echo "")
 		origin=$(git -C "$rr" remote get-url origin 2>/dev/null || echo "")
 	elif [[ "$rr" == "." ]]; then
-		RC_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+		if [[ -z "$RC_HEAD_SHA" && "$input_type" != "pr_number" && "$input_type" != "url" ]]; then
+			RC_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+		fi
 		origin=$(git remote get-url origin 2>/dev/null || echo "")
 	fi
-	if [[ -n "$owner" && -n "$repo" ]]; then
+	# A review run by MR/PR URL from outside the target checkout has an
+	# unrelated origin remote, so prefer the host prepare-emit.sh recorded in
+	# session.txt. Anything that is not a plain DNS name, or an owner/repo that
+	# is not a safe project path, falls through to the origin derivation below.
+	forge_host=$(rc_parse_kv "$session_dir/session.txt" "Host")
+	if [[ "$forge_host" != "none" && "$owner" != "none" && "$repo" != "none" ]] &&
+		[[ "$forge_host" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] &&
+		project_path_ok "$owner" "$repo"; then
+		RC_FORGE_WEB="https://${forge_host}/${owner}/${repo}"
+	elif [[ -n "$owner" && -n "$repo" ]]; then
 		host=$(printf '%s' "$origin" | sed -E 's#^git@([^:]+):.*#\1#; s#^https?://([^/]+)/.*#\1#')
 		# A host that failed to parse (empty, or unchanged from the raw origin)
 		# leaves RC_FORGE_WEB empty rather than guessing a forge -- this
@@ -319,6 +377,18 @@ rc_render_comment_body() { # session_dir body_file
 		[[ -n "$host" && "$host" != "$origin" ]] && RC_FORGE_WEB="https://${host}/${owner}/${repo}"
 	fi
 	RC_SHORT_SHA="${RC_HEAD_SHA:0:7}"
+	# The session directory's name identifies this run. Stamping it on the
+	# marker makes every run's body differ from the last one's, so the poster
+	# edits the verdict even when the review itself rendered byte-identical,
+	# and the batch driver can tell a completed re-review from one that posted
+	# nothing. Re-posting the same session still renders the same body. A
+	# name outside the safe set is left off rather than written into the
+	# marker, where a space or `-->` would break every parser downstream.
+	# Resolved first, so `.` names the session rather than stamping a dot;
+	# CDPATH is cleared because a cd it resolves also prints the directory.
+	_RC_RUN_ID=$(CDPATH='' cd "$session_dir" 2>/dev/null && pwd) || _RC_RUN_ID=""
+	_RC_RUN_ID="${_RC_RUN_ID##*/}"
+	[[ "$_RC_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || _RC_RUN_ID=""
 
 	# Severity counts from verified findings.
 	c_crit=$(sev_count CRITICAL)
@@ -332,7 +402,7 @@ rc_render_comment_body() { # session_dir body_file
 		local verdict_agents
 		verdict_agents=$(jq -r '.verdicts | keys[]' "$RC_EVIDENCE" 2>/dev/null || true)
 		while IFS= read -r name; do
-			[[ "$name" == divisor-* ]] || continue
+			[[ "$name" == divisor-* || "$name" == "$RC_SCRIPT_AGENT" ]] || continue
 			local raw_v label agent_count
 			raw_v=$(jq -r --arg a "$name" '.verdicts[$a] // "APPROVE"' "$RC_EVIDENCE")
 			case "$raw_v" in *"REQUEST CHANGES"*) av="❌ Changes" ;; *) av="✅ Approve" ;; esac
@@ -517,13 +587,18 @@ _rc_pack() { # level keep limit max_parts
 	local level="$1" keep="$2" limit="$3" max_parts="$4"
 	local -a starts=() ends=()
 	local i j part=1 start=0 used=0 open_sev="" sev variant add extra
-	local disc prelude_len close_len n_sev
+	local disc prelude_len close_len marker_len n_sev
 	_rc_disclosure "$level" "$keep"
 	disc="$_RC_OUT"
 	close_len=$(_rc_bytes "$_RC_GROUP_CLOSE")
+	# Every part ends with the marker. Neither its part index nor its count is
+	# known yet, and neither is ever wider than max_parts, so costing it with
+	# max_parts for both can only over-reserve.
+	_rc_marker "$max_parts" "$max_parts"
+	marker_len=$(_rc_bytes "$_RC_OUT")
 
 	_rc_prelude 1 "$max_parts" "$disc"
-	used=$(_rc_bytes "${_RC_OUT}${_RC_FOOTER}")
+	used=$(($(_rc_bytes "${_RC_OUT}${_RC_FOOTER}") + marker_len))
 	for ((i = 0; i < keep; i++)); do
 		sev="${_RC_F_SEV[i]}"
 		variant=$(_rc_variant "$level" "$sev")
@@ -549,7 +624,7 @@ _rc_pack() { # level keep limit max_parts
 			start=$i
 			open_sev=""
 			_rc_prelude "$part" "$max_parts" "$disc"
-			prelude_len=$(_rc_bytes "${_RC_OUT}${_RC_FOOTER}")
+			prelude_len=$(($(_rc_bytes "${_RC_OUT}${_RC_FOOTER}") + marker_len))
 			_rc_group_open "$sev" "$n_sev"
 			extra=$(_rc_bytes "$_RC_OUT")
 			used=$prelude_len
@@ -606,8 +681,12 @@ _rc_prelude() { # part_index part_count disclosure -> _RC_OUT
 
 # The identity tag every part carries. `part`/`of` let the poster match a
 # re-render against the comments it wrote last time, one part at a time.
+# `run` goes last, after every key a parser anchors on, and is never parsed:
+# it exists so each run's body differs (see _RC_RUN_ID above).
 _rc_marker() { # part_index part_count -> _RC_OUT
-	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2} -->"$'\n'
+	local run=""
+	[[ -n "${_RC_RUN_ID:-}" ]] && run=" run=${_RC_RUN_ID}"
+	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2}${run} -->"$'\n'
 }
 
 # Last resort: keep whole lines until the limit is reached. Cutting on a line
@@ -674,6 +753,11 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 	session_dir="${1:-}"
 	if [[ -z "$session_dir" || ! -d "$session_dir" ]]; then
 		json_output "skip" "Session directory not found."
+		exit 0
+	fi
+	gate_msg=$(rc_comment_refusal "$session_dir")
+	if [[ -n "$gate_msg" ]]; then
+		json_output "error" "$gate_msg"
 		exit 0
 	fi
 	body_file="$session_dir/comment-body.md"

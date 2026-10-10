@@ -21,11 +21,13 @@ layer by layer, as separate jobs, rather than calling that target.
 | `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` and `macos-latest` |
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
 
-`test.yml` is a two-dimensional matrix — four layers by two operating systems,
-eight jobs — plus a gating job that depends on all of them. The two are easy to
-confuse: the matrix job has the id `test` and displays per leg as
-`<layer> (<os>)`, while the gating job has the id `test-result` and displays as
-`test`.
+`test.yml` is a two-dimensional matrix — layers by operating systems — plus a
+gating job that depends on all of them. Pushes and pull requests run three
+layers (unit, e2e, degraded), six jobs; the nightly schedule and a manual
+dispatch run the mutation layer alone, two jobs. The matrix job and the gating
+job are easy to confuse: the matrix job has the id `test` and displays per leg
+as `<layer> (<os>)`, while the gating job has the id `test-result` and displays
+as `test`.
 
 The layers used to run as one serial `task test:all` per OS, which made a leg's
 wall clock their sum: macOS reached 24m48s against a 25m limit and the next
@@ -36,9 +38,19 @@ layer instead, and a layer that grows can no longer push an unrelated one over
 the limit.
 
 Gate on the `test-result` job — the check that appears as `test` — not on the
-eight matrix jobs. It is one stable check name that does not change when a layer
+matrix jobs. It is one stable check name that does not change when a layer
 or an OS is added, and it fails on a matrix that was cancelled or skipped as
 well as one that failed.
+
+The mutation layer is off the pull-request path. At 18–20 minutes per OS it took
+about twice as long as the next-slowest layer, and a refactor that stops an
+entry's expression matching fails it (`BROKEN`) with no defect present. Its
+lasting job is noticing a guard that has gone slack, and a nightly run does that
+within a day. The cost is that a broken entry now shows up after merge, on
+`main`; run `task test:mutate` locally before pushing, or dispatch it for a
+branch with `gh workflow run test.yml --ref <branch>`. GitHub disables a public
+repository's schedules after 60 days without activity, so a quiet repository
+also stops running this layer until a schedule is re-enabled.
 
 Every test layer runs on both operating systems. None is gated by OS. That is
 deliberate: the mutation harness is the layer that caught GNU-only `sed`

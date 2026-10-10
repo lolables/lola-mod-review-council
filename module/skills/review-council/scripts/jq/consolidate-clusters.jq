@@ -11,18 +11,26 @@
 # a member that verification stripped, or name one member twice, and rewriting a
 # lone finding as its own merge would be a lie about what happened.
 #
+# A script finding (provenance.validator.result == "SCRIPT") is never touched:
+# it cannot be a member, a primary, or removed. The manifest is model-written,
+# and folding the finding into a reviewer's would leave it where validation can
+# retract it. The rule sits in the reducer rather than in a filter over the
+# manifest because the reducer iterates whatever shape it is handed — objects
+# as well as arrays — and a filter has to anticipate every one of them.
+#
 # duplicates_consolidated and consolidation_records accumulate across clusters
 # rather than being replaced, so an exact-dedup count already in the document
 # survives.
 
 def rank: {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}[.] // 0;
 def ident: {file: .file, line: .line, agent: .agent};
+def script: .provenance.validator.result == "SCRIPT";
 
 . as $root
 | (reduce $clusters[] as $c (
 	{verified: ($root.verified // []), records: [], semantic: 0};
 	( [ $c.members[] as $m | .verified[]
-	    | select(.file == $m.file and .line == $m.line and .agent == $m.agent) ] ) as $found
+	    | select((script | not) and .file == $m.file and .line == $m.line and .agent == $m.agent) ] ) as $found
 	# Distinct identities, not raw matches. A manifest can name one member
 	# twice, and one agent can file two findings at the same line; either way
 	# `$found` holds two entries the reducer has nothing to fold between. The
@@ -61,10 +69,16 @@ def ident: {file: .file, line: .line, agent: .agent};
 	    # finding being filtered — reducing the test to `secid == secid`, always
 	    # true, which deletes every non-primary finding in the array. Capture
 	    # the finding as $fid at the boundary.
+	    #
+	    # A script finding is never in $found, but a reviewer finding can share
+	    # its identity, so it is let through before any identity test and left
+	    # out of the "emitted yet?" one: matching there, it would stand in for
+	    # the primary and the primary would never be written.
 	    | .verified = ( reduce .verified[] as $f ([];
 	        ($f | ident) as $fid
-	        | if $fid == ($primary | ident)
-	          then (if (map(ident) | any(. == $fid)) then . else . + [$newprimary] end)
+	        | if ($f | script) then . + [$f]
+	          elif $fid == ($primary | ident)
+	          then (if (map(select(script | not) | ident) | any(. == $fid)) then . else . + [$newprimary] end)
 	          elif ($secids | any(. == $fid)) then .
 	          else . + [$f] end ) )
 	    | .records += [ {primary: ($primary | ident), merged: $secids} ]

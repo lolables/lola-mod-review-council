@@ -33,6 +33,7 @@ pr_number=""
 pr_title=""
 pr_base=""
 pr_head=""
+pr_head_sha=""
 pr_url=""
 pr_state=""
 pr_body=""
@@ -50,6 +51,20 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 		if declare -F rc_forge_fetch_pr >/dev/null; then
 			rc_forge_fetch_pr "$pr_number" "$forge_owner" "$forge_repo"
 		fi
+		# Every one-line value the forge supplied is the PR author's to write
+		# and lands in line-oriented files (pr-metadata.txt, session.txt,
+		# tracking.md) that are read first match wins, so none may carry a
+		# line break or other control character. Done here, once, rather than
+		# in each adapter or at each writer: this is the one point every forge's
+		# values pass before any of them is written. pr_body and
+		# pr_status_checks are multi-line by design and go only into their own
+		# delimited sections of pr-metadata.txt; pr_head_sha is already
+		# validated as 40-hex by the adapter.
+		pr_title=$(rc_single_line "$pr_title")
+		pr_base=$(rc_single_line "$pr_base")
+		pr_head=$(rc_single_line "$pr_head")
+		pr_url=$(rc_single_line "$pr_url")
+		pr_state=$(rc_single_line "$pr_state")
 
 		# Write pr-metadata.txt
 		if [[ -n "$pr_title" ]]; then
@@ -77,17 +92,32 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 fi
 
 # ============================================================================
-# SECTION 6b: Materialize Target Repo (PR/URL scope, github only)
+# SECTION 6b: Materialize Target Repo (PR/URL scope, github and gitlab)
 # ============================================================================
 
 review_root="."
 
 if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
-	if [[ "$forge" == "github" ]] && [[ -n "$pr_number" ]]; then
+	if [[ "$forge" == "github" || "$forge" == "gitlab" ]] && [[ -n "$pr_number" ]]; then
 		clone_head="${pr_head:-}"
+		# The host travels as --url whenever it is known. Without it the clone
+		# script falls back to the forge's canonical host, and a self-hosted
+		# GitLab project would be cloned from a same-named one on gitlab.com.
+		# forge_host is a validated hostname and owner/repo are segment-gated
+		# by prepare-repo.sh, so the URL holds nothing they did not. The `.git`
+		# suffix keeps it the URL the clone script builds by default.
+		clone_url_args=()
+		[[ -n "$forge_host" ]] &&
+			clone_url_args=(--url "https://${forge_host}/${forge_owner}/${forge_repo}.git")
+		# The adapter has already read (and validated) the head commit. GitLab
+		# materializes the archive at it, so the clone script need not ask;
+		# GitHub checks it out, so the tree is the commit the diff was read at
+		# even when the pull request moves on before the fetch.
+		[[ -n "${pr_head_sha:-}" ]] &&
+			clone_url_args+=(--head-sha "$pr_head_sha")
 		clone_json=$(AGENTS_DIR="${AGENTS_DIR:-}" bash "$(dirname "$0")/rc-clone-target.sh" \
 			--forge "$forge" --owner "$forge_owner" --repo "$forge_repo" \
-			--pr "$pr_number" --head "$clone_head" 2>/dev/null || echo '{}')
+			--pr "$pr_number" --head "$clone_head" "${clone_url_args[@]}" 2>/dev/null || echo '{}')
 		rr=$(echo "$clone_json" | jq -r '.review_root // "."' 2>/dev/null || echo ".")
 		[[ -n "$rr" && "$rr" != "null" ]] && review_root="$rr"
 	fi

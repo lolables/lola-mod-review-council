@@ -204,18 +204,25 @@ out=$(require_commands bash jq 2>&1) || rc=$?
 assert_equals "$rc" "0" "binaries that exist exit 0"
 assert_equals "$out" "" "and nothing is printed"
 
-[[ -f "$LIB_DIR/prs.sh" ]] || {
-	echo "ERROR: library not found: $LIB_DIR/prs.sh" >&2
-	exit 1
-}
+for lib in target.sh prs.sh; do
+	[[ -f "$LIB_DIR/$lib" ]] || {
+		echo "ERROR: library not found: $LIB_DIR/$lib" >&2
+		exit 1
+	}
+done
+# shellcheck source=scripts/lib/target.sh
+source "$LIB_DIR/target.sh"
 # shellcheck source=scripts/lib/prs.sh
 source "$LIB_DIR/prs.sh"
+# shellcheck source=scripts/lib/forge-github.sh
+source "$LIB_DIR/forge-github.sh"
 
-# A gh that answers from shell variables instead of the network. prs.sh calls
-# `gh` as a bare command, so a shell function of that name takes precedence
-# over anything on PATH — which is the whole mock, with no bin directory to
-# build and no PATH to juggle. Anything not declared below returns non-zero,
-# the "the lookup answered nothing" case each caller must survive.
+# A gh that answers from shell variables instead of the network.
+# forge-github.sh and target.sh call `gh` as a bare command, so a shell
+# function of that name takes precedence over anything on PATH — which is the
+# whole mock, with no bin directory to build and no PATH to juggle. Anything
+# not declared below returns non-zero, the "the lookup answered nothing" case
+# each caller must survive.
 STUB_COMMENTS_DIR=""
 gh() {
 	case "$*" in
@@ -238,6 +245,15 @@ gh() {
 		[[ -n "${STUB_DECISIONS:-}" ]] || return 1
 		awk -F'\t' -v pr="$3" '$1 == pr { print $2 }' <<<"$STUB_DECISIONS"
 		;;
+	*"--json nameWithOwner"*)
+		[[ -n "${STUB_REPO:-}" ]] || return 1
+		printf '%s\n' "$STUB_REPO"
+		;;
+	# The SSH-alias probe, already reduced by --jq to url then nameWithOwner.
+	*"--json url,nameWithOwner"*)
+		[[ -n "${STUB_REPO_URL:-}" ]] || return 1
+		printf '%s\n%s\n' "$STUB_REPO_URL" "${STUB_REPO:-}"
+		;;
 	*) return 1 ;;
 	esac
 }
@@ -252,7 +268,7 @@ for url_case in \
 	"https://github.com/acme/widgets/pull/5/files	acme/widgets	5" \
 	"https://github.com/acme/my.repo_1-x/pull/7	acme/my.repo_1-x	7"; do
 	IFS=$'\t' read -r url want_repo want_pr <<<"$url_case"
-	REPO=""
+	FORGE="" FORGE_HOST="" REPO=""
 	resolve_target "$url"
 	assert_equals "${REPO}#${TARGET_PR}" "${want_repo}#${want_pr}" \
 		"$url -> $want_repo #$want_pr"
@@ -273,7 +289,7 @@ for bad in \
 	"github.com/../../pull/4" \
 	"https://github.com/acme/../pull/4"; do
 	rc=0
-	REPO=""
+	FORGE="" FORGE_HOST="" REPO=""
 	# The rejection paths call `exit 2`; the command substitution is the
 	# subshell that contains it, so the suite survives to assert on it.
 	# shellcheck disable=SC2310 # A non-zero exit IS the answer this case asserts on.
@@ -283,17 +299,274 @@ done
 
 echo ""
 echo "Test: resolve_target keeps an explicit --repo that agrees with the URL"
-REPO="acme/widgets"
+FORGE="" FORGE_HOST="" REPO="acme/widgets"
 resolve_target "https://github.com/acme/widgets/pull/4"
 assert_equals "$REPO" "acme/widgets" "agreeing spellings are not a conflict"
 
 echo ""
 echo "Test: resolve_target refuses an explicit --repo the URL contradicts"
 rc=0
-REPO="acme/widgets"
+FORGE="" FORGE_HOST="" REPO="acme/widgets"
 # shellcheck disable=SC2310 # A non-zero exit IS the answer this case asserts on.
 actual=$(resolve_target "https://github.com/other/repo/pull/4" 2>&1) || rc=$?
 assert_equals "$rc" "2" "a contradicting --repo and URL is an error"
+
+# resolve_in <origin> <target> [NAME=value...] -> runs resolve_target and then
+# resolve_project, as the entry scripts do, and sets `actual` to
+# "FORGE|FORGE_HOST|REPO|TARGET_PR" (or the diagnostics) and `rc` to the status.
+#
+# Each case runs in a subshell inside a fresh checkout: resolve_target reads
+# the origin remote of the current directory, and the suite's own checkout has
+# one that would otherwise decide every case. An empty <origin> is a checkout
+# with no remote at all. The flag globals start empty and glab's host
+# variables (GITLAB_API_HOST, GITLAB_HOST, GITLAB_URI, GL_HOST) unset, as
+# they are in an entry script given no flags, and the assignments override
+# them. git's own config files are masked too, so an operator's `insteadOf`
+# cannot rewrite the remote a case set up.
+resolve_in() {
+	local origin="$1" target="$2" dir
+	shift 2
+	dir=$(mktemp -d)
+	rc=0
+	# shellcheck disable=SC2310 # A non-zero exit IS the answer cases assert on.
+	actual=$(
+		exec 2>&1
+		cd "$dir" || exit 99
+		export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+		git init -q
+		[[ -z "$origin" ]] || git remote add origin "$origin"
+		FORGE="" FORGE_HOST="" REPO="" TARGET_PR=""
+		unset GITLAB_API_HOST GITLAB_HOST GITLAB_URI GL_HOST STUB_REPO STUB_REPO_URL
+		for assignment in "$@"; do
+			export "${assignment?}"
+		done
+		resolve_target "$target"
+		resolve_project
+		printf '%s|%s|%s|%s' "$FORGE" "$FORGE_HOST" "$REPO" "$TARGET_PR"
+	) || rc=$?
+	rm -rf "$dir"
+}
+
+echo ""
+echo "Test: resolve_target reads forge, host and project from the target"
+for target_case in \
+	"https://gitlab.com/g/p/-/merge_requests/7	gitlab|gitlab.com|g/p|7" \
+	"https://git.example.org/a/b/c/-/merge_requests/12#note_1	gitlab|git.example.org|a/b/c|12" \
+	"gitlab.com/g/p.git/-/merge_requests/9/diffs	gitlab|gitlab.com|g/p|9" \
+	"https://GITLAB.COM/g/p/-/merge_requests/1	gitlab|gitlab.com|g/p|1" \
+	"https://github.com/o/r/pull/3	github|github.com|o/r|3"; do
+	IFS=$'\t' read -r url want <<<"$target_case"
+	resolve_in "" "$url"
+	assert_equals "${rc}:${actual}" "0:${want}" "$url"
+done
+
+echo ""
+echo "Test: resolve_target reads forge, host and project from the origin remote"
+resolve_in "git@gitlab.com:g/sub/p.git" "5"
+assert_equals "${rc}:${actual}" "0:gitlab|gitlab.com|g/sub/p|5" \
+	"an scp-form gitlab.com remote names the project and a bare MR number"
+resolve_in "https://git.corp.example/g/p.git" "" \
+	"GITLAB_HOST=https://git.corp.example/"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"a remote on \$GITLAB_HOST's host is GitLab"
+resolve_in "ssh://git@git.corp.example:2222/g/p/" "" "FORGE_HOST=GIT.corp.example"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"--host alone implies GitLab, matches the remote host case-insensitively, and is lowercased"
+resolve_in "https://git.corp.example/g/p.git" ""
+assert_equals "$rc" "2" "a remote on an unknown host is refused"
+names_flags="no"
+[[ "$actual" != *"--forge gitlab --host git.corp.example"* ]] || names_flags="yes"
+assert_equals "$names_flags" "yes" "and the refusal names the flags that would resolve it"
+resolve_in "https://git.corp.example/g/p.git" "" "REPO=g/p"
+assert_equals "$rc" "2" "so is one with a --repo, which names no forge"
+resolve_in "https://git.corp.example/g/p.git" "" "FORGE=github" "REPO=o/r"
+assert_equals "${rc}:${actual}" "0:github|github.com|o/r|" \
+	"--forge github lets such a checkout target github.com"
+resolve_in "https://u:p@ss@git.corp.example/g/p.git" ""
+leaks_userinfo="no"
+[[ "$actual" != *"ss@"* ]] || leaks_userinfo="yes"
+assert_equals "${rc}:${leaks_userinfo}" "2:no" \
+	"an @ inside the remote's password does not leak into the refusal as its host"
+
+echo ""
+echo "Test: resolve_target refuses GitLab hosts with a port, but not git transport ports"
+# glab addresses a host by name only (`--hostname host:port` is "invalid
+# hostname"); a non-default API port lives in that host's api_host setting. A
+# port the operator names for the API is refused with that fix rather than
+# silently dropped. A port in the origin remote is git's transport port (ssh
+# 2222, https 443), not the API's, so it is stripped instead.
+port_msg="GitLab hosts with a port are not supported: glab addresses a host by name. Run 'glab auth login --hostname git.example.org --api-host git.example.org:8443' and use git.example.org without the port."
+resolve_in "" "https://git.example.org:8443/g/p/-/merge_requests/1"
+assert_equals "${rc}:${actual}" "2:${port_msg}" "an MR URL with a port"
+resolve_in "" "" "FORGE_HOST=git.example.org:8443" "REPO=g/p"
+assert_equals "${rc}:${actual}" "2:${port_msg}" "a --host with a port"
+resolve_in "https://git.corp.example/g/p.git" "" "GITLAB_HOST=https://git.corp.example:8443"
+assert_equals "${rc}:${actual}" "2:${port_msg//git.example.org/git.corp.example}" \
+	"a \$GITLAB_HOST with a port naming the remote's host"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GITLAB_HOST=git.corp.example:8443"
+assert_equals "${rc}:${actual}" "2:${port_msg//git.example.org/git.corp.example}" \
+	"a \$GITLAB_HOST with a port as the default host"
+resolve_in "https://git.corp.example/g/p.git" "" "GITLAB_HOST=https://git.corp.example:443"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"https's default port on \$GITLAB_HOST is no port"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GITLAB_HOST=http://git.corp.example:80/"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"nor is http's"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GITLAB_HOST=https://git.corp.example:80"
+assert_equals "$rc" "2" "but http's port on an https \$GITLAB_HOST is a port"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GITLAB_HOST=git.corp.example:443"
+assert_equals "$rc" "2" "and so is 443 with no scheme to make it the default"
+resolve_in "ssh://git@git.corp.example:2222/g/p.git" "" "GITLAB_HOST=git.corp.example"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"an ssh remote's port is stripped from the API host"
+resolve_in "https://gitlab.com:443/g/p.git" ""
+assert_equals "${rc}:${actual}" "0:gitlab|gitlab.com|g/p|" \
+	"an https remote's port is stripped from the API host"
+resolve_in "" "https://user@git.example.org:8443/g/p/-/merge_requests/1"
+assert_equals "$rc" "2" "credentials with a port are still refused"
+not_port="yes"
+[[ "$actual" != *"with a port"* ]] || not_port="no"
+assert_equals "$not_port" "yes" "as an unusable host, not as a port"
+
+echo ""
+echo "Test: a host variable naming no usable host is refused, not read as gitlab.com"
+# glab would aim at whatever such a value spells, never at gitlab.com, so a run
+# that would default to it stops and asks for --host instead of guessing.
+unusable_msg="glab's host variables (first non-empty of GITLAB_API_HOST, GITLAB_HOST, GITLAB_URI, GL_HOST) name no usable GitLab host; fix that variable or pass --host."
+for assignment in "GITLAB_HOST=https://" "GITLAB_HOST=/x" "GITLAB_API_HOST=git.corp.example/api" \
+	"GITLAB_API_HOST=https://git.corp.example"; do
+	resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "$assignment"
+	assert_equals "${rc}:${actual}" "2:${unusable_msg}" "a bare --forge gitlab run with ${assignment}"
+done
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GITLAB_HOST=https://" "FORGE_HOST=git.corp.example"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" "an explicit --host still runs"
+resolve_in "https://git.corp.example/g/p.git" "" "FORGE=gitlab" "GITLAB_HOST=https://"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" "and so does a self-hosted origin remote"
+
+echo ""
+echo "Test: resolve_target takes glab's default host in glab's own precedence"
+# GITLAB_API_HOST, then GITLAB_HOST, GITLAB_URI and GL_HOST, empty values
+# skipped, else gitlab.com: a remote on that host is GitLab, and it is the
+# host a bare --forge gitlab run means.
+for precedence_case in \
+	"GITLAB_URI=https://git.corp.example/;GITLAB_URI marks the remote's host" \
+	"GL_HOST=git.corp.example;so does GL_HOST" \
+	"GITLAB_API_HOST=git.corp.example GITLAB_HOST=other.example;GITLAB_API_HOST wins over GITLAB_HOST" \
+	"GITLAB_API_HOST= GITLAB_HOST=git.corp.example;an empty GITLAB_API_HOST is skipped" \
+	"GITLAB_URI=git.corp.example GL_HOST=other.example;GITLAB_URI wins over GL_HOST"; do
+	IFS=';' read -r assignments label <<<"$precedence_case"
+	read -ra assignment_list <<<"$assignments"
+	resolve_in "https://git.corp.example/g/p.git" "" "${assignment_list[@]}"
+	assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" "$label"
+done
+resolve_in "https://git.corp.example/g/p.git" "" "GITLAB_API_HOST=other.example" "GITLAB_HOST=git.corp.example"
+assert_equals "$rc" "2" "a GITLAB_HOST that GITLAB_API_HOST overrides marks nothing"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GL_HOST=https://Git.Corp.Example/"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"GL_HOST is the default host of a bare --forge gitlab run"
+resolve_in "https://git.corp.example/g/p.git" "" "GITLAB_API_HOST=git.corp.example:8443"
+assert_equals "${rc}:${actual}" "2:${port_msg//git.example.org/git.corp.example}" \
+	"a GITLAB_API_HOST with a port is refused like GITLAB_HOST's"
+
+echo ""
+echo "Test: resolve_target follows an SSH host alias only as far as gh does"
+# git@github-work:o/r.git names a host only ~/.ssh/config knows. gh resolves
+# such aliases itself, so its answer is evidence about the forge; without that
+# evidence the alias is an unknown host like any other.
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://github.com/o/r" "STUB_REPO=o/r"
+assert_equals "${rc}:${actual}" "0:github|github.com|o/r|" \
+	"an alias gh resolves to github.com is GitHub"
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://GitHub.com/o/r" "STUB_REPO=o/r"
+assert_equals "${rc}:${actual}" "0:github|github.com|o/r|" \
+	"whatever the case of the host gh reports"
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://ghe.example.com/o/r" "STUB_REPO=o/r"
+assert_equals "$rc" "2" "an alias gh resolves to GitHub Enterprise is refused"
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://github.com.evil.tld/o/r" "STUB_REPO=o/r"
+assert_equals "$rc" "2" "a host that merely starts with github.com is refused"
+resolve_in "git@github-work:o/r.git" ""
+assert_equals "$rc" "2" "an alias gh cannot resolve is refused"
+
+echo ""
+echo "Test: resolve_target trusts the alias probe only when it names origin"
+# gh repo view does not answer about origin: it prefers an upstream or github
+# remote, or whatever `gh repo set-default` chose. An answer naming some other
+# repository says nothing about where origin lives.
+resolve_in "https://git.corp.example/g/p.git" "" "STUB_REPO_URL=https://github.com/up/stream" "STUB_REPO=up/stream"
+assert_equals "$rc" "2" "a probe naming another repository is refused"
+has_hint="no"
+[[ "$actual" != *"check 'gh auth status' — gh could not confirm it"* ]] || has_hint="yes"
+assert_equals "$has_hint" "yes" "and the refusal says gh could not confirm the alias"
+resolve_in "https://git.corp.example/g/p.git" "" "STUB_REPO_URL=https://github.com/up/stream" "STUB_REPO=up/stream" "REPO=g/p"
+assert_equals "$rc" "2" "so is one whose --repo matches origin but not the probe"
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://github.com/O/R" "STUB_REPO=O/R"
+assert_equals "${rc}:${actual}" "0:github|github.com|O/R|" \
+	"a probe naming origin in another case is accepted, with gh's spelling"
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://github.com/o/r" "STUB_REPO=o/r" "REPO=O/r"
+assert_equals "${rc}:${actual}" "0:github|github.com|O/r|" \
+	"a --repo naming the same repository in another case is kept"
+resolve_in "git@github-work:o/r.git" "" "STUB_REPO_URL=https://github.com/o/r" "STUB_REPO=o/r" "REPO=x/y"
+assert_equals "$rc" "2" "a --repo naming a different repository than the confirmed alias is refused"
+
+echo ""
+echo "Test: resolve_target takes forge, host and project from flags alone"
+resolve_in "" "" "FORGE=gitlab" "FORGE_HOST=git.corp.example" "REPO=g/p"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"--forge gitlab --host --repo needs no checkout"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p" "GITLAB_HOST=git.corp.example"
+assert_equals "${rc}:${actual}" "0:gitlab|git.corp.example|g/p|" \
+	"a GitLab host defaults to \$GITLAB_HOST"
+resolve_in "" "" "FORGE=gitlab" "REPO=g/p"
+assert_equals "${rc}:${actual}" "0:gitlab|gitlab.com|g/p|" \
+	"and to gitlab.com without it"
+
+echo ""
+echo "Test: resolve_target leaves GitHub checkouts and --repo as they were"
+resolve_in "git@github.com:lolables/other.git" "" "STUB_REPO=acme/widgets"
+assert_equals "${rc}:${actual}" "0:github|github.com|acme/widgets|" \
+	"a github.com checkout with no flags asks gh for its repository"
+resolve_in "" "4" "STUB_REPO=acme/widgets"
+assert_equals "${rc}:${actual}" "0:github|github.com|acme/widgets|4" \
+	"so does a directory with no remote"
+resolve_in "" "" "REPO=acme/widgets"
+assert_equals "${rc}:${actual}" "0:github|github.com|acme/widgets|" \
+	"a --repo with no remote at all is a GitHub repository"
+resolve_in "" ""
+assert_equals "$rc" "1" "no remote, no --repo and no answer from gh exits 1"
+
+echo ""
+echo "Test: resolve_target refuses targets, hosts and projects it cannot trust"
+# Whatever comes out of resolve_target is interpolated into API paths and is
+# the project this tool comments on publicly, so every refusal here is exit 2.
+for bad_case in \
+	"https://gitlab.com/../x/-/merge_requests/1||a dot-dot group in a GitLab URL" \
+	"https://gitlab.com/p/-/merge_requests/1||a GitLab project with no namespace" \
+	"https://user@gitlab.com/g/p/-/merge_requests/1||credentials in the host" \
+	"evil.com/github.com/o/r/pull/1||a github.com path behind another host" \
+	"https://gitlab.com/g/p/-/issues/1||a GitLab URL that is not an MR" \
+	"|FORGE=gitlab REPO=g/p;rm|a shell metacharacter in --repo" \
+	"|FORGE=gitlab FORGE_HOST=bad\x20host REPO=g/p|a space in --host" \
+	"https://gitlab.com/g/p/-/merge_requests/1|FORGE_HOST=git.corp.example|a URL host --host contradicts" \
+	"https://gitlab.com/g/p/-/merge_requests/1|FORGE=github|a GitLab URL with --forge github" \
+	"https://github.com/o/r/pull/1|FORGE=gitlab|a GitHub URL with --forge gitlab" \
+	"https://gitlab.com/g/p/-/merge_requests/1|REPO=g/q|a URL project --repo contradicts" \
+	"|FORGE=github FORGE_HOST=x REPO=o/r|--host with --forge github" \
+	"|FORGE=github REPO=../..|a dot-dot --repo on GitHub" \
+	"|FORGE=github REPO=a/b/c|a three-segment GitHub --repo" \
+	"|FORGE=gitlab REPO=g/./p|a dot segment in a GitLab --repo" \
+	"https://gitlab.com/g/x/-/merge_requests/1/-/merge_requests/2||a GitLab URL with two MR routes" \
+	"|FORGE=gitlab REPO=g/-/p|GitLab's reserved - segment in --repo" \
+	"|FORGE=gitlab REPO=-g/p|a GitLab --repo segment starting with -" \
+	"|FORGE=github REPO=o/-r|a GitHub --repo segment starting with -" \
+	"|FORGE=gitlab FORGE_HOST=.. REPO=g/p|a --host of dots" \
+	"|FORGE=gitlab FORGE_HOST=- REPO=g/p|a --host of a hyphen" \
+	"https://-/g/p/-/merge_requests/1||a hyphen host in a GitLab URL"; do
+	IFS='|' read -r url assignments label <<<"$bad_case"
+	read -ra assignment_list <<<"$assignments"
+	# A literal space cannot survive the word split above, so it travels as \x20.
+	assignment_list=("${assignment_list[@]//\\x20/ }")
+	resolve_in "" "$url" "${assignment_list[@]}"
+	assert_equals "$rc" "2" "refused: $label"
+done
 
 echo ""
 echo "Test: collect_prs separates a broken lookup from an empty one"
@@ -391,7 +664,7 @@ rm -rf "$STUB_COMMENTS_DIR"
 STUB_COMMENTS_DIR=""
 
 echo ""
-echo "Test: approved_pr reads GitHub's own review decision"
+echo "Test: forge_is_approved reads GitHub's own review decision"
 # reviewDecision is the forge's summary of the human reviews on a PR. Only
 # APPROVED is an approval: the other two values it reports both mean the PR is
 # still waiting on someone.
@@ -404,7 +677,7 @@ for decision_case in "1	0	APPROVED is an approval" \
 	IFS=$'\t' read -r probe_pr want_rc label <<<"$decision_case"
 	rc=0
 	# shellcheck disable=SC2310 # The exit status IS the answer this case asserts on.
-	approved_pr "$probe_pr" || rc=$?
+	forge_is_approved "$probe_pr" || rc=$?
 	assert_equals "$rc" "$want_rc" "$label"
 done
 
@@ -417,7 +690,7 @@ echo "Test: a review-decision lookup that fails is not an approval"
 STUB_DECISIONS=""
 rc=0
 # shellcheck disable=SC2310 # The exit status IS the answer this case asserts on.
-approved_pr 1 || rc=$?
+forge_is_approved 1 || rc=$?
 assert_equals "$rc" "1" "a broken lookup fails open to reviewing"
 
 echo ""

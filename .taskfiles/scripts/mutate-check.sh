@@ -60,7 +60,7 @@ module_snapshot() {
 #
 # <script> is relative to module/skills/review-council/scripts/, <suite> to
 # module/tests/. Preparation targets carry a lib/ prefix: rc-prepare.sh is an
-# entry point that sources six stages, and each defect lives in the stage that
+# entry point that sources seven stages, and each defect lives in the stage that
 # owns that step. Anchor each expression tightly: a mutation that fails to apply
 # is reported as BROKEN rather than silently counted as caught, because "the
 # suite went red" means nothing if the code was never actually changed. A suite
@@ -362,7 +362,7 @@ check_mutation "RC-25 cluster guard counts distinct findings" \
 # surviving array, while the sibling's angle was folded nowhere.
 check_mutation "RC-26 cluster primary emitted once" \
 	jq/consolidate-clusters.jq \
-	's/map(ident) | any(. == \$fid)/false/' \
+	's/map(select(script | not) | ident) | any(. == \$fid)/false/' \
 	test-rc-consolidate.sh
 
 # Every finding headline in every artifact was a 60-byte mid-word cut, because
@@ -527,7 +527,7 @@ check_mutation "RC-041 the cut reserves what it re-appends" \
 # the LAST line. Widest of the five: it takes the ordinary single-comment upsert
 # down with it, which is what Test 9 reports.
 check_mutation "RC-042 marker read from its own line" \
-	rc-post-comment-github.sh \
+	rc-lib.sh \
 	's/^RC_MARKER_LINE_JQ=.*$/RC_MARKER_LINE_JQ=".body"/' \
 	test-rc-post-comment-github.sh
 
@@ -537,9 +537,21 @@ check_mutation "RC-042 marker read from its own line" \
 # forgery — with the subject and both patterns otherwise intact, which is why
 # this is guarded apart from the entry above.
 check_mutation "RC-042 the last marker line wins" \
-	rc-post-comment-github.sh \
+	rc-lib.sh \
 	's/^\(RC_MARKER_LINE_JQ=.*\)| last)/\1| first)/' \
 	test-rc-post-comment-github.sh
+
+# The same two reads, through the GitLab poster: RC_MARKER_LINE_JQ is shared,
+# so a defect there lands on both forges and each suite must see it.
+check_mutation "RC-042 marker read from its own line (GitLab)" \
+	rc-lib.sh \
+	's/^RC_MARKER_LINE_JQ=.*$/RC_MARKER_LINE_JQ=".body"/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-042 the last marker line wins (GitLab)" \
+	rc-lib.sh \
+	's/^\(RC_MARKER_LINE_JQ=.*\)| last)/\1| first)/' \
+	test-rc-post-comment-gitlab.sh
 
 # The selector. "Is this comment part of the verdict for the commit under
 # review?" answered by searching the body for `sha=<head>` adopts a PRIOR
@@ -1077,6 +1089,269 @@ check_mutation "RC-070 a wrong-shaped manifest claims no missing verdicts" \
 	rc-verify-evidence.sh \
 	's/if (\$c | type) == "array" and (\$c | all(type == "string"))$/if true/' \
 	test-rc-verify-evidence.sh
+
+# --- RC-071: a stale GitLab verdict was never retired ------------------------
+#
+# The GitLab poster took any note containing `review-council:obsolete` as
+# already retired, so a verdict quoting the tag in its evidence was never
+# bannered — and GitLab cannot hide a note, so it stayed live for good. Only
+# the first line decides, as it does for the batch scripts. A retire that
+# could not read or rewrite the note was swallowed and still counted.
+check_mutation "RC-071 retired means a banner first line, not a substring" \
+	rc-post-comment-gitlab.sh \
+	's/split("\\n")\[0\] | test(\$re)/test("review-council:obsolete")/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-071 a failed banner write is not counted as superseded" \
+	rc-post-comment-gitlab.sh \
+	's/^\([[:space:]]*gl_update "\$id" "\$supersede_file"\)$/\1 || true/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-071 an unreadable note is not bannered blind" \
+	rc-post-comment-gitlab.sh \
+	's/old_body=\$(gl_get_body "\$id") || return 1/old_body=$(gl_get_body "$id") || true/' \
+	test-rc-post-comment-gitlab.sh
+
+# --- RC-072: GitLab note selection and identity ------------------------------
+#
+# The GitLab poster's half of RC-042's contract. Each entry removes one of the
+# checks that keep its writes on the council's own notes, or keep a listing it
+# could not read from passing as "nothing posted yet".
+check_mutation "RC-072 GitLab listings require the viewer as author" \
+	rc-post-comment-gitlab.sh \
+	's/select(.author.id == \\\$viewer and /select(/g' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-072 the GitLab sweep skips the notes it just created" \
+	rc-post-comment-gitlab.sh \
+	'/\[\[ -n "\${created_ids\[\$id\]:-}" \]\] && continue/d' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-072 the GitLab viewer id must be a positive integer" \
+	rc-post-comment-gitlab.sh \
+	's/^if \[\[ ! "\$viewer_id" =~ \^\[1-9\]\[0-9\]\*\$ \]\]; then$/if false; then/' \
+	test-rc-post-comment-gitlab.sh
+
+check_mutation "RC-072 a notes page that is not an array is an error" \
+	rc-post-comment-gitlab.sh \
+	's/if length > 0 and all(.\[\]; type == "array")/if length > 0/' \
+	test-rc-post-comment-gitlab.sh
+
+# --- RC-073: the GitLab poster asks the credential gate first ----------------
+#
+# glab sends its stored token to any host it is pointed at. The poster must
+# not contact the recorded host until rc_forge_glab_admits has passed it.
+check_mutation "RC-073 the GitLab poster refuses a host glab is not logged in to" \
+	rc-post-comment-gitlab.sh \
+	's/^if ! rc_forge_glab_admits /if false \&\& ! rc_forge_glab_admits /' \
+	test-rc-post-comment-gitlab.sh
+
+# --- RC-074: GitHub list calls read only their first page --------------------
+#
+# `gh api` returns one page of a list endpoint unless told to paginate. The
+# council read a 110-comment PR as its oldest 30, and the poster, past 100
+# comments, neither retired old verdicts nor found its own to update.
+check_mutation "RC-074 the adapter reads every page of a list" \
+	lib/forge/github.sh \
+	's/ --paginate --slurp 2>\/dev\/null)/ 2>\/dev\/null)/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-074 the poster reads every page of the timeline" \
+	rc-post-comment-github.sh \
+	's/ --paginate --slurp) || return 1$/) || return 1/' \
+	test-rc-post-comment-github.sh
+
+check_mutation "RC-074 the poster refuses a page that is not an array" \
+	rc-post-comment-github.sh \
+	's/ and all(\.\[0\]\[\]; type == "array")//' \
+	test-rc-post-comment-github.sh
+
+check_mutation "RC-074 the adapter refuses a page that is not an array" \
+	lib/forge/github.sh \
+	's/ and all(\.\[0\]\[\]; type == "array")//' \
+	test-rc-forge-adapters.sh
+
+# --- RC-075: a re-review rendered without its Disposition phase --------------
+#
+# Disposition was an instruction only; a standard re-review skipped it and
+# posted anyway. The render refuses until disposition.txt exists.
+check_mutation "RC-075 rendering refuses a re-review that skipped Disposition" \
+	rc-render-comment.sh \
+	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || return 0$/return 0/' \
+	test-rc-render-comment.sh
+
+# --- RC-076: committed symlinks reached reviewers live -----------------------
+#
+# A PR adding a link to a host file was put in front of every reviewer, and
+# nothing flagged it. The check files an escaping link as a HIGH no LLM phase
+# can revise; the GitHub checkout writes links as inert files.
+check_mutation "RC-076 an absolute symlink target escapes" \
+	lib/symlinks.sh \
+	's/\[\[ "\$target" == \/\* || /[[ /' \
+	test-rc-symlinks-lib.sh
+
+check_mutation "RC-076 the script finding survives a diff-only review root" \
+	rc-verify-evidence.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$origin" == "SCRIPT" \]\]; then$/\1if false; then/' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-076 the script verdict is admitted from the top level only" \
+	rc-verify-evidence.sh \
+	's/find "\$vdir" -name .divisor-\*\.json. -type f/find "$vdir" \\( -name "divisor-*.json" -o -name "rc-check-symlinks.json" \\) -type f/' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-076 dedup never merges a script finding" \
+	jq/dedup-findings.jq \
+	's/^\([[:space:]]*\)if (\$x | script) then/\1if false then/' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-076 no cluster takes a script finding as a member" \
+	jq/consolidate-clusters.jq \
+	's/select((script | not) and \.file == /select(.file == /' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-076 extraction refuses the script's reserved name" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$agent" == "\$RC_SCRIPT_AGENT" \]\]; then$/\1if false; then/' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-076 the GitHub checkout writes links as files" \
+	rc-clone-target.sh \
+	's/ config core\.symlinks false / config core.symlinks true /' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-076 a surviving link fails closed" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)\[\[ -n "\$live_links" \]\]; then$/\1false; then/' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-076 an escaping tracked link refuses in-place review" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)if inplace_link_escapes; then$/\1if false; then/' \
+	test-rc-clone-target.sh
+
+# --- RC-077: the council verdict was the model's to write --------------------
+#
+# verdict.txt is a function of the verified severities, but the model decided
+# it and the renderers printed whatever it said.
+check_mutation "RC-077 a verified HIGH blocks" \
+	rc-lib.sh \
+	's/any(\$s\[\]; \. == "CRITICAL" or \. == "HIGH")/any($s[]; . == "CRITICAL")/' \
+	test-rc-decide-verdict.sh
+
+check_mutation "RC-077 the comment refuses a verdict the findings do not decide" \
+	rc-lib.sh \
+	's/^[[:space:]]*\[\[ "\$have" == "\$want" \]\] && return 0$/return 0/' \
+	test-rc-render-comment.sh
+
+# --- RC-078: symlinks judged from the diff alone ------------------------------
+#
+# A pure rename (similarity 100%) carries no mode or target in the diff, and a
+# new link can escape only by chaining through a link already on the base; both
+# merged with no finding. The check now judges changes against every link in
+# the head tree (head-links.json) and reports an untouched link a change makes
+# escape. A forge that cannot list the tree whole is disclosed, not trusted.
+check_mutation "RC-078 a pure rename is judged from the head tree's list" \
+	rc-check-symlinks.sh \
+	's/print "R" moved$/moved = moved/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 the map is seeded from the head tree's list" \
+	rc-check-symlinks.sh \
+	's/^\([[:space:]]*\)rc_symlink_map_add "\${head_paths\[h\]}" "\${head_targets\[h\]}"$/\1:/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 an untouched link a change makes escape is reported" \
+	rc-check-symlinks.sh \
+	's/^\([[:space:]]*\)\[\[ -n "\$via" \]\] || continue$/\1continue/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 a missing list is disclosed" \
+	rc-check-symlinks.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$head_links" == unavailable \]\]; then$/\1if false; then/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 an unknown target escapes" \
+	lib/symlinks.sh \
+	's/_RC_SYMLINK_MAP\["p:\$1"\]=\/$/_RC_SYMLINK_MAP["p:$1"]=./' \
+	test-rc-symlinks-lib.sh
+
+check_mutation "RC-078 the walk names the changed link it follows" \
+	lib/symlinks.sh \
+	's/^\([[:space:]]*\)_rc_symlink_followed_changed="\$cur"$/\1:/' \
+	test-rc-symlinks-lib.sh
+
+check_mutation "RC-078 GitHub refuses a truncated tree" \
+	lib/forge/github.sh \
+	's/ and \.truncated == false and / and true and /' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 GitHub refuses a list over the cap" \
+	lib/forge/github.sh \
+	's/| if length <= \$max then \.\[\] else error("over the cap") end/| .[]/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 GitLab refuses a list over the cap" \
+	lib/forge/gitlab.sh \
+	's/| if length <= \$max then \.\[\] else error("over the cap") end/| .[]/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 GitLab nulls a target holding NUL" \
+	lib/forge/gitlab.sh \
+	's/if \$fetched and (\$target | explode | all(\. != 0)) then/if $fetched then/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 a local review lists the index" \
+	lib/prepare-links.sh \
+	's/^\([[:space:]]*\)head_links_json=\$(rc_index_links) || head_links_json=""$/\1head_links_json=""/' \
+	test-rc-prepare-git-edges.sh
+
+# --- RC-079: concurrent GitHub reviews shared one tree ------------------------
+#
+# Every review of a repository fetched into the shared cache clone and checked
+# out FETCH_HEAD there; a second review moved the first one's files mid-review
+# (seen live: a false-clean review). Each review now gets its own worktree at
+# its own pinned commit.
+check_mutation "RC-079 each GitHub review gets its own tree" \
+	rc-clone-target.sh \
+	'/ worktree add -q --detach /,/^[[:space:]]*review_root="\$run_tree"$/ s/^\([[:space:]]*\)review_root="\$run_tree"$/\1review_root="$dest"/' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-079 the head is fetched into the pull request's own ref" \
+	rc-clone-target.sh \
+	's/ fetch origin "+\${head_ref}:\${pr_ref}" / fetch origin "${head_ref}" /' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-079 --head-sha pins the GitHub tree" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)if \[\[ -n "\$head_sha" \]\]; then$/\1if false; then/' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-079 a pruned GitHub tree's worktree metadata is pruned" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$stale_name" == github@\* \]\]; then$/\1if false; then/' \
+	test-rc-clone-target.sh
+
+# --- RC-080: two runs of one project shared a session directory -------------
+#
+# The session directory was named to the second and created non-exclusively,
+# so two preparations started together wrote into one session (seen live: the
+# second PR's orchestrator found the first PR's metadata). It is now created
+# exclusively with mktemp.
+check_mutation "RC-080 a same-second preparation gets its own session directory" \
+	lib/prepare-repo.sh \
+	's|mktemp -d "\${project_dir}/\${run_id}-XXXXXX"|mkdir -p "${project_dir}/${run_id}" \&\& echo "${project_dir}/${run_id}"|' \
+	test-rc-prepare-session-cache.sh
+
+# --- RC-081: a re-review rendering identical text edited nothing -------------
+#
+# The poster upserts a same-sha verdict only when the body differs, so a forced
+# re-review with unchanged findings left the comment untouched and the batch
+# driver reported it as never posted. The marker now carries the session id.
+check_mutation "RC-081 every part's marker carries the run that rendered it" \
+	rc-render-comment.sh \
+	's|of=\${2}\${run} -->|of=${2} -->|' \
+	test-rc-render-comment.sh
 
 total=$((caught + missed + broken))
 echo ""

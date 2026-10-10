@@ -7,19 +7,20 @@ SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-post-comment-github.sh"
 source "$SCRIPT_DIR/helpers.sh"
 
 # Mock gh: logs args, and drives responses off env by inspecting the endpoint,
-# method, --jq filter, and whether a -f body= arg was present. The github
-# script's inline gh calls are:
-#   sha-parts   : GET issues/<pr>/comments?per_page=100  --jq "... part= ... @tsv"
-#   list-council: GET issues/<pr>/comments?per_page=100  --jq "... @tsv"
+# method, and whether a -f body= arg was present. The github script's inline
+# gh calls are:
+#   listing     : GET issues/<pr>/comments?per_page=100 --paginate --slurp
 #   get-body    : GET issues/comments/<id>               --jq .body
 #   create      : POST issues/<pr>/comments -f body=...  --jq .id
 #   update      : PATCH issues/comments/<id> -X PATCH -f body=...
 #   minimize    : graphql minimizeComment
 # Env: MOCK_FIND (single already-posted part for this sha), MOCK_PARTS (the
-# full per-part listing when a case needs more than one), MOCK_FIND_RC (their
-# exit), MOCK_CREATE_RC / MOCK_CREATE_FAIL_AT / MOCK_UPDATE_RC (write
-# failures), MOCK_GETBODY
-# (file get-body cats), MOCK_NEWID (create stdout), MOCK_LIST (list-council %b),
+# full per-part listing when a case needs more than one), MOCK_SHA (the head
+# sha those comments carry in their marker; the script matches on it),
+# MOCK_FIND_RC (the lookup's exit), MOCK_CREATE_RC / MOCK_CREATE_FAIL_AT /
+# MOCK_UPDATE_RC (write failures), MOCK_GETBODY (file get-body cats),
+# MOCK_NEWID (create stdout), MOCK_LIST (the comments present after the run
+# posts, for the retire sweep; %b),
 # MOCK_ACTOR (`gh api user` login; set to "" to exercise the fail-closed path),
 # MOCK_ACTOR_RC (its exit status — a real auth failure is non-zero plus stderr,
 # not an empty success, and only that shape reaches the `|| echo ""` arm).
@@ -76,15 +77,31 @@ user)
 		[[ "${MOCK_CREATE_RC:-0}" -eq 0 ]] || { echo "gh: Validation Failed (HTTP 422)" >&2; exit "$MOCK_CREATE_RC"; }
 		printf '%s' "${MOCK_NEWID:-555}"; exit 0
 	fi
-	# The per-part lookup for THIS sha is the only filter that mentions part=.
-	# MOCK_PARTS gives the full "id<TAB>node<TAB>part" listing; MOCK_FIND is the
-	# older single-comment shorthand, kept because most cases have one part.
-	if [[ "$jqf" == *"part="* ]]; then
-		if [[ -n "${MOCK_PARTS:-}" ]]; then printf '%b' "$MOCK_PARTS"; exit "${MOCK_FIND_RC:-0}"; fi
-		[[ -n "${MOCK_FIND:-}" ]] && printf '%s\tNODE_%s\t1\n' "$MOCK_FIND" "$MOCK_FIND"
-		exit "${MOCK_FIND_RC:-0}"
+	# A listing: the script fetches every page (--paginate --slurp) and
+	# filters it itself, so this answers with comment objects, one page. The
+	# PR holds the MOCK_FIND / MOCK_PARTS comments (for this head, MOCK_SHA)
+	# before the run posts, and the MOCK_LIST comments after it. The first
+	# listing since this run's `gh api user` is the lookup; any later one is
+	# the retire sweep.
+	actor="${MOCK_ACTOR-council-bot}"
+	listings=$(awk '/^gh api user/ { n = 0; next } /--paginate/ { n++ } END { print n + 0 }' "$GH_LOG")
+	if [[ "$listings" -le 1 ]]; then
+		if [[ "${MOCK_FIND_RC:-0}" -ne 0 ]]; then
+			echo "gh: HTTP 502: Bad Gateway" >&2
+			exit "$MOCK_FIND_RC"
+		fi
+		rows="${MOCK_PARTS:-}"
+		[[ -z "$rows" && -n "${MOCK_FIND:-}" ]] && rows="${MOCK_FIND}\tNODE_${MOCK_FIND}\t1\n"
+		printf '%b' "$rows" | jq -Rsc --arg sha "${MOCK_SHA:-}" --arg actor "$actor" '
+			[[split("\n")[] | select(length > 0) | split("\t")
+			  | {id: (.[0] | tonumber), node_id: .[1], user: {login: $actor},
+			     body: "council verdict\n\n<!-- review-council:marker sha=\($sha) part=\(.[2]) -->\n"}]]'
+	else
+		printf '%b' "${MOCK_LIST:-}" | jq -Rsc --arg actor "$actor" '
+			[[split("\n")[] | select(length > 0) | split("\t")
+			  | {id: (.[0] | tonumber), node_id: .[1], user: {login: $actor},
+			     body: "council verdict\n\n<!-- review-council:marker sha=\(.[2]) -->\n"}]]'
 	fi
-	if [[ "$jqf" == *"@tsv"* ]]; then printf '%b' "${MOCK_LIST:-}"; exit 0; fi
 	exit 0
 	;;
 esac
@@ -93,10 +110,11 @@ GH
 	chmod +x "$dir/gh"
 }
 
-# Real-filter mock: runs the script's actual `gh api --jq` filters over a canned
-# comments array (in $GH_COMMENTS) through REAL jq, so the marker+sha selection
-# and the `capture("sha=...")` regex are genuinely exercised (guards the
-# SHA-keyed upsert logic this refactor relocated). Create returns id 778.
+# Real-filter mock: runs the script's actual jq filters over the comments array
+# it fetched (canned in $GH_COMMENTS, served in pages) through REAL jq, so the
+# marker+sha selection and the `capture("sha=...")` regex are genuinely
+# exercised (guards the SHA-keyed upsert logic this refactor relocated). Create
+# returns id 778.
 # Comments in $GH_COMMENTS carry `.user.login`, so the author filter is real
 # too; the authenticated login is $MOCK_ACTOR (default council-bot).
 make_gh_realjq() {
@@ -136,7 +154,29 @@ case "$endpoint" in
 	;;
 */comments*)
 	[[ $hasbody -eq 1 ]] && { echo "778"; exit 0; }
-	printf '%s' "$comments" | jq -r "$jqf"   # find-by-sha / list-council: REAL filter
+	# GitHub serves a listing in pages of MOCK_PAGE_SIZE (per_page; 100 by
+	# default). Without --paginate gh returns the first page only, through
+	# --jq when one is given; --slurp wraps every page in one outer array.
+	# MOCK_ERROR_PAGE=1 appends an error body as a page, =null a null page;
+	# MOCK_LIST_RC fails the call after it has printed the first page.
+	pages=$(jq -c --argjson n "${MOCK_PAGE_SIZE:-100}" \
+		'[range(0; ([length, 1] | max); $n) as $i | .[$i:$i + $n]]' <<<"$comments")
+	if [[ " $* " != *" --paginate "* ]]; then
+		page=$(jq -c '.[0]' <<<"$pages")
+		if [[ -n "$jqf" ]]; then jq -r "$jqf" <<<"$page"; else printf '%s\n' "$page"; fi
+		exit 0
+	fi
+	if [[ "${MOCK_LIST_RC:-0}" -ne 0 ]]; then
+		if [[ " $* " == *" --slurp "* ]]; then jq -c '[.[0]]' <<<"$pages"; else jq -c '.[0]' <<<"$pages"; fi
+		echo "gh: HTTP 502: Bad Gateway" >&2
+		exit "$MOCK_LIST_RC"
+	fi
+	case "${MOCK_ERROR_PAGE:-0}" in
+	1) pages=$(jq -c '. + [{message: "Server Error"}]' <<<"$pages") ;;
+	null) pages=$(jq -c '. + [null]' <<<"$pages") ;;
+	*) : ;;
+	esac
+	if [[ " $* " == *" --slurp "* ]]; then printf '%s\n' "$pages"; else jq -c '.[]' <<<"$pages"; fi
 	exit 0
 	;;
 esac
@@ -205,7 +245,8 @@ bin=$(mktemp -d)
 make_gh "$bin"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1 # pre-render deterministic body
 cp "$sess/comment-body.md" "$bin/prior.md"
-result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="900" MOCK_GETBODY="$bin/prior.md" \
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_SHA="$head_sha" MOCK_FIND="900" MOCK_GETBODY="$bin/prior.md" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "unchanged" "action is unchanged"
 if ! grep -q -- '-X PATCH' "$bin/log"; then
@@ -224,7 +265,8 @@ make_review_session "$sess"
 bin=$(mktemp -d)
 make_gh "$bin"
 echo "stale prior body" >"$bin/stale.md"
-result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="901" MOCK_GETBODY="$bin/stale.md" \
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_SHA="$head_sha" MOCK_FIND="901" MOCK_GETBODY="$bin/stale.md" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "updated" "action is updated"
 if grep -q 'issues/comments/901' "$bin/log" && grep -q -- '-X PATCH' "$bin/log"; then
@@ -332,6 +374,34 @@ result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 assert_json_field "$result" "action" "unchanged" "real filter finds the sha-matched comment"
 rm -rf "$sess" "$bin"
 
+# Test 9a: Test 9's prior comment, but rendered by an earlier session: same head,
+# same findings, a different session directory. Each run stamps its session
+# into the marker, so the bodies differ and the verdict is edited. Without that
+# the edit is skipped and a batch run cannot tell this completed re-review from
+# one that posted nothing.
+echo "Test 9a: a re-review from a new session at the same head edits the verdict"
+sess=$(mktemp -d)
+make_review_session "$sess"
+sess_new=$(mktemp -d)
+cp -R "$sess/." "$sess_new" # same checkout (Review root), findings and verdict
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+rbody=$(cat "$sess/comment-body.md")
+jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess_new" --send 2>/dev/null)
+assert_json_field "$result" "action" "updated" "the earlier session's verdict is edited in place"
+assert_json_field "$result" "superseded" "0" "an edit at the same head retires nothing"
+if grep -q -- '-X PATCH' "$bin/log" && grep -q 'issues/comments/900' "$bin/log"; then
+	echo "  PASS: comment 900 was PATCHed"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: comment 900 was not edited"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$sess_new" "$bin"
+
 # Test 9b: same fixture as Test 9 — one prior verdict of ours carrying THIS head
 # sha — plus a non-empty pr-conversation.txt. prepare-context.sh writes that file
 # only when replies landed at or after our last verdict, so its presence means
@@ -347,6 +417,7 @@ bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the body, whose marker carries t
 rbody=$(cat "$sess/comment-body.md")
 jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
 printf 'reply from @bootc: finding 3 is wrong, the guard is two lines up.\n' >"$sess/pr-conversation.txt"
+printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt" # Disposition ran (RC-075 gate)
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "created" "answering a conversation posts a new comment"
@@ -359,6 +430,99 @@ if grep -q 'issues/comments/900' "$bin/log" && grep -q 'NODE900' "$bin/log"; the
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the prior same-sha verdict was left live"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$bin"
+
+# --- Pagination (RC-074) ------------------------------------------------------
+#
+# GitHub serves a comment listing in pages. These put the council's own
+# comments past the first page, where an unpaginated listing never looked:
+# past 100 comments a same-sha re-post duplicated instead of updating, and an
+# older verdict was never retired.
+fillers() { # n -> n comments by another account
+	jq -nc --argjson n "$1" \
+		'[range(0; $n) | {id: (5000 + .), node_id: "NODEF\(.)", user: {login: "someone"}, body: "+1"}]'
+}
+
+echo "Test 9c: a verdict for this commit on page 2 is found, not duplicated (RC-074)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+rbody=$(cat "$sess/comment-body.md")
+fillers 100 | jq -c --arg b "$rbody" '. + [{id: 900, node_id: "NODE900", user: {login: "council-bot"}, body: $b}]' \
+	>"$bin/comments.json"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "action" "unchanged" "the page-2 verdict is the one this run matches"
+if grep -q -- '-f body=' "$bin/log"; then
+	echo "  FAIL: a duplicate verdict was created"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no duplicate verdict created"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess" "$bin"
+
+echo "Test 9d: an older verdict on page 2 is retired (RC-074)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+fillers 100 | jq -c '. + [{id: 808, node_id: "NODE808", user: {login: "council-bot"},
+	body: "old council\n\n<!-- review-council:marker sha=deadbeefdeadbeef -->\n"}]' >"$bin/comments.json"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "action" "created" "a new verdict is posted"
+assert_json_field "$result" "superseded" "1" "the page-2 verdict is retired"
+if grep -q 'issues/comments/808' "$bin/log" && grep -q 'NODE808' "$bin/log"; then
+	echo "  PASS: the page-2 verdict was bannered and minimized"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the page-2 verdict was never touched"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$bin"
+
+echo "Test 9e: an error or null page fails the post instead of reading as 'not posted' (RC-074)"
+# A null page is the shape a bare merge would swallow: [[1], null] | add is [1].
+for bad_page in 1 null; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	bin=$(mktemp -d)
+	make_gh_realjq "$bin"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	rbody=$(cat "$sess/comment-body.md")
+	jq -nc --arg b "$rbody" '[{id: 900, node_id: "NODE900", user: {login: "council-bot"}, body: $b}]' >"$bin/comments.json"
+	result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" MOCK_ERROR_PAGE="$bad_page" \
+		REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+	assert_json_field "$result" "status" "error" "status is error (page $bad_page)"
+	if ! grep -q -- '-f body=' "$bin/log" && ! grep -q -- '-X PATCH' "$bin/log"; then
+		echo "  PASS: nothing created or updated"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: wrote to the PR from a listing it could not fully read"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess" "$bin"
+done
+
+echo "Test 9f: a listing cut off partway fails the post (RC-074)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh_realjq "$bin"
+fillers 150 >"$bin/comments.json"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" MOCK_LIST_RC=1 \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "error" "status is error"
+if ! grep -q -- '-f body=' "$bin/log"; then
+	echo "  PASS: nothing created"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: posted after a truncated listing"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess" "$bin"
@@ -612,8 +776,9 @@ make_chained_session "$sess"
 bin=$(mktemp -d)
 make_gh "$bin"
 echo "a stale prior part body" >"$bin/stale.md"
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_GETBODY="$bin/stale.md" \
-	MOCK_PARTS="901\tNODE901\t1\n902\tNODE902\t2\n903\tNODE903\t3\n" \
+	MOCK_SHA="$head_sha" MOCK_PARTS="901\tNODE901\t1\n902\tNODE902\t2\n903\tNODE903\t3\n" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "updated" "action is updated"
 assert_json_field "$result" "updated" "3" "all three parts updated"
@@ -637,8 +802,9 @@ make_review_session_many "$sess"
 bin=$(mktemp -d)
 make_gh "$bin"
 echo "a prior part body" >"$bin/old.md"
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_GETBODY="$bin/old.md" \
-	MOCK_PARTS="901\tNODE901\t1\n902\tNODE902\t2\n903\tNODE903\t3\n" \
+	MOCK_SHA="$head_sha" MOCK_PARTS="903\tNODE903\t3\n901\tNODE901\t1\n902\tNODE902\t2\n" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "parts" "1" "the verdict now fits one comment"
 sup=$(echo "$result" | jq '.superseded')
@@ -777,8 +943,9 @@ make_chained_session "$sess"
 bin=$(mktemp -d)
 make_gh "$bin"
 echo "a stale prior part body" >"$bin/stale.md"
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_GETBODY="$bin/stale.md" MOCK_UPDATE_RC=1 \
-	MOCK_PARTS="901\tNODE901\t1\n902\tNODE902\t2\n903\tNODE903\t3\n" \
+	MOCK_SHA="$head_sha" MOCK_PARTS="901\tNODE901\t1\n902\tNODE902\t2\n903\tNODE903\t3\n" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "status" "error" "a failed update is an error"
 if echo "$result" | jq -r '.message' | grep -qF "part 3 of 3"; then
@@ -837,23 +1004,29 @@ else
 fi
 # The invariant above holds whether or not the guard exists, because a head with
 # room to spare satisfies it either way. So drive the overflow itself: re-render
-# to recover the head as the renderer sized it, then re-run with the limit set to
-# exactly that. The packer fills part 1 identically — the finding that did not
-# fit the wider budget does not fit a tighter one — so the head comes back at the
-# limit to the byte, and the links have nowhere to go.
+# to recover the head as the renderer sized it, then re-run with the limit 64
+# bytes above that. The packer fills part 1 identically — the finding that did
+# not fit the wider budget does not fit a tighter one, and the few bytes the
+# packer over-reserves for group counts fit the 64 — so the head comes back with
+# 64 bytes to spare, and the links line, over 100 bytes, has nowhere to go.
 bash "$SCRIPT" "$sess" >/dev/null 2>&1 # dry-run: the head carries the placeholder again
-exact=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
-sed "s/^- Comment limit: .*/- Comment limit: ${exact}/" "$sess/tracking.md" >"$sess/tracking.next"
+head_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
+limit=$((head_bytes + 64))
+sed "s/^- Comment limit: .*/- Comment limit: ${limit}/" "$sess/tracking.md" >"$sess/tracking.next"
 mv "$sess/tracking.next" "$sess/tracking.md"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+packed_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
+assert_equals "$packed_bytes" "$head_bytes" \
+	"precondition: the head packs the same findings 64 bytes short of the limit"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log2" MOCK_FIND="" MOCK_NEWID_SEQ="$bin/seq2" MOCK_LIST="" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "parts" "3" "still a chain, so the links are still attempted"
 tight_bytes=$(wc -c <"$sess/comment-body.md" | tr -d ' ')
-if [[ "$tight_bytes" -le "$exact" ]]; then
-	echo "  PASS: the head at the exact limit was not grown past it ($tight_bytes <= $exact)"
+if [[ "$tight_bytes" -le "$limit" ]]; then
+	echo "  PASS: the head near the limit was not grown past it ($tight_bytes <= $limit)"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: substitution pushed the head over the limit ($tight_bytes > $exact)"
+	echo "  FAIL: substitution pushed the head over the limit ($tight_bytes > $limit)"
 	FAIL=$((FAIL + 1))
 fi
 # Navigation is what yields: the parts are adjacent in the thread regardless,
@@ -983,7 +1156,7 @@ rm -rf "$sess/checkout/.git" # no HEAD to resolve
 bin=$(mktemp -d)
 make_gh_realjq "$bin"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1 # render the parts a previous run posted
-if grep -qF '<!-- review-council:marker sha=unknown part=1 of=3 -->' "$sess/comment-body.md"; then
+if grep -qF '<!-- review-council:marker sha=unknown part=1 of=3 ' "$sess/comment-body.md"; then
 	echo "  PASS: the marker carries a non-hex sha"
 	PASS=$((PASS + 1))
 else
@@ -1065,6 +1238,24 @@ for node in NODE901 NODE902 NODE903; do
 	grep -q "$node" "$bin/log" && hidden_own=$((hidden_own + 1))
 done
 assert_equals "$hidden_own" "0" "no part of the current verdict was hidden as outdated"
+rm -rf "$sess" "$bin"
+
+echo "Test D1: the poster refuses a re-review that skipped Disposition (RC-075)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bin=$(mktemp -d)
+make_gh "$bin"
+printf 'reply\n' >"$sess/pr-conversation.txt"
+result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_NEWID="779" \
+	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "error" "status is error"
+if [[ ! -e "$bin/log" ]] || ! grep -q -- '-f body=' "$bin/log"; then
+	echo "  PASS: nothing posted"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: posted a verdict whose Disposition never ran"
+	FAIL=$((FAIL + 1))
+fi
 rm -rf "$sess" "$bin"
 
 echo ""

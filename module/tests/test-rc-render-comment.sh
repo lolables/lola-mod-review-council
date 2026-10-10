@@ -896,7 +896,7 @@ fi
 # Anchored at column 0 and spelled out in full: the listings bind the last line
 # that STARTS with the marker opening, so a marker indented or run onto the end
 # of a kept line would not be found.
-if grep -qE '^<!-- review-council:marker sha=[^ ]+ part=1 of=1 -->$' "$sess/comment-body.md"; then
+if grep -qE '^<!-- review-council:marker sha=[^ ]+ part=1 of=1 run=[^ ]+ -->$' "$sess/comment-body.md"; then
 	echo "  PASS: the marker line survives the cut"
 	PASS=$((PASS + 1))
 else
@@ -1128,7 +1128,7 @@ echo "Test: an unsplit verdict still declares its place in the chain"
 sess=$(mktemp -d)
 make_review_session "$sess"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
-if grep -qF "part=1 of=1 -->" "$sess/comment-body.md"; then
+if grep -qF "part=1 of=1 run=${sess##*/} -->" "$sess/comment-body.md"; then
 	echo "  PASS: single-comment marker carries part=1 of=1"
 	PASS=$((PASS + 1))
 else
@@ -1241,6 +1241,7 @@ sess=$(mktemp -d)
 make_review_session "$sess"
 jq '.verified = [] | .verdicts = {} | .total_findings = 0' "$sess/verdicts/findings.json" \
 	>"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+echo "APPROVE" >"$sess/verdict.txt" # the verdict no findings decide (RC-077)
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -1367,6 +1368,45 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
+
+echo "Test: every part's marker ends with the run that rendered it"
+# The run stamp is what makes a re-review whose findings are unchanged still edit
+# the verdict, so the batch driver can see it completed. It goes last: every
+# reader anchors on the fields before it, and none of them reads past `of=`.
+sess=$(mktemp -d)
+make_review_session "$sess"
+make_review_session_many "$sess"
+printf -- '- Max comments: 3\n' >>"$sess/tracking.md"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	rc_comment_limit() { printf '12000'; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+run_id="${sess##*/}"
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
+for part in 1 2 3; do
+	if [[ "$part" -eq 1 ]]; then part_file="$sess/comment-body.md"; else part_file="$sess/comment-body.part${part}.md"; fi
+	marker=$(tail -n 1 "$part_file")
+	assert_equals "$marker" \
+		"<!-- review-council:marker sha=${head_sha} part=${part} of=3 run=${run_id} -->" \
+		"part ${part}'s marker ends with run=${run_id}"
+done
+rm -rf "$sess"
+
+echo "Test: a session name outside the safe set is left off the marker"
+# The stamp comes from a path. A space would split it into two tokens and a `>`
+# could close the comment early, so a name carrying either is not written at all.
+parent=$(mktemp -d)
+sess="$parent/run one"
+make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+head_sha=$(git -C "$sess/checkout" rev-parse HEAD)
+marker=$(tail -n 1 "$sess/comment-body.md")
+assert_equals "$marker" \
+	"<!-- review-council:marker sha=${head_sha} part=1 of=1 -->" \
+	"the marker carries no run= for an unsafe session name"
+rm -rf "$parent"
 
 echo "Test: a re-render that needs fewer parts removes the stale ones"
 # A run that needed three comments followed by one that needs two must not leave
@@ -1499,6 +1539,238 @@ else
 	echo "  PASS: a full-council run claims no skip"
 	PASS=$((PASS + 1))
 fi
+rm -rf "$sess"
+
+# Test 9: a recorded forge host (session.txt "Host:") wins over the origin
+# remote, which is unrelated when a review runs by URL from outside the target
+# checkout. Junk, "none", or a missing line fall back to the origin derivation.
+# Sets FORGE_WEB (RC_FORGE_WEB) and FORGE_LINK ("yes" when a file link under it
+# was rendered) for a session whose Owner/Repo lines are replaced and whose
+# Host line is appended (omitted when empty).
+forge_web_for() { # owner repo host_line
+	local s out
+	s=$(mktemp -d)
+	make_review_session "$s" github 42 "https://github.example.com/acme/widgets.git"
+	sed -i.bak -e "s#^Owner: .*#Owner:        $1#" -e "s#^Repo: .*#Repo:         $2#" "$s/session.txt"
+	[[ -n "$3" ]] && printf 'Host:         %s\n' "$3" >>"$s/session.txt"
+	out=$(
+		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+		source "$SCRIPT"
+		rc_url_file() { printf '%s/-/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+		rc_url_commit() { printf '%s/-/commit/%s' "$1" "$2"; }
+		rc_render_comment_body "$s" "$s/body.md"
+		echo "$RC_FORGE_WEB"
+		if grep -qF "$RC_FORGE_WEB/-/blob/" "$s/body.md"; then echo yes; else echo no; fi
+	)
+	FORGE_WEB=${out%%$'\n'*}
+	FORGE_LINK=${out##*$'\n'}
+	rm -rf "$s"
+}
+echo "Test 9: recorded Host overrides the origin remote"
+forge_web_for "g/sub" "p" "git.example.org"
+assert_equals "$FORGE_WEB" "https://git.example.org/g/sub/p" "nested GitLab owner uses recorded host"
+assert_equals "$FORGE_LINK" "yes" "file links use recorded host"
+forge_web_for "o" "r" "github.com"
+assert_equals "$FORGE_WEB" "https://github.com/o/r" "github host with unrelated origin"
+for host_line in "none" "" "evil.com/x" "a b" "-bad.example" "host:8080"; do
+	forge_web_for "acme" "widgets" "$host_line"
+	assert_equals "$FORGE_WEB" "https://github.example.com/acme/widgets" "Host '${host_line}' falls back to origin"
+done
+forge_web_for "../x" "r" "git.example.org"
+assert_equals "${FORGE_WEB#https://git.example.org}" "$FORGE_WEB" "unsafe owner ignores recorded host"
+
+# Test 10: the marker names the commit that was reviewed
+# The batch scripts read a PR as reviewed only when a marker names its current
+# head, so `sha=unknown` re-reviews it forever and a wrong sha misreports it.
+# The head prepare recorded from the forge ("Head SHA:") wins over any checkout:
+# a GitLab review_root is an extracted archive with no .git at all. A PR or URL
+# review standing in "." never stamps the working tree's HEAD, which belongs
+# to whatever checkout the run was launched from; a local review still does.
+# Prints the sha in the rendered marker for session <s>, rendered from <cwd>.
+marker_sha_for() { # session cwd
+	local s="$1" cwd="$2"
+	(
+		cd "$cwd" || exit 1
+		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+		source "$SCRIPT"
+		rc_render_comment_body "$s" "$s/body.md"
+	) >/dev/null 2>&1
+	sed -nE 's/^<!-- review-council:marker sha=([^ ]+) part=.*/\1/p' "$s/body.md" | head -n1
+}
+# Sets <s>'s session.txt line <key> to <value>, or removes it for "".
+set_session_kv() { # session key value
+	local f="$1/session.txt"
+	grep -v "^$2:" "$f" >"$f.tmp" || true
+	mv "$f.tmp" "$f"
+	[[ -z "$3" ]] || printf '%s:%*s%s\n' "$2" $((13 - ${#2})) "" "$3" >>"$f"
+}
+echo "Test 10: the marker names the reviewed head"
+head_sha=5555555555555555555555555555555555555555
+elsewhere=$(mktemp -d)
+(
+	cd "$elsewhere" || exit 1
+	git_init_sandbox
+	git commit -q --allow-empty -m unrelated
+)
+elsewhere_sha=$(git -C "$elsewhere" rev-parse HEAD)
+while IFS='|' read -r label input recorded root want; do
+	s=$(mktemp -d)
+	make_review_session "$s" github 42 "https://github.com/acme/widgets.git"
+	checkout_sha=$(git -C "$s/checkout" rev-parse HEAD)
+	case "$root" in
+	archive)
+		mkdir -p "$s/archive/auth"
+		cp "$s/checkout/auth/token.go" "$s/archive/auth/"
+		set_session_kv "$s" "Review root" "$s/archive"
+		;;
+	dot) set_session_kv "$s" "Review root" "." ;;
+	checkout) ;;
+	*)
+		echo "  FAIL: unknown root '$root'"
+		FAIL=$((FAIL + 1))
+		;;
+	esac
+	set_session_kv "$s" "Input" "$input"
+	set_session_kv "$s" "Head SHA" "${recorded//HEAD/$head_sha}"
+	got=$(marker_sha_for "$s" "$elsewhere")
+	want="${want//HEAD/$head_sha}"
+	want="${want//CHECKOUT/$checkout_sha}"
+	want="${want//CWD/$elsewhere_sha}"
+	assert_equals "$got" "$want" "$label"
+	rm -rf "$s"
+done <<'HEADCASES'
+recorded head, archive root without .git|url|HEAD|archive|HEAD
+recorded head wins over a checkout's HEAD|pr_number|HEAD|checkout|HEAD
+recorded head, review standing in .|url|HEAD|dot|HEAD
+no recorded head: the materialized checkout|url||checkout|CHECKOUT
+recorded none: the materialized checkout|pr_number|none|checkout|CHECKOUT
+junk recorded head is ignored|url|0123|checkout|CHECKOUT
+URL review in . with no head: not the launch checkout|url||dot|unknown
+PR review in . with head none: not the launch checkout|pr_number|none|dot|unknown
+archive root and no head: unknown|url||archive|unknown
+local review in . stamps the working tree|auto||dot|CWD
+local review without an Input line|||dot|CWD
+HEADCASES
+rm -rf "$elsewhere"
+
+# --- Disposition gate (RC-075) -------------------------------------------------
+#
+# A re-review (pr-conversation.txt exists) at any effort but quick, whose
+# evidence check produced findings.json, must have run Disposition before the
+# verdict is rendered. Live, a standard re-review skipped it silently.
+set_effort() { # session effort ("" removes the line)
+	grep -v '^Effort:' "$1/session.txt" >"$1/session.next" || true
+	[[ -n "$2" ]] && printf 'Effort:       %s\n' "$2" >>"$1/session.next"
+	mv "$1/session.next" "$1/session.txt"
+}
+
+echo "Test D1: a re-review that skipped Disposition is refused (RC-075)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+printf 'reply from @bootc: finding 1 is fixed.\n' >"$sess/pr-conversation.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "render refused"
+if jq -r '.message' <<<"$result" | grep -q 'Disposition'; then
+	echo "  PASS: the message names the phase to run"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the message does not name Disposition"
+	FAIL=$((FAIL + 1))
+fi
+if [[ ! -e "$sess/comment-body.md" ]]; then
+	echo "  PASS: nothing written"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a body was written despite the refusal"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test D2: each gate input admits the render on its own (RC-075)"
+printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "Disposition ran: rendered"
+rm -f "$sess/verdicts/_meta/disposition.txt" "$sess/comment-body.md"
+set_effort "$sess" quick
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "quick effort: rendered"
+set_effort "$sess" standard
+mv "$sess/verdicts/findings.json" "$sess/findings.aside"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+# No findings.json is no review, so no verdict to post (RC-077): the render is
+# still refused, but by the verdict check, not by Disposition.
+assert_json_field "$result" "status" "error" "no findings.json (nothing_to_do): refused, no verdict to post"
+if jq -r '.message' <<<"$result" | grep -q 'Disposition'; then
+	echo "  FAIL: the Disposition gate fired without a findings.json"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the Disposition gate admits a session with no findings.json"
+	PASS=$((PASS + 1))
+fi
+mv "$sess/findings.aside" "$sess/verdicts/findings.json"
+rm -f "$sess/pr-conversation.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "first review, no conversation: rendered"
+
+echo "Test D3: an unrecorded effort is held to the gate (RC-075)"
+printf 'reply\n' >"$sess/pr-conversation.txt"
+set_effort "$sess" ""
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "missing Effort line: refused"
+rm -rf "$sess"
+
+echo "Test S1: the symlink check has its own row in the agent table (RC-076)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified += [{"agent":"rc-check-symlinks","severity":"HIGH","file":"leak","line":1,
+		"evidence":"/tmp/rc-canary.txt","description":"d","recommendation":"r",
+		"status":"verified","verdict":"REQUEST CHANGES","provenance":{}}]
+	| .verdicts["rc-check-symlinks"] = "REQUEST CHANGES"' \
+	"$sess/verdicts/findings.json" >"$sess/f.next"
+mv "$sess/f.next" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF '| 🔗 Symlink check | ❌ Changes | 1 HIGH |' "$sess/comment-body.md"; then
+	echo "  PASS: the check's row is rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no Symlink check row in the table"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# --- Scripted verdict (RC-077) -------------------------------------------------
+echo "Test V1: a verdict.txt the findings do not decide is refused (RC-077)"
+sess=$(mktemp -d)
+make_review_session "$sess" # one verified HIGH; verdict.txt says REQUEST CHANGES
+echo "APPROVE" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a hand-written APPROVE over a HIGH is refused"
+if [[ ! -e "$sess/comment-body.md" ]]; then
+	echo "  PASS: nothing written"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a body was written despite the refusal"
+	FAIL=$((FAIL + 1))
+fi
+rm -f "$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a missing verdict.txt beside findings is refused"
+echo "REQUEST CHANGES" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "the verdict the findings decide renders"
+
+printf 'REQUEST CHANGES\r\n' >"$sess/verdict.txt"
+rm -f "$sess/comment-body.md"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a CRLF verdict.txt is refused, not posted with a stray CR"
+
+echo "Test V2: with no findings.json there is no verdict to post (RC-077)"
+mv "$sess/verdicts/findings.json" "$sess/verdicts/findings.json.stale"
+rm -f "$sess/verdict.txt" "$sess/comment-body.md"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "an empty review is not rendered as APPROVE"
+echo "APPROVE" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a hand-written verdict without findings is refused"
 rm -rf "$sess"
 
 echo ""

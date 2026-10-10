@@ -7,7 +7,8 @@
 # this suite pins is the state the driver would act on. The second is that the
 # script stays read-only. The mock gh below refuses `pr comment` outright
 # rather than recording it, so an accidental write fails at the call site
-# instead of surfacing as a missing assertion three tests later.
+# instead of surfacing as a missing assertion three tests later; the mock glab
+# refuses any write the same way and logs it for the GitLab cases to assert on.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -36,7 +37,11 @@ make_mockbin() {
 args="$*"
 case "$args" in
 auth\ status*) exit "${STUB_GH_AUTH_FAILS:-0}" ;;
-*--json\ nameWithOwner*) echo "acme/widgets" ;;
+# A logged-out gh cannot look a repository up either.
+*--json\ nameWithOwner*)
+	[[ "${STUB_GH_AUTH_FAILS:-0}" -eq 0 ]] || exit 1
+	echo "acme/widgets"
+	;;
 # A forge outage that leaves `auth status` answering: a typo'd --repo, a 502
 # or a secondary rate limit all land here. The report must tell these apart
 # from a repository that simply has no open PRs.
@@ -101,6 +106,103 @@ pr\ comment*)
 esac
 MOCKGH
 	chmod +x "$dir/gh"
+	# The GitLab counterpart, answering the `glab api` reads forge-gitlab.sh makes
+	# and dispatching on the joined argv as test-review-open-prs.sh's stub does,
+	# most specific pattern first. Two open MRs, !2 at bbbbbbb and !1 at aaaaaaa,
+	# and the viewer is user 42. Any call that names a method or a request body
+	# is a write and is refused like the gh stub's `pr comment` — and recorded
+	# in MOCK_WRITE_LOG as well, because the adapter discards glab's stderr and
+	# the refusal alone would never reach OUT. Every call is logged to
+	# MOCK_GLAB_LOG. `auth status --hostname H` exits 0 only for the hosts in
+	# STUB_GLAB_HOSTS (default: git.example.org and gitlab.com), as the real
+	# glab answers locally for a host absent from its config.
+	cat >"$dir/glab" <<'MOCKGLAB'
+#!/usr/bin/env bash
+args="$*"
+printf '%s\n' "$args" >>"${MOCK_GLAB_LOG:-/dev/null}"
+printf 'tokens=%s\n' "${GITLAB_TOKEN+GITLAB_TOKEN}${GITLAB_ACCESS_TOKEN+,GITLAB_ACCESS_TOKEN}${OAUTH_TOKEN+,OAUTH_TOKEN}" >>"${MOCK_GLAB_LOG:-/dev/null}.tokens"
+printf 'api_host=%s ci_autologin=%s\n' "${GITLAB_API_HOST-<unset>}" "${GLAB_ENABLE_CI_AUTOLOGIN-<unset>}" >>"${MOCK_GLAB_LOG:-/dev/null}.api_host"
+mr=""
+[[ "$args" =~ merge_requests/([0-9]+) ]] && mr="${BASH_REMATCH[1]}"
+# Every way glab api can be told to send something rather than fetch it: an
+# explicit method in any spelling, a request body, or a field, which on its own
+# turns a GET into a POST.
+case " $args " in
+*" -X"* | *" --method "* | *" --method="* | *" --input "* | *" --input="* | \
+	*" -f "* | *" -F "* | *" --field "* | *" --field="* | *" --raw-field "* | *" --raw-field="*)
+	printf '%s\n' "$args" >>"${MOCK_WRITE_LOG:-/dev/null}"
+	echo "FATAL attempted a write: $args" >&2
+	exit 97
+	;;
+esac
+case "$args" in
+"auth status --hostname "*)
+	case " ${STUB_GLAB_HOSTS-git.example.org gitlab.com} " in
+	*" $4 "*) exit 0 ;;
+	esac
+	echo "  X $4 has not been authenticated with glab; run \`glab auth login --hostname $4\` to authenticate." >&2
+	exit 1
+	;;
+*" user")
+	[[ "${STUB_GLAB_AUTH_FAILS:-0}" -eq 0 ]] || exit 1
+	echo '{"id":42,"username":"council"}'
+	;;
+*merge_requests\?state=opened*)
+	[[ "${STUB_GLAB_LIST_FAILS:-0}" -eq 0 ]] || {
+		echo "glab: 404 Project Not Found" >&2
+		exit 1
+	}
+	# A project with nothing open answers an empty array, not a failure.
+	if [[ "${STUB_GLAB_LIST_EMPTY:-0}" -eq 1 ]]; then
+		echo '[]'
+	else
+		echo '[{"iid":2,"sha":"bbbbbbb"},{"iid":1,"sha":"aaaaaaa"}]'
+	fi
+	;;
+# Notes as GitLab returns them. An MR with no fixture has no notes.
+*/notes*)
+	if [[ -n "${MOCK_COMMENTS_DIR:-}" ]] && [[ -f "${MOCK_COMMENTS_DIR}/mr-${mr}.json" ]]; then
+		cat "${MOCK_COMMENTS_DIR}/mr-${mr}.json"
+	else
+		echo '[]'
+	fi
+	;;
+*/commits*)
+	awk -F'\t' -v mr="$mr" '$1 == mr { print $2 }' "${MOCK_EMAILS_FILE:-/dev/null}" |
+		jq -R -s 'split("\n") | map(select(length > 0) | {author_email: .})'
+	;;
+*/diffs*)
+	echo '[{"new_path":"README.md"}]'
+	;;
+# "<username><TAB><access_level>" lines in MOCK_PERMS. A user's id is 1000 plus
+# their line number, so the member lookup can find the level again; an
+# unlisted username is a user GitLab does not know.
+*users\?username=*)
+	who="${args#*username=}"
+	awk -F'\t' -v want="$who" '$1 == want { printf "[{\"id\":%d}]\n", 1000 + NR; f = 1 }
+		END { if (!f) print "[]" }' "${MOCK_PERMS_FILE:-/dev/null}"
+	;;
+*members/all/*)
+	id="${args##*/}"
+	awk -F'\t' -v n="$((id - 1000))" 'NR == n { printf "{\"access_level\":%d}\n", $2 }' \
+		"${MOCK_PERMS_FILE:-/dev/null}"
+	;;
+# Single-MR target. Every MR exists unless a test names one that does not,
+# which real glab answers with a 404 and a failing exit.
+*merge_requests/[0-9]*)
+	[[ "$mr" != "${STUB_GLAB_MISSING_MR:-}" ]] || {
+		echo "glab: 404 Not found" >&2
+		exit 1
+	}
+	sha="ccccccc"
+	[[ "$mr" = "1" ]] && sha="aaaaaaa"
+	[[ "$mr" = "2" ]] && sha="bbbbbbb"
+	printf '{"iid":%s,"sha":"%s","changes_count":"1","author":{"bot":false}}\n' "$mr" "$sha"
+	;;
+*) exit 1 ;;
+esac
+MOCKGLAB
+	chmod +x "$dir/glab"
 	for cli in $STUB_CLIS; do
 		cat >"$dir/$cli" <<MOCKCLI
 #!/usr/bin/env bash
@@ -124,8 +226,10 @@ mask_agent_clis() {
 }
 
 # run_case <stdin: __eof__ | text> <script args...>
-# Sets OUT (stdout+stderr), RC (exit status) and CALLS (agent CLI invocations,
-# which must always be zero). Honours STUB_CLIS and any RUN_ENV entries. Runs
+# Sets OUT (stdout+stderr), RC (exit status), CALLS (agent CLI invocations,
+# which must always be zero), GLAB_CALLS (every glab argv), GLAB_TOKENS (the
+# distinct sets of glab's environment token variables those calls saw) and
+# GLAB_API_HOSTS (the distinct GITLAB_API_HOST values they saw). Honours STUB_CLIS and any RUN_ENV entries. Runs
 # inside its own temp CWD so no test depends on the developer's checkout.
 run_case() {
 	local input="$1"
@@ -152,12 +256,16 @@ run_case() {
 	fi
 	local perms_file="$work/perms.tsv"
 	printf '%s' "$MOCK_PERMS" >"$perms_file"
+	# Every write the glab stub refused, one argv per line. Read back into
+	# WRITES below; it must stay empty.
+	local write_log="$work/writes.log"
+	: >"$write_log"
 
 	set +e
 	if [[ "$input" == "__eof__" ]]; then
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_WRITE_LOG="$write_log" MOCK_GLAB_LOG="$work/glab.log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" </dev/null 2>&1)
 	else
-		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
+		OUT=$(cd "$work" && env "${RUN_ENV[@]}" MOCK_EMAILS_FILE="$emails_file" MOCK_COMMENTS_DIR="$comments_dir" MOCK_PERMS_FILE="$perms_file" MOCK_WRITE_LOG="$write_log" MOCK_GLAB_LOG="$work/glab.log" PATH="$bin:$masked" "$RC_TIMEOUT_BIN" 30 bash "$SCRIPT" "$@" <<<"$input" 2>&1)
 	fi
 	RC=$?
 	set -e
@@ -166,6 +274,13 @@ run_case() {
 	if [[ -f "$log" ]]; then
 		CALLS=$(grep -c . "$log" || true)
 	fi
+	WRITES=$(cat "$write_log")
+	GLAB_CALLS=""
+	[[ -f "$work/glab.log" ]] && GLAB_CALLS=$(cat "$work/glab.log")
+	GLAB_TOKENS=""
+	[[ -f "$work/glab.log.tokens" ]] && GLAB_TOKENS=$(sort -u "$work/glab.log.tokens")
+	GLAB_API_HOSTS=""
+	[[ -f "$work/glab.log.api_host" ]] && GLAB_API_HOSTS=$(sort -u "$work/glab.log.api_host")
 	rm -rf "$work"
 }
 
@@ -186,6 +301,10 @@ MOCK_COMMENTS=""
 # gets the lookup-answered-nothing path — which must fail closed.
 MOCK_PERMS=""
 
+# The prefix a row's PR cell carries in the table, which the assert_* readers
+# below key on: "#" for GitHub, "!" while the GitLab cases run.
+PR_MARK="#"
+
 # write_comments <pr> <<'JSON' ... JSON
 # Stage one PR's comment timeline for the next run_case. Each test writes its
 # own timeline inline rather than carrying a fixtures tree, because the shape
@@ -195,6 +314,14 @@ write_comments() {
 	local pr="$1"
 	[[ -n "$MOCK_COMMENTS" ]] || MOCK_COMMENTS=$(mktemp -d)
 	cat >"$MOCK_COMMENTS/pr-${pr}.json"
+}
+
+# write_notes <mr> <<'JSON' ... JSON
+# The GitLab counterpart: one MR's notes, as the raw array the API returns.
+write_notes() {
+	local mr="$1"
+	[[ -n "$MOCK_COMMENTS" ]] || MOCK_COMMENTS=$(mktemp -d)
+	cat >"$MOCK_COMMENTS/mr-${mr}.json"
 }
 
 # Drop staged timelines and permissions. Call between cases: a leftover verdict
@@ -220,7 +347,7 @@ reset_comments() {
 # against the empty string instead of aborting the suite.
 assert_state() {
 	local actual
-	actual=$(awk -v want="#$1" '$1 == want { print $2 }' <<<"$OUT")
+	actual=$(awk -v want="${PR_MARK}$1" '$1 == want { print $2 }' <<<"$OUT")
 	assert_equals "$actual" "$2" "$3"
 }
 
@@ -233,7 +360,7 @@ assert_state() {
 # in the foreign-marker list beneath it cannot satisfy the assertion.
 assert_by() {
 	local actual
-	actual=$(awk -v want="#$1" '$1 == want { print $4 }' <<<"$OUT")
+	actual=$(awk -v want="${PR_MARK}$1" '$1 == want { print $4 }' <<<"$OUT")
 	assert_equals "$actual" "$2" "$3"
 }
 
@@ -243,7 +370,7 @@ assert_by() {
 # reaching here posts, for the same reason assert_by reads field 4.
 assert_verdict() {
 	local actual
-	actual=$(awk -v want="#$1" '$1 == want { print $3 }' <<<"$OUT")
+	actual=$(awk -v want="${PR_MARK}$1" '$1 == want { print $3 }' <<<"$OUT")
 	assert_equals "$actual" "$2" "$3"
 }
 
@@ -677,6 +804,29 @@ assert_verdict 2 "—" "and no word, because that account's comment has none"
 reset_comments
 
 echo ""
+echo "Test: --forge and --host refuse a missing or unknown value"
+run_case "__eof__" --repo acme/widgets --forge
+assert_contains "$OUT" "--forge requires an argument" "a bare --forge names what it wanted"
+assert_equals "$RC" "2" "and exits 2"
+run_case "__eof__" --repo acme/widgets --forge bitbucket
+assert_contains "$OUT" "--forge must be one of: github, gitlab" "an unknown forge lists the accepted ones"
+assert_equals "$RC" "2" "and exits 2"
+run_case "__eof__" --repo acme/widgets --host
+assert_contains "$OUT" "--host requires an argument" "a bare --host names what it wanted"
+assert_equals "$RC" "2" "and exits 2"
+
+echo ""
+echo "Test: a logged-out gh is reported as such even with no --repo"
+# Without --repo the repository is asked of gh, which cannot answer while
+# logged out. The auth check must come first, or the operator is told the
+# repository is unknown when the fix is `gh auth login`.
+RUN_ENV=(STUB_GH_AUTH_FAILS=1)
+run_case "__eof__"
+RUN_ENV=()
+assert_contains "$OUT" "not authenticated" "the message names the real problem"
+assert_equals "$RC" "1" "and exits 1"
+
+echo ""
 echo "Test: --account requires a login"
 run_case "__eof__" --repo acme/widgets --account
 assert_equals "$RC" "2" "a bare --account exits 2"
@@ -764,6 +914,8 @@ assert_jq_str "$OUT" '.pull_requests[] | select(.number == 1) | .verdict' "null"
 	"an unreviewed PR carries null, not an em dash"
 assert_jq_str "$OUT" '.pull_requests[] | select(.number == 2) | .reviewed_is_ours' "true" \
 	"our own verdict is reviewed_is_ours: true, a real boolean"
+assert_jq_str "$OUT" '.forge' "github" "the envelope names the forge"
+assert_jq_str "$OUT" '.host' "github.com" "and the host"
 reset_comments
 
 echo ""
@@ -1188,6 +1340,314 @@ JSON
 run_case "__eof__" --repo acme/widgets --exit-code --tsv
 assert_equals "$RC" "0" "and a fully reviewed repository exits 0 under --tsv too"
 reset_comments
+
+# ---- GitLab -----------------------------------------------------------------
+# The same report against a GitLab project, through the glab stub above: two
+# open MRs, !2 at bbbbbbb and !1 at aaaaaaa, viewed by user 42. Notes are the
+# raw API objects; forge_comments_for normalises them, so these tests run the
+# adapter and the report together rather than either in isolation. Every case's
+# refused writes are gathered in GL_WRITES and asserted empty at the end.
+GL=(--forge gitlab --host git.example.org --repo g/p)
+GL_WRITES=""
+PR_MARK="!"
+
+echo ""
+echo "Test: a GitLab report labels MRs the GitLab way and names the host"
+reset_comments
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+assert_equals "$RC" "0" "a GitLab status run exits clean"
+assert_contains "$OUT" "review-council status — g/p on git.example.org  (accounts: all)" \
+	"the header names the project and the host"
+assert_state 2 "unreviewed" "an MR with no notes is unreviewed, in a row keyed !2"
+assert_state 1 "unreviewed" "and so is its neighbour"
+assert_not_contains "$OUT" "#2" "no row uses GitHub's # label"
+assert_column_aligned "STATE" "unreviewed" "!2" "the ! label keeps the columns in line"
+assert_equals "$CALLS" "0" "a GitLab status run invokes no agent CLI"
+
+echo ""
+echo "Test: our GitLab verdict at head is up-to-date, and shows its verdict"
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
+  "body":"## 🟢 Review Council: APPROVE\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}]
+JSON
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+assert_state 2 "up-to-date" "our verdict at head is up-to-date, unstarred"
+assert_verdict 2 "APPROVE" "and the verdict word is shown"
+assert_state 1 "unreviewed" "and its neighbour is unaffected"
+
+echo ""
+echo "Test: our GitLab verdict at an older commit is stale"
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
+  "body":"## 🟢 Review Council: APPROVE\n\n<!-- review-council:marker sha=0000000 part=1 of=1 -->"}]
+JSON
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+assert_state 2 "stale" "a moved head is stale"
+
+echo ""
+echo "Test: a GitLab re-review request needs Developer or above"
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
+  "body":"## 🟢 Review Council: APPROVE\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"},
+ {"id":2,"system":false,"author":{"id":50,"username":"dev"},"created_at":"2026-08-21T09:00:00.000Z",
+  "body":"Fixed.\n\n/review-council review\n"}]
+JSON
+MOCK_PERMS=$'dev\t30'
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+assert_state 2 "requested" "a Developer's request is reported as requested"
+MOCK_PERMS=$'dev\t20'
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+assert_state 2 "up-to-date" "a Reporter's request is not"
+reset_comments
+
+echo ""
+echo "Test: a GitLab MR written entirely by ignored addresses is ignored"
+MOCK_EMAILS=$'1\tdependabot[bot]@users.noreply.github.com'
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+MOCK_EMAILS=""
+assert_state 1 "ignored" "a bot MR is visible but marked ignored"
+assert_state 2 "unreviewed" "and its neighbour is unaffected"
+
+echo ""
+echo "Test: a retire banner on a GitLab verdict reads as unreviewed"
+# GitLab cannot collapse a note, so the banner on its first line stands in.
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":42,"username":"council"},"created_at":"2026-08-20T10:00:00.123Z",
+  "body":"> **Obsolete.** Superseded by the [current Review Council verdict](https://git.example.org/g/p/-/merge_requests/2#note_9) for commit `abc1234`. <!-- review-council:obsolete -->\n\n## 🟢 Review Council: APPROVE\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}]
+JSON
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+assert_state 2 "unreviewed" "a bannered verdict does not count"
+
+echo ""
+echo "Test: --account all counts another GitLab user's verdict, starred"
+reset_comments
+write_notes 2 <<'JSON'
+[{"id":1,"system":false,"author":{"id":77,"username":"fleet-bot"},"created_at":"2026-08-20T10:00:00.123Z",
+  "body":"## 🟢 Review Council: APPROVE\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}]
+JSON
+run_case "__eof__" "${GL[@]}" --account all
+GL_WRITES+="$WRITES"
+assert_state 2 "up-to-date*" "another user's verdict is counted and starred"
+assert_by 2 "fleet-bot" "BY names the GitLab username"
+assert_contains "$OUT" "* reviewed by another account" "and the footnote explains the star"
+
+echo ""
+echo "Test: GitLab --json names the forge and host and normalises the time"
+run_case "__eof__" "${GL[@]}" --json
+GL_WRITES+="$WRITES"
+assert_equals "$RC" "0" "--json exits clean on GitLab"
+jq_rc=0
+printf '%s' "$OUT" | jq empty >/dev/null 2>&1 || jq_rc=$?
+assert_equals "$jq_rc" "0" "jq parses the whole document"
+assert_jq_str "$OUT" '.forge' "gitlab" "the envelope names the forge"
+assert_jq_str "$OUT" '.host' "git.example.org" "and the host"
+assert_jq_str "$OUT" '.repo' "g/p" "and the project"
+assert_jq_str "$OUT" '[.pull_requests[].number | type] | unique | .[]' "number" \
+	"MR numbers are JSON numbers, not \"!2\" strings"
+assert_jq_str "$OUT" '.pull_requests[] | select(.number == 2) | .reviewed_at' \
+	"2026-08-20T10:00:00Z" "reviewed_at is UTC whole seconds, milliseconds dropped"
+assert_jq_str "$OUT" '.pull_requests[] | select(.number == 2) | .reviewed_is_ours | type' \
+	"boolean" "reviewed_is_ours is a real boolean"
+assert_jq_str "$OUT" '.pull_requests[] | select(.number == 2) | .reviewed_is_ours' \
+	"false" "and false for another user's verdict"
+
+echo ""
+echo "Test: GitLab --tsv keeps nine fields and a bare number"
+run_case "__eof__" "${GL[@]}" --tsv
+GL_WRITES+="$WRITES"
+assert_tsv_nf 2 "9" "a reviewed MR's line has nine fields"
+assert_tsv_nf 1 "9" "and so does an unreviewed one"
+assert_tsv_field 2 1 "2" "the number field is bare, no ! label"
+assert_tsv_field 2 4 "fleet-bot" "the by field is the GitLab username"
+assert_not_contains "$OUT" "!" "no ! label appears anywhere in --tsv"
+reset_comments
+
+echo ""
+echo "Test: --exit-code on GitLab exits 10 with MRs pending"
+run_case "__eof__" "${GL[@]}" --exit-code
+GL_WRITES+="$WRITES"
+assert_equals "$RC" "10" "unreviewed MRs exit 10"
+
+echo ""
+echo "Test: a failed GitLab listing is fatal and says merge requests"
+RUN_ENV=(STUB_GLAB_LIST_FAILS=1)
+run_case "__eof__" "${GL[@]}" --exit-code
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "1" "a broken listing exits 1, never 10 or 0"
+assert_contains "$OUT" "Could not list the open merge requests in g/p" \
+	"and names merge requests"
+assert_not_contains "$OUT" "pull request" "with no GitHub wording"
+
+echo ""
+echo "Test: a GitLab project with no open MRs says so and exits clean"
+RUN_ENV=(STUB_GLAB_LIST_EMPTY=1)
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "0" "an empty listing exits 0"
+assert_contains "$OUT" "No open merge requests found in g/p." "and names merge requests"
+
+echo ""
+echo "Test: a missing GitLab MR is named as an MR"
+RUN_ENV=(STUB_GLAB_MISSING_MR=99)
+run_case "__eof__" "${GL[@]}" 99
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "1" "a missing MR exits 1"
+assert_contains "$OUT" "MR !99 not found in g/p" "and is named the GitLab way"
+
+echo ""
+echo "Test: a GitLab host absent from glab's config is never contacted"
+# glab sends the stored token to any host it is pointed at, so only the local
+# login check may run for a host absent from glab's config.
+RUN_ENV=(STUB_GLAB_HOSTS=gitlab.com)
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "1" "a host absent from glab's config exits 1"
+assert_contains "$OUT" "git.example.org is not in glab's config. Run 'glab auth login --hostname git.example.org' first" \
+	"the message names the host and the login"
+assert_equals "$GLAB_CALLS" "auth status --hostname git.example.org" "glab is asked nothing else"
+
+echo ""
+echo "Test: glab's environment tokens reach only the host they belong to"
+RUN_ENV=(-u GITLAB_HOST GITLAB_TOKEN=t GITLAB_ACCESS_TOKEN=t OAUTH_TOKEN=t)
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "0" "a self-managed host with a gitlab.com token in the environment runs"
+assert_equals "$GLAB_TOKENS" "tokens=" "and no glab call sees the token"
+RUN_ENV=(GITLAB_HOST=git.example.org GITLAB_TOKEN=t GITLAB_ACCESS_TOKEN=t OAUTH_TOKEN=t)
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$GLAB_TOKENS" "tokens=GITLAB_TOKEN,GITLAB_ACCESS_TOKEN,OAUTH_TOKEN" \
+	"with GITLAB_HOST naming the host, every glab call sees the token"
+# GITLAB_API_HOST overrides even an explicit --hostname, so it would aim every
+# call past the login gate; and it outranks GITLAB_HOST as the token's host.
+RUN_ENV=(GITLAB_API_HOST=evil.example GLAB_ENABLE_CI_AUTOLOGIN=true CI_SERVER_HOST=evil.example GITLAB_HOST=git.example.org GITLAB_TOKEN=t GITLAB_ACCESS_TOKEN=t OAUTH_TOKEN=t)
+run_case "__eof__" "${GL[@]}"
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "0" "a run with GITLAB_API_HOST set completes"
+assert_equals "$GLAB_API_HOSTS" "api_host=<unset> ci_autologin=<unset>" \
+	"and no glab call sees GITLAB_API_HOST or GLAB_ENABLE_CI_AUTOLOGIN"
+assert_equals "$GLAB_TOKENS" "tokens=" "nor the token, which belongs to GITLAB_API_HOST's host"
+
+echo ""
+echo "Test: a GitLab host with a port is refused before glab is called"
+run_case "__eof__" --host git.example.org:8443 --repo g/p
+assert_equals "$RC" "2" "a ported --host exits 2"
+assert_contains "$OUT" "glab auth login --hostname git.example.org --api-host git.example.org:8443" "and names the fix"
+assert_equals "$GLAB_CALLS" "" "and glab is never called"
+
+echo ""
+echo "Test: an unauthenticated glab is a hard failure"
+RUN_ENV=(STUB_GLAB_AUTH_FAILS=1)
+run_case "__eof__" "${GL[@]}" --exit-code
+GL_WRITES+="$WRITES"
+RUN_ENV=()
+assert_equals "$RC" "1" "an unauthenticated glab exits 1"
+assert_contains "$OUT" "not authenticated for git.example.org" "and names the host"
+
+echo ""
+echo "Test: no GitLab case attempted a write"
+assert_equals "$GL_WRITES" "" "the glab stub's write guard never fired"
+PR_MARK="#"
+
+echo ""
+echo "Test: --help documents GitLab"
+run_case "__eof__" --help
+assert_contains "$OUT" "Forges:" "usage has a Forges section"
+assert_contains "$OUT" "glab auth login --hostname" "and says how to authenticate glab"
+assert_contains "$OUT" "merge_requests/7" "and shows an MR URL"
+assert_contains "$OUT" "GITLAB_HOST" "and documents GITLAB_HOST"
+assert_contains "$OUT" "gh or glab (authenticated) and jq" "and lists glab as a requirement"
+assert_contains "$OUT" "present in glab's config" "and that a GitLab host must be in glab's config"
+assert_contains "$OUT" "--stdin < tokenfile" "and how to add one non-interactively"
+assert_contains "$OUT" "--api-host <host>:<port>" "and how a host with a port is reached"
+assert_contains "$OUT" "only used for the host it belongs to" "and where an environment token goes"
+assert_contains "$OUT" "first of GITLAB_API_HOST, GITLAB_HOST," "and glab's host precedence"
+# The banner is only honoured at column 0, so the help must print it there, in
+# a form the adapter's own pattern accepts, or a copy of it retires nothing.
+banner=$(printf '%s\n' "$OUT" | grep 'review-council:obsolete' || true)
+if jq -en --arg b "$banner" \
+	'$b | test("^> \\*\\*Obsolete\\.\\*\\* .*<!-- review-council:obsolete -->[ \t]*$")' >/dev/null; then
+	echo "  PASS: the retire banner is printed copyable, at column 0"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the printed retire banner would not be recognised: '$banner'"
+	FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "Test: the shared glab policy is found from any CWD and through relative links"
+# common.sh sources glab-env.sh from this clone's module/ source, located from
+# the symlink-resolved script directory. run_case already runs in a fresh temp
+# CWD; each form below must answer --help and a GitLab dry run alike. Both hops
+# of the chain are relative, so each must be re-based on its own link's
+# directory.
+hop_root=$(mktemp -d)
+hop_root=$(cd -P "$hop_root" && pwd)
+mkdir -p "$hop_root/a" "$hop_root/b"
+real_script=$(dirname "$SCRIPT")
+real_script="$(cd -P "$real_script" && pwd)/${SCRIPT##*/}"
+up=""
+dir="$hop_root/a"
+while [[ "$dir" != "/" ]]; do
+	up+="../"
+	dir="$(dirname "$dir")"
+done
+ln -s "${up}${real_script#/}" "$hop_root/a/first"
+ln -s "../a/first" "$hop_root/b/second"
+first_hop=$(readlink "$hop_root/a/first")
+second_hop=$(readlink "$hop_root/b/second")
+assert_equals "${first_hop:0:1}${second_hop:0:1}" ".." "both hops of the chain are relative"
+SAVED_SCRIPT="$SCRIPT"
+for form in "$real_script" "$hop_root/b/second"; do
+	SCRIPT="$form"
+	label="direct"
+	[[ "$form" == "$real_script" ]] || label="two-hop relative symlink"
+	run_case "__eof__" --help
+	assert_equals "$RC" "0" "${label}: --help exits clean"
+	assert_contains "$OUT" "--forge" "${label}: --help prints the usage"
+	reset_comments
+	run_case "__eof__" "${GL[@]}"
+	assert_equals "$RC" "0" "${label}: a GitLab dry run exits clean"
+	assert_contains "$OUT" "g/p on git.example.org" "${label}: and reaches the GitLab project"
+done
+SCRIPT="$SAVED_SCRIPT"
+rm -rf "$hop_root"
+
+echo ""
+echo "Test: a copy of scripts/ without module/ beside it stops with a named cause"
+partial=$(mktemp -d)
+partial=$(cd -P "$partial" && pwd)
+cp -R "$SCRIPT_DIR/../../scripts" "$partial/scripts"
+SAVED_SCRIPT="$SCRIPT"
+SCRIPT="$partial/scripts/${SAVED_SCRIPT##*/}"
+want="Incomplete checkout: ${partial}/module/skills/review-council/scripts/lib/glab-env.sh not found; run the scripts from a clone of this repository."
+for args in "--help" "${GL[*]}"; do
+	# shellcheck disable=SC2086 # word-split the flag list on purpose
+	run_case "__eof__" $args
+	assert_equals "$RC" "1" "${args}: exits 1"
+	assert_contains "$OUT" "$want" "${args}: names the missing file and the fix"
+	assert_equals "$GLAB_CALLS" "" "${args}: and calls no glab"
+done
+SCRIPT="$SAVED_SCRIPT"
+rm -rf "$partial"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

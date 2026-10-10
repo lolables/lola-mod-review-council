@@ -85,6 +85,8 @@ the conversation, judges each claim on its own merits.
 
 **Inputs the subagent receives:**
 
+Exclude findings marked `provenance.validator.result: "SCRIPT"` (the `rc-check-symlinks` check's): they were computed from the diff, a reply cannot resolve them, and they are never dispositioned.
+
 - The full contents of `${session_dir}/verdicts/findings.json` (or, in deep
   mode, the aggregated findings across subsystems).
 - The full contents of `${session_dir}/pr-conversation.txt`, appended after
@@ -249,15 +251,16 @@ contents of the findings to disposition.
 > an argument. Severity was settled before you saw these findings and is not
 > part of your task.
 
-**Maintainer note (envelope assumption):** column-0 safety for the
-`Author:` / `Timestamp:` lines depends on GitHub usernames and ISO
-timestamps being unable to contain a newline or forge a column-0 delimiter.
-`rc-prepare.sh` only implements this for GitHub today — its SECTION 13
-("Fetch Prior Reviews") carries an explicit no-op `gitlab` branch that
-writes no conversation file at all. Before extending `pr-conversation.txt`
-generation to GitLab or any other forge, confirm that forge's username and
-timestamp charset can't inject a line that would be mistaken for envelope
-structure — this trust-boundary design does not transfer automatically.
+**Maintainer note (envelope assumption):** column-0 safety for `Author:` /
+`Timestamp:` lines depends on username + timestamp unable to hold newline or
+forge column-0 delimiter. `pr-conversation.txt` written for GitHub and GitLab
+(`rc_forge_fetch_conversation` in each forge adapter). GitHub: usernames and
+ISO timestamps. GitLab (`lib/forge/gitlab.sh`): usernames come from GitLab's
+restricted charset (letters, digits, `_`, `-`, `.`; no whitespace); `created_at`
+parsed by `RC_FORGE_GL_UTC_JQ` and re-emitted as `YYYY-MM-DDTHH:MM:SSZ`, or
+`""` if unparseable — raw server string never reaches envelope. Any new forge:
+confirm username + timestamp charset can't inject line mistaken for envelope
+structure first; trust-boundary design does not transfer automatically.
 
 ---
 

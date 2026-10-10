@@ -1,0 +1,53 @@
+module/skills/review-council/scripts/rc-decide-verdict.sh
+  s_a7670e68011805::t_6efd4654d45f76 1-42
+docs/dev/pipeline.md
+  s_a7670e68011805::t_6efd4654d45f76 27
+.taskfiles/scripts/mutate-check.sh
+  s_a7670e68011805::t_6efd4654d45f76 1183-1196
+module/skills/review-council/SKILL.md
+  s_a7670e68011805::t_6efd4654d45f76 971-979,987-991
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_a7670e68011805::t_6efd4654d45f76 272-286,737
+module/skills/review-council/scripts/rc-lib.sh
+  s_a7670e68011805::t_6efd4654d45f76 33-65
+module/tests/test-rc-state-vocab.sh
+  s_a7670e68011805::t_6efd4654d45f76 49-51
+module/tests/test-rc-render-comment.sh
+  s_a7670e68011805::t_6efd4654d45f76 1244,1660-1669,1682-1715
+module/tests/test-rc-pipeline.sh
+  s_a7670e68011805::t_6efd4654d45f76 98-100
+module/skills/review-council/references/pipeline-states.md
+  s_a7670e68011805::t_6efd4654d45f76 21-23
+CHANGELOG.md
+  s_a7670e68011805::t_6efd4654d45f76 738-742
+module/skills/review-council/scripts/rc-render-report.sh
+  s_a7670e68011805::t_6efd4654d45f76 107-119,193,195-196,223,225
+module/tests/test-rc-decide-verdict.sh
+  s_a7670e68011805::t_6efd4654d45f76 1-84
+module/tests/test-rc-render-report.sh
+  s_a7670e68011805::t_6efd4654d45f76 65,287,352,388,405-409,423-429,435,468,495-497,832-833,835,1302-1360
+module/skills/review-council/phases/report.md
+  s_a7670e68011805::t_6efd4654d45f76 444-459
+module/skills/review-council/scripts/rc-post-comment-github.sh
+  s_a7670e68011805::t_6efd4654d45f76 214
+module/skills/review-council/scripts/rc-post-comment-gitlab.sh
+  s_a7670e68011805::t_6efd4654d45f76 187
+module/tests/e2e/lib/rc-pipeline.yml
+  s_a7670e68011805::t_6efd4654d45f76 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "252b5256429614cb98049b6c11b9640380aff22c",
+  "prompts": {},
+  "sessions": {
+    "s_a7670e68011805": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2631aaf8-611c-458a-9850-e0c6f228b17b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

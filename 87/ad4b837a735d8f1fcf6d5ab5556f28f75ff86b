@@ -1,0 +1,19 @@
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_99ac666f9b5aed::t_c89c4cc377ab4d 39,115-116,127,135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87ad4b837a735d8f1fcf6d5ab5556f28f75ff86b",
+  "prompts": {},
+  "sessions": {
+    "s_99ac666f9b5aed": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "25d46a80-a5f8-416a-b55b-32030326344d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

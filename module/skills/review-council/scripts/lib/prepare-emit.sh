@@ -314,6 +314,8 @@ fi
 # script is running from one and agent discovery above read the other.
 scripts_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 skill_dir=$(dirname -- "$scripts_dir")
+# shellcheck disable=SC2153 # AGENTS_DIR is the caller's environment input,
+# checked non-empty in prepare-target.sh; agents_dir is not a misspelling of it.
 agents_dir=$(CDPATH='' cd -- "$AGENTS_DIR" && pwd -P)
 
 # Build the result JSON

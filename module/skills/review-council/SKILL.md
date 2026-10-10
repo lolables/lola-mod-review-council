@@ -170,13 +170,13 @@ itself), an agent identifier (what you dispatch), and a persona token (what
 `Pin personas` and `tracking.md` use). They are not interchangeable — the
 token is the one to write in configuration:
 
-| Role     | Agent                    | Persona token | Lens                                       |
-|----------|--------------------------|---------------|--------------------------------------------|
-| Guard    | `divisor-guard-code`     | `guard`       | intent drift, governance, structural coherence |
-| Adversary| `divisor-adversary-code` | `adversary`   | security, resilience                       |
-| Tester   | `divisor-testing-code`   | `testing`     | test quality, coverage                     |
-| Operator | `divisor-sre-code`       | `sre`         | deployment, dependencies                   |
-| Curator  | `divisor-curator-code`   | `curator`     | documentation gaps                         |
+| Role      | Agent                    | Persona token | Lens                                           |
+|-----------|--------------------------|---------------|------------------------------------------------|
+| Guard     | `divisor-guard-code`     | `guard`       | intent drift, governance, structural coherence |
+| Adversary | `divisor-adversary-code` | `adversary`   | security, resilience                           |
+| Tester    | `divisor-testing-code`   | `testing`     | test quality, coverage                         |
+| Operator  | `divisor-sre-code`       | `sre`         | deployment, dependencies                       |
+| Curator   | `divisor-curator-code`   | `curator`     | documentation gaps                             |
 
 Spec mode dispatches the same five personas from `divisor-*-spec.md`. Note
 that Tester and Operator do NOT pin as `tester` / `operator`: the tokens are

@@ -1,0 +1,27 @@
+docs/dev/testing.md
+  s_a7670e68011805::t_9b30a48c2a46ec 24-30,41,45-54
+CHANGELOG.md
+  s_a7670e68011805::t_5387054168850b 366-369
+docs/dev/writing-tests.md
+  s_a7670e68011805::t_63ce9ac0968205 90-93
+.github/workflows/test.yml
+  s_a7670e68011805::t_4cfeed06c1e665 8-13,18-19,21
+  s_a7670e68011805::t_1a877953ebee91 36-42,49-54
+  s_a7670e68011805::t_9626181b16d24c 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e81b3dafb21c057278289e1925ca2add52b46be2",
+  "prompts": {},
+  "sessions": {
+    "s_a7670e68011805": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2631aaf8-611c-458a-9850-e0c6f228b17b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

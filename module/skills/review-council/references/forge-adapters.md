@@ -474,10 +474,19 @@ key" below describes.
 An existing `.git` there is reused as-is; otherwise these are tried in order,
 each bounded by a 120s timeout:
 
-Every network call below (`gh repo clone`, `git clone`, `git fetch`) runs with
+Every network call below (`gh repo clone`, `git clone`, `git fetch`, and the
+`git checkout` that downloads a blobless clone's blobs) runs with
 `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS=`. A
 private host with no credential helper then fails at once instead of prompting
 until the timeout; a configured credential helper still answers.
+
+On github.com, when `gh` is on PATH, the `git` calls also get gh as a
+credential helper for `https://github.com`, passed through
+`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` after any entries
+the caller set. `gh repo clone` authenticates only the clone it runs, so
+without this a private repository's `pull/N/head` fetch had no credentials
+unless the operator had run `gh auth setup-git`. Nothing is written to any git
+config file, and no other host ever asks gh for a token.
 
 1. `gh repo clone <owner>/<repo> -- --filter=blob:none --no-checkout` — only
    for `--forge github` when the target host is `github.com` and `gh` is on
@@ -696,10 +705,11 @@ session directory and instruct the user to post it manually:
 ## Authentication
 
 - Clone: `gh repo clone` is preferred on github.com when `gh` is present, since
-  it carries gh's own auth (private repos). Every other GitHub host, and the
-  `gh`-less case, falls through to `git clone`, which honours the URL and
-  whatever the operator's credential helper supplies — public repos without
-  one. A GitLab merge request is fetched as a repository archive through `glab`
+  it carries gh's own auth (private repos). The fetch and checkout that follow
+  get the same auth through gh as a process-scoped credential helper. Every
+  other GitHub host, and the `gh`-less case, falls through to `git clone`,
+  which honours the URL and whatever the operator's credential helper
+  supplies — public repos without one. A GitLab merge request is fetched as a repository archive through `glab`
   with glab's own auth, so private projects work wherever glab is logged in.
   See "Materializing the target repo".
 - Comment: `rc-post-comment-github.sh` requires `gh` authenticated for the

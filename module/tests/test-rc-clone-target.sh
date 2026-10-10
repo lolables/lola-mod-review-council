@@ -1465,12 +1465,70 @@ for tc_flags in "--filter=blob:none --no-checkout" "--depth 50"; do
 done
 rm -rf "$bin" "$cache"
 
-# Test 21: a cache with no per-run trees is not a failure
+# Test 21: git authenticates to github.com through gh, without user config
+# `gh repo clone` hands gh's credential helper to the clone alone, so on a
+# private repository the later fetch of pull/N/head — and the checkout, which
+# in a blobless clone downloads the blobs it needs — had no credentials unless
+# the operator had run `gh auth setup-git`. Every git call of the github.com
+# path is given gh as a credential helper through GIT_CONFIG_COUNT, scoped to
+# https://github.com and appended after any entries the caller set. The mock
+# asks the real git which helper it resolves, so the assertion is git's own
+# reading of that environment.
+echo "Test 21: github.com git calls use gh as credential helper"
+real_git=$(command -v git)
+make_cred_mockbin() { # dir
+	local dir="$1"
+	cat >"$dir/git" <<MOCKGIT
+#!/usr/bin/env bash
+sub=""
+for a in "\$@"; do
+	case "\$a" in clone | fetch | checkout) sub="\$a"; break ;; esac
+done
+case "\$1" in
+remote) echo "https://example.invalid/other/repo.git"; exit 0 ;;
+rev-parse) echo "main"; exit 0 ;;
+esac
+[[ -n "\$sub" ]] || exit 0
+helper=\$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null "$real_git" config --get-urlmatch credential.helper "https://github.com/acme/widgets.git" 2>/dev/null || echo none)
+echo "\$sub helper=\$helper key0=\${GIT_CONFIG_KEY_0-unset} prompt=\${GIT_TERMINAL_PROMPT-unset}" >>"$dir/cred.log"
+if [[ "\$sub" == clone ]]; then
+	for a in "\$@"; do dest="\$a"; done
+	mkdir -p "\$dest/.git"
+fi
+MOCKGIT
+	chmod +x "$dir/git"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$dir/gh"
+	chmod +x "$dir/gh"
+}
+while IFS='|' read -r label tc_url tc_env want_helper want_key0; do
+	bin=$(mktemp -d)
+	make_cred_mockbin "$bin"
+	cache=$(mktemp -d)
+	url_args=()
+	[[ -n "$tc_url" ]] && url_args=(--url "$tc_url")
+	# shellcheck disable=SC2086 # tc_env is a list of VAR=value words
+	result=$(env $tc_env PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		"${url_args[@]}" 2>/dev/null)
+	assert_json_field "$result" "status" "ok" "$label: status is ok"
+	for sub in clone fetch checkout; do
+		line=$(grep -m1 "^$sub " "$bin/cred.log" || echo "$sub missing")
+		assert_equals "$line" "$sub helper=$want_helper key0=$want_key0 prompt=0" \
+			"$label: $sub credential helper and prompt"
+	done
+	rm -rf "$bin" "$cache"
+done <<'CREDCASES'
+github.com||GIT_CONFIG_COUNT=0|!gh auth git-credential|credential.https://github.com.helper
+caller entries kept|https://github.com/acme/widgets.git|GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.askPass GIT_CONFIG_VALUE_0=|!gh auth git-credential|core.askPass
+other host|https://ghe.example.com/acme/widgets.git|GIT_CONFIG_COUNT=0|none|unset
+CREDCASES
+
+# Test 22: a cache with no per-run trees is not a failure
 # Only GitLab makes trees under .runs, so a GitHub checkout routinely finds the
 # directory missing, or emptied by an earlier prune. Listing it then matched
 # nothing, and the error trap reported a failed command on stderr — which the
 # agent reading this script's output takes for a real one.
-echo "Test 21: no run trees means a clean stderr"
+echo "Test 22: no run trees means a clean stderr"
 for tc_runs in missing empty; do
 	bin=$(mktemp -d)
 	make_mockbin "$bin" ok "main" "https://example.invalid/other/repo.git"

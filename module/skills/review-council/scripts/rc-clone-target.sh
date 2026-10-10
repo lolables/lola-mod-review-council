@@ -225,6 +225,23 @@ fi
 # an empty GIT_ASKPASS/SSH_ASKPASS is read as unset. GCM_INTERACTIVE is Git
 # Credential Manager's own switch for its prompts.
 no_prompt=(env GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS=)
+# github.com credentials come from gh for every git call, not only the clone.
+# `gh repo clone` hands its credential helper to that one clone and stores
+# nothing, so on a private repository the fetch of pull/N/head — and the
+# checkout, which in a blobless clone downloads the blobs it needs — had no
+# credentials unless the operator had run `gh auth setup-git`. The helper is
+# passed the way gh passes it, as process-scoped configuration: scoped to
+# https://github.com so no other host ever asks gh for a token, appended after
+# any GIT_CONFIG_* entries the caller set, and written to no config file. A
+# non-numeric GIT_CONFIG_COUNT is left alone; git refuses it either way.
+gh_auth=()
+if [[ "$forge" == "github" ]] && [[ "$target_host" == "github.com" ]] && command -v gh >/dev/null 2>&1 &&
+	[[ "${GIT_CONFIG_COUNT:-0}" =~ ^[0-9]+$ ]]; then
+	config_index=$((10#${GIT_CONFIG_COUNT:-0}))
+	gh_auth=("GIT_CONFIG_COUNT=$((config_index + 1))"
+		"GIT_CONFIG_KEY_${config_index}=credential.https://github.com.helper"
+		"GIT_CONFIG_VALUE_${config_index}=!gh auth git-credential")
+fi
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones"
 # Built from the host the caller named, never from the origin's.
 clone_url="${url:-https://${target_host}/${owner}/${repo}.git}"
@@ -593,14 +610,14 @@ else
 		# may have left behind, or this clone aborts with "destination exists".
 		if [[ "$clone_ok" != true ]]; then
 			rm -rf "$dest" 2>/dev/null
-			if rc_timeout 120 "${no_prompt[@]}" git clone --filter=blob:none --no-checkout -- "$clone_url" "$dest" >/dev/null 2>&1; then
+			if rc_timeout 120 "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git clone --filter=blob:none --no-checkout -- "$clone_url" "$dest" >/dev/null 2>&1; then
 				clone_ok=true
 			fi
 		fi
 		# Shallow fallback.
 		if [[ "$clone_ok" != true ]]; then
 			rm -rf "$dest" 2>/dev/null
-			if rc_timeout 120 "${no_prompt[@]}" git clone --depth 50 -- "$clone_url" "$dest" >/dev/null 2>&1; then
+			if rc_timeout 120 "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git clone --depth 50 -- "$clone_url" "$dest" >/dev/null 2>&1; then
 				clone_ok=true
 			fi
 		fi
@@ -613,7 +630,7 @@ else
 	fi
 
 	# Fetch the PR/MR head ref (works for forks on the base repo) and check it out.
-	if ! rc_timeout 120 "${no_prompt[@]}" git -C "$dest" fetch origin "$head_ref" >/dev/null 2>&1; then
+	if ! rc_timeout 120 "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" fetch origin "$head_ref" >/dev/null 2>&1; then
 		review_root="."
 		emit "skip" "Fetch of ${head_label} failed; reviewing from diff only."
 		exit 0
@@ -622,7 +639,7 @@ else
 	# files until this runs. If it fails, the tree is empty and every finding
 	# would be stripped FILE_NOT_FOUND (a false-clean review), so fall back to
 	# diff-only review instead of emitting a misleading "ok".
-	if ! git -C "$dest" checkout -q FETCH_HEAD >/dev/null 2>&1; then
+	if ! "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" checkout -q FETCH_HEAD >/dev/null 2>&1; then
 		review_root="."
 		emit "skip" "Checkout of ${head_label} failed; reviewing from diff only."
 		exit 0

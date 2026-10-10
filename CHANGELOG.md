@@ -735,6 +735,12 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- A private github.com repository is reviewed from a real checkout without
+  `gh auth setup-git`. `gh repo clone` authenticated only the clone, so the
+  fetch of `pull/N/head` and the blobless checkout after it had no credentials
+  and the review fell back to the diff alone. Those `git` calls now get gh as
+  a credential helper for `https://github.com` through process-scoped
+  `GIT_CONFIG_*` variables; no git config file is written
 - The posted marker names the PR/MR head the forge reported. The renderer read
   it from the checkout under review, which a GitLab archive tree does not have
   (`sha=unknown`, so the batch scripts re-reviewed the MR on every run), and a

@@ -104,6 +104,19 @@ if [[ -n "$verification_refusal" ]]; then
 	exit 0
 fi
 
+# The verdict must be the one the findings decide (rc_verdict_refusal,
+# rc-lib.sh). An empty review (no findings.json, no verdict.txt) passes here
+# and renders "not recorded" below, which is the truth for it. The refusal
+# opens "Not rendering: " for the comment renderer's JSON message; the report's
+# own "**Not rendered.**" already says it.
+verdict_refusal=$(rc_verdict_refusal "$session_dir")
+if [[ -n "$verdict_refusal" ]]; then
+	echo "# Review Council Report"
+	echo ""
+	echo "**Not rendered.** ${verdict_refusal#Not rendering: }"
+	exit 0
+fi
+
 evidence_file="$session_dir/verdicts/findings.json"
 
 # Parse tracking.md through the shared reader, which trims with sed. These were
@@ -177,9 +190,10 @@ if [[ -z "$models_block" ]]; then
 	models_block="_Not recorded by the host — reviewer, validator, and coordinator model IDs were not exposed to the report renderer._"
 fi
 
-# Council verdict. The orchestrator decides it (phases/report.md, "Final
+# Council verdict. rc-decide-verdict.sh decides it (phases/report.md, "Final
 # Verdict Determination") and records it as the first line of verdict.txt; this
-# script renders it. Keeping the render here rather than asking the
+# script renders it, after rc_verdict_refusal above has checked it against the
+# findings. Keeping the render here rather than asking the
 # orchestrator to append a section keeps SKILL.md's EXECUTION-CONTRACT intact —
 # the model fills the markers this script emits and nothing else — and
 # gives the report and the PR comment (rc-render-comment.sh) one shared source
@@ -206,7 +220,9 @@ if [[ -n "$council_verdict" ]]; then
 else
 	# Never infer a verdict from the findings here: a silent default would read
 	# as a council decision that was never made, and APPROVE is the unsafe
-	# direction to guess in.
+	# direction to guess in. verdict.txt has already been checked against the
+	# findings (rc_verdict_refusal), so reaching this branch with it missing
+	# means there is no findings.json either: an empty review, with no verdict.
 	council_verdict_line="_Not recorded — the orchestrator did not write \`verdict.txt\` before rendering._"
 fi
 

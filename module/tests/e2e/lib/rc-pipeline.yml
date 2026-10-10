@@ -58,7 +58,9 @@ steps:
       printf '=== EVIDENCE VERIFICATION ===\n(e2e fixture)\n=== SUMMARY ===\nTotal findings: 0\n' \
         > "$W/session/verdicts/_meta/verification.txt"
 
-      echo "REQUEST CHANGES" > "$W/session/verdict.txt"
+      # The verdict is recorded by script from the findings (RC-077), so the
+      # tampered run, whose surviving findings are all LOW, records its own.
+      bash "$SC/rc-decide-verdict.sh" "$W/session" >/dev/null 2>&1
       bash "$SC/rc-render-report.sh" "$W/session" > "{{.input.out_report}}" 2>/dev/null
 
       jq -r '

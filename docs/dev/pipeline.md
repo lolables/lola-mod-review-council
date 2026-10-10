@@ -24,7 +24,7 @@ conditional:
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
 | **Disposition**       | `phases/disposition.md` (re-review only)                           | Triage untrusted PR-conversation replies against findings |
-| **Report**            | `rc-render-report.sh` + `phases/report.md`                         | Final report, learnings feedback                          |
+| **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
 | **Post**              | `rc-render-comment.sh` + `rc-post-comment.sh` (opt-in, PR only)    | Publish or update the verdict comment on the PR           |
 

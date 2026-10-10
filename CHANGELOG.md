@@ -735,6 +735,11 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The council verdict is decided by `rc-decide-verdict.sh` from the verified
+  findings instead of by the model, and both renderers refuse a `verdict.txt`
+  the findings do not decide. A review that produced no findings file records
+  no verdict, and its PR comment is refused rather than posted as APPROVE.
+
 - A re-review that skipped the Disposition phase is no longer rendered or
   posted. When the PR has replies since the last verdict and effort is not
   `quick`, rendering refuses with an error naming the phase until

@@ -269,6 +269,21 @@ rc_disposition_gate() { # session_dir
 	printf '%s' "Not rendering: this re-review has replies to weigh (pr-conversation.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
 }
 
+# Why the PR comment may not be rendered, or nothing: the first refusal among
+# the render gates. Every comment entry point (standalone and both posters)
+# asks this one function, so a gate added later reaches all three. With no
+# findings.json nothing was reviewed: there is no verdict to post, and the
+# old fallback of rendering APPROVE would announce a review that never ran.
+rc_comment_refusal() { # session_dir
+	local msg
+	msg=$(rc_disposition_gate "$1")
+	[[ -n "$msg" ]] || msg=$(rc_verdict_refusal "$1")
+	if [[ -z "$msg" && ! -f "$1/verdicts/findings.json" ]]; then
+		msg="Not rendering: there is no verdicts/findings.json, so nothing was reviewed and there is no verdict to post."
+	fi
+	printf '%s' "$msg"
+}
+
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
 # RC_EVIDENCE (no `local`) so the sourcing per-forge script can build its own
 # forge-specific links (e.g. #issuecomment-<id>). ---
@@ -719,7 +734,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 		json_output "skip" "Session directory not found."
 		exit 0
 	fi
-	gate_msg=$(rc_disposition_gate "$session_dir")
+	gate_msg=$(rc_comment_refusal "$session_dir")
 	if [[ -n "$gate_msg" ]]; then
 		json_output "error" "$gate_msg"
 		exit 0

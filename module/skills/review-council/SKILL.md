@@ -968,14 +968,15 @@ reached, and the session is interactive — present the verified findings and as
 
 ### Step 6: REPORT
 
-**First, determine the council verdict** (`APPROVE`, `REQUEST CHANGES`, or
-`APPROVE WITH ADVISORIES`) per the "Final Verdict Determination" rules in
-`${PHASES_DIR}/report.md`, and write it as the first line of
-`${session_dir}/verdict.txt`. The finding set is final for this iteration by the
-time you get here — an accepted offer at the end of Step 5 returns to Step 3 and
-runs this step again, overwriting it. Both the report renderer and the
-PR-comment renderer read this one file, so the report and the posted comment can
-never disagree about the outcome.
+**First, run `${SCRIPTS_DIR}/rc-decide-verdict.sh ${session_dir}`.** It decides
+the council verdict (`APPROVE`, `REQUEST CHANGES`, or `APPROVE WITH
+ADVISORIES`) from the verified findings, per the rule in `${PHASES_DIR}/report.md`
+"Final Verdict Determination", and writes it to `${session_dir}/verdict.txt`. Do
+not decide or edit the verdict yourself: both renderers refuse a `verdict.txt`
+the findings do not decide. The finding set is final for this iteration by the
+time you get here — an accepted offer at the end of Step 5 returns to Step 3
+and runs this step again, which re-records it. On `nothing_to_do` (no
+`findings.json`), no verdict is recorded and no PR comment can be posted.
 
 **Then run `${SCRIPTS_DIR}/rc-render-report.sh ${session_dir}` and
 save its stdout to `${session_dir}/report.md`.** The script renders
@@ -983,9 +984,11 @@ structured report template (tables, counts, findings list, verdict)
 from tracking and verification data, and leaves the eight markers named
 in the EXECUTION-CONTRACT for the next step to fill or delete — see
 `${PHASES_DIR}/report.md`, "How Sections Reach the Report", for which
-procedure owns each one. If `verdict.txt` is missing or empty the
-Council Verdict section renders as "not recorded" rather than guessing —
-treat that in a rendered report as a bug in this step, not a council outcome.
+procedure owns each one. The Council Verdict section renders as "not
+recorded" only for an empty review (no `findings.json`, so no `verdict.txt`);
+a missing `verdict.txt` beside a `findings.json`, or one the findings do not
+decide, is refused with "**Not rendered.**" — run `rc-decide-verdict.sh` and
+render again.
 
 **Then, read `${PHASES_DIR}/report.md`** for narrative synthesis
 and learnings extraction guidance.

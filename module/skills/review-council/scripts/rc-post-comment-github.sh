@@ -211,7 +211,7 @@ if [[ -z "$pr" || "$pr" == "none" ]]; then
 fi
 
 # Refused before rendering, so nothing is written and nothing is posted.
-gate_msg=$(rc_disposition_gate "$session_dir")
+gate_msg=$(rc_comment_refusal "$session_dir")
 if [[ -n "$gate_msg" ]]; then
 	json_output "error" "$gate_msg"
 	exit 0

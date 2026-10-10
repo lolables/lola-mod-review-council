@@ -1180,6 +1180,20 @@ check_mutation "RC-075 rendering refuses a re-review that skipped Disposition" \
 	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || return 0$/return 0/' \
 	test-rc-render-comment.sh
 
+# --- RC-077: the council verdict was the model's to write --------------------
+#
+# verdict.txt is a function of the verified severities, but the model decided
+# it and the renderers printed whatever it said.
+check_mutation "RC-077 a verified HIGH blocks" \
+	rc-lib.sh \
+	's/any(\$s\[\]; \. == "CRITICAL" or \. == "HIGH")/any($s[]; . == "CRITICAL")/' \
+	test-rc-decide-verdict.sh
+
+check_mutation "RC-077 the comment refuses a verdict the findings do not decide" \
+	rc-lib.sh \
+	's/^[[:space:]]*\[\[ "\$have" == "\$want" \]\] && return 0$/return 0/' \
+	test-rc-render-comment.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

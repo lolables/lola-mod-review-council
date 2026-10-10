@@ -30,6 +30,44 @@ _RC_LIB_LOADED=1
 # RC_MARKER_OPEN below rather than reaching for the bare key.
 RC_MARKER_KEY="review-council:marker"
 
+# The council verdict, as a jq program over findings.json. phases/report.md
+# "Final Verdict Determination" states the rule; this is its only
+# implementation. Severity decides it (severity.md: CRITICAL and HIGH block,
+# MEDIUM and LOW do not), and only verified findings count. The model used to
+# decide it and write verdict.txt by hand, and both renderers printed whatever
+# that file said. rc-decide-verdict.sh now records it, and the renderers
+# refuse a verdict.txt that disagrees (rc_verdict_refusal).
+# shellcheck disable=SC2016 # a jq program; $s is jq's variable, not the shell's.
+RC_COUNCIL_VERDICT_JQ='[(.verified // [])[] | .severity] as $s
+	| if any($s[]; . == "CRITICAL" or . == "HIGH") then "REQUEST CHANGES"
+	  elif ($s | length) > 0 then "APPROVE WITH ADVISORIES"
+	  else "APPROVE" end'
+
+# Why verdict.txt may not be rendered, or nothing. Three ways it can be wrong:
+# it differs from the verdict findings.json decides; it is missing beside a
+# findings.json; or it exists with no findings.json to decide it from, which
+# can only be a hand-written verdict. With neither file there is nothing to
+# check, and each renderer keeps its own handling of an empty review.
+#
+# Only the newline is stripped, not a carriage return: the comment renderer
+# prints the line exactly as read, so a CRLF verdict.txt that passed here would
+# post its verdict with a stray CR. rc-decide-verdict.sh never writes one.
+rc_verdict_refusal() { # session_dir
+	local sdir="$1" want have=""
+	[[ -f "$sdir/verdict.txt" ]] && have=$(head -n1 "$sdir/verdict.txt" | tr -d '\n')
+	if [[ ! -f "$sdir/verdicts/findings.json" ]]; then
+		[[ -f "$sdir/verdict.txt" ]] || return 0
+		printf '%s' "Not rendering: verdict.txt records '${have}', but there is no verdicts/findings.json to decide a verdict from. Nothing was reviewed, so no verdict is recorded; remove verdict.txt (rc-decide-verdict.sh does) and render again."
+		return 0
+	fi
+	if ! want=$(jq -r "$RC_COUNCIL_VERDICT_JQ" "$sdir/verdicts/findings.json" 2>/dev/null) || [[ -z "$want" ]]; then
+		printf '%s' "Not rendering: verdicts/findings.json could not be read, so the verdict cannot be checked."
+		return 0
+	fi
+	[[ "$have" == "$want" ]] && return 0
+	printf '%s' "Not rendering: verdict.txt records '${have:-nothing}', but the verified findings decide '${want}'. Run rc-decide-verdict.sh ${sdir} to record it, then render again."
+}
+
 # The opening of a marker as rc-render-comment.sh emits it, which is always the
 # first thing on a line of its own. Both readers match on THIS rather than on
 # the key alone, and both anchor it to the start of a line: GitHub's "Quote

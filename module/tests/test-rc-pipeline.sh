@@ -95,7 +95,9 @@ bash "$S/rc-consolidate.sh" "$session" >/dev/null
 # for that here, at the point in the pipeline the orchestrator would, because
 # rc-render-report.sh now refuses to render without it.
 write_verification_log "$session"
-echo "REQUEST CHANGES" >"$session/verdict.txt"
+# The verdict is the script's to record (RC-077); the renderer refuses any other.
+result=$(bash "$S/rc-decide-verdict.sh" "$session")
+assert_json_field "$result" "verdict" "REQUEST CHANGES" "the verified HIGH decides the verdict"
 report=$(bash "$S/rc-render-report.sh" "$session")
 
 if echo "$report" | grep -q "^## Council Verdict$"; then

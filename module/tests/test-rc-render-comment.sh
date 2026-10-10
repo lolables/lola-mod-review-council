@@ -1241,6 +1241,7 @@ sess=$(mktemp -d)
 make_review_session "$sess"
 jq '.verified = [] | .verdicts = {} | .total_findings = 0' "$sess/verdicts/findings.json" \
 	>"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+echo "APPROVE" >"$sess/verdict.txt" # the verdict no findings decide (RC-077)
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
@@ -1656,7 +1657,16 @@ assert_json_field "$result" "status" "rendered" "quick effort: rendered"
 set_effort "$sess" standard
 mv "$sess/verdicts/findings.json" "$sess/findings.aside"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
-assert_json_field "$result" "status" "rendered" "no findings.json (nothing_to_do): rendered"
+# No findings.json is no review, so no verdict to post (RC-077): the render is
+# still refused, but by the verdict check, not by Disposition.
+assert_json_field "$result" "status" "error" "no findings.json (nothing_to_do): refused, no verdict to post"
+if jq -r '.message' <<<"$result" | grep -q 'Disposition'; then
+	echo "  FAIL: the Disposition gate fired without a findings.json"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the Disposition gate admits a session with no findings.json"
+	PASS=$((PASS + 1))
+fi
 mv "$sess/findings.aside" "$sess/verdicts/findings.json"
 rm -f "$sess/pr-conversation.txt"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
@@ -1667,6 +1677,42 @@ printf 'reply\n' >"$sess/pr-conversation.txt"
 set_effort "$sess" ""
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "error" "missing Effort line: refused"
+rm -rf "$sess"
+
+# --- Scripted verdict (RC-077) -------------------------------------------------
+echo "Test V1: a verdict.txt the findings do not decide is refused (RC-077)"
+sess=$(mktemp -d)
+make_review_session "$sess" # one verified HIGH; verdict.txt says REQUEST CHANGES
+echo "APPROVE" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a hand-written APPROVE over a HIGH is refused"
+if [[ ! -e "$sess/comment-body.md" ]]; then
+	echo "  PASS: nothing written"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a body was written despite the refusal"
+	FAIL=$((FAIL + 1))
+fi
+rm -f "$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a missing verdict.txt beside findings is refused"
+echo "REQUEST CHANGES" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "the verdict the findings decide renders"
+
+printf 'REQUEST CHANGES\r\n' >"$sess/verdict.txt"
+rm -f "$sess/comment-body.md"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a CRLF verdict.txt is refused, not posted with a stray CR"
+
+echo "Test V2: with no findings.json there is no verdict to post (RC-077)"
+mv "$sess/verdicts/findings.json" "$sess/verdicts/findings.json.stale"
+rm -f "$sess/verdict.txt" "$sess/comment-body.md"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "an empty review is not rendered as APPROVE"
+echo "APPROVE" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "a hand-written verdict without findings is refused"
 rm -rf "$sess"
 
 echo ""

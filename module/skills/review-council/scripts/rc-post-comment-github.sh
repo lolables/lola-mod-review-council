@@ -107,6 +107,28 @@ source "$(dirname "$0")/rc-render-comment.sh"
 # The jq that binds that line is RC_MARKER_LINE_JQ in rc-lib.sh, shared with the
 # GitLab poster so the two forges cannot read a marker differently.
 
+# Every comment on the pull request's timeline, as one JSON array, oldest first.
+#
+# A listing answers one page at a time and gh returns only the first without
+# --paginate, so past 100 comments an older verdict was never retired and a
+# same-sha re-post created a duplicate instead of updating. --slurp gathers the
+# pages into one outer array, joined here, and the filters below run over the
+# whole list, since gh refuses --jq beside --slurp. A page that is not an array
+# is an error body, and a failed call is a truncated list; both fail rather than
+# return what was read, because the find-by-SHA lookup must never mistake "could
+# not see" for "not posted yet". Empty output fails too: -s makes
+# jq see no value at all, which the length check turns into an error instead of
+# the silent exit 0 a plain read would give. The 60s timeout covers every page,
+# so a timeline too long to list in time fails the post rather than posting
+# blind. gl_notes_json is the GitLab twin.
+gh_comments_json() { # owner repo pr
+	local pages
+	pages=$(rc_timeout 60 gh api "repos/$1/$2/issues/$3/comments?per_page=100" --paginate --slurp) || return 1
+	jq -sc 'if length == 1 and (.[0] | type == "array") and all(.[0][]; type == "array")
+		then .[0] | add // []
+		else error("a comments page was not an array") end' <<<"$pages"
+}
+
 # Every council comment already posted for THIS commit, one TSV row per part,
 # ordered by part number. A verdict too large for one comment is chained across
 # several, so "is it already posted?" is a list question, not a lookup: the
@@ -116,19 +138,21 @@ source "$(dirname "$0")/rc-render-comment.sh"
 # Comments predating chaining carry no `part=` in their marker. They are part 1,
 # which is what they were.
 gh_list_sha_parts() { # owner repo pr sha actor
-	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
-		--jq "[.[] | select((.user.login // \"\") == \"$5\")
+	local comments
+	comments=$(gh_comments_json "$1" "$2" "$3") || return 1
+	jq -r "[.[] | select((.user.login // \"\") == \"$5\")
 			| ${RC_MARKER_LINE_JQ} as \$m
 			| select(\$m | startswith(\"${RC_MARKER_OPEN}$4 \"))
 			| [(.id | tostring), .node_id, ((\$m | capture(\"^${RC_MARKER_OPEN}[^ ]+ part=(?<p>[0-9]+)\").p) // \"1\")]]
-			| sort_by(.[2] | tonumber)[] | @tsv"
+			| sort_by(.[2] | tonumber)[] | @tsv" <<<"$comments"
 }
 gh_list_council() { # owner repo pr actor
-	rc_timeout 30 gh api "repos/$1/$2/issues/$3/comments?per_page=100" \
-		--jq ".[] | select((.user.login // \"\") == \"$4\")
+	local comments
+	comments=$(gh_comments_json "$1" "$2" "$3") || return 1
+	jq -r ".[] | select((.user.login // \"\") == \"$4\")
 			| ${RC_MARKER_LINE_JQ} as \$m
 			| select(\$m != \"\")
-			| [(.id | tostring), .node_id, ((\$m | capture(\"^${RC_MARKER_OPEN}(?<s>[^ ]+)\").s) // \"\")] | @tsv"
+			| [(.id | tostring), .node_id, ((\$m | capture(\"^${RC_MARKER_OPEN}(?<s>[^ ]+)\").s) // \"\")] | @tsv" <<<"$comments"
 }
 gh_get_body() { # owner repo id
 	rc_timeout 30 gh api "repos/$1/$2/issues/comments/$3" --jq '.body'

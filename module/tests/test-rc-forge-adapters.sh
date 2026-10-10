@@ -244,17 +244,25 @@ rm -rf "$work" "$bindir" "$cache"
 
 # Call one context capability against a canned `gh api` payload and print the
 # normalized JSON it returns.
-# Usage: json=$(github_context_call rc_forge_fetch_reviews '<gh api payload>')
+# Usage: json=$(github_context_call rc_forge_fetch_reviews '<one page of the gh api payload>')
 github_context_call() {
 	local fn="$1" payload="$2" bindir
 	bindir=$(mktemp -d)
+	printf '%s\n' "$payload" >"$bindir/payload"
+	# <payload> is one page. Asked to --slurp, gh wraps the pages in an outer
+	# array, so the single page is wrapped here; a payload that is not JSON
+	# stays not JSON either way.
 	cat >"$bindir/gh" <<GH
 #!/usr/bin/env bash
 case "\$1" in
 "api" | "issue")
-	cat <<'JSON'
-${payload}
-JSON
+	if [[ " \$* " == *" --slurp "* ]]; then
+		printf '['
+		cat "$bindir/payload"
+		printf ']\n'
+	else
+		cat "$bindir/payload"
+	fi
 	;;
 *) exit 0 ;;
 esac
@@ -300,6 +308,76 @@ for fn in rc_forge_fetch_reviews rc_forge_fetch_review_comments rc_forge_fetch_c
 	actual=$(github_context_call "$fn" 'not json at all')
 	len=$(jq -r 'length' <<<"$actual" 2>/dev/null || echo "MALFORMED")
 	assert_equals "$len" "0" "$fn degrades to an empty array"
+done
+
+# Call one context capability against a fake gh that serves <pages> (a JSON
+# array of pages) the way GitHub does: the first page alone without
+# --paginate, every page with it, wrapped in one outer array with --slurp.
+# <mode> `fail` exits non-zero after printing, as a call cut off mid-listing
+# does; `empty` prints nothing and exits 0. Prints what the capability returns.
+# Usage: json=$(github_paged_call <fn> <pages-json> [fail|empty])
+github_paged_call() {
+	local fn="$1" pages="$2" mode="${3:-ok}" bindir
+	bindir=$(mktemp -d)
+	printf '%s\n' "$pages" >"$bindir/pages.json"
+	cat >"$bindir/gh" <<GH
+#!/usr/bin/env bash
+args=" \$* "
+[[ "$mode" == "empty" ]] && exit 0
+if [[ "\$args" != *" --paginate "* ]]; then
+	jq -c '.[0]' "$bindir/pages.json"
+elif [[ "\$args" == *" --slurp "* ]]; then
+	jq -c . "$bindir/pages.json"
+else
+	jq -c '.[]' "$bindir/pages.json"
+fi
+[[ "$mode" == "fail" ]] && exit 1
+exit 0
+GH
+	chmod +x "$bindir/gh"
+	(
+		PATH="$bindir:$PATH"
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/github.sh
+		source "$FORGE_DIR/github.sh"
+		"$fn" 7 acme widgets
+	)
+	rm -rf "$bindir"
+}
+
+echo "Test 13b: every page of a long list is read, in order (RC-074)"
+# A PR with 110 comments was read as its oldest 30: the replies posted since
+# the council's latest verdict were never seen, the newest least of all.
+two_pages=$(jq -nc '[
+	[range(0; 100) | {user: {login: "filler"}, created_at: "2026-02-01T00:00:00Z",
+		submitted_at: "2026-02-01T00:00:00Z", path: "a.go", line: 1, state: "COMMENTED", body: "x"}],
+	[{user: {login: "dave"}, created_at: "2026-02-03T00:00:00Z",
+		submitted_at: "2026-02-03T00:00:00Z", path: "b.go", line: 2, state: "COMMENTED", body: "newest"}]
+]')
+for fn in rc_forge_fetch_reviews rc_forge_fetch_review_comments rc_forge_fetch_conversation; do
+	actual=$(github_paged_call "$fn" "$two_pages")
+	assert_jq_str "$actual" 'length' "101" "$fn reads both pages"
+	assert_jq_str "$actual" '.[100].body' "newest" "$fn keeps page order"
+done
+
+echo "Test 13c: a page that is not an array, or a cut-off listing, yields [] (RC-074)"
+# An error body among the pages, or a call that failed after page 1, is a
+# truncated list. A partial timeline can move the "latest verdict" anchor, so
+# the adapter returns no context rather than some of it.
+bad_page=$(jq -nc '[[{user: {login: "a"}, created_at: "", body: "x"}], {message: "Server Error"}]')
+null_page=$(jq -nc '[[{user: {login: "a"}, created_at: "", body: "x"}], null]')
+one_page=$(jq -nc '[[{user: {login: "a"}, created_at: "", body: "x"}]]')
+for fn in rc_forge_fetch_reviews rc_forge_fetch_review_comments rc_forge_fetch_conversation; do
+	actual=$(github_paged_call "$fn" "$bad_page")
+	assert_jq_str "$actual" 'length' "0" "$fn rejects an error page"
+	actual=$(github_paged_call "$fn" "$null_page")
+	assert_jq_str "$actual" 'length' "0" "$fn rejects a null page"
+	actual=$(github_paged_call "$fn" "$one_page" fail)
+	assert_jq_str "$actual" 'length' "0" "$fn rejects a failed listing"
+	actual=$(github_paged_call "$fn" "$one_page" empty)
+	assert_jq_str "$actual" 'length' "0" "$fn returns [] when gh prints nothing"
 done
 
 # --------------------------------------------------------------------------

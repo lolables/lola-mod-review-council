@@ -735,6 +735,15 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- On GitHub, the council now reads every page of a pull request's reviews,
+  review comments and conversation. It used to read only the first 30 of each,
+  so on a long thread the replies since the last verdict, the newest
+  especially, never reached the Disposition phase. A listing that fails partway
+  is treated as no context rather than a partial one.
+- On GitHub, posting the verdict now reads every page of the pull request's
+  comments. Past 100 comments an older verdict was never retired and a
+  same-commit re-post created a duplicate instead of updating; a listing that
+  fails partway now fails the post, as on GitLab.
 - A private github.com repository is reviewed from a real checkout without
   `gh auth setup-git`. `gh repo clone` authenticated only the clone, so the
   fetch of `pull/N/head` and the blobless checkout after it had no credentials

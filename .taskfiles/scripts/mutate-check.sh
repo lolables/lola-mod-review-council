@@ -1146,6 +1146,31 @@ check_mutation "RC-073 the GitLab poster refuses a host glab is not logged in to
 	's/^if ! rc_forge_glab_admits /if false \&\& ! rc_forge_glab_admits /' \
 	test-rc-post-comment-gitlab.sh
 
+# --- RC-074: GitHub list calls read only their first page --------------------
+#
+# `gh api` returns one page of a list endpoint unless told to paginate. The
+# council read a 110-comment PR as its oldest 30, and the poster, past 100
+# comments, neither retired old verdicts nor found its own to update.
+check_mutation "RC-074 the adapter reads every page of a list" \
+	lib/forge/github.sh \
+	's/ --paginate --slurp 2>\/dev\/null)/ 2>\/dev\/null)/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-074 the poster reads every page of the timeline" \
+	rc-post-comment-github.sh \
+	's/ --paginate --slurp) || return 1$/) || return 1/' \
+	test-rc-post-comment-github.sh
+
+check_mutation "RC-074 the poster refuses a page that is not an array" \
+	rc-post-comment-github.sh \
+	's/ and all(\.\[0\]\[\]; type == "array")//' \
+	test-rc-post-comment-github.sh
+
+check_mutation "RC-074 the adapter refuses a page that is not an array" \
+	lib/forge/github.sh \
+	's/ and all(\.\[0\]\[\]; type == "array")//' \
+	test-rc-forge-adapters.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

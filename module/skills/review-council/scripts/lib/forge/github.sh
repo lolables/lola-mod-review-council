@@ -129,11 +129,31 @@ rc_forge_fetch_issue() {
 		<<<"$issue_json" 2>/dev/null || true
 }
 
+# Every item of a GitHub list endpoint, as one JSON array in API order.
+#
+# A list endpoint answers one page at a time, 30 items unless asked for more,
+# and `gh api` without --paginate returns that first page alone. A pull request
+# with 110 comments was read as its oldest 30, so the reply window after the
+# council's latest verdict held 25 of the 105 replies posted since, and none of
+# the newest. --slurp gathers the pages into one outer array (gh refuses it
+# beside --jq, so the merge happens here). A page that is not an array is an
+# error body, and a failed call is a truncated list: either yields [] rather
+# than the pages read so far, because a partial timeline can move the "latest
+# verdict" anchor the re-review path selects replies by.
+_rc_forge_gh_list() { # endpoint
+	local pages
+	pages=$(rc_timeout 60 gh api "$1?per_page=100" --paginate --slurp 2>/dev/null) || {
+		echo "[]"
+		return 0
+	}
+	jq -sc 'if length == 1 and (.[0] | type == "array") and all(.[0][]; type == "array") then .[0] | add // [] else [] end' \
+		<<<"$pages" 2>/dev/null || echo "[]"
+}
+
 # [{author, state, submitted_at, body}] — submitted reviews, oldest first.
 rc_forge_fetch_reviews() {
 	local pr_number="$1" owner="$2" repo="$3" reviews_json
-	reviews_json=$(rc_timeout 30 gh api \
-		"repos/${owner}/${repo}/pulls/${pr_number}/reviews" 2>/dev/null || echo "[]")
+	reviews_json=$(_rc_forge_gh_list "repos/${owner}/${repo}/pulls/${pr_number}/reviews")
 
 	jq -c '[.[]? | {
 		author: (.user.login // "unknown"),
@@ -150,8 +170,7 @@ rc_forge_fetch_reviews() {
 # addressable instead of rendering them at line "?".
 rc_forge_fetch_review_comments() {
 	local pr_number="$1" owner="$2" repo="$3" comments_json
-	comments_json=$(rc_timeout 30 gh api \
-		"repos/${owner}/${repo}/pulls/${pr_number}/comments" 2>/dev/null || echo "[]")
+	comments_json=$(_rc_forge_gh_list "repos/${owner}/${repo}/pulls/${pr_number}/comments")
 
 	jq -c '[.[]? | {
 		file: (.path // "?"),
@@ -170,8 +189,7 @@ rc_forge_fetch_review_comments() {
 # since. GitHub's issue-comments API is ascending by created_at.
 rc_forge_fetch_conversation() {
 	local pr_number="$1" owner="$2" repo="$3" conversation_json
-	conversation_json=$(rc_timeout 30 gh api \
-		"repos/${owner}/${repo}/issues/${pr_number}/comments" 2>/dev/null || echo "[]")
+	conversation_json=$(_rc_forge_gh_list "repos/${owner}/${repo}/issues/${pr_number}/comments")
 
 	jq -c '[.[]? | {
 		author: (.user.login // "unknown"),

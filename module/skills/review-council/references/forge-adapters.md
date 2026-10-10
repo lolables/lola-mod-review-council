@@ -61,6 +61,10 @@ stub that pretends to work.
 exist, so a half-implemented adapter cannot report "no inline comments" for a
 call it never makes.
 
+GitHub's list endpoints (`pulls/<n>/reviews`, `pulls/<n>/comments`,
+`issues/<n>/comments`) are read with `gh api --paginate --slurp` and merged in
+order; a failed call or an error page yields `[]`, never a partial list.
+
 `rc_forge_current_user` names the account the council posts as. It writes no
 artifact; it decides whether the council's own verdict comment can be told apart
 from a participant's reply that merely quotes it. Council identity is **marker

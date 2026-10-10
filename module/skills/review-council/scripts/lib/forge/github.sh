@@ -98,9 +98,10 @@ rc_forge_fetch_diff() {
 # Optional capabilities
 #
 # Everything below enriches a review rather than defining it, so an adapter may
-# omit any of them: prepare-context.sh tests `declare -F` before calling and
-# writes no artifact when the capability is absent. That is how a forge ships
-# partial support without a stub that pretends to work.
+# omit any of them: the calling stage (prepare-context.sh, prepare-links.sh)
+# tests `declare -F` before calling and writes no artifact when the capability
+# is absent. That is how a forge ships partial support without a stub that
+# pretends to work.
 #
 # Each returns NORMALIZED JSON on stdout, never the forge's own shape. That is
 # the whole point of the seam — the stage that renders these files must not
@@ -211,4 +212,47 @@ rc_forge_fetch_conversation() {
 # or rate-limited forge must not abort preparation.
 rc_forge_current_user() {
 	rc_timeout 15 gh api user --jq '.login' 2>/dev/null || echo ""
+}
+
+# [{path, target}] — every symlink in the tree at <head_sha>, target null when
+# its blob could not be read or holds a NUL byte.
+#
+# Optional capability, and the one exception to "failure is empty output, exit
+# 0": a partial list would judge a change against links that are not all there,
+# so anything short of the complete list prints nothing and returns non-zero,
+# and rc-check-symlinks.sh then discloses that it judged from the diff alone.
+# That covers a tree GitHub reports as truncated (over 100,000 entries or 7 MB)
+# and more links than REVIEW_COUNCIL_MAX_HEAD_LINKS (default 500): each link
+# costs one blob request.
+#
+# The blob API returns base64 wrapped at 60 columns, which @base64d refuses
+# until the line breaks are removed.
+rc_forge_fetch_links() {
+	local owner="$2" repo="$3" head_sha="$4"
+	local max_links=500 tree_json link_rows row blob_sha blob_json entry entries=""
+	[[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+	# Base 10 is forced: a leading zero would otherwise read as octal.
+	[[ "${REVIEW_COUNCIL_MAX_HEAD_LINKS:-}" =~ ^[0-9]{1,18}$ ]] &&
+		max_links=$((10#$REVIEW_COUNCIL_MAX_HEAD_LINKS))
+	tree_json=$(rc_timeout 60 gh api "repos/${owner}/${repo}/git/trees/${head_sha}?recursive=1" 2>/dev/null) ||
+		return 1
+	link_rows=$(jq -c --argjson max "$max_links" '
+		if type == "object" and .truncated == false and (.tree | type) == "array"
+			and all(.tree[]; type == "object" and (.path | type) == "string" and (.mode | type) == "string")
+		then [.tree[] | select(.mode == "120000") | {path, sha}]
+			| if length <= $max then .[] else error("over the cap") end
+		else error("incomplete tree") end' <<<"$tree_json" 2>/dev/null) || return 1
+	while IFS= read -r row; do
+		[[ -n "$row" ]] || continue
+		blob_sha=$(jq -r '.sha' <<<"$row")
+		[[ "$blob_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+		blob_json=$(rc_timeout 30 gh api "repos/${owner}/${repo}/git/blobs/${blob_sha}" 2>/dev/null) || blob_json=""
+		entry=$(jq -c --arg blob "$blob_json" '{path, target: ([
+			$blob | fromjson? | select(type == "object" and .encoding == "base64" and (.content | type) == "string")
+			| .content | gsub("\\s"; "") | try @base64d catch empty
+			| select(explode | all(. != 0))
+		] | .[0])}' <<<"$row") || return 1
+		entries+="$entry"$'\n'
+	done <<<"$link_rows"
+	jq -sc '.' <<<"$entries"
 }

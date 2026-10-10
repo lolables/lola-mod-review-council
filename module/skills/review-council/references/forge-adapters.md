@@ -56,6 +56,7 @@ stub that pretends to work.
 | `rc_forge_fetch_review_comments <pr> <owner> <repo>` | `[{file, line, author, body}]`           | `prior-reviews.txt`     |
 | `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, created_at, body}]`           | `pr-conversation.txt`   |
 | `rc_forge_current_user`                              | `<login>` (bare string, or empty)        | (no artifact; see below)|
+| `rc_forge_fetch_links <pr> <owner> <repo> <head_sha>` | `[{path, target}]`, target string or null | `head-links.json` (see below) |
 
 `prior-reviews.txt` needs both review functions and is skipped unless both
 exist, so a half-implemented adapter cannot report "no inline comments" for a
@@ -110,6 +111,33 @@ not write that puts a marker at the start of a line, which takes deliberate
 effort rather than clicking "Quote reply". On the fallback that comment is read
 as the verdict; with a login to compare against it is not.
 
+`rc_forge_fetch_links` lists every symlink in the tree at the head commit, so
+`rc-check-symlinks.sh` can judge a change against all of them: a pure rename
+(no target in the diff) and a chain through a link the change does not touch
+(`x -> sub/up/..` with `sub/up -> ..` already on the base) are invisible in the
+diff alone. Preparation (`lib/prepare-links.sh`) calls it when the diff came
+from the forge and the adapter reported a 40-hex `pr_head_sha`, and writes its
+output as `head-links.json`; a local review lists the operator's index instead.
+
+- **Contract.** Print the JSON array and return 0, or print nothing and return
+  non-zero. It is the one capability where failure is a non-zero exit: a partial
+  list would judge the change against links that are not all there, so anything
+  short of the complete list must say so. The check then judges from the diff
+  alone and discloses it in `symlinks.txt` and its `head_links: "unavailable"`
+  payload. `target` is null when the link's blob could not be read or holds a
+  NUL byte; such a link counts as escaping wherever a chain reaches it.
+- **Cap.** At most `REVIEW_COUNCIL_MAX_HEAD_LINKS` links (default 500), since
+  each costs one blob request; more is a failure, not a truncated list.
+- **GitHub.** `gh api repos/<owner>/<repo>/git/trees/<sha>?recursive=1`; a
+  response with `"truncated": true` (over 100,000 entries or 7 MB) is a
+  failure. Entries with `mode == "120000"` are links, and each target comes
+  from `git/blobs/<sha>`, base64 wrapped at 60 columns.
+- **GitLab.** Gated by `rc_forge_glab_admits` like every other call.
+  `glab api --paginate projects/<enc>/repository/tree?recursive=true&ref=<sha>&per_page=100`,
+  with the pages slurped and checked as for the conversation, and an empty
+  answer refused; each target is `repository/blobs/<id>/raw`, which glab copies
+  to stdout byte for byte.
+
 ### Why normalized shapes
 
 Adapters return the module's field names, never the forge's. The stages that
@@ -121,8 +149,9 @@ prevent.
 ### Degradation
 
 Every function returns empty output, or an empty array, on failure — never a
-non-zero exit. A forge that is down, rate-limiting or refusing auth costs the
-review its context, not its life.
+non-zero exit, except `rc_forge_fetch_links`, whose non-zero exit is how it says
+the list is incomplete. A forge that is down, rate-limiting or refusing auth
+costs the review its context, not its life.
 
 ### GitLab status
 
@@ -131,6 +160,7 @@ review its context, not its life.
 | Required contract                | implemented; `pr_status_checks` is left empty, so no pipeline status    |
 | `rc_forge_fetch_conversation`    | implemented: MR notes, oldest first, system notes dropped, timestamps normalised to UTC |
 | `rc_forge_current_user`          | implemented: the GitLab username of the account glab is logged in as    |
+| `rc_forge_fetch_links`           | implemented: repository tree at the MR head commit, raw blobs           |
 | `rc_forge_fetch_reviews` / `rc_forge_fetch_review_comments` | absent, so no `prior-reviews.txt` (known gap) |
 | `rc_forge_fetch_issue`           | absent                                                                  |
 
@@ -515,8 +545,15 @@ message. The checkout is not cosmetic: a blobless `--no-checkout` clone has no
 files until it runs, and reporting `ok` over an empty tree would strip every
 finding as `FILE_NOT_FOUND`, producing a false-clean review.
 
-The GitHub checkout keeps the symlinks the pull request commits; only the
-GitLab path below removes them. Removing them here too is a known follow-up.
+The GitHub checkout writes every committed symlink as a regular file holding
+its target text: `core.symlinks=false` is set in the cache clone's own config,
+links already in the work tree (an earlier checkout, the shallow fallback's
+clone) are deleted, and the checkout is forced. After either forge's tree is
+built, any symlink left outside `.git/` is a `skip` (diff-only review). The
+in-place path is refused, falling through to the cache, when the current
+checkout tracks a link (`git ls-files -s`, mode `120000`) whose target escapes
+the repository by `lib/symlinks.sh`'s rule; the operator's tree is never
+modified.
 
 **GitLab: the archive at the head sha.** A GitLab merge request is not cloned.
 An unauthenticated `git clone` of a private project fails, and the one

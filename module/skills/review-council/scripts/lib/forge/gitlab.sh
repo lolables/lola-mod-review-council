@@ -233,3 +233,55 @@ rc_forge_current_user() {
 	user_json=$(rc_forge_glab 15 "$host" api --hostname "$host" user 2>/dev/null) || return 0
 	jq -r '.username // empty' <<<"$user_json" 2>/dev/null || echo ""
 }
+
+# [{path, target}] — every symlink in the tree at <head_sha>, or no output and
+# a non-zero status when the complete list cannot be had. Optional capability;
+# see the GitHub adapter for why a partial list is a failure here, and for the
+# REVIEW_COUNCIL_MAX_HEAD_LINKS cap.
+#
+# Pages are slurped and checked as rc_forge_fetch_conversation does, and no
+# output at all is a failure too: every commit has a tree, so an empty answer
+# is not an empty listing. The raw blob is the target's bytes, which glab
+# copies to stdout unchanged; it is kept in a file, since a shell variable
+# would drop a NUL byte, and jq's --rawfile keeps one for the NUL test.
+rc_forge_fetch_links() {
+	local owner="$2" repo="$3" head_sha="$4" host="${forge_host:-gitlab.com}"
+	local max_links=500 project pages link_rows row blob_id blob_file fetched entry entries=""
+	[[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+	rc_forge_glab_admits "$host" "$owner" "$repo" || return 1
+	# Base 10 is forced: a leading zero would otherwise read as octal.
+	[[ "${REVIEW_COUNCIL_MAX_HEAD_LINKS:-}" =~ ^[0-9]{1,18}$ ]] &&
+		max_links=$((10#$REVIEW_COUNCIL_MAX_HEAD_LINKS))
+	# owner/repo are validated [A-Za-z0-9._-] segments, so `/` is the only
+	# character the project path needs encoded.
+	project="${owner//\//%2F}%2F${repo}"
+	pages=$(rc_forge_glab 60 "$host" api --hostname "$host" --paginate \
+		"projects/${project}/repository/tree?recursive=true&ref=${head_sha}&per_page=100" \
+		2>/dev/null) || return 1
+	link_rows=$(jq -sc --argjson max "$max_links" '
+		if length > 0 and all(.[]; type == "array")
+			and all(.[][]; type == "object" and (.path | type) == "string" and (.mode | type) == "string")
+		then [add | .[] | select(.mode == "120000") | {path, id}]
+			| if length <= $max then .[] else error("over the cap") end
+		else error("incomplete tree") end' <<<"$pages" 2>/dev/null) || return 1
+	blob_file=$(mktemp) || return 1
+	while IFS= read -r row; do
+		[[ -n "$row" ]] || continue
+		blob_id=$(jq -r '.id' <<<"$row")
+		if [[ ! "$blob_id" =~ ^[0-9a-f]{40}$ ]]; then
+			rm -f "$blob_file"
+			return 1
+		fi
+		fetched=true
+		rc_forge_glab 30 "$host" api --hostname "$host" \
+			"projects/${project}/repository/blobs/${blob_id}/raw" >"$blob_file" 2>/dev/null || fetched=false
+		entry=$(jq -c --rawfile target "$blob_file" --argjson fetched "$fetched" \
+			'{path, target: (if $fetched and ($target | explode | all(. != 0)) then $target else null end)}' <<<"$row") || {
+			rm -f "$blob_file"
+			return 1
+		}
+		entries+="$entry"$'\n'
+	done <<<"$link_rows"
+	rm -f "$blob_file"
+	jq -sc '.' <<<"$entries"
+}

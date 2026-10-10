@@ -245,6 +245,112 @@ else
 fi
 rm -rf "$work"
 
+echo "Test: preparation files a symlink leaving the repository (RC-076)"
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	echo base >README
+	git add README
+	git commit -qm base
+	ln -s /etc/passwd leak
+	git add leak
+	git commit -qm link
+)
+result=$(prepare_in "$work" --scope range --scope-value "HEAD~1..HEAD")
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+if [[ -n "$sess" ]] && jq -e '.findings[0].file == "leak"' "$sess/verdicts/rc-check-symlinks.json" >/dev/null 2>&1; then
+	echo "  PASS: the script verdict is in the session"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no script verdict after preparation"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work"
+
+echo "Test: the operator's diff configuration cannot hide a symlink (RC-076)"
+# diff.patch is built with the operator's git, and plain `git diff` honours
+# their config: color.diff=always put escape codes before every header, so the
+# link was never seen, and diff.mnemonicPrefix filed it as w/leak. The staged
+# link makes the diff index-to-commit, where the mnemonic prefixes apply.
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	echo base >README
+	git add README
+	git commit -qm base
+	git config color.diff always
+	git config diff.mnemonicPrefix true
+	ln -s /etc/passwd leak
+	git add leak
+)
+result=$(prepare_in "$work")
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+if [[ -n "$sess" ]] && jq -e '[.findings[].file] == ["leak"]' "$sess/verdicts/rc-check-symlinks.json" >/dev/null 2>&1; then
+	echo "  PASS: the link is filed at its real path"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the link was missed or filed at the wrong path"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work"
+
+echo "Test: preparation judges a new link against links the change does not touch (RC-078)"
+# sub/up -> .. is on the base and stays inside; x -> sub/up/.. resolves to the
+# repository's parent. Only the index listing preparation writes as
+# head-links.json shows the check where sub/up points.
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	echo base >README
+	mkdir sub
+	ln -s .. sub/up
+	git add README sub/up
+	git commit -qm base
+	ln -s sub/up/.. x
+	git add x
+	git commit -qm link
+)
+result=$(prepare_in "$work" --scope range --scope-value "HEAD~1..HEAD")
+assert_json_field "$result" "status" "ok" "status is ok"
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+if [[ -n "$sess" ]] && jq -e '[.findings[] | "\(.severity) \(.file)"] == ["HIGH x"]' \
+	"$sess/verdicts/rc-check-symlinks.json" >/dev/null 2>&1; then
+	echo "  PASS: x is filed as a HIGH finding"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the chain through sub/up was not reported"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work"
+
+echo "Test: a symlink check that fails stops preparation (RC-076)"
+# Reviewing on without the check would drop the one finding no reviewer is
+# relied on for. A copy of the skill whose check crashes stands in for any
+# failure inside it.
+work=$(mktemp -d)
+skill=$(mktemp -d)
+cp -R "$SCRIPT_DIR/../skills/review-council"/. "$skill"/
+printf '#!/usr/bin/env bash\nexit 1\n' >"$skill/scripts/rc-check-symlinks.sh"
+(
+	cd "$work"
+	git_init_sandbox
+	echo base >README
+	git add README
+	git commit -qm base
+	ln -s /etc/passwd leak
+	git add leak
+	git commit -qm link
+)
+result=$(cd "$work" && AGENTS_DIR="$AGENTS" bash "$skill/scripts/rc-prepare.sh" --scope range --scope-value "HEAD~1..HEAD" 2>/dev/null)
+assert_json_field "$result" "status" "skip" "status is skip"
+assert_message_matches "$result" 'symlink check could not run' "the message names the check"
+rm -rf "$work" "$skill"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

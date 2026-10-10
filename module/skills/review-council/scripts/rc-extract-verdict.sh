@@ -240,6 +240,18 @@ for raw in "${raw_files[@]}"; do
 	agent=$(basename "$raw")
 	agent="${agent%.raw.md}"
 	rel="${raw#"$session_dir"/}"
+	# The symlink check's verdict is written by rc-check-symlinks.sh straight
+	# to verdicts/, and its findings skip the evidence check because a script
+	# computed them. A model-written raw file under that name would be turned
+	# into the same json here: at the top level it overwrites the script's
+	# verdict (a HIGH replaced by an empty APPROVE), and in a subsystem
+	# directory it would carry in findings nobody computed. Refused at any
+	# depth, before the block is read, and its json is never written.
+	if [[ "$agent" == "$RC_SCRIPT_AGENT" ]]; then
+		detail="${RC_SCRIPT_AGENT} is reserved: it names the symlink check, which rc-check-symlinks.sh writes to verdicts/${RC_SCRIPT_AGENT}.json itself. Reviewers never write it, and nothing was extracted from this file. Delete ${rel} and re-run the extractor; no dispatch is needed."
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RESERVED_AGENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		continue
+	fi
 	block=$(extract_block "$raw")
 	if [[ -z "$block" ]] || ! echo "$block" | jq -e . >/dev/null 2>&1; then
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')

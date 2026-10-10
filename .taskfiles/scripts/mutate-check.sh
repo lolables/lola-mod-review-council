@@ -60,7 +60,7 @@ module_snapshot() {
 #
 # <script> is relative to module/skills/review-council/scripts/, <suite> to
 # module/tests/. Preparation targets carry a lib/ prefix: rc-prepare.sh is an
-# entry point that sources six stages, and each defect lives in the stage that
+# entry point that sources seven stages, and each defect lives in the stage that
 # owns that step. Anchor each expression tightly: a mutation that fails to apply
 # is reported as BROKEN rather than silently counted as caught, because "the
 # suite went red" means nothing if the code was never actually changed. A suite
@@ -362,7 +362,7 @@ check_mutation "RC-25 cluster guard counts distinct findings" \
 # surviving array, while the sibling's angle was folded nowhere.
 check_mutation "RC-26 cluster primary emitted once" \
 	jq/consolidate-clusters.jq \
-	's/map(ident) | any(. == \$fid)/false/' \
+	's/map(select(script | not) | ident) | any(. == \$fid)/false/' \
 	test-rc-consolidate.sh
 
 # Every finding headline in every artifact was a 60-byte mid-word cut, because
@@ -1180,6 +1180,56 @@ check_mutation "RC-075 rendering refuses a re-review that skipped Disposition" \
 	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || return 0$/return 0/' \
 	test-rc-render-comment.sh
 
+# --- RC-076: committed symlinks reached reviewers live -----------------------
+#
+# A PR adding a link to a host file was put in front of every reviewer, and
+# nothing flagged it. The check files an escaping link as a HIGH no LLM phase
+# can revise; the GitHub checkout writes links as inert files.
+check_mutation "RC-076 an absolute symlink target escapes" \
+	lib/symlinks.sh \
+	's/\[\[ "\$target" == \/\* || /[[ /' \
+	test-rc-symlinks-lib.sh
+
+check_mutation "RC-076 the script finding survives a diff-only review root" \
+	rc-verify-evidence.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$origin" == "SCRIPT" \]\]; then$/\1if false; then/' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-076 the script verdict is admitted from the top level only" \
+	rc-verify-evidence.sh \
+	's/find "\$vdir" -name .divisor-\*\.json. -type f/find "$vdir" \\( -name "divisor-*.json" -o -name "rc-check-symlinks.json" \\) -type f/' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-076 dedup never merges a script finding" \
+	jq/dedup-findings.jq \
+	's/^\([[:space:]]*\)if (\$x | script) then/\1if false then/' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-076 no cluster takes a script finding as a member" \
+	jq/consolidate-clusters.jq \
+	's/select((script | not) and \.file == /select(.file == /' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-076 extraction refuses the script's reserved name" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$agent" == "\$RC_SCRIPT_AGENT" \]\]; then$/\1if false; then/' \
+	test-rc-extract-verdict.sh
+
+check_mutation "RC-076 the GitHub checkout writes links as files" \
+	rc-clone-target.sh \
+	's/ config core\.symlinks false / config core.symlinks true /' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-076 a surviving link fails closed" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)\[\[ -n "\$live_links" \]\]; then$/\1false; then/' \
+	test-rc-clone-target.sh
+
+check_mutation "RC-076 an escaping tracked link refuses in-place review" \
+	rc-clone-target.sh \
+	's/^\([[:space:]]*\)if inplace_link_escapes; then$/\1if false; then/' \
+	test-rc-clone-target.sh
+
 # --- RC-077: the council verdict was the model's to write --------------------
 #
 # verdict.txt is a function of the verified severities, but the model decided
@@ -1193,6 +1243,68 @@ check_mutation "RC-077 the comment refuses a verdict the findings do not decide"
 	rc-lib.sh \
 	's/^[[:space:]]*\[\[ "\$have" == "\$want" \]\] && return 0$/return 0/' \
 	test-rc-render-comment.sh
+
+# --- RC-078: symlinks judged from the diff alone ------------------------------
+#
+# A pure rename (similarity 100%) carries no mode or target in the diff, and a
+# new link can escape only by chaining through a link already on the base; both
+# merged with no finding. The check now judges changes against every link in
+# the head tree (head-links.json) and reports an untouched link a change makes
+# escape. A forge that cannot list the tree whole is disclosed, not trusted.
+check_mutation "RC-078 a pure rename is judged from the head tree's list" \
+	rc-check-symlinks.sh \
+	's/print "R" moved$/moved = moved/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 the map is seeded from the head tree's list" \
+	rc-check-symlinks.sh \
+	's/^\([[:space:]]*\)rc_symlink_map_add "\${head_paths\[h\]}" "\${head_targets\[h\]}"$/\1:/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 an untouched link a change makes escape is reported" \
+	rc-check-symlinks.sh \
+	's/^\([[:space:]]*\)\[\[ -n "\$via" \]\] || continue$/\1continue/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 a missing list is disclosed" \
+	rc-check-symlinks.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$head_links" == unavailable \]\]; then$/\1if false; then/' \
+	test-rc-check-symlinks.sh
+
+check_mutation "RC-078 an unknown target escapes" \
+	lib/symlinks.sh \
+	's/_RC_SYMLINK_MAP\["p:\$1"\]=\/$/_RC_SYMLINK_MAP["p:$1"]=./' \
+	test-rc-symlinks-lib.sh
+
+check_mutation "RC-078 the walk names the changed link it follows" \
+	lib/symlinks.sh \
+	's/^\([[:space:]]*\)_rc_symlink_followed_changed="\$cur"$/\1:/' \
+	test-rc-symlinks-lib.sh
+
+check_mutation "RC-078 GitHub refuses a truncated tree" \
+	lib/forge/github.sh \
+	's/ and \.truncated == false and / and true and /' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 GitHub refuses a list over the cap" \
+	lib/forge/github.sh \
+	's/| if length <= \$max then \.\[\] else error("over the cap") end/| .[]/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 GitLab refuses a list over the cap" \
+	lib/forge/gitlab.sh \
+	's/| if length <= \$max then \.\[\] else error("over the cap") end/| .[]/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 GitLab nulls a target holding NUL" \
+	lib/forge/gitlab.sh \
+	's/if \$fetched and (\$target | explode | all(\. != 0)) then/if $fetched then/' \
+	test-rc-forge-adapters.sh
+
+check_mutation "RC-078 a local review lists the index" \
+	lib/prepare-links.sh \
+	's/^\([[:space:]]*\)head_links_json=\$(rc_index_links) || head_links_json=""$/\1head_links_json=""/' \
+	test-rc-prepare-git-edges.sh
 
 total=$((caught + missed + broken))
 echo ""

@@ -221,7 +221,8 @@ Validate JSON output:
 - `status` present (`ok`, `extract_error`, `nothing_to_do`, or `skip`)?
 - On `ok`, did `verdicts/<agent>.json` get written for every agent?
 - On `extract_error`, does the per-agent `reason` (`NO_JSON_BLOCK` /
-  `SCHEMA_INVALID` / `VERDICT_INCOHERENT` / `AGENT_MISMATCH`) and `remediation` text give an
+  `SCHEMA_INVALID` / `VERDICT_INCOHERENT` / `AGENT_MISMATCH` /
+  `RESERVED_AGENT`) and `remediation` text give an
   LLM orchestrator enough to re-dispatch that one agent? A
   `VERDICT_INCOHERENT` block is schema-valid — it declares APPROVE over a
   CRITICAL or HIGH finding — so do not expect `jsonschema validate` to

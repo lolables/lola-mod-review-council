@@ -66,6 +66,20 @@ fi
 source "$RC_LIB_DIR/prepare-target.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-changes.sh
 source "$RC_LIB_DIR/prepare-changes.sh"
+
+# Symlinks the change adds, moves or retargets are judged now, against every
+# link in the head tree, before any reviewer runs; an escaping one becomes a
+# script-authored HIGH finding. A check that cannot complete stops the run
+# instead of reviewing on without it.
+# shellcheck source=module/skills/review-council/scripts/lib/prepare-links.sh
+source "$RC_LIB_DIR/prepare-links.sh"
+symlink_json=$(bash "$(dirname "$0")/rc-check-symlinks.sh" "$session_dir")
+symlink_status=$(jq -r '.status // empty' <<<"$symlink_json") || symlink_status=""
+if [[ "$symlink_status" != "ok" ]]; then
+	symlink_reason=$(jq -r '.message // empty' <<<"$symlink_json") || symlink_reason=""
+	json_output "skip" "The symlink check could not run: ${symlink_reason:-it printed no readable result.}"
+	exit 0
+fi
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-context.sh
 source "$RC_LIB_DIR/prepare-context.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-emit.sh

@@ -7,6 +7,8 @@ rc_trap_errors     # report script:line on any unhandled failure (never silent)
 rc_require_timeout # this script makes forge calls; fail before any side effect
 # shellcheck source=module/skills/review-council/scripts/lib/forge/gitlab.sh
 source "$(dirname "$0")/lib/forge/gitlab.sh"
+# shellcheck source=module/skills/review-council/scripts/lib/symlinks.sh
+source "$(dirname "$0")/lib/symlinks.sh"
 
 # rc-clone-target.sh — materialize a target repo for PR/MR review when we are
 # not already in it. Emits JSON with review_root for downstream reads.
@@ -113,6 +115,47 @@ remove_special() {
 	find "$1" -mindepth 1 \( ! -type f ! -type d -o -type f -links +1 \) -exec rm -f {} +
 }
 
+# Does the checkout we are standing in track a symlink leading out of the
+# repository? In-place review reads the operator's own tree, live links and
+# all, so such a checkout is not reused: the cache paths materialize the same
+# head with every link inert, and the operator's tree is never modified.
+# Every tracked link goes into the map, so a chain through another link is
+# judged as the kernel would follow it. Links that stay inside can only reach
+# the review's own content and are left alone. A git failure counts as
+# escaping: the cache path is the safe one.
+inplace_link_escapes() {
+	local listing rec meta mode obj path target i
+	local -a link_paths=() link_targets=()
+	listing=$(mktemp) || return 0
+	if ! git ls-files -s -z >"$listing" 2>/dev/null; then
+		rm -f "$listing"
+		return 0
+	fi
+	rc_symlink_map_reset
+	# shellcheck disable=SC2094 # the rm inside runs only on the path that
+	# returns at once, so nothing reads the listing after it is removed.
+	while IFS= read -r -d '' rec; do
+		meta="${rec%%$'\t'*}"
+		path="${rec#*$'\t'}"
+		read -r mode obj _ <<<"$meta"
+		[[ "$mode" == 120000 ]] || continue
+		# The sentinel keeps a trailing newline that $( ) would strip.
+		if ! target=$(git cat-file blob "$obj" && printf x); then
+			rm -f "$listing"
+			return 0
+		fi
+		target="${target%x}"
+		rc_symlink_map_add "$path" "$target"
+		link_paths+=("$path")
+		link_targets+=("$target")
+	done <"$listing"
+	rm -f "$listing"
+	for i in "${!link_paths[@]}"; do
+		rc_symlink_escapes "${link_paths[i]}" "${link_targets[i]}" && return 0
+	done
+	return 1
+}
+
 # Validate identifiers (defense in depth; prepare.sh already validates).
 # A GitLab owner is a namespace path that may nest subgroups, so for GitLab
 # every segment of owner/repo is gated on its own by project_path_ok — the
@@ -211,10 +254,15 @@ if [[ -n "$cur_host" ]] && [[ "${cur_host,,}" == "${target_host,,}" ]] &&
 	[[ "${cur_path,,}" == "${owner,,}/${repo,,}" ]]; then
 	origin_names_target=true
 fi
+inplace_note=""
 if [[ "$origin_names_target" == true ]] && [[ -n "$head" ]] && [[ "$cur_branch" == "$head" ]]; then
-	review_root="."
-	emit "in_place" "Already in ${owner}/${repo} at ${head}; using working tree."
-	exit 0
+	if inplace_link_escapes; then
+		inplace_note=" Not reviewed in place: this checkout tracks a symlink leading out of the repository."
+	else
+		review_root="."
+		emit "in_place" "Already in ${owner}/${repo} at ${head}; using working tree."
+		exit 0
+	fi
 fi
 
 # --- Materialize into per-endpoint cache ---
@@ -635,17 +683,46 @@ else
 		emit "skip" "Fetch of ${head_label} failed; reviewing from diff only."
 		exit 0
 	fi
+	# A committed symlink is the author's to aim, at /etc/passwd or a
+	# credentials file, and every reviewer reads this tree as repository
+	# content. With core.symlinks=false git writes each link as a regular file
+	# holding its target text: the path still exists for reviewers, and nothing
+	# behind it is reachable. The setting goes in the cache clone's own config,
+	# never the operator's. A link an earlier checkout (or the shallow
+	# fallback's clone) already wrote is deleted first and the checkout is
+	# forced, because git leaves a path it believes unchanged exactly as it is
+	# on disk.
+	if ! git -C "$dest" config core.symlinks false >/dev/null 2>&1 ||
+		! find "$dest" -path "$dest/.git" -prune -o -type l -exec rm -f {} + 2>/dev/null; then
+		review_root="."
+		emit "skip" "Could not make the symlinks in the ${owner}/${repo} cache inert; reviewing from diff only."
+		exit 0
+	fi
 	# Checkout populates the working tree; a blobless --no-checkout clone has no
 	# files until this runs. If it fails, the tree is empty and every finding
 	# would be stripped FILE_NOT_FOUND (a false-clean review), so fall back to
 	# diff-only review instead of emitting a misleading "ok".
-	if ! "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" checkout -q FETCH_HEAD >/dev/null 2>&1; then
+	if ! "${no_prompt[@]}" ${gh_auth[@]+"${gh_auth[@]}"} git -C "$dest" checkout -q -f FETCH_HEAD >/dev/null 2>&1; then
 		review_root="."
 		emit "skip" "Checkout of ${head_label} failed; reviewing from diff only."
 		exit 0
 	fi
 	review_root="$dest"
 	ok_message="Materialized ${owner}/${repo} at ${head_label} into cache."
+fi
+
+# Fail closed. Whichever path built the tree, no reviewer may meet a live
+# symlink in it: GitHub writes links as plain files and GitLab deletes them,
+# and either going wrong lands here instead of in front of a reviewer. A
+# GitLab run tree is this run's alone, so it goes with the refusal.
+if ! live_links=$(find "$review_root" -path "$review_root/.git" -prune -o -type l -print 2>/dev/null) ||
+	[[ -n "$live_links" ]]; then
+	if [[ -n "${run_tree:-}" ]]; then
+		rm_tree "$run_tree" 2>/dev/null || true
+	fi
+	review_root="."
+	emit "skip" "A symlink survived materializing ${head_label}; reviewing from diff only."
+	exit 0
 fi
 
 # Mark as most-recently-used for LRU.
@@ -713,5 +790,5 @@ while IFS= read -r stale; do
 	[[ -z "$stale" || "$stale" == "${run_tree:-}" ]] || rm_tree "$stale" 2>/dev/null || true
 done <<<"$abandoned"
 
-emit "ok" "$ok_message"
+emit "ok" "${ok_message}${inplace_note}"
 exit 0

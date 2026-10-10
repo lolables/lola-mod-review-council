@@ -1543,6 +1543,133 @@ for tc_runs in missing empty; do
 	rm -rf "$bin" "$cache"
 done
 
+# --- Symlinks in the GitHub checkout (RC-076) ---------------------------------
+#
+# These run real git against a local fixture: the wrapper only redirects the
+# clone URL, so the fetch of pull/7/head, the config and the checkout are
+# exactly what a review does.
+
+# A real git whose clones come from <fixture> instead of the network.
+# LATE_LINK, when set, is a path the wrapper makes a live link after each
+# checkout, standing in for a materialization that left one behind.
+make_fixture_git() { # bindir fixture
+	local dir="$1" fixture="$2" real_git
+	real_git=$(command -v git)
+	mkdir -p "$dir"
+	cat >"$dir/git" <<WRAP
+#!/usr/bin/env bash
+args=("\$@")
+if printf '%s\n' "\$@" | grep -qx clone; then
+	for i in "\${!args[@]}"; do
+		if [[ "\${args[\$i]}" == "--" ]]; then
+			args[\$((i + 1))]="file://$fixture"
+			break
+		fi
+	done
+fi
+"$real_git" "\${args[@]}"
+rc=\$?
+if [[ -n "\${LATE_LINK:-}" ]] && printf '%s\n' "\$@" | grep -qx checkout; then
+	ln -s /etc/passwd "\$LATE_LINK"
+fi
+exit \$rc
+WRAP
+	chmod +x "$dir/git"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$dir/gh"
+	chmod +x "$dir/gh"
+}
+
+# A repository whose refs/pull/7/head adds an escaping link and an inside one.
+make_link_fixture() { # dir canary
+	mkdir -p "$1"
+	(
+		cd "$1"
+		git_init_sandbox
+		mkdir -p docs
+		echo base >README
+		git add README
+		git commit -qm base
+		ln -s "$2" leak
+		ln -s ../README docs/readme-link
+		git add leak docs/readme-link
+		git commit -qm links
+		git update-ref refs/pull/7/head HEAD
+		git checkout -q --detach HEAD~1
+	)
+}
+
+live_links() { # root -> count of symlinks outside .git
+	find "$1" -path "$1/.git" -prune -o -type l -print | wc -l | tr -d ' '
+}
+
+canary=$(mktemp)
+echo "RC-CANARY-TEST" >"$canary"
+fixture=$(mktemp -d)
+make_link_fixture "$fixture/origin" "$canary"
+gbin=$(mktemp -d)
+make_fixture_git "$gbin" "$fixture/origin"
+
+echo "Test 23: GitHub checkout writes committed symlinks as inert files (RC-076)"
+cache=$(mktemp -d)
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+root="$cache/review-council/clones/github.com-acme-widgets"
+assert_json_field "$result" "review_root" "$root" "review_root is the cache clone"
+assert_equals "$(live_links "$root")" "0" "no live link in the review tree"
+assert_equals "$(cat "$root/leak" 2>/dev/null)" "$canary" "the link is a file holding its target text"
+assert_equals "$(grep -rl RC-CANARY-TEST --exclude-dir=.git "$root" | wc -l | tr -d ' ')" "0" \
+	"the target's content is nowhere in the tree"
+assert_equals "$(git -C "$root" config core.symlinks)" "false" "the cache clone's own config holds the setting"
+
+echo "Test 24: links an earlier checkout left live are made inert (RC-076)"
+git -C "$root" config core.symlinks true
+git -C "$root" checkout -q -f FETCH_HEAD
+ln -s "$canary" "$root/planted"
+assert_equals "$(live_links "$root")" "2" "precondition: the cache holds live links"
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status is ok"
+assert_equals "$(live_links "$root")" "0" "every live link is gone"
+assert_equals "$(cat "$root/leak" 2>/dev/null)" "$canary" "the tracked link is an inert file again"
+rm -rf "$cache"
+
+echo "Test 25: a link that survives materializing fails closed (RC-076)"
+cache=$(mktemp -d)
+root="$cache/review-council/clones/github.com-acme-widgets"
+result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" LATE_LINK="$root/late" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "skip" "status is skip"
+assert_json_field "$result" "review_root" "." "review falls back to the diff"
+rm -rf "$cache"
+
+echo "Test 26: a checkout tracking an escaping link is not reviewed in place (RC-076)"
+op=$(mktemp -d)
+git clone -q "$fixture/origin" "$op/w"
+git -C "$op/w" fetch -q origin pull/7/head
+git -C "$op/w" checkout -q -b feature-x FETCH_HEAD
+git -C "$op/w" remote set-url origin https://github.com/acme/widgets.git
+cache=$(mktemp -d)
+result=$(cd "$op/w" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "ok" "reviewed from the cache, not in place"
+if [[ -L "$op/w/leak" ]]; then
+	echo "  PASS: the operator's checkout is untouched"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the operator's checkout was modified"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$cache"
+
+echo "Test 26b: a checkout whose links stay inside is still reviewed in place"
+git -C "$op/w" rm -q leak
+git -C "$op/w" commit -qm "drop leak"
+result=$(cd "$op/w" && PATH="$gbin:$PATH" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+assert_json_field "$result" "status" "in_place" "status is in_place"
+rm -rf "$op" "$fixture" "$gbin" "$canary"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

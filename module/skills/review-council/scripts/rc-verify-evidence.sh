@@ -48,7 +48,20 @@ vdir="$session_dir/verdicts"
 agent_files=()
 while IFS= read -r -d '' f; do agent_files+=("$f"); done \
 	< <(find "$vdir" -name 'divisor-*.json' -type f -print0 2>/dev/null | LC_ALL=C sort -z || true)
-[[ ${#agent_files[@]} -gt 0 ]] || {
+# The one script-authored verdict (rc-check-symlinks.sh) is admitted from one
+# path only: the top level of verdicts/, under its exact name, where that script
+# writes it. Its findings are trusted by construction, so the trust attaches to
+# that FILE, never to a name: a copy nested in a subsystem directory would count
+# its findings twice or carry in ones the script never computed, and a
+# reviewer's file naming itself rc-check-symlinks is still a reviewer's file.
+# Read last, as it always was: its findings sit after every reviewer's.
+script_file="$vdir/${RC_SCRIPT_AGENT}.json"
+[[ -f "$script_file" && ! -L "$script_file" ]] || script_file=""
+verdict_files=(${agent_files[@]+"${agent_files[@]}"})
+if [[ -n "$script_file" ]]; then
+	verdict_files+=("$script_file")
+fi
+[[ ${#verdict_files[@]} -gt 0 ]] || {
 	json_output "nothing_to_do" "No agent verdict JSON found."
 	exit 0
 }
@@ -78,7 +91,7 @@ while IFS= read -r -d '' f; do agent_files+=("$f"); done \
 missing_json='[]'
 manifest="$session_dir/session-manifest.json"
 if [[ -f "$manifest" ]]; then
-	found_json=$(printf '%s\n' "${agent_files[@]}" |
+	found_json=$(printf '%s\n' "${verdict_files[@]}" |
 		sed 's|.*/||; s|\.json$||' | sort -u | jq -R . | jq -s .)
 	missing_json=$(jq -n --slurpfile m "$manifest" --argjson found "$found_json" \
 		'if ($m[0] | type) != "object" then [] else
@@ -88,12 +101,33 @@ if [[ -f "$manifest" ]]; then
 fi
 
 # Merge all findings into one array, tagging each with its agent and verdict.
-all=$(jq -s '
-	map(
-		.agent as $a | .verdict as $v |
-		(.findings // []) | map(. + {agent:$a, verdict:$v})
-	) | add // []
-' "${agent_files[@]}")
+#
+# Script findings are marked final HERE, as they are gathered and before
+# anything can merge them: provenance.validator.result "SCRIPT". Both reducers
+# that merge findings (jq/dedup-findings.jq, jq/consolidate-clusters.jq) pass a
+# finding so marked through untouched, and the validation gate rejects any
+# outcome for it as ALREADY_FINAL (jq/apply-validation.jq), so no merge and no
+# validator reply can fold, retract or rewrite it. A reviewer's finding never
+# arrives with provenance — RC_FINDING_KEYS in rc-extract-verdict.sh does not
+# permit the key — so any it carries was written by hand, and it is dropped
+# rather than allowed to claim the mark.
+reviewer_all='[]'
+if [[ ${#agent_files[@]} -gt 0 ]]; then
+	reviewer_all=$(jq -s '
+		map(
+			.agent as $a | .verdict as $v |
+			(.findings // []) | map(del(.provenance) + {agent:$a, verdict:$v})
+		) | add // []
+	' "${agent_files[@]}")
+fi
+script_all='[]'
+if [[ -n "$script_file" ]]; then
+	script_all=$(jq --arg a "$RC_SCRIPT_AGENT" '.verdict as $v | (.findings // [])
+		| map(. + {agent:$a, verdict:$v, provenance: {validator: {result: "SCRIPT",
+			reason: "Computed from diff.patch by rc-check-symlinks.sh; not subject to validation."}}})' \
+		"$script_file")
+fi
+all=$(printf '%s\n%s\n' "$reviewer_all" "$script_all" | jq -s 'add')
 
 # Per-agent verdict map, for the report/comment table. In deep mode the same
 # agent runs once per subsystem; aggregate REQUEST-CHANGES-wins so a single
@@ -103,7 +137,7 @@ jq -s '
 	group_by(.agent) | map({key: .[0].agent,
 		value: (if any(.[]; .verdict | test("REQUEST CHANGES")) then "REQUEST CHANGES" else .[0].verdict end)})
 	| from_entries
-' "${agent_files[@]}" >"$vdir/verdicts-map.json"
+' "${verdict_files[@]}" >"$vdir/verdicts-map.json"
 
 # Absolute, symlink-resolved review root, for the containment check below.
 root_abs=$(cd "$review_root" 2>/dev/null && pwd -P) || {
@@ -132,7 +166,16 @@ for ((i = 0; i < n; i++)); do
 	line=$(echo "$all" | jq -r ".[$i].line | if type == \"number\" then floor else . end // \"\"")
 	ev=$(echo "$all" | jq -r ".[$i].evidence")
 	obj=$(echo "$all" | jq -c ".[$i]")
-	status=$(rc_evidence_status "$f" "$line" "$ev")
+	origin=$(echo "$all" | jq -r ".[$i].provenance.validator.result // \"\"")
+	# A script finding was computed from diff.patch, not quoted from a file by
+	# a reviewer, so there is no claim here to test. Testing it anyway strips
+	# it exactly when it matters most: a diff-only review has no tree holding
+	# the file.
+	if [[ "$origin" == "SCRIPT" ]]; then
+		status=verified
+	else
+		status=$(rc_evidence_status "$f" "$line" "$ev")
+	fi
 	case "$status" in
 	verified)
 		verified=$(echo "$verified" | jq --argjson o "$obj" '. + [$o + {status:"verified"}]')
@@ -151,7 +194,8 @@ done
 # live in jq/dedup-findings.jq, which documents each and is exercised directly
 # by test-rc-jq-programs.sh. It sits in a file rather than inline because this
 # reducer has already produced one silent-data-loss bug (RC-20) that no test
-# could reach without first building a whole session.
+# could reach without first building a whole session. It passes script
+# findings through unmerged (see the gathering step above).
 before=$(echo "$verified" | jq 'length')
 verified=$(echo "$verified" | jq -f "$(dirname "$0")/jq/dedup-findings.jq")
 after=$(echo "$verified" | jq 'length')

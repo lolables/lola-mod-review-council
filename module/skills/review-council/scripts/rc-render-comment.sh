@@ -390,7 +390,7 @@ rc_render_comment_body() { # session_dir body_file
 		local verdict_agents
 		verdict_agents=$(jq -r '.verdicts | keys[]' "$RC_EVIDENCE" 2>/dev/null || true)
 		while IFS= read -r name; do
-			[[ "$name" == divisor-* ]] || continue
+			[[ "$name" == divisor-* || "$name" == "$RC_SCRIPT_AGENT" ]] || continue
 			local raw_v label agent_count
 			raw_v=$(jq -r --arg a "$name" '.verdicts[$a] // "APPROVE"' "$RC_EVIDENCE")
 			case "$raw_v" in *"REQUEST CHANGES"*) av="❌ Changes" ;; *) av="✅ Approve" ;; esac

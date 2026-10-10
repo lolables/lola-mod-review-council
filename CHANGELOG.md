@@ -6,6 +6,18 @@ All notable changes to the Review Council module are documented here.
 
 ### Added
 
+- A symlink check. Preparation reads `diff.patch` for every symlink the change
+  adds or retargets and resolves its target without following it. A link that
+  leaves the repository (an absolute target, one above the root, one into
+  `.git`, or a chain through such a link) becomes a HIGH finding from
+  "🔗 Symlink check", so the review requests changes until it is explained.
+  The finding is marked final as it is gathered, before anything can merge
+  it: neither exact dedup (at verification or after the correction round) nor
+  model-written consolidation folds it into a reviewer's finding, and
+  validation cannot retract it. It is read only from the script's own
+  `verdicts/rc-check-symlinks.json`, and an `rc-check-symlinks.raw.md` written
+  anywhere under `verdicts/` is refused rather than extracted. Reviewers also
+  get `symlinks.txt` listing every changed link.
 - `scripts/review-open-prs.sh` and `scripts/review-pr-status.sh` work on GitLab
   merge requests through `glab`, on gitlab.com or a self-hosted instance. The
   forge comes from a PR/MR URL, else `--forge github|gitlab` and `--host <name>`
@@ -735,10 +747,34 @@ All notable changes to the Review Council module are documented here.
 
 ### Fixed
 
+- The symlink check no longer misses links that leave the repository through a
+  diff it cannot read: a target holding a NUL byte (shown as a binary diff), a
+  path containing a space, CRLF line endings, or an operator's own `git diff`
+  settings (colour, external diff, mnemonic or no prefixes, `diff.relative`,
+  textconv) on a local review. The attacker-chosen target is quoted only as the
+  finding's evidence, never in its description, and a very long target no
+  longer stalls preparation.
+- The symlink check judged a change from its diff alone, so a pure rename that
+  moves an inside link to where it escapes, or a new link that chains through a
+  link already on the base (`x -> sub/up/..` with `sub/up -> ..`), merged with
+  no finding. Preparation now lists every symlink in the head tree
+  (`head-links.json`), from the forge API through a new optional adapter
+  capability `rc_forge_fetch_links`, or from the index on a local review. The
+  check judges changed links against that list, and also reports an untouched
+  link that a change makes escape. When the forge cannot list the tree whole
+  (truncated, or more than `REVIEW_COUNCIL_MAX_HEAD_LINKS` links, default 500),
+  the check judges the diff alone and says so.
+
 - The council verdict is decided by `rc-decide-verdict.sh` from the verified
   findings instead of by the model, and both renderers refuse a `verdict.txt`
   the findings do not decide. A review that produced no findings file records
   no verdict, and its PR comment is refused rather than posted as APPROVE.
+
+- The GitHub review tree no longer holds live symlinks. A pull request's
+  committed links are written as plain files holding their target, a link left
+  live by an earlier checkout is replaced, and any link that survives makes the
+  review fall back to the diff. A checkout tracking a link out of the
+  repository is no longer reviewed in place.
 
 - A re-review that skipped the Disposition phase is no longer rendered or
   posted. When the PR has replies since the last verdict and effort is not

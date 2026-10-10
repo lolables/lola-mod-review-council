@@ -1679,6 +1679,25 @@ result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "error" "missing Effort line: refused"
 rm -rf "$sess"
 
+echo "Test S1: the symlink check has its own row in the agent table (RC-076)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified += [{"agent":"rc-check-symlinks","severity":"HIGH","file":"leak","line":1,
+		"evidence":"/tmp/rc-canary.txt","description":"d","recommendation":"r",
+		"status":"verified","verdict":"REQUEST CHANGES","provenance":{}}]
+	| .verdicts["rc-check-symlinks"] = "REQUEST CHANGES"' \
+	"$sess/verdicts/findings.json" >"$sess/f.next"
+mv "$sess/f.next" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF '| 🔗 Symlink check | ❌ Changes | 1 HIGH |' "$sess/comment-body.md"; then
+	echo "  PASS: the check's row is rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no Symlink check row in the table"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
 # --- Scripted verdict (RC-077) -------------------------------------------------
 echo "Test V1: a verdict.txt the findings do not decide is refused (RC-077)"
 sess=$(mktemp -d)

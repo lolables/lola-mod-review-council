@@ -15,10 +15,10 @@ check() { # script token
 	fi
 }
 
-# rc-prepare.sh is an entry point that sources six stages; the json_output calls
+# rc-prepare.sh is an entry point that sources seven stages; the json_output calls
 # live in whichever stage reaches that state. Checking the entry point alone
 # would report every token missing, so the whole set is searched as one program.
-# Globbed rather than listed: a seventh stage must not silently escape the check.
+# Globbed rather than listed: an eighth stage must not silently escape the check.
 check_prepare() { # token
 	local token="$1" hits
 	hits=$(grep -l "\"$token\"" "$S/rc-prepare.sh" "$S"/lib/prepare-*.sh 2>/dev/null) || hits=""

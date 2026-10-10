@@ -367,6 +367,11 @@ repositories.
 - **GitHub:** a blobless partial clone, with a shallow fallback. Cloning never
   prompts for credentials: a private repository needs `gh` (github.com) or a
   configured git credential helper.
+  Committed symbolic links are written as plain files holding their target
+  text, so no reviewer reads through one; if a live link survives anyway, the
+  review falls back to the diff. Your own checkout is not reviewed in place
+  when it tracks a link leading out of the repository: the cached copy is
+  reviewed instead.
 - **GitLab:** the repository archive at the merge request's head commit,
   downloaded through `glab` with the credentials glab holds for that host, so a
   private project works wherever `glab auth login` has been run. Every file the
@@ -387,6 +392,13 @@ repositories.
   `REVIEW_COUNCIL_MAX_CHANGED_FILES=0` makes every merge request fall back to
   diff-only review, and `REVIEW_COUNCIL_MAX_RUN_TREES=0` keeps only the current
   review's tree.
+
+Whatever the forge, a change that adds or retargets a symlink leading out of
+the repository gets a HIGH finding from the built-in symlink check, shown as
+"🔗 Symlink check", whatever the reviewers conclude. Renames and chains through
+other links in the pull request's tree are judged too; when the forge cannot
+list that tree whole (more than `REVIEW_COUNCIL_MAX_HEAD_LINKS` links, default
+500), the check judges the diff alone and says so in its output.
 
 When materialization fails, the review falls back to the diff.
 

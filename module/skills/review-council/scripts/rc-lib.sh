@@ -30,6 +30,18 @@ _RC_LIB_LOADED=1
 # RC_MARKER_OPEN below rather than reaching for the bare key.
 RC_MARKER_KEY="review-council:marker"
 
+# The agent name of the one script-authored verdict: rc-check-symlinks.sh files
+# it from diff.patch, not a reviewer. Its findings are deterministic, so the
+# pipeline keeps every LLM phase from revising them: rc-verify-evidence.sh
+# admits only verdicts/<this>.json at the top level and marks its findings
+# provenance.validator.result "SCRIPT" as it gathers them, before any merge;
+# both merging reducers (jq/dedup-findings.jq, jq/consolidate-clusters.jq) pass
+# a finding so marked through untouched; and rc-extract-verdict.sh refuses a
+# <this>.raw.md anywhere under verdicts/ (RESERVED_AGENT), since a reviewer
+# never writes it.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_SCRIPT_AGENT="rc-check-symlinks"
+
 # The council verdict, as a jq program over findings.json. phases/report.md
 # "Final Verdict Determination" states the rule; this is its only
 # implementation. Severity decides it (severity.md: CRITICAL and HIGH block,

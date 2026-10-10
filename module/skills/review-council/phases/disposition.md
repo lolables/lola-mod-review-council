@@ -85,6 +85,8 @@ the conversation, judges each claim on its own merits.
 
 **Inputs the subagent receives:**
 
+Exclude findings marked `provenance.validator.result: "SCRIPT"` (the `rc-check-symlinks` check's): they were computed from the diff, a reply cannot resolve them, and they are never dispositioned.
+
 - The full contents of `${session_dir}/verdicts/findings.json` (or, in deep
   mode, the aggregated findings across subsystems).
 - The full contents of `${session_dir}/pr-conversation.txt`, appended after

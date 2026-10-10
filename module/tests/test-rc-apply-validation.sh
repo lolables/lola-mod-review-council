@@ -319,6 +319,28 @@ for args in "--dispute" "--dispute f1" "--dispute F1,,F2" "--dispute F1;ls" "--d
 done
 rm -rf "$s"
 
+echo "Test S1: a script finding cannot be retracted or corrected (RC-076)"
+# rc-verify-evidence.sh marks a script finding final (SCRIPT); any outcome for
+# it is rejected, and it is never left pending or marked UNVALIDATED.
+s=$(mk_session)
+jq '.verified[0] |= (.agent = "rc-check-symlinks"
+	| .provenance.validator = {result: "SCRIPT", reason: "computed from diff.patch"})' \
+	"$s/verdicts/findings.json" >"$s/f.next"
+mv "$s/f.next" "$s/verdicts/findings.json"
+validation "$s" '{"results":[
+ {"id":"F1","file":"a.go","result":"RETRACTED","reason":"the link is fine","evidence":"trust me"},
+ {"id":"F2","file":"b.go","result":"CONFIRMED","reason":"y := 2 at b.go:9"}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '[.rejected[] | select(.id == "F1") | .reason] | join(",")' "ALREADY_FINAL" \
+	"the retraction is rejected as already final"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id == "F1") | .provenance.validator.result' \
+	"SCRIPT" "F1 stays verified with its SCRIPT result"
+assert_jq_str "$result" '.pending | index("F1") == null' "true" "F1 is not pending"
+bash "$SCRIPT" "$s" --final >/dev/null
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id == "F1") | .provenance.validator.result' \
+	"SCRIPT" "the final pass does not mark F1 UNVALIDATED"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

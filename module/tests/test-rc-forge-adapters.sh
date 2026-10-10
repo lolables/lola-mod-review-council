@@ -899,6 +899,138 @@ for tc_forge in github gitlab; do
 	done
 done
 
+# --------------------------------------------------------------------------
+# rc_forge_fetch_links: every symlink in the head tree, or nothing (RC-078).
+#
+# rc-check-symlinks.sh judges a change against this list, so a partial one would
+# hide a chain through a link it left out. Each adapter must print the whole
+# list and return 0, or print nothing and return non-zero.
+# --------------------------------------------------------------------------
+
+links_head=0123456789abcdef0123456789abcdef01234567
+link_a=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+link_b=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+# Run rc_forge_fetch_links from the <forge> adapter against a fake CLI that
+# answers the tree request with <fixture>/tree (gh's response, or glab's pages
+# back to back) and a blob request for <id> with <fixture>/blob-<id>, failing
+# when that file is absent. <cap>, when given, is REVIEW_COUNCIL_MAX_HEAD_LINKS.
+# Sets links_out to what the capability printed and links_rc to its status.
+# Usage: links_call <github|gitlab> <fixture> [cap]
+links_out="" links_rc=0
+links_call() {
+	local forge="$1" fixture="$2" cap="${3:-}" cli=gh bindir
+	[[ "$forge" == "gitlab" ]] && cli=glab
+	bindir=$(mktemp -d)
+	cat >"$bindir/$cli" <<FAKE
+#!/usr/bin/env bash
+for arg in "\$@"; do
+	case "\$arg" in
+	*/trees/${links_head}\?recursive=1 | */repository/tree\?recursive=true\&ref=${links_head}\&per_page=100)
+		cat "$fixture/tree"
+		exit 0
+		;;
+	*/blobs/*)
+		id="\${arg#*/blobs/}"
+		id="\${id%/raw}"
+		[[ -f "$fixture/blob-\$id" ]] || exit 1
+		cat "$fixture/blob-\$id"
+		exit 0
+		;;
+	esac
+done
+exit 1
+FAKE
+	chmod +x "$bindir/$cli"
+	links_rc=0
+	# shellcheck disable=SC2310 # the status is captured into links_rc and asserted on.
+	links_out=$(
+		PATH="$bindir:$PATH"
+		[[ -z "$cap" ]] || export REVIEW_COUNCIL_MAX_HEAD_LINKS="$cap"
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck disable=SC1090 # one of the two adapters, chosen per case.
+		source "$FORGE_DIR/${forge}.sh"
+		forge_host="gitlab.com"
+		rc_forge_fetch_links 7 acme widgets "$links_head"
+	) || links_rc=$?
+	rm -rf "$bindir"
+}
+
+# A GitHub blob response: base64 of <bytes>, wrapped at 60 columns as GitHub does.
+gh_blob() { # bytes, with printf %b escapes
+	local content
+	content=$(printf '%b' "$1" | base64 | tr -d '\n' | fold -w 60)
+	jq -n --arg c "$content"$'\n' '{sha: "x", size: 1, encoding: "base64", content: $c}'
+}
+
+echo "Test 36: GitHub lists every link in the head tree with its target (RC-078)"
+fx=$(mktemp -d)
+jq -n --arg a "$link_a" --arg b "$link_b" '{sha: "t", truncated: false, tree: [
+	{path: "README", mode: "100644", type: "blob", sha: $b},
+	{path: "docs", mode: "040000", type: "tree", sha: $a},
+	{path: "docs/l", mode: "120000", type: "blob", sha: $a},
+	{path: "top", mode: "120000", type: "blob", sha: $b}]}' >"$fx/tree"
+gh_blob "../$(printf 'r%.0s' {1..70})" >"$fx/blob-$link_a"
+gh_blob 'docs' >"$fx/blob-$link_b"
+links_call github "$fx"
+assert_equals "$links_rc" "0" "the list is complete"
+assert_equals "$links_out" \
+	"[{\"path\":\"docs/l\",\"target\":\"../$(printf 'r%.0s' {1..70})\"},{\"path\":\"top\",\"target\":\"docs\"}]" \
+	"both links, the one in a subdirectory too, with wrapped base64 decoded"
+
+echo "Test 37: GitHub — a NUL byte or an unreadable blob is a null target (RC-078)"
+gh_blob '/etc/shadow\0junk' >"$fx/blob-$link_a"
+rm -f "$fx/blob-$link_b"
+links_call github "$fx"
+assert_equals "$links_rc" "0" "the list is still complete"
+assert_equals "$links_out" '[{"path":"docs/l","target":null},{"path":"top","target":null}]' \
+	"neither target is guessed"
+
+echo "Test 38: GitHub — a truncated tree, or more links than the cap, is no list (RC-078)"
+links_call github "$fx" 1
+assert_equals "$links_rc:$links_out" "1:" "over REVIEW_COUNCIL_MAX_HEAD_LINKS: non-zero, no output"
+jq '.truncated = true' "$fx/tree" >"$fx/tree.new"
+mv "$fx/tree.new" "$fx/tree"
+links_call github "$fx"
+assert_equals "$links_rc:$links_out" "1:" "a truncated tree: non-zero, no output"
+rm -rf "$fx"
+
+echo "Test 39: GitLab lists every link across pages, target bytes exact (RC-078)"
+fx=$(mktemp -d)
+{
+	jq -nc --arg a "$link_a" '[{id: $a, name: "docs", type: "tree", path: "docs", mode: "040000"},
+		{id: $a, name: "l", type: "blob", path: "docs/l", mode: "120000"}]'
+	jq -nc --arg b "$link_b" '[{id: $b, name: "top", type: "blob", path: "top", mode: "120000"},
+		{id: $b, name: "README", type: "blob", path: "README", mode: "100644"}]'
+} >"$fx/tree"
+printf '../README' >"$fx/blob-$link_a"
+printf 'docs\n' >"$fx/blob-$link_b"
+links_call gitlab "$fx"
+assert_equals "$links_rc" "0" "the list is complete"
+assert_equals "$links_out" '[{"path":"docs/l","target":"../README"},{"path":"top","target":"docs\n"}]' \
+	"both pages read, the subdirectory link kept, a trailing newline kept"
+
+echo "Test 40: GitLab — a NUL byte or an unreadable blob is a null target (RC-078)"
+printf '/etc/shadow\0junk' >"$fx/blob-$link_a"
+rm -f "$fx/blob-$link_b"
+links_call gitlab "$fx"
+assert_equals "$links_rc" "0" "the list is still complete"
+assert_equals "$links_out" '[{"path":"docs/l","target":null},{"path":"top","target":null}]' \
+	"neither target is guessed"
+
+echo "Test 41: GitLab — an error page, no answer, or more links than the cap is no list (RC-078)"
+links_call gitlab "$fx" 1
+assert_equals "$links_rc:$links_out" "1:" "over REVIEW_COUNCIL_MAX_HEAD_LINKS: non-zero, no output"
+printf '[]{"message":"500 Internal Server Error"}' >"$fx/tree"
+links_call gitlab "$fx"
+assert_equals "$links_rc:$links_out" "1:" "an error page among the pages: non-zero, no output"
+: >"$fx/tree"
+links_call gitlab "$fx"
+assert_equals "$links_rc:$links_out" "1:" "an empty answer: non-zero, no output"
+rm -rf "$fx"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -418,6 +418,37 @@ after=$(jq '.verified | length' "$s/verdicts/findings.json")
 assert_conserved "$before" "$after" 1 "one finding merged, bystander kept"
 rm -rf "$s"
 
+echo "Test S1: a cluster never folds away a script finding (RC-076)"
+# The manifest is model-written. Folding the script's HIGH into a reviewer's
+# CRITICAL would leave only a finding validation may retract.
+s=$(mk_session '[
+ {"agent":"divisor-adversary-code","severity":"CRITICAL","file":"leak","line":1,"evidence":"/etc/passwd","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+ {"agent":"rc-check-symlinks","severity":"HIGH","file":"leak","line":1,"evidence":"/etc/passwd","description":"d2","recommendation":"r2","verdict":"REQUEST CHANGES","status":"verified","provenance":{"validator":{"result":"SCRIPT","reason":"x"}}}]')
+echo '{"clusters":[{"members":[
+ {"file":"leak","line":1,"agent":"divisor-adversary-code"},
+ {"file":"leak","line":1,"agent":"rc-check-symlinks"}]}]}' >"$s/verdicts/_meta/clusters.json"
+bash "$SCRIPT" "$s" >/dev/null
+assert_jq "$s/verdicts/findings.json" '[.verified[] | select(.agent == "rc-check-symlinks")] | length' "1" \
+	"the script finding is still its own verified finding"
+assert_jq "$s/verdicts/findings.json" '.verified | length' "2" "nothing was merged"
+
+echo "Test S2: nor does a manifest in a shape the schema does not allow (RC-076)"
+# The reducer iterates objects as well as arrays, so a filter that only
+# understood the documented shape let both of these fold the HIGH away.
+before=$(cat "$s/verdicts/findings.json")
+for manifest in \
+	'{"clusters":[{"members":{"a":{"file":"leak","line":1,"agent":"divisor-adversary-code"},"b":{"file":"leak","line":1,"agent":"rc-check-symlinks"}}}]}' \
+	'{"clusters":{"x":{"members":[{"file":"leak","line":1,"agent":"divisor-adversary-code"},{"file":"leak","line":1,"agent":"rc-check-symlinks"}]}}}'; do
+	printf '%s\n' "$before" >"$s/verdicts/findings.json"
+	printf '%s\n' "$manifest" >"$s/verdicts/_meta/clusters.json"
+	bash "$SCRIPT" "$s" >/dev/null
+	assert_jq "$s/verdicts/findings.json" '[.verified[] | select(.provenance.validator.result == "SCRIPT")] | length' "1" \
+		"the script finding stands: ${manifest:0:30}"
+	assert_jq "$s/verdicts/findings.json" '[.verified[].provenance.consolidated_from // empty] | length' "0" \
+		"nothing was folded: ${manifest:0:30}"
+done
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

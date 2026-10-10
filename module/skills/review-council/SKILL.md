@@ -925,6 +925,7 @@ After the subagent returns:
   findings are upgraded to `APPROVE` per `verify.md` Step 6's logic. Only
   `resolved` removals count toward that check — `suppressed-low` removals are
   verdict-neutral and do NOT (`disposition.md` Step 4).
+- Findings marked `provenance.validator.result: "SCRIPT"` (from `rc-check-symlinks`) are never handed to the subagent and never moved.
 - Write `${session_dir}/verdicts/_meta/disposition.txt` as the audit trail
   (`disposition.md` Step 5).
 

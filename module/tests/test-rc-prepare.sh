@@ -748,6 +748,28 @@ assert_track "$session_dir" "Subsystem triage" "on" \
 	"a malformed env value falls through to the configured value"
 discard_fixture "$tmpdir"
 
+# The orchestrator's shell state does not survive between commands, so the
+# skill's ${SCRIPTS_DIR}-style notation must be filled in with real paths on
+# every call. Prepare hands them back as absolute, symlink-resolved values to
+# copy, whatever relative or linked paths the orchestrator invoked it with: a
+# relative value is wrong from any other cwd, and a linked scripts directory
+# would put phases/ and references/ beside the link instead of the skill.
+echo "Test: prepare returns absolute skill directories from relative linked paths"
+tmpdir=$(mktemp -d)
+mkdir "$tmpdir/repo"
+setup_repo "$tmpdir/repo" feature ""
+ln -s "$SCRIPT_DIR/../skills/review-council/scripts" "$tmpdir/scripts-link"
+ln -s "$SCRIPT_DIR/../agents" "$tmpdir/agents-link"
+skill_real=$(cd -P "$SCRIPT_DIR/../skills/review-council" && pwd)
+agents_real=$(cd -P "$SCRIPT_DIR/../agents" && pwd)
+result=$(cd "$tmpdir/repo" && AGENTS_DIR="../agents-link" bash ../scripts-link/rc-prepare.sh --mode code 2>/dev/null)
+assert_json_status "$result" "ok" "prepare succeeds through linked relative paths"
+assert_json_field "$result" "scripts_dir" "$skill_real/scripts" "scripts_dir is the real scripts directory"
+assert_json_field "$result" "phases_dir" "$skill_real/phases" "phases_dir sits beside the real scripts directory"
+assert_json_field "$result" "references_dir" "$skill_real/references" "references_dir sits beside the real scripts directory"
+assert_json_field "$result" "agents_dir" "$agents_real" "agents_dir is the real agents directory"
+discard_fixture "$tmpdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

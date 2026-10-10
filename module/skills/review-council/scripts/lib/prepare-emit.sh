@@ -308,6 +308,16 @@ if $rc_no_git; then
 	fi
 fi
 
+# Absolute, symlink-resolved skill directories for the orchestrator to copy
+# into later commands: its shell state does not survive between commands, so
+# it cannot rely on variables set once. Both directories exist by now — this
+# script is running from one and agent discovery above read the other.
+scripts_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+skill_dir=$(dirname -- "$scripts_dir")
+# shellcheck disable=SC2153 # AGENTS_DIR is the caller's environment input,
+# checked non-empty in prepare-target.sh; agents_dir is not a misspelling of it.
+agents_dir=$(CDPATH='' cd -- "$AGENTS_DIR" && pwd -P)
+
 # Build the result JSON
 jq -n \
 	--arg status "ok" \
@@ -324,6 +334,10 @@ jq -n \
 	--arg review_root "$review_root" \
 	--arg post_comment "$post_comment" \
 	--arg post_auto_send "$post_auto_send" \
+	--arg scripts_dir "$scripts_dir" \
+	--arg phases_dir "$skill_dir/phases" \
+	--arg references_dir "$skill_dir/references" \
+	--arg agents_dir "$agents_dir" \
 	--argjson agents "$agents_json" \
 	'{
     status: $status,
@@ -340,5 +354,9 @@ jq -n \
     review_root: $review_root,
     post_comment: $post_comment,
     post_auto_send: $post_auto_send,
+    scripts_dir: $scripts_dir,
+    phases_dir: $phases_dir,
+    references_dir: $references_dir,
+    agents_dir: $agents_dir,
     agents: $agents
   }'

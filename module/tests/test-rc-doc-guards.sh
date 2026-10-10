@@ -2086,6 +2086,43 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-071: Path Anchoring told the orchestrator to set and `export` SCRIPTS_DIR
+# and friends once, and every later step writes `bash "${SCRIPTS_DIR}/..."`.
+# No host keeps shell state between tool calls, so an orchestrator that pastes
+# those commands verbatim runs `bash /rc-select-council.sh` and fails before
+# recovering. The skill must say the variables do not survive and that each
+# command carries the resolved absolute paths.
+echo "Test: Path Anchoring says shell state does not survive between commands (RC-071)"
+anchor_start=$(grep -n '^## Path Anchoring' "$SKILL_MD" | cut -d: -f1)
+anchor_end=$(grep -n '^## Quick Reference' "$SKILL_MD" | cut -d: -f1)
+anchor_flat=$(sed -n "${anchor_start},${anchor_end}p" "$SKILL_MD" | tr '\n' ' ' | tr -s ' ')
+rc071_missing=0
+if ! grep -qiE 'shell state does not survive' <<<"$anchor_flat"; then
+	echo "  missing: no statement that variables are lost between commands"
+	rc071_missing=$((rc071_missing + 1))
+fi
+if ! grep -qiE 'substitute the resolved absolute paths' <<<"$anchor_flat"; then
+	echo "  missing: no instruction to write resolved paths into every command"
+	rc071_missing=$((rc071_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span, not a command substitution.
+if ! grep -qF '`scripts_dir`' <<<"$anchor_flat"; then
+	echo "  missing: no pointer to the paths rc-prepare.sh returns"
+	rc071_missing=$((rc071_missing + 1))
+fi
+if grep -qE '^ *export AGENTS_DIR SCRIPTS_DIR' "$SKILL_MD"; then
+	echo "  present: a one-time export still implies the variables persist"
+	rc071_missing=$((rc071_missing + 1))
+fi
+if [[ "$rc071_missing" -eq 0 ]]; then
+	echo "  PASS: path variables are documented as per-command notation"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc071_missing path-persistence rule(s) wrong — a verbatim"
+	echo "        \${SCRIPTS_DIR} command expands to /rc-*.sh on a fresh shell"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -120,12 +120,15 @@ there is no `BASH_SOURCE` to resolve. Anchor on the absolute path this
    AGENTS_DIR="${MODULE_DIR}/agents"
    ```
 
-4. **Export all four before invoking any script**, since each script runs in
-   its own process:
-
-   ```bash
-   export AGENTS_DIR SCRIPTS_DIR PHASES_DIR REFERENCES_DIR
-   ```
+4. **Shell state does not survive between commands.** Each command you run
+   may start in a fresh shell, so a variable set or exported in one command is
+   empty in the next, and `bash "${SCRIPTS_DIR}/rc-prepare.sh"` pasted as-is
+   runs `bash /rc-prepare.sh`. Treat `${SKILL_DIR}`, `${SCRIPTS_DIR}`,
+   `${PHASES_DIR}`, `${REFERENCES_DIR}` and `${AGENTS_DIR}` in this skill as
+   notation: in every command, substitute the resolved absolute paths from
+   steps 1–3 before running it. Once Step 1 has run, copy them from its JSON
+   instead — `scripts_dir`, `phases_dir`, `references_dir` and `agents_dir`
+   are the same directories, already absolute.
 
 5. **Pass `AGENTS_DIR` explicitly to `rc-prepare.sh`**, which needs it to
    discover reviewer agents:
@@ -167,13 +170,13 @@ itself), an agent identifier (what you dispatch), and a persona token (what
 `Pin personas` and `tracking.md` use). They are not interchangeable — the
 token is the one to write in configuration:
 
-| Role     | Agent                    | Persona token | Lens                                       |
-|----------|--------------------------|---------------|--------------------------------------------|
-| Guard    | `divisor-guard-code`     | `guard`       | intent drift, governance, structural coherence |
-| Adversary| `divisor-adversary-code` | `adversary`   | security, resilience                       |
-| Tester   | `divisor-testing-code`   | `testing`     | test quality, coverage                     |
-| Operator | `divisor-sre-code`       | `sre`         | deployment, dependencies                   |
-| Curator  | `divisor-curator-code`   | `curator`     | documentation gaps                         |
+| Role      | Agent                    | Persona token | Lens                                           |
+|-----------|--------------------------|---------------|------------------------------------------------|
+| Guard     | `divisor-guard-code`     | `guard`       | intent drift, governance, structural coherence |
+| Adversary | `divisor-adversary-code` | `adversary`   | security, resilience                           |
+| Tester    | `divisor-testing-code`   | `testing`     | test quality, coverage                         |
+| Operator  | `divisor-sre-code`       | `sre`         | deployment, dependencies                       |
+| Curator   | `divisor-curator-code`   | `curator`     | documentation gaps                             |
 
 Spec mode dispatches the same five personas from `divisor-*-spec.md`. Note
 that Tester and Operator do NOT pin as `tester` / `operator`: the tokens are
@@ -343,9 +346,17 @@ relay all of it to the user. The history scopes
   "effort": "standard",
   "review_root": ". | /absolute/path/to/checkout",
   "post_comment": "yes | no",
-  "post_auto_send": "yes | no"
+  "post_auto_send": "yes | no",
+  "scripts_dir": "/absolute/path/to/skills/review-council/scripts",
+  "phases_dir": "/absolute/path/to/skills/review-council/phases",
+  "references_dir": "/absolute/path/to/skills/review-council/references",
+  "agents_dir": "/absolute/path/to/agents"
 }
 ```
+
+The four `*_dir` fields are the values to write in place of `${SCRIPTS_DIR}`,
+`${PHASES_DIR}`, `${REFERENCES_DIR}` and `${AGENTS_DIR}` in every later command
+(see Path Anchoring step 4).
 
 Note the `mode` value: the spec mode is `spec`, singular, in this JSON field
 and in every `divisor-*-spec.md` filename. Only the CLI flag token is plural

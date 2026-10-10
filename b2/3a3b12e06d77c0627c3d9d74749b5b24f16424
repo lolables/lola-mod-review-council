@@ -1,0 +1,21 @@
+module/tests/test-gh-list-pagination.sh
+  s_25da563d6f732b::t_3e966b624b79ff 66
+module/tests/test-glab-call-sites.sh
+  s_25da563d6f732b::t_3e966b624b79ff 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b23a3b12e06d77c0627c3d9d74749b5b24f16424",
+  "prompts": {},
+  "sessions": {
+    "s_25da563d6f732b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "39166252-4c99-44c9-9e0a-959a8dc23dfb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

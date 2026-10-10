@@ -1,0 +1,65 @@
+module/skills/review-council/phases/disposition.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 88-89
+docs/dev/pipeline.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 276,289,292-304
+module/skills/review-council/scripts/lib/symlinks.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1-87
+module/skills/review-council/SKILL.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 928
+CHANGELOG.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 9-20,750-754
+module/tests/test-rc-clone-target.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1546-1672
+module/tests/test-rc-render-comment.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1682
+module/tests/test-rc-symlinks-lib.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1-115
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 393
+module/skills/review-council/scripts/lib/render-findings.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 58-63
+module/skills/review-council/scripts/rc-lib.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 33
+module/tests/test-rc-verify-evidence.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 991-1024
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 10-11,118-158,257,259-265,686-700,705,714-727,793
+module/skills/review-council/phases/verify.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 148,215,235-239,242-243,363-364,528-529,699
+.taskfiles/scripts/mutate-check.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1183-1212
+module/skills/review-council/scripts/rc-check-symlinks.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1-201
+module/skills/review-council/references/forge-adapters.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 548-556
+module/skills/review-council/scripts/rc-prepare.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 69-78
+module/tests/test-rc-consolidate.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 421-451
+README.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 370-374,396-398
+module/skills/review-council/phases/delegate.md
+  s_a7670e68011805::t_2a5c6a5d7e481f 271-280,442-448
+module/tests/test-rc-apply-validation.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 322-343
+module/tests/test-rc-prepare-git-edges.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 248-271
+module/tests/test-rc-check-symlinks.sh
+  s_a7670e68011805::t_2a5c6a5d7e481f 1-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6574bbba8e56e4de0a7d65c5435a1f2d188baf80",
+  "prompts": {},
+  "sessions": {
+    "s_a7670e68011805": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2631aaf8-611c-458a-9850-e0c6f228b17b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

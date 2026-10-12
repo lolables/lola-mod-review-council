@@ -1,0 +1,26 @@
+.taskfiles/tests/release.venom.yml
+  s_0b4aca1b6a7ce1::t_159b4c4d66718d 282-356,523-542
+  s_0b4aca1b6a7ce1::t_31166a863491e6 543
+.taskfiles/release.yml
+  s_0b4aca1b6a7ce1::t_d4faedb117f51e 6-7
+.taskfiles/scripts/release-bump.sh
+  s_0b4aca1b6a7ce1::t_d4faedb117f51e 11-14,124-139
+.taskfiles/scripts/changelog-section.sh
+  s_0b4aca1b6a7ce1::t_d4faedb117f51e 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5a99054ee61430ad68e1294b4e8001d1f58123c",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

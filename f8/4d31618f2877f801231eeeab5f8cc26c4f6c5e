@@ -1,0 +1,25 @@
+.taskfiles/scripts/changelog-section.sh
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 1-42
+Taskfile.yml
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 9-10
+.taskfiles/release.yml
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 1-21
+.taskfiles/scripts/release-bump.sh
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 1-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f84d31618f2877f801231eeeab5f8cc26c4f6c5e",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

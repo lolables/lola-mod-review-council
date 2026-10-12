@@ -20,7 +20,7 @@ find is not permitted. Network access is not permitted.
 
 Before reviewing, read:
 
-1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — testing conventions, coding conventions, build & test commands
+1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context: build & test commands
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
 3. `${REFERENCES_DIR}/severity.md` for severity definitions
 4. Appropriate convention pack for project language — check its `testing_conventions` section for ecosystem-specific tooling

@@ -31,7 +31,7 @@ Use as reasoning anchors, not mechanical checklists. Cite relevant CWE ID where 
 
 Before reviewing, read:
 
-1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — security conventions, coding conventions, CI configuration
+1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context: CI configuration, security constraints
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
 3. `${REFERENCES_DIR}/severity.md` for severity definitions
 4. Appropriate convention pack for project language — check calibration rules and calibration notes for language-specific security patterns

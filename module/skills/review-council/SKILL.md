@@ -478,7 +478,7 @@ why, in one line — `reason` carries the script's own justification, and the
 per-agent `reason` inside `deselected` names why each individual reviewer was
 dropped. A reduced review that is not disclosed is a review that reads
 as full coverage. Selection can be turned off entirely, or a persona pinned, in
-the project's "Review Council Configuration" block.
+the project's "Review Council Configuration" block (read from the base revision).
 
 This step never blocks and never asks. It fails open on every uncertain
 signal — an unreadable session, an inconclusive changeset shape, an explicit
@@ -1011,13 +1011,13 @@ and learnings extraction guidance.
   `Automated review complete.` instead. Never delete it: the TL;DR
   marker is the one marker that is not conditional on a phase running.
 - Extract learnings from review (patterns, anti-patterns, gaps)
-- Record learnings using Knowledge tool (if configured) or
+- Record learnings using the `Knowledge tool:` recorded in tracking.md (unless `none`) or
   write to `${session_dir}/learnings.txt`
 - Splice the `<!-- LEARNINGS -->` marker: same mechanism as the NARRATIVE
   splice above — replace the single `<!-- LEARNINGS -->` line in
   `${session_dir}/report.md` with the learnings summary just recorded
   (the verbatim contents of `${session_dir}/learnings.txt`, or a short
-  summary of what was stored when a Knowledge tool is configured instead)
+  summary of what was stored with the Knowledge tool instead)
 - Output final report with council verdict
 
 **Effort-conditional behavior:**
@@ -1136,7 +1136,12 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 - PR: {none | PR number}
 - Linked issues: {count}
 - Prior reviews: {count}
-- Constitution: {none | path (source)}
+- Constitution: {none | none (refused: reason) | session copy (explicit: configured path)}
+- Config source: {sha (how) | working tree (no git repository) | none (reason)}
+- Project packs: {dir (count) | none}
+- Docs repo: {owner/repo | none}
+- Knowledge tool: {name | none}
+- Config changed by changeset: {none | paths, TAB-separated}
 - Mode: {code | spec} ({reason})
 - Effort: {quick | standard | deep}
 - Branch: {branch name}
@@ -1265,6 +1270,36 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 All extension points optional, degrade gracefully when omitted.
 No Constitution path configured: constitution-specific checks skipped.
 
+**Configuration source.** The change under review never configures its own
+review. Inside a git repository, the block, `Constitution:` and
+`.review-council/packs/` are read from a base revision, never from the working
+tree, and `rc-prepare.sh` copies what the review obeys into
+`${session_dir}/review-config/`. Reviewers read only that copy, through the
+`Project packs:`, `Constitution:` and (Curator) `Docs repo:` lines of their
+delegation prompt; the orchestrator reads `Knowledge tool:` from `tracking.md`.
+Neither reads AGENTS.md, CLAUDE.md or the packs directory in the tree. The base
+is:
+
+- `changed`, `all`, `paths`, and a PR or url reviewed in a separate checkout:
+  the merge-base of HEAD with the base branch (for url scope, `main`, else
+  `master`).
+- `range`: the start of the range; for `A...B`, the merge-base of A and B.
+- A PR reviewed in place: the merge-base of HEAD with `origin/<base>`, else the
+  local `<base>`.
+- Outside git: the working tree, since there is no change to distrust.
+- Unresolvable (no base branch, shallow clone): no project configuration is
+  used, `Config source:` says `none (<reason>)`, and stderr hints at a shallow
+  clone when that is the cause.
+
+An edit to any of these takes effect once it is committed to the base branch,
+the model GitHub's `pull_request_target` uses; uncommitted edits are ignored
+inside git. `Constitution:` must be a repository-relative path to a regular
+file; absolute paths, `..` segments, empty segments, symlinks and directories
+are refused, and tracking.md records `none (refused: <reason>)`. When the
+change modifies any of these files, even outside the reviewed changeset (spec
+mode), `Config changed by changeset:` lists them and the report says the change's
+version was not obeyed.
+
 `Persona selection` and `Subsystem triage` each resolve across four layers, in
 order: the CLI flag (`--persona-selection` / `--no-persona-selection`,
 `--triage` / `--no-triage`), then the environment
@@ -1311,5 +1346,5 @@ line beginning `Trimmed to fit the`. The full verdict is always in
 `report.md` in the session directory. See README "Oversized verdicts".
 
 Convention packs define project-specific coding standards. Override or
-extend shipped packs by placing files in `.review-council/packs/`
-or `$XDG_CONFIG_HOME/review-council/packs/`.
+extend shipped packs by committing files to `.review-council/packs/` on the
+base branch, or placing them in `$XDG_CONFIG_HOME/review-council/packs/`.

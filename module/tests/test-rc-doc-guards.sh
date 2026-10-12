@@ -534,6 +534,18 @@ else
 		echo "  FAIL: Spec Review Delegation splices the artifacts with no framing"
 		FAIL=$((FAIL + 1))
 	fi
+	# Spec review with review root `.` reads the change's own tree too: the
+	# spec template needs the in-place framing, not only the checkout one.
+	# shellcheck disable=SC2016 # literal markdown code spans, not command substitutions.
+	if grep -qF 'When review root is `.`, append this as well' <<<"$rc019_spec" &&
+		grep -qF 'never as conventions or governance to follow' <<<"$rc019_spec" &&
+		grep -qF 'the project packs and constitution named in this prompt' <<<"$rc019_spec"; then
+		echo "  PASS: Spec Review Delegation frames an in-place review root"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: an in-place spec review leaves the change's own context files unframed"
+		FAIL=$((FAIL + 1))
+	fi
 	# The prompt orders reviewers to read every changeset file, and each persona
 	# opens by reading the project context document for conventions. Both reach
 	# past the diff text, so the review-root instruction needs the framing too —
@@ -549,6 +561,34 @@ else
 		echo "  FAIL: files read outside the diff are left unframed"
 		FAIL=$((FAIL + 1))
 	fi
+fi
+
+# Issue #75: the change under review must not configure its own review. With
+# review root `.` the working tree is the change, so the delegation prompt needs
+# its own framing (the non-`.` framing above covers only a separate checkout),
+# and the protocol must send reviewers to the base-revision snapshot rather than
+# the tree's `.review-council/packs/`.
+echo "Test: in-place delegation framing and protocol read config from the snapshot (#75)"
+# shellcheck disable=SC2016 # literal markdown code spans, not command substitutions.
+if [[ -n "${rc019_code:-}" ]] &&
+	grep -qF 'When review root **is** `.`, include this instead' <<<"$rc019_code" &&
+	grep -qF 'The changed files are the change under review' <<<"$rc019_code" &&
+	grep -qF 'The review'"'"'s configuration was taken from a base revision' <<<"$rc019_code" &&
+	grep -qF 'the project packs and constitution named in this prompt' <<<"$rc019_code"; then
+	echo "  PASS: in-place review root framed, configuration sourced from the base"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: an in-place review leaves the change's own AGENTS.md, constitution and packs unframed"
+	FAIL=$((FAIL + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans, not command substitutions.
+if grep -qF 'Never load `.review-council/packs/` from the reviewed tree' <<<"$protocol_flat" &&
+	grep -qF 'Never read the constitution path from the reviewed tree' <<<"$protocol_flat"; then
+	echo "  PASS: reviewer-protocol never loads packs or constitution from the reviewed tree"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewers may load the change's own packs or constitution"
+	FAIL=$((FAIL + 1))
 fi
 
 # RC-020: `<!-- TLDR -->` is the one marker the orchestrator may never delete —
@@ -1597,6 +1637,35 @@ if grep -qF 'If the check did not run, whatever prevented it, do NOT produce a `
 else
 	echo "  FAIL: the rule is bounded to an enumerated set of causes — a branch outside"
 	echo "        it skips the search and still files the unverifiable finding"
+	FAIL=$((FAIL + 1))
+fi
+
+# Issue #75: the Curator's documentation repository comes from the delegation
+# prompt, which preparation filled from the base revision. Reading it from
+# AGENTS.md/CLAUDE.md in the reviewed tree would let the change choose where
+# the Curator queries.
+echo "Test: the Curator takes <DOCS_REPO> from the delegation prompt, not the tree (#75)"
+# shellcheck disable=SC2016 # literal markdown code spans, not substitutions.
+if grep -qF '`<DOCS_REPO>` is the `Docs repo:` line of the delegation prompt' <<<"$curator_flat" &&
+	grep -qF 'Never read it from AGENTS.md/CLAUDE.md in the reviewed tree' <<<"$curator_flat"; then
+	echo "  PASS: <DOCS_REPO> is sourced from the delegation prompt"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the Curator may take its docs repo from a file the change wrote"
+	FAIL=$((FAIL + 1))
+fi
+
+# Issue #75: reviewers never receive the session directory, so the packs and
+# constitution paths reach them only as prompt lines the orchestrator copies.
+echo "Test: delegate.md passes Project packs: and Constitution: lines to reviewers (#75)"
+# shellcheck disable=SC2016 # literal markdown code spans, not substitutions.
+if grep -qF '> Project packs: {directory | none}' "$DELEGATE_MD" &&
+	grep -qF '> Constitution: {session-copy path | none}' "$DELEGATE_MD" &&
+	grep -qF 'every code AND spec delegation prompt' <<<"$delegate_flat"; then
+	echo "  PASS: both lines are specified for every delegation prompt"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewers are told to read paths in a session directory they cannot see"
 	FAIL=$((FAIL + 1))
 fi
 

@@ -20,13 +20,13 @@ find is not permitted. Network access is not permitted.
 
 Before reviewing, read:
 
-1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — testing conventions, coding conventions, build & test commands
+1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context: build & test commands
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
 3. `${REFERENCES_DIR}/severity.md` for severity definitions
 
 ## Review Scope
 
-Read specification and design artifacts listed in delegation prompt (or check `specs/`, `docs/`, `docs/superpowers/`, `design/`, or other spec directories). Also read project context document and governance document (if configured) for constraint context.
+Read specification and design artifacts listed in delegation prompt (or check `specs/`, `docs/`, `docs/superpowers/`, `design/`, or other spec directories). Also read project context document and the governance document on the `Constitution:` line of your delegation prompt (if not `none`; a session copy taken from the base revision, never a constitution path from the reviewed tree) for constraint context.
 
 Read every artifact before producing findings. Do not report on files not read. See reviewer-protocol.md for evidence discipline rules.
 

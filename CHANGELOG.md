@@ -4,6 +4,18 @@ All notable changes to the Review Council module are documented here.
 
 ## [Unreleased]
 
+### Security
+
+- Review configuration is read from the base revision, not the change under
+  review (#75). Inside a git repository the "Review Council Configuration"
+  block, the Constitution and `.review-council/packs/` come from the
+  merge-base with the base branch (the start of the range for `range`), never
+  from the working tree, and are snapshotted into the session's
+  `review-config/`. `Docs repo` and `Knowledge tool` reach the curator and the
+  report through `tracking.md`, not AGENTS.md. A Constitution path must be a
+  repository-relative regular file. The report notes configuration the
+  changeset modifies. Unresolvable base means built-in defaults.
+
 ### Added
 
 - A symlink check. Preparation reads `diff.patch` for every symlink the change

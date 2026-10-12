@@ -31,7 +31,7 @@ Use as reasoning anchors, not mechanical checklists.
 
 Before reviewing, read:
 
-1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) -- security conventions, project constraints
+1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) -- project context: security constraints
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
 3. `${REFERENCES_DIR}/severity.md` for severity definitions
 

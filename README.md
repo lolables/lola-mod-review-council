@@ -464,7 +464,8 @@ Packs are resolved in priority order (later wins):
 
 1. **Module packs** — shipped with this module (read-only)
 2. **User packs** — `$XDG_CONFIG_HOME/review-council/packs/`
-3. **Project packs** — `.review-council/packs/` in your repo
+3. **Project packs** — `.review-council/packs/` in your repo, as committed on the base branch (see
+   [Where configuration is read from](#where-configuration-is-read-from))
 
 To override a shipped pack, create a file with the same name at a higher priority level. To add a new pack, drop a new
 `.md` file into either location.
@@ -506,6 +507,37 @@ CLAUDE.md:
 
 All extension points are optional. The review council works without any of them — agents gracefully skip checks that
 require unconfigured extensions.
+
+### Where configuration is read from
+
+The change under review never configures its own review. Inside a git repository, the configuration block, the
+`Constitution` file and `.review-council/packs/` are read from a base revision, not from your working tree:
+
+| Scope                                                              | Base revision                                                             |
+|--------------------------------------------------------------------|---------------------------------------------------------------------------|
+| `changed`, `all`, `paths`, and a PR or URL reviewed in a separate checkout | Merge-base of HEAD with the base branch (for a URL, `main`, else `master`) |
+| `range`                                                            | Start of the range; for `A...B`, the merge-base of A and B                |
+| A PR reviewed in place                                             | Merge-base of HEAD with `origin/<base>`, else the local `<base>`          |
+
+Outside git, the files on disk are used.
+
+For `range`, the trust anchor is the range start, and it must be a commit you trust. A single ref such as `HEAD~1` on an
+untrusted branch can land on a commit the contributor wrote, and its configuration is then what the review obeys.
+
+- An edit takes effect once it is committed to the base branch, the same model as GitHub's `pull_request_target`.
+  Uncommitted edits are ignored inside git.
+- If no base can be resolved (no base branch, or a shallow clone that lacks its history), no project configuration is
+  used and the reason is recorded in the session's `tracking.md`. In a shallow clone, fetch the base branch history.
+- `Constitution` must be a repository-relative path to a regular file. Absolute paths, `..` segments, empty segments,
+  symlinks and directories are refused, and the refusal is recorded.
+- When the change modifies any of these files, including in spec mode where they are not part of the reviewed
+  changeset, the report lists them. The change's version was not obeyed; the run used the base's.
+
+Residual risk: the host agent itself loads `CLAUDE.md` and `AGENTS.md` from the directory a session starts in, before
+the review begins. Reviewing an untrusted PR from a checkout of its head hands those files to the host. Review untrusted
+PRs with `--scope pr N` from a checkout of the base branch. That clones the PR instead of reviewing in place, unless the
+PR's head branch has the same name as the branch you are on (a fork PR from its `main`, say), which is reviewed in place
+(tracked in #63).
 
 ### Council selection
 

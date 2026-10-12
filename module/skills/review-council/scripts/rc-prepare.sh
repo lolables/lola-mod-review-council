@@ -66,6 +66,8 @@ fi
 source "$RC_LIB_DIR/prepare-target.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/prepare-changes.sh
 source "$RC_LIB_DIR/prepare-changes.sh"
+# shellcheck source=module/skills/review-council/scripts/lib/prepare-config.sh
+source "$RC_LIB_DIR/prepare-config.sh"
 
 # Symlinks the change adds, moves or retargets are judged now, against every
 # link in the head tree, before any reviewer runs; an escaping one becomes a

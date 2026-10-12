@@ -7,6 +7,21 @@ SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"
 
+# Commit <files> to main under <dir>'s setup_repo checkout and move the topic
+# branch on top, so the configuration is in the base revision — the only place
+# it is read from inside git (#75).
+commit_config_to_base() { # dir files...
+	local dir="$1" branch
+	shift
+	branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD)
+	# The files are untracked, so they ride along across the checkout.
+	git -C "$dir" checkout -q main
+	git -C "$dir" add -- "$@"
+	git -C "$dir" commit -qm "review config"
+	git -C "$dir" checkout -q "$branch"
+	git -C "$dir" rebase -q main
+}
+
 assert_json_status() {
 	local json="$1" expected="$2" test_name="$3"
 	assert_json_field "$json" "status" "$expected" "$test_name"
@@ -501,11 +516,13 @@ cat >"$tmpdir/AGENTS.md" <<'CFG'
 
 - Comment limit: 99
 CFG
+echo "Rules." >"$tmpdir/GOVERNANCE.md"
+commit_config_to_base "$tmpdir" AGENTS.md GOVERNANCE.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Comment limit" "20000" "Comment limit reaches tracking.md"
 assert_track "$session_dir" "Max comments" "3" "Max comments reaches tracking.md"
-assert_track "$session_dir" "Constitution" "./GOVERNANCE.md (explicit)" \
+assert_track "$session_dir" "Constitution" "$session_dir/review-config/constitution.md (explicit: ./GOVERNANCE.md)" \
 	"Constitution still resolves alongside the new keys"
 discard_fixture "$tmpdir"
 
@@ -524,6 +541,7 @@ cat >"$tmpdir/CLAUDE.md" <<'CFG'
 - Comment limit: sixty-five thousand
 - Max comments: 0
 CFG
+commit_config_to_base "$tmpdir" CLAUDE.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Comment limit" "forge default" \
@@ -548,6 +566,7 @@ cat >"$tmpdir/AGENTS.md" <<'CFG'
 - Batch bytes: 65536
 - Batch size: 30
 CFG
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Batch bytes" "65536" "Batch bytes reaches tracking.md"
@@ -560,6 +579,7 @@ cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Batch bytes: half a megabyte\n- Batch size: 0\n' \
 	>"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Batch bytes" "131072" \
@@ -576,6 +596,7 @@ cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Max comments: 2\n' >"$tmpdir/AGENTS.md"
 printf '## Review Council Configuration\n\n- Max comments: 5\n- Comment limit: 30000\n' >"$tmpdir/CLAUDE.md"
+commit_config_to_base "$tmpdir" AGENTS.md CLAUDE.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Max comments" "2" "AGENTS.md wins where both define a key"
@@ -658,6 +679,7 @@ cat >"$tmpdir/AGENTS.md" <<'CFG'
 - Persona selection: OFF
 - Pin personas: Adversary,  guard
 CFG
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Persona selection" "off" "an uppercase off is honoured"
@@ -671,6 +693,7 @@ cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Persona selection: maybe\n- Pin personas: !!!\n' \
 	>"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
 assert_track "$session_dir" "Persona selection" "on" \
@@ -702,6 +725,7 @@ cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Persona selection: off\n- Subsystem triage: off\n' \
 	>"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(REVIEW_COUNCIL_PERSONA_SELECTION=on REVIEW_COUNCIL_TRIAGE=on \
 	AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
@@ -715,6 +739,7 @@ cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Persona selection: on\n- Subsystem triage: on\n' \
 	>"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(REVIEW_COUNCIL_PERSONA_SELECTION=on REVIEW_COUNCIL_TRIAGE=on \
 	AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code \
 	--no-persona-selection --no-triage 2>/dev/null)
@@ -728,6 +753,7 @@ tmpdir=$(mktemp -d)
 cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Subsystem triage: off\n' >"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(REVIEW_COUNCIL_TRIAGE=off AGENTS_DIR="$SCRIPT_DIR/../agents" \
 	bash "$SCRIPT" --mode code --triage 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')
@@ -741,6 +767,7 @@ tmpdir=$(mktemp -d)
 cd "$tmpdir"
 setup_repo "$tmpdir" >/dev/null
 printf '## Review Council Configuration\n\n- Subsystem triage: on\n' >"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
 result=$(REVIEW_COUNCIL_TRIAGE=yes AGENTS_DIR="$SCRIPT_DIR/../agents" \
 	bash "$SCRIPT" --mode code 2>/dev/null)
 session_dir=$(echo "$result" | jq -r '.session_dir')

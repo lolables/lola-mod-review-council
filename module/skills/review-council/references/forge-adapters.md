@@ -485,15 +485,15 @@ the messages report, so a disagreement would file and report one project's
 checkout as another's.
 
 `rc-prepare.sh` invokes the script whenever the forge resolved to `github` or
-`gitlab` and a PR/MR number is known. It passes `--forge --owner --repo --pr
---head`, plus `--url https://<host>/<owner>/<repo>.git` whenever the session
-has a host, so a self-hosted GitLab is never silently swapped for gitlab.com,
-and `--head-sha <pr_head_sha>` whenever the adapter read a valid head commit,
-so either forge's tree is the commit the diff was read at.
-That host has already passed `rc_forge_host_refusal` under `--scope url` before
-this script runs. A GitHub Enterprise or other self-hosted GitHub install is
-refused earlier and never gets this far, so the non-`github.com` GitHub paths
-below document the script's own contract, not a capability the module offers.
+`gitlab` and a PR/MR number is known. It passes `--forge --owner --repo --pr`,
+plus `--url https://<host>/<owner>/<repo>.git` whenever the session has a host,
+so a self-hosted GitLab is never silently swapped for gitlab.com, and
+`--head-sha <pr_head_sha>` whenever the adapter read a valid head commit, so
+either forge's tree is the commit the diff was read at. That host has already
+passed `rc_forge_host_refusal` under `--scope url` before this script runs. A
+GitHub Enterprise or other self-hosted GitHub install is refused earlier and
+never gets this far, so the non-`github.com` GitHub paths below document the
+script's own contract, not a capability the module offers.
 
 The origin remote is never a source for the target host: under URL scope the
 checkout we happen to be standing in has nothing to do with the PR being
@@ -502,9 +502,13 @@ from a host an attacker controls — serving the same two path segments.
 
 **In place.** The current working tree is reused only when the origin remote's
 host and whole project path (`owner/repo`, subgroups included) match the target
-(compared case-insensitively) **and** the current branch equals `--head`. Status
-is then `in_place` with `review_root` `.`. The host is part of the test, not an
-incidental detail: standing in a same-named repository on a different host is
+(compared case-insensitively) **and** `HEAD` is the `--head-sha` commit. Status
+is then `in_place` with `review_root` `.`. Without `--head-sha` the tree is
+never reused. The head branch name is not evidence: it is a bare name, so a fork
+PR from its `main` would match an operator on the base repository's `main`, and
+a local branch behind or ahead of the PR matches its own name. Uncommitted
+changes in the working tree are not checked. The host is part of the test, not
+an incidental detail: standing in a same-named repository on a different host is
 exactly when the tree must not be reused, because `review_root` would then point
 at foreign content that the verify phase grounds findings against as though it
 were the PR. (A `--url` carrying an explicit port parses to no host at all, so

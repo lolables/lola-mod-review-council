@@ -100,7 +100,6 @@ clone_status=""
 
 if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 	if [[ "$forge" == "github" || "$forge" == "gitlab" ]] && [[ -n "$pr_number" ]]; then
-		clone_head="${pr_head:-}"
 		# The host travels as --url whenever it is known. Without it the clone
 		# script falls back to the forge's canonical host, and a self-hosted
 		# GitLab project would be cloned from a same-named one on gitlab.com.
@@ -118,7 +117,7 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 			clone_url_args+=(--head-sha "$pr_head_sha")
 		clone_json=$(AGENTS_DIR="${AGENTS_DIR:-}" bash "$(dirname "$0")/rc-clone-target.sh" \
 			--forge "$forge" --owner "$forge_owner" --repo "$forge_repo" \
-			--pr "$pr_number" --head "$clone_head" "${clone_url_args[@]}" 2>/dev/null || echo '{}')
+			--pr "$pr_number" "${clone_url_args[@]}" 2>/dev/null || echo '{}')
 		rr=$(echo "$clone_json" | jq -r '.review_root // "."' 2>/dev/null || echo ".")
 		[[ -n "$rr" && "$rr" != "null" ]] && review_root="$rr"
 		# `in_place` means the operator's working tree IS the pull request head.

@@ -1409,6 +1409,13 @@ check_mutation "RC-089 the report names configuration the change modified" \
 	's|^\([[:space:]]*\)if \[\[ -n "\$config_changed" && "\$config_changed" != "none" \]\]; then$|\1if false; then|' \
 	test-rc-render-report.sh
 
+# In place matched the PR's bare head branch name, so a fork PR from main, or a
+# local branch behind the PR, had reviewers read the operator's tree (#63).
+check_mutation "RC-090 in place only at the PR head commit" \
+	rc-clone-target.sh \
+	's/ && \[\[ "\$cur_commit" == "\$head_sha" \]\]//' \
+	test-rc-clone-target.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

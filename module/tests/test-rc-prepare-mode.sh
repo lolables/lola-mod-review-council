@@ -12,8 +12,9 @@ source "$SCRIPT_DIR/helpers.sh"
 # changeset for every PR review.
 
 # Fake gh: answers the calls rc-prepare.sh makes for a PR review. The clone
-# step is kept off the network by matching origin owner/repo/branch so
-# rc-clone-target.sh takes its in_place path.
+# step never reaches the network: this gh answers `repo clone` without cloning,
+# and helpers.sh refuses every git transport but a local path, so the fetch
+# fails at once and the run falls back to diff-only review.
 make_fake_gh() {
 	local bindir="$1"
 	cat >"$bindir/gh" <<'GH'

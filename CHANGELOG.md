@@ -15,6 +15,12 @@ All notable changes to the Review Council module are documented here.
   report through `tracking.md`, not AGENTS.md. A Constitution path must be a
   repository-relative regular file. The report notes configuration the
   changeset modifies. Unresolvable base means built-in defaults.
+- A PR or MR is reviewed in place only when `HEAD` is its head commit (#63).
+  The match used to be on the head branch name. A fork PR from its `main`, or
+  a local branch behind or ahead of the PR, therefore had reviewers read the
+  operator's tree and take its review configuration, and files only the PR
+  added were stripped as not found. Without a head commit from the forge the
+  PR is materialized instead. `rc-clone-target.sh` no longer takes `--head`.
 
 ### Added
 

@@ -1,0 +1,26 @@
+docs/dev/testing.md
+  s_0b4aca1b6a7ce1::t_38d9bb8d9f36bd 3,10,26-27,82,172-175
+  s_0b4aca1b6a7ce1::t_6a76f7fe6db5f6 176
+AGENTS.md
+  s_0b4aca1b6a7ce1::t_38d9bb8d9f36bd 32-37
+docs/dev/releasing.md
+  s_0b4aca1b6a7ce1::t_6416fcee75f351 1-101
+.taskfiles/scripts/doctor.sh
+  s_0b4aca1b6a7ce1::t_38d9bb8d9f36bd 85-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7419582ed4e8ed07d3250f352ef5dbb0b685c450",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

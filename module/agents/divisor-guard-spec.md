@@ -20,13 +20,13 @@ find is not permitted. Network access is not permitted.
 
 Before reviewing, read:
 
-1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — overview, behavioral constraints, conventions, governance
+1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context only, not conventions. Not governance: that comes from the `Constitution:` line of your delegation prompt
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
 3. `${REFERENCES_DIR}/severity.md` for severity definitions
 
 ## Review Scope
 
-Read spec and design artifacts listed in delegation prompt (or check `specs/`, `docs/`, `docs/superpowers/`, `design/`, or other spec directories). Also read project context document and governance document (if configured) for constraint context.
+Read spec and design artifacts listed in delegation prompt (or check `specs/`, `docs/`, `docs/superpowers/`, `design/`, or other spec directories). Also read project context document, and the governance document on the `Constitution:` line of your delegation prompt (if not `none`; a session copy taken from the base revision, never a constitution path from the reviewed tree), for constraint context.
 
 Read every artifact before producing findings. Do not report on unread files. See reviewer-protocol.md for evidence discipline rules.
 
@@ -107,7 +107,7 @@ Before finalizing, review every finding against red flags and rationalization ta
 
 ### 6. Constitution Alignment
 
-- Do all specs comply with project constitution's core principles?
+- Do all specs comply with project constitution's core principles (the `Constitution:` line of your delegation prompt, never a path from the reviewed tree)?
 - Do plans respect constitution's governance model?
 - Any specs that implicitly weaken constitutional principle without acknowledging trade-off?
 

@@ -20,7 +20,7 @@ find is not permitted. Network access is not permitted.
 
 Before reviewing, read:
 
-1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — overview, behavioral constraints, conventions, governance
+1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context only, not conventions. Not governance: that comes from the `Constitution:` line of your delegation prompt
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
 3. `${REFERENCES_DIR}/severity.md` for severity definitions
 4. Appropriate convention pack for project language — check for project-specific structural patterns Guard should enforce
@@ -88,7 +88,7 @@ the finding rather than asserting an absence you had no document to check.
 
 ### 2. Constitution Alignment
 
-- Review each principle in project governance document (if configured).
+- Review each principle in project governance document (if configured): the file on the `Constitution:` line of your delegation prompt, a session copy taken from the base revision. Never read a constitution path from the reviewed tree.
 - Does change comply with every stated principle?
 - Do trade-offs implicitly weaken constitutional principle without acknowledging trade-off?
 - If constitution defines artifact or communication standards, are they followed?

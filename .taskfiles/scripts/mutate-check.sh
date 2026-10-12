@@ -1353,6 +1353,62 @@ check_mutation "RC-081 every part's marker carries the run that rendered it" \
 	's|of=\${2}\${run} -->|of=${2} -->|' \
 	test-rc-render-comment.sh
 
+# --- RC-082..RC-089: the change never configures its own review (#75) --------
+#
+# Inside git the configuration used to be read off disk, which in every
+# in-place scope is the head of the change, so a change could write the block,
+# the Constitution or the packs that governed its own review. They are now read
+# from a base revision the change cannot write. Each guard below puts back one
+# way of letting the change reach its own configuration.
+#
+# No guard exists for the reader's object-identity check (the one tying the
+# object `rev-parse` names to the entry `ls-tree` vouches for). Removing it
+# alone is not caught, because `cat-file blob` already refuses a tree and so
+# covers the same case; a guard would only pass by also breaking `cat-file`.
+check_mutation "RC-082 inside git, config is read from a revision, not disk" \
+	lib/prepare-config.sh \
+	's|^if \$rc_no_git; then$|if true; then|' \
+	test-rc-prepare-config-source.sh
+
+check_mutation "RC-083 an in-place PR reads the PR base" \
+	lib/prepare-config.sh \
+	's|^\([[:space:]]*\)if \[\[ "\${clone_status:-}" == "in_place" \]\]; then$|\1if false; then|' \
+	test-rc-prepare-config-source.sh
+
+check_mutation "RC-084 a '..' Constitution segment is refused" \
+	lib/prepare-config.sh \
+	's|^\([[:space:]]*\)elif \[\[ "/\${constitution_path}/" == \*/\.\./\* \]\]; then$|\1elif false; then|' \
+	test-rc-prepare-config-source.sh
+
+check_mutation "RC-085 an absolute Constitution path is refused" \
+	lib/prepare-config.sh \
+	's|^\([[:space:]]*\)if \[\[ "\$constitution_value" == /\* \]\]; then$|\1if false; then|' \
+	test-rc-prepare-config-source.sh
+
+check_mutation "RC-086 a symlink at the source is not read" \
+	lib/prepare-config.sh \
+	's#^\([[:space:]]*\)\[\[ "\$mode" == 100644 || "\$mode" == 100755 \]\] || return 1$#\1:#' \
+	test-rc-prepare-config-source.sh
+
+# Listing a path because its bytes differ, not because the changeset names it:
+# under --scope all and --scope paths the changeset is every file in the tree.
+check_mutation "RC-087 changed-config listing compares content" \
+	lib/prepare-config.sh \
+	's|^\([[:space:]]*\)if rc_config_differs "\$rel_path" "\${config_cand_what\[\$i\]}"; then$|\1if true; then|' \
+	test-rc-prepare-config-source.sh
+
+# The same symlink test also sits in the worktree branch of rc_config_read, so
+# the expression is addressed to rc_config_head_read to match one line only.
+check_mutation "RC-088 the head-side read refuses symlinks" \
+	lib/prepare-config.sh \
+	'/^rc_config_head_read() {/,/^}$/s#^\([[:space:]]*\)\[\[ -f "\$path" && ! -L "\$path" \]\] || return 1$#\1[[ -f "$path" ]] || return 1#' \
+	test-rc-prepare-config-source.sh
+
+check_mutation "RC-089 the report names configuration the change modified" \
+	rc-render-report.sh \
+	's|^\([[:space:]]*\)if \[\[ -n "\$config_changed" && "\$config_changed" != "none" \]\]; then$|\1if false; then|' \
+	test-rc-render-report.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

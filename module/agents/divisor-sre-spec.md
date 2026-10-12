@@ -28,7 +28,7 @@ Before reviewing, read:
 
 ## Review Scope
 
-Read specification and design artifacts listed in delegation prompt (or check `specs/`, `docs/`, `docs/superpowers/`, `design/`, or other spec directories). Also read project context document and governance document (if configured) for constraint context.
+Read specification and design artifacts listed in delegation prompt (or check `specs/`, `docs/`, `docs/superpowers/`, `design/`, or other spec directories). Also read project context document and the governance document on the `Constitution:` line of your delegation prompt (if not `none`; a session copy taken from the base revision, never a constitution path from the reviewed tree) for constraint context.
 
 Read every artifact before producing findings. Do not report on files you have not read. See reviewer-protocol.md for evidence discipline rules.
 

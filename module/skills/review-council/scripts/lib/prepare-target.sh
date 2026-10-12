@@ -96,6 +96,7 @@ fi
 # ============================================================================
 
 review_root="."
+clone_status=""
 
 if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 	if [[ "$forge" == "github" || "$forge" == "gitlab" ]] && [[ -n "$pr_number" ]]; then
@@ -120,6 +121,10 @@ if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 			--pr "$pr_number" --head "$clone_head" "${clone_url_args[@]}" 2>/dev/null || echo '{}')
 		rr=$(echo "$clone_json" | jq -r '.review_root // "."' 2>/dev/null || echo ".")
 		[[ -n "$rr" && "$rr" != "null" ]] && review_root="$rr"
+		# `in_place` means the operator's working tree IS the pull request head.
+		# prepare-config.sh needs to know: there, the tree is the change, and its
+		# configuration must come from the PR base instead.
+		clone_status=$(jq -r '.status // empty' <<<"$clone_json" 2>/dev/null) || clone_status=""
 	fi
 fi
 

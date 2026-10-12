@@ -209,7 +209,7 @@ is prose only — it never touches structure.
 **Effort gate — quick mode:** If effort is `quick`, skip learnings
 extraction entirely.
 
-If knowledge layer tool is configured (see "Review Council Configuration" — "Knowledge tool"):
+If `Knowledge tool:` in `${session_dir}/tracking.md` is not `none`:
 
 a. **False positive patterns** — record stripped findings (from Step 3) and validator retractions (from Step 4). Include agent name, fabricated claim, why stripped or retracted, and validator reasoning where applicable. For findings corrected in Step 1 but retracted in Step 4, also record as **correction failure** (agent doubled down).
 

@@ -458,6 +458,9 @@ make_constitution_repo "$work" "none" ':'
 )
 result=$(prepare_in "$work" --scope changed --mode code)
 sess=$(session_of "$result")
+# Passes even without the single-lining fix: tracking.md is line-oriented and a
+# bare CR never starts a new line. The CR-absence and single-line-count
+# assertions below are what catch that regression.
 assert_track "$sess" "Knowledge tool" "none" "the injected key is not obeyed"
 docs_line=$(grep -c '^- Docs repo: ' "$sess/tracking.md") || docs_line=0
 assert_equals "$docs_line" "1" "Docs repo stays a single tracking.md line"
@@ -468,6 +471,248 @@ else
 	echo "  PASS: tracking.md carries no CR"
 	PASS=$((PASS + 1))
 fi
+rm -rf "$work"
+
+echo "Test 19: the changeset's edits to review configuration are listed"
+work=$(mktemp -d)
+make_hostile_branch_repo "$work"
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+# Membership and count, not order: changeset.txt is sorted by the caller's
+# locale, so the joined string differs between a C and a UTF-8 run.
+listed=$(sed -n 's/^- Config changed by changeset: //p' "$sess/tracking.md")
+agents_n=$(grep -cF 'AGENTS.md' <<<"$listed") || agents_n=0
+pack_n=$(grep -cF '.review-council/packs/evil.md' <<<"$listed") || pack_n=0
+gov_n=$(grep -cF 'GOVERNANCE.md' <<<"$listed") || gov_n=0
+tabs="${listed//[^$'\t']/}"
+assert_equals "$agents_n" "1" "the changed block is listed"
+assert_equals "$pack_n" "1" "the pack is listed"
+assert_equals "$gov_n" "0" "an unaccepted constitution is not listed"
+assert_equals "$((${#tabs} + 1))" "2" "exactly two paths are listed"
+rm -rf "$work"
+
+echo "Test 20: an AGENTS.md edit outside the block is not a configuration change"
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git checkout -q -b main
+	printf '# P\n\n## Review Council Configuration\n\n- Max comments: 2\n' >AGENTS.md
+	git add AGENTS.md && git commit -qm init && git checkout -q -b feature
+	printf 'Intro.\n\n# P\n\n## Review Council Configuration\n\n- Max comments: 2\n' >AGENTS.md
+	git commit -qam prose
+)
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "none" "prose outside the block is not listed"
+rm -rf "$work"
+
+echo "Test 21: the accepted constitution is listed when the branch modifies it"
+work=$(mktemp -d)
+make_constitution_repo "$work" "./GOV.md" 'echo "Base rule." >GOV.md'
+(
+	cd "$work"
+	echo "Weakened rule." >GOV.md
+	git commit -qam "weaken constitution"
+)
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "GOV.md" \
+	"the changeset path GOV.md matches the configured ./GOV.md"
+rm -rf "$work"
+
+echo "Test 22: a modified file that is not the constitution is not listed"
+work=$(mktemp -d)
+make_constitution_repo "$work" "./GOV.md" 'echo "Base rule." >GOV.md'
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "none" "a.go alone is not configuration"
+rm -rf "$work"
+
+echo "Test 23: with no config source, a block in the tree is listed and no error trap fires"
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git checkout -q -b main
+	echo x >a.go
+	git add a.go && git commit -qm one
+	git checkout -q --orphan unrelated && git rm -qrf . && echo y >b.go
+	printf '## Review Council Configuration\n\n- Max comments: 7\n' >AGENTS.md
+	git add b.go AGENTS.md && git commit -qm two
+	echo "- Max comments: 8" >>AGENTS.md
+)
+result=$(cd "$work" && AGENTS_DIR="$AGENTS" bash "$SCRIPT" --scope changed --mode code 2>"$work.err")
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "AGENTS.md" \
+	"a block that no source vouches for counts as carried by the change"
+if grep -q 'rc-error' "$work.err"; then
+	echo "  FAIL: the ERR trap fired"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the ERR trap stayed quiet"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$work" "$work.err"
+
+echo "Test 24: unchanged configuration is not listed under a tree-listing scope"
+work=$(mktemp -d)
+make_constitution_repo "$work" "./GOV.md" 'echo "Rule." >GOV.md; mkdir -p .review-council/packs; echo p >.review-council/packs/base.md'
+for scope_args in "--scope all" "--scope paths --scope-value GOV.md,.review-council/packs"; do
+	# shellcheck disable=SC2086 # the argument string is split on purpose.
+	result=$(prepare_in "$work" $scope_args --mode code)
+	sess=$(session_of "$result")
+	assert_track "$sess" "Config changed by changeset" "none" "unchanged files are not listed (${scope_args})"
+done
+rm -rf "$work"
+
+echo "Test 25: a pack edited on the branch is listed under --scope all"
+work=$(mktemp -d)
+make_constitution_repo "$work" "./GOV.md" 'echo "Rule." >GOV.md; mkdir -p .review-council/packs; echo p >.review-council/packs/base.md'
+(
+	cd "$work"
+	echo "weaker" >.review-council/packs/base.md
+	git commit -qam "edit pack"
+)
+result=$(prepare_in "$work" --scope all --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" ".review-council/packs/base.md" \
+	"only the pack whose content differs is listed"
+rm -rf "$work"
+
+echo "Test 26: configuration changed in the directory the review runs from is listed"
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git checkout -q -b main
+	mkdir sub
+	echo x >sub/a.go
+	printf '## Review Council Configuration\n\n- Max comments: 4\n' >sub/AGENTS.md
+	printf '## Review Council Configuration\n\n- Max comments: 5\n' >AGENTS.md
+	git add -A && git commit -qm init && git checkout -q -b feature
+	echo "- Max comments: 9" >>sub/AGENTS.md
+	echo "- Max comments: 8" >>AGENTS.md
+	git commit -qam "edit both"
+)
+result=$(prepare_in "$work/sub" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "sub/AGENTS.md" \
+	"sub/AGENTS.md is listed; the root AGENTS.md is not this review's configuration"
+rm -rf "$work"
+
+echo "Test 27: a head AGENTS.md symlink to /dev/zero is not followed and is listed"
+work=$(mktemp -d)
+make_constitution_repo "$work" "none" ':'
+(
+	cd "$work"
+	rm AGENTS.md
+	ln -s /dev/zero AGENTS.md
+	git add -A && git commit -qm "link AGENTS.md"
+)
+result=$(cd "$work" && AGENTS_DIR="$AGENTS" "$RC_TIMEOUT_BIN" 60 bash "$SCRIPT" --scope changed --mode code 2>/dev/null) || result=""
+sess=$(session_of "$result")
+if [[ -n "$sess" ]]; then
+	assert_track "$sess" "Config changed by changeset" "AGENTS.md" "the link is itself a configuration change"
+else
+	echo "  FAIL: the run did not complete within 60s"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work"
+
+echo "Test 28: a head AGENTS.md symlink is a change even when its target reads the same"
+work=$(mktemp -d)
+make_constitution_repo "$work" "none" ':'
+(
+	cd "$work"
+	cp AGENTS.md "$work.target"
+	rm AGENTS.md
+	ln -s "$work.target" AGENTS.md
+	git add -A && git commit -qm "link AGENTS.md"
+)
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "AGENTS.md" \
+	"the link is not followed, so identical content behind it does not hide the change"
+rm -rf "$work" "$work.target"
+
+echo "Test 29: a new AGENTS.md symlink where the source has none is listed"
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git checkout -q -b main
+	echo x >a.go
+	git add -A && git commit -qm init && git checkout -q -b feature
+	ln -s /dev/zero AGENTS.md
+	git add -A && git commit -qm "add link"
+)
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "AGENTS.md" \
+	"a link at a path the source lacks still counts as a configuration change"
+rm -rf "$work"
+
+echo "Test 30: a changed path whose directory holds ', ' is one tab-separated entry"
+work=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git checkout -q -b main
+	mkdir "a, b"
+	echo x >"a, b/a.go"
+	printf '## Review Council Configuration\n\n- Max comments: 4\n' >"a, b/AGENTS.md"
+	git add -A && git commit -qm init && git checkout -q -b feature
+	echo "- Max comments: 9" >>"a, b/AGENTS.md"
+	git commit -qam "edit block"
+)
+result=$(prepare_in "$work/a, b" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Config changed by changeset" "a, b/AGENTS.md" "the path is listed whole"
+rm -rf "$work"
+
+# A branch that changes a spec, the config block and a pack.
+make_spec_config_repo() { # dir
+	(
+		cd "$1" || exit 1
+		git_init_sandbox
+		git checkout -q -b main
+		mkdir -p docs/specs .review-council/packs
+		echo "# Spec" >docs/specs/a.md
+		printf '## Review Council Configuration\n\n- Max comments: 4\n' >AGENTS.md
+		echo base >.review-council/packs/base.md
+		echo gone >.review-council/packs/gone.md
+		git add -A && git commit -qm init && git checkout -q -b feature
+		echo "# Spec v2" >docs/specs/a.md
+		echo "- Max comments: 9" >>AGENTS.md
+		echo evil >.review-council/packs/e.md
+		git rm -q .review-council/packs/gone.md
+		git add -A && git commit -qm "change all"
+	)
+}
+
+echo "Test 31: spec mode, whose changeset holds only specs, still sees configuration changes"
+work=$(mktemp -d)
+make_spec_config_repo "$work"
+result=$(prepare_in "$work" --scope changed --mode specs)
+sess=$(session_of "$result")
+listed=$(sed -n 's/^- Config changed by changeset: //p' "$sess/tracking.md")
+agents_n=$(grep -cF 'AGENTS.md' <<<"$listed") || agents_n=0
+pack_n=$(grep -cF '.review-council/packs/e.md' <<<"$listed") || pack_n=0
+assert_equals "$agents_n" "1" "the changed block is listed in spec mode"
+assert_equals "$pack_n" "1" "the added pack is listed in spec mode"
+rm -rf "$work"
+
+echo "Test 32: a pack deleted on the branch is listed, though only the source has it"
+work=$(mktemp -d)
+make_spec_config_repo "$work"
+result=$(prepare_in "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+listed=$(sed -n 's/^- Config changed by changeset: //p' "$sess/tracking.md")
+gone_n=$(grep -cF '.review-council/packs/gone.md' <<<"$listed") || gone_n=0
+base_n=$(grep -cF '.review-council/packs/base.md' <<<"$listed") || base_n=0
+assert_equals "$gone_n" "1" "the deleted pack is listed"
+assert_equals "$base_n" "0" "the untouched pack is not"
 rm -rf "$work"
 
 echo ""

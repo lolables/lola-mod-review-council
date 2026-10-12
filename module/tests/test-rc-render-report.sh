@@ -1361,5 +1361,104 @@ else
 fi
 rm -rf "$session"
 
+echo "Test: the report says when the changeset modifies review configuration"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n- Config source: 1a2b3c4d5e6f (merge-base of main and HEAD)\n- Config changed by changeset: AGENTS.md\t.review-council/packs/evil.md\n' >"$session/tracking.md"
+write_verification_log "$session"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+# shellcheck disable=SC2016 # the backticks are literal markdown.
+if grep -qxF -- '- **Review configuration changed by this changeset**: `AGENTS.md`, `.review-council/packs/evil.md` — not obeyed; this review ran under the configuration at 1a2b3c4d5e6f (merge-base of main and HEAD).' <<<"$result"; then
+	echo "  PASS: the note names the paths and the configuration the run used"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the changed-config note is missing or malformed"
+	FAIL=$((FAIL + 1))
+fi
+# The note is a list item between PR and Session Directory; a blank line there
+# would split the Session Information list in two.
+if grep -qxF -- '- **Session Directory**: '"$session" <<<"$result" &&
+	! grep -B1 -xF -- '- **Session Directory**: '"$session" <<<"$result" | grep -qx ''; then
+	echo "  PASS: the note leaves the Session Information list unbroken"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a blank line splits the Session Information list"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: no changed-config note when nothing changed or the key is absent"
+for tracking_line in '- Config changed by changeset: none' ''; do
+	session=$(new_session)
+	printf '# Review Council Session Tracking\n\n- Mode: code\n- Config source: 1a2b3c4d5e6f (merge-base of main and HEAD)\n%s\n' "$tracking_line" >"$session/tracking.md"
+	write_verification_log "$session"
+	result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+	if grep -qF 'Review configuration changed' <<<"$result"; then
+		echo "  FAIL: a changed-config note appeared for '${tracking_line:-<no key>}'"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: no note for '${tracking_line:-<no key>}'"
+		PASS=$((PASS + 1))
+	fi
+	rm -rf "$session"
+done
+
+echo "Test: a changed-config note without a recorded source says so"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n- Config changed by changeset: AGENTS.md\n' >"$session/tracking.md"
+write_verification_log "$session"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF 'this review ran under the configuration at an unrecorded source.' <<<"$result"; then
+	echo "  PASS: an absent Config source is named as unrecorded"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the note hides that the source was not recorded"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: a hostile pack name is rendered only inside a code span"
+session=$(new_session)
+# shellcheck disable=SC2016 # backticks and markup in the fixture are literal.
+hostile='.review-council/packs/<img src=x onerror=alert(1)>`x.md'
+printf '# Review Council Session Tracking\n\n- Mode: code\n- Config source: 1a2b3c4d5e6f (merge-base of main and HEAD)\n- Config changed by changeset: AGENTS.md\t%s\n' "$hostile" >"$session/tracking.md"
+write_verification_log "$session"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+note=$(grep -F -- 'Review configuration changed' <<<"$result") || note=""
+# A backtick in the path means a single-backtick span would close early; the
+# delimiter must be two backticks, and the path must sit between them.
+# shellcheck disable=SC2016 # literal markdown.
+if grep -qF -- '``'"$hostile"'``' <<<"$note"; then
+	echo "  PASS: the path is wrapped in a delimiter longer than its backtick run"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the hostile path is not safely delimited"
+	echo "        got: $note"
+	FAIL=$((FAIL + 1))
+fi
+outside=${note//"$hostile"/}
+if grep -qF -- '<img' <<<"$outside"; then
+	echo "  FAIL: markup from the path appears outside a code span"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the markup appears only inside the code span"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$session"
+
+echo "Test: a pack name containing a comma and space renders as one path"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n- Config source: 1a2b3c4d5e6f (merge-base of main and HEAD)\n- Config changed by changeset: AGENTS.md\t.review-council/packs/a, b.md\n' >"$session/tracking.md"
+write_verification_log "$session"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+# shellcheck disable=SC2016 # the backticks are literal markdown.
+if grep -qF -- '**: `AGENTS.md`, `.review-council/packs/a, b.md` — not obeyed' <<<"$result"; then
+	echo "  PASS: the path with ', ' in its name is a single span"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a path containing ', ' was split into two"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

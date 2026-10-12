@@ -107,6 +107,7 @@ fi
 	echo "- Project packs: ${project_packs}"
 	echo "- Docs repo: ${docs_repo}"
 	echo "- Knowledge tool: ${knowledge_tool}"
+	echo "- Config changed by changeset: ${config_changed_line}"
 	echo "- Mode: ${mode} (${mode_reason})"
 	echo "- Effort: ${effort}"
 	echo "- Branch: ${display_branch}"

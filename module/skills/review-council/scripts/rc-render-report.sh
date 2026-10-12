@@ -138,6 +138,8 @@ pr_line=$(rc_parse_kv "$tracking_file" "PR")
 agents_discovered=$(rc_parse_kv "$tracking_file" "Agents discovered")
 agents_absent=$(rc_parse_kv "$tracking_file" "Agents absent")
 changeset=$(rc_parse_kv "$tracking_file" "Changeset size")
+config_source=$(rc_parse_kv "$tracking_file" "Config source")
+config_changed=$(rc_parse_kv "$tracking_file" "Config changed by changeset")
 # The third coverage state. "Absent" is a persona this host does not have
 # installed; "skipped" is one it has and deliberately did not dispatch, because
 # the changeset holds nothing for that persona to review. Neither is a verdict
@@ -156,6 +158,34 @@ agents_absent="${agents_absent:-none}"
 agents_skipped="${agents_skipped:-none}"
 selection_shape="${selection_shape:-not evaluated}"
 changeset="${changeset:-unknown}"
+
+# A changeset that edits the review's own configuration was reviewed under the
+# configuration at its base, not the one it carries. Say so, so a maintainer
+# does not read the run as having exercised the new configuration. The note is
+# a whole line including its newline, or nothing, so an absent note leaves no
+# blank line in the Session Information list it sits in.
+config_changed_note=""
+if [[ -n "$config_changed" && "$config_changed" != "none" ]]; then
+	# Each path is a filename the change's author chose, so it is rendered as
+	# an inline code span whose delimiter is longer than any backtick run in
+	# the path (the sizing evidence_block applies to fences), padded when the
+	# path begins or ends with a backtick. Raw, a path could close the span,
+	# inject HTML or an image, or pose as a link. tracking.md joins paths with
+	# a TAB, which no name can contain (rc_single_line flattened them), so a path
+	# holding ", " stays one span; the spans are joined here with ", ".
+	config_changed_spans=""
+	while IFS= read -r config_changed_path; do
+		# shellcheck disable=SC2016 # literal markdown code-span delimiters.
+		config_changed_delim='`'
+		while [[ "$config_changed_path" == *"$config_changed_delim"* ]]; do
+			config_changed_delim+='`'
+		done
+		config_changed_pad=""
+		[[ "$config_changed_path" == '`'* || "$config_changed_path" == *'`' ]] && config_changed_pad=" "
+		config_changed_spans+="${config_changed_spans:+, }${config_changed_delim}${config_changed_pad}${config_changed_path}${config_changed_pad}${config_changed_delim}"
+	done < <(printf '%s\n' "${config_changed//$'\t'/$'\n'}")
+	config_changed_note="- **Review configuration changed by this changeset**: ${config_changed_spans} — not obeyed; this review ran under the configuration at ${config_source:-an unrecorded source}."$'\n'
+fi
 
 # Parse findings.json if exists
 total_findings=0
@@ -253,7 +283,7 @@ $council_verdict_line
 - **Branch**: $branch
 - **Base**: $base
 - **PR**: $pr_line
-- **Session Directory**: $session_dir
+${config_changed_note}- **Session Directory**: $session_dir
 
 ## Discovery Summary
 - **Agents discovered**: $agents_discovered

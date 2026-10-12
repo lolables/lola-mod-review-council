@@ -211,6 +211,7 @@ rc_config_value() { # key
 # copied into the session; reviewers read the copy.
 constitution="none"
 constitution_source=""
+constitution_accepted_path="" # leading ./ stripped, as git prints paths
 constitution_value=$(rc_config_value "Constitution")
 constitution_value=$(rc_single_line "$constitution_value")
 if [[ -n "$constitution_value" ]]; then
@@ -236,6 +237,7 @@ if [[ -n "$constitution_value" ]]; then
 	else
 		constitution="${config_dir}/constitution.md"
 		constitution_source="explicit: ${constitution_value}"
+		constitution_accepted_path="$constitution_path"
 	fi
 fi
 
@@ -393,3 +395,144 @@ if [[ -n "$pin_personas" ]]; then
 		grep -E '^[a-z][a-z0-9-]*$' | paste -sd ',' - || true)
 fi
 [[ -n "$pin_personas" ]] || pin_personas="none"
+
+# ============================================================================
+# Changes to review configuration
+# ============================================================================
+#
+# The change's own version of anything above is never obeyed; the report says
+# so, so a maintainer does not take the run as having exercised the new
+# configuration. A path is listed only when its content differs between the
+# configuration source and the reviewed tree. AGENTS.md/CLAUDE.md are compared
+# by their configuration block alone, so prose edits do not count. Absent on one
+# side and present on the other is a difference, which is also how a pack
+# deleted or added by the change is caught. A constitution the guard refused is
+# not listed: it governed nothing, and the block edit that named it is listed
+# through AGENTS.md/CLAUDE.md.
+#
+# What is compared is a fixed candidate set, not changeset.txt: AGENTS.md,
+# CLAUDE.md, the accepted constitution, and every safely named pack found at
+# the source or in the reviewed tree. The changeset is the wrong list twice
+# over. Under `--scope all` and `--scope paths` it names every file in the tree,
+# and in spec mode or under a scope filter it omits the very files that matter.
+# Content comparison makes the unchanged candidates fall out.
+#
+# The exception is a cloned review (review_root is not `.`: a PR or url
+# materialised elsewhere). There the source is the invoking repository, which
+# has no relation to the PR head, so any difference between them is not the
+# change's doing. Candidates are then intersected with changeset.txt, which is
+# the forge's diff of the PR, so only files the PR touches can be listed. That
+# diff covers every file, so spec mode loses nothing there. The cost is that a
+# rename is reported by `--name-only` as its new path only, so in that case a
+# config file moved elsewhere is not listed under its old path.
+#
+# Candidates are relative to the directory the review runs from, while git
+# prints paths relative to the repository root; the listed path carries the
+# prefix (`git rev-parse --show-prefix`) so it reads like a changeset path. In a
+# clone no prefix applies: the paths are relative to the clone root, but the
+# source is read from the invoking repository's own subdirectory, so the base's
+# `sub/AGENTS.md` is compared with the clone's root `AGENTS.md`. The comparison
+# is only exact when the review runs in place. The constitution path is compared
+# with its leading `./` stripped, the form git prints.
+
+head_root=$(CDPATH='' cd -- "$review_root" 2>/dev/null && pwd -P) || head_root=""
+config_prefix=""
+if ! $rc_no_git && [[ "$review_root" == "." ]]; then
+	config_prefix=$(git rev-parse --show-prefix 2>/dev/null) || config_prefix=""
+fi
+
+# Content of <path> in the reviewed tree, on stdout; fails, printing nothing,
+# unless it is a regular file, not a symlink, whose physical directory lies
+# inside review_root. Mirrors the worktree branch of rc_config_read: the tree
+# belongs to the change, and a symlink there (to /dev/zero, a FIFO, a file
+# outside the tree) must not be followed.
+rc_config_head_read() { # path relative to review_root
+	local path="${review_root}/$1" dir_abs
+	[[ -f "$path" && ! -L "$path" ]] || return 1
+	dir_abs=$(CDPATH='' cd -- "$(dirname -- "$path")" 2>/dev/null && pwd -P) || return 1
+	[[ "$dir_abs" == "$head_root" || "$dir_abs" == "$head_root"/* ]] || return 1
+	cat -- "$path"
+}
+
+# Whether <path> differs between the source and the reviewed tree. <what> is
+# `block` to compare only the Review Council Configuration section, `file` to
+# compare the whole content. Compared through files, so trailing newlines count.
+config_cmp_src="${session_dir}/config-cmp-src.tmp"
+config_cmp_head="${session_dir}/config-cmp-head.tmp"
+rc_config_differs() { # path what
+	local path="$1" what="$2" src_ok=false head_ok=false
+	rc_config_read "$path" >"$config_cmp_src" && src_ok=true
+	rc_config_head_read "$path" >"$config_cmp_head" && head_ok=true
+	if ! $head_ok; then
+		# Something at the path that is not a readable regular file (a
+		# symlink, a directory) is a change in its own right: turning a
+		# config file into a link is how one would smuggle content in.
+		[[ -e "${review_root}/${path}" || -L "${review_root}/${path}" ]] && return 0
+		$src_ok
+		return
+	fi
+	$src_ok || return 0
+	if [[ "$what" == block ]]; then
+		rc_config_block <"$config_cmp_src" >"${config_cmp_src}.blk"
+		rc_config_block <"$config_cmp_head" >"${config_cmp_head}.blk"
+		! cmp -s "${config_cmp_src}.blk" "${config_cmp_head}.blk"
+	else
+		! cmp -s "$config_cmp_src" "$config_cmp_head"
+	fi
+}
+
+# Candidates as parallel arrays: path relative to the review's directory, and
+# how to compare it.
+config_cand_path=()
+config_cand_what=()
+declare -A config_seen
+rc_config_candidate() { # path what
+	[[ -z "${config_seen[$1]:-}" ]] || return 0
+	config_seen["$1"]=1
+	config_cand_path+=("$1")
+	config_cand_what+=("$2")
+}
+rc_config_candidate AGENTS.md block
+rc_config_candidate CLAUDE.md block
+[[ -z "$constitution_accepted_path" ]] || rc_config_candidate "$constitution_accepted_path" file
+# Pack names from both sides: a pack the change deleted is only at the source,
+# one it added only in the tree. The name rules are the loader's, so a name
+# that could never have been loaded as a pack is not a candidate.
+config_pack_names=()
+while IFS= read -r -d '' pack_path; do
+	config_pack_names+=("${pack_path##*/}")
+done < <(rc_config_pack_paths || true)
+for pack_path in "${review_root}/.review-council/packs/"*.md; do
+	[[ -e "$pack_path" || -L "$pack_path" ]] && config_pack_names+=("${pack_path##*/}")
+done
+for pack_name in "${config_pack_names[@]}"; do
+	[[ "$pack_name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*\.md$ ]] &&
+		rc_config_candidate ".review-council/packs/${pack_name}" file
+done
+
+config_changed=()
+for i in "${!config_cand_path[@]}"; do
+	rel_path="${config_cand_path[$i]}"
+	changed_path="${config_prefix}${rel_path}"
+	if [[ "$review_root" != "." ]] && ! grep -qxF -- "$changed_path" "${session_dir}/changeset.txt"; then
+		continue
+	fi
+	if rc_config_differs "$rel_path" "${config_cand_what[$i]}"; then
+		# A filename is the change author's text; it goes into a one-line
+		# tracking.md value, so control bytes are flattened first.
+		config_changed+=("$(rc_single_line "$changed_path")")
+	fi
+done
+rm -f "$config_cmp_src" "${config_cmp_src}.blk" "$config_cmp_head" "${config_cmp_head}.blk"
+if ((${#config_changed[@]} > 0)); then
+	# Tab-separated: rc_single_line has turned any tab inside a name into a
+	# space, so a name cannot forge the separator, which ", " would not
+	# guarantee. rc_parse_kv trims only trailing whitespace, so interior tabs
+	# survive to the renderer.
+	config_changed_line=$(
+		IFS=$'\t'
+		printf '%s' "${config_changed[*]}"
+	)
+else
+	config_changed_line="none"
+fi

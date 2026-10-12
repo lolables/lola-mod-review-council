@@ -1,0 +1,21 @@
+cliff.toml
+  s_0b4aca1b6a7ce1::t_a8aa344810fbad 1-124
+VERSION
+  s_0b4aca1b6a7ce1::t_10a5feda956df3 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d51ddc7bcfdd03adf5f1708c42b815cc023d534b",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

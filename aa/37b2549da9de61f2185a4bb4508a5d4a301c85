@@ -1,0 +1,49 @@
+.taskfiles/scripts/mutate-check.sh
+  s_eaf7288cabf2a5::t_0a6f291bb7523d 1412-1418
+module/tests/test-rc-prepare-config-source.sh
+  s_eaf7288cabf2a5::t_ffee3d62ec6234 119,132-133,150
+CHANGELOG.md
+  s_eaf7288cabf2a5::t_513c63f9366194 18-23
+module/skills/review-council/references/forge-adapters.md
+  s_eaf7288cabf2a5::t_c70e4b552e65bd 489-496,507-509
+  s_eaf7288cabf2a5::t_19d8af924121d3 505-506
+  s_eaf7288cabf2a5::t_e4c0d7a9b9a5c1 510-511
+  s_eaf7288cabf2a5::t_69027fa1769b6d 488
+module/tests/test-rc-prepare-mode.sh
+  s_eaf7288cabf2a5::t_13b46cd17122a6 16-17
+  s_eaf7288cabf2a5::t_61adc6d32ddaea 15
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_eaf7288cabf2a5::t_69027fa1769b6d 120
+module/tests/test-rc-clone-target.sh
+  s_eaf7288cabf2a5::t_65fe0c0780c99b 11-13,72-74
+  s_eaf7288cabf2a5::t_6724dcf0b75ce3 37-39,64-65,69,1759,1775
+  s_eaf7288cabf2a5::t_69027fa1769b6d 66,82,90,101,150,165,184,217,230,248,268,312,314,318,322,325,331,334,338,341,352,354,358,397,430,476,490,591,690,1214,1260,1278,1307,1334,1383,1424,1456,1482,1517,1573,1603,1701,1726,1743,1761,1777,1795,1798,1813,1819,1834
+  s_eaf7288cabf2a5::t_2a23c177945261 10,14-15,17,63,98,147,164,173,208,227,245,265,388,426,472,581,1175,1253,1274,1299,1324,1379,1446,1474,1513,1597
+  s_eaf7288cabf2a5::t_828c4e562b461b 60,70-71,75-77
+  s_eaf7288cabf2a5::t_7e2d1189229155 78-81,83-89,91-92
+  s_eaf7288cabf2a5::t_10838007e74191 1417
+  s_eaf7288cabf2a5::t_78632b4f52d917 360,376,379
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_eaf7288cabf2a5::t_ac1cd35468353c 263,268
+  s_eaf7288cabf2a5::t_69027fa1769b6d 17,44,242-243
+  s_eaf7288cabf2a5::t_6aa7cd59d59a7a 238,244-248
+  s_eaf7288cabf2a5::t_e4c0d7a9b9a5c1 32-34
+README.md
+  s_eaf7288cabf2a5::t_19d8af924121d3 538-539
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa37b2549da9de61f2185a4bb4508a5d4a301c85",
+  "prompts": {},
+  "sessions": {
+    "s_eaf7288cabf2a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b586709f-6b1d-427d-963c-c9c2ca52355b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

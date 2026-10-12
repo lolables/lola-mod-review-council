@@ -14,7 +14,7 @@ source "$(dirname "$0")/lib/symlinks.sh"
 # not already in it. Emits JSON with review_root for downstream reads.
 #
 # Usage:
-#   rc-clone-target.sh --forge github|gitlab --owner O --repo R --pr N --head REF [--url URL]
+#   rc-clone-target.sh --forge github|gitlab --owner O --repo R --pr N [--url URL]
 #                      [--head-sha SHA]
 #
 #   --owner is a GitLab namespace for --forge gitlab and may name subgroups
@@ -29,7 +29,9 @@ source "$(dirname "$0")/lib/symlinks.sh"
 #   --head-sha is the PR/MR head commit as preparation already read it. GitLab
 #   materializes the archive at that sha instead of looking the merge request
 #   up again; GitHub checks that commit out, which must then be in the fetched
-#   history. Anything but a 40-hex commit id is refused.
+#   history. It is also the only evidence that the current checkout is the
+#   PR/MR head: without it the working tree is never reviewed in place.
+#   Anything but a 40-hex commit id is refused.
 #
 # Output JSON:
 #   {"status":"in_place|ok|skip","review_root":"<path|.>","message":"..."}
@@ -39,7 +41,7 @@ source "$(dirname "$0")/lib/symlinks.sh"
 #                  archive (GitLab), and GitLab adds "special_files_removed":<n>
 #     skip      -> not materialized (unsupported forge / clone failure); review_root "."
 
-forge="" owner="" repo="" pr="" head="" url="" head_sha=""
+forge="" owner="" repo="" pr="" url="" head_sha=""
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 	--forge)
@@ -56,10 +58,6 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--pr)
 		pr="$2"
-		shift 2
-		;;
-	--head)
-		head="$2"
 		shift 2
 		;;
 	--url)
@@ -237,11 +235,17 @@ if [[ -n "$url" ]]; then
 	fi
 fi
 
-# --- Already in it? Same host AND project path AND current branch == PR head ---
+# --- Already in it? Same host AND project path AND HEAD == PR head commit ---
 origin_url=$(git remote get-url origin 2>/dev/null || echo "")
 parse_remote "$origin_url"
 cur_host="$rc_remote_host" cur_path="$rc_remote_path"
-cur_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+# The commit, never the branch name. A PR's head branch is a bare name with no
+# repository behind it: a fork PR from someone/widgets:main matches an operator standing on
+# acme/widgets main, and a local branch behind or ahead of the PR matches its
+# own name. Either way reviewers would read a tree the diff was not taken from,
+# and the working tree would also supply the review configuration
+# (prepare-config.sh). Without --head-sha nothing proves the tree is the head.
+cur_commit=$(git rev-parse --verify -q 'HEAD^{commit}' 2>/dev/null || echo "")
 # Does the checkout we are standing in hold the repository we were asked for?
 # The host is part of the question, not an incidental detail: standing in a
 # same-named repository on a different host is exactly when the working tree
@@ -256,12 +260,12 @@ if [[ -n "$cur_host" ]] && [[ "${cur_host,,}" == "${target_host,,}" ]] &&
 	origin_names_target=true
 fi
 inplace_note=""
-if [[ "$origin_names_target" == true ]] && [[ -n "$head" ]] && [[ "$cur_branch" == "$head" ]]; then
+if [[ "$origin_names_target" == true ]] && [[ -n "$head_sha" ]] && [[ "$cur_commit" == "$head_sha" ]]; then
 	if inplace_link_escapes; then
 		inplace_note=" Not reviewed in place: this checkout tracks a symlink leading out of the repository."
 	else
 		review_root="."
-		emit "in_place" "Already in ${owner}/${repo} at ${head}; using working tree."
+		emit "in_place" "Already in ${owner}/${repo} at ${head_label} (${head_sha}); using working tree."
 		exit 0
 	fi
 fi

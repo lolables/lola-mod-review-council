@@ -535,9 +535,8 @@ untrusted branch can land on a commit the contributor wrote, and its configurati
 
 Residual risk: the host agent itself loads `CLAUDE.md` and `AGENTS.md` from the directory a session starts in, before
 the review begins. Reviewing an untrusted PR from a checkout of its head hands those files to the host. Review untrusted
-PRs with `--scope pr N` from a checkout of the base branch. That clones the PR instead of reviewing in place, unless the
-PR's head branch has the same name as the branch you are on (a fork PR from its `main`, say), which is reviewed in place
-(tracked in #63).
+PRs with `--scope pr N` from a checkout of the base branch. That clones the PR instead of reviewing in place: a PR is
+reviewed in place only when `HEAD` is the PR's head commit.
 
 ### Council selection
 

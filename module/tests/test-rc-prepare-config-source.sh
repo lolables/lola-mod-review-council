@@ -116,7 +116,7 @@ rm -rf "$work"
 
 echo "Test 5: an in-place pull request reads the configuration from its base"
 # rc-clone-target.sh takes its in_place path when origin names the PR's repo
-# and the current branch is the PR head, so no network is touched.
+# and HEAD is the PR head commit (headRefOid), so no network is touched.
 work=$(mktemp -d)
 bindir=$(mktemp -d)
 (
@@ -129,7 +129,8 @@ cat >"$bindir/gh" <<'GH'
 #!/usr/bin/env bash
 case "$1 $2" in
 "pr view")
-	echo '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"feature","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}'
+	printf '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"feature","headRefOid":"%s","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}\n' \
+		"$(cat "${0%/*}/head-sha")"
 	;;
 "pr diff") printf 'diff --git a/run.sh b/run.sh\n--- /dev/null\n+++ b/run.sh\n@@ -0,0 +1 @@\n+eval "$1"\n' ;;
 "api "*) echo "[]" ;;
@@ -146,6 +147,7 @@ git -C "$work" checkout -q main
 printf '## Review Council Configuration\n\n- Subsystem triage: on\n' >"$work/AGENTS.md"
 git -C "$work" commit -qam "local main drifts"
 git -C "$work" checkout -q feature
+git -C "$work" rev-parse feature >"$bindir/head-sha"
 result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$AGENTS" \
 	bash "$SCRIPT" --scope pr --scope-value 7 --mode code 2>/dev/null)
 sess=$(session_of "$result")

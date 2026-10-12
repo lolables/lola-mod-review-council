@@ -7,8 +7,14 @@ SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-clone-target.sh"
 source "$SCRIPT_DIR/helpers.sh"
 
 # Build a temp bin dir with mock git/gh, prepended to PATH per-test.
+# head_commit is what the operator's checkout resolves HEAD to: $pr_sha puts it
+# at the PR head, $other_sha anywhere else. The current branch is always
+# feature-x, a PR head branch's name, so a script that matched on the branch
+# name again would review nearly every case in place (#63).
+pr_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+other_sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 make_mockbin() {
-	local dir="$1" mode="$2" branch="$3" remote="${4:-https://github.com/acme/widgets.git}"
+	local dir="$1" mode="$2" head_commit="$3" remote="${4:-https://github.com/acme/widgets.git}"
 	mkdir -p "$dir"
 	cat >"$dir/git" <<MOCKGIT
 #!/usr/bin/env bash
@@ -28,7 +34,9 @@ if [[ "\$1" == "-C" ]]; then shift 2; fi
 case "\$1" in
 	remote) echo "$remote" ;;
 	rev-parse)
-		if [[ "\$2" == "--abbrev-ref" ]]; then echo "$branch"; else echo "deadbeef"; fi ;;
+		if [[ "\$2" == "--abbrev-ref" ]]; then echo "feature-x"
+		elif [[ " \$* " == *" HEAD^{commit} "* ]]; then echo "$head_commit"
+		else echo "deadbeef"; fi ;;
 	clone)
 		if [[ "$mode" == "partialfail" ]] && printf '%s\n' "\$@" | grep -q 'blob:none'; then
 			exit 1
@@ -49,23 +57,48 @@ MOCKGIT
 	chmod +x "$dir/gh"
 }
 
-# Test 1: already in the target repo on the PR branch -> in_place
+# Test 1: already in the target repo at the PR head commit -> in_place
 echo "Test 1: in-place detection"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "feature-x"
-result=$(PATH="$bin:$PATH" bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+make_mockbin "$bin" ok "$pr_sha"
+cache=$(mktemp -d)
+result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head-sha "$pr_sha" 2>/dev/null)
 assert_json_field "$result" "status" "in_place" "status is in_place"
 assert_json_field "$result" "review_root" "." "review_root is ."
-rm -rf "$bin"
+rm -rf "$bin" "$cache"
+
+# Test 1b: only the head commit puts the working tree at the PR head (#63)
+# A PR's head branch is a bare name. A fork PR from someone/widgets:main
+# matches an operator's checkout of acme/widgets on main, and a local branch
+# behind or ahead of the PR matches its own name. Reviewing either in place has every
+# reviewer read the wrong tree, and evidence verification then strips findings
+# on files only the PR adds: a false clean.
+echo "Test 1b: in place only at the PR head commit"
+bin=$(mktemp -d)
+make_mockbin "$bin" ok "$other_sha"
+cache=$(mktemp -d)
+result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 --head-sha "$pr_sha" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "HEAD is not the PR head commit: materialized, not in place"
+rm -rf "$bin" "$cache"
+# Without a head commit there is nothing to prove the tree is the PR head.
+bin=$(mktemp -d)
+make_mockbin "$bin" ok "$pr_sha"
+cache=$(mktemp -d)
+result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
+assert_json_field "$result" "status" "ok" "no --head-sha: materialized, not in place"
+rm -rf "$bin" "$cache"
 
 # Test 2: different branch -> materialize into cache, review_root = this run's
 # own worktree of the cache clone
 echo "Test 2: materialize into cache"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main"
+make_mockbin "$bin" ok "$other_sha"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 root=$(echo "$result" | jq -r '.review_root')
 clones="$cache/review-council/clones"
@@ -111,10 +144,10 @@ rm -rf "$bin" "$cache"
 # Test 3: partial clone fails -> shallow fallback
 echo "Test 3: shallow fallback"
 bin=$(mktemp -d)
-make_mockbin "$bin" partialfail "main"
+make_mockbin "$bin" partialfail "$other_sha"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok after fallback"
 if grep -q 'depth 50' "$bin/git.log"; then
 	echo "  PASS: shallow fallback used"
@@ -128,8 +161,8 @@ rm -rf "$bin" "$cache"
 # Test 4: a forge with no clone support -> skip (generic fallback), review_root = .
 echo "Test 4: unsupported forge skip"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main"
-result=$(PATH="$bin:$PATH" bash "$SCRIPT" --forge bitbucket --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+make_mockbin "$bin" ok "$other_sha"
+result=$(PATH="$bin:$PATH" bash "$SCRIPT" --forge bitbucket --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip"
 assert_json_field "$result" "review_root" "." "review_root stays ."
 rm -rf "$bin"
@@ -137,7 +170,7 @@ rm -rf "$bin"
 # Test 5: LRU prune keeps newest N, removes older clones
 echo "Test 5: LRU prune"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main"
+make_mockbin "$bin" ok "$other_sha"
 cache=$(mktemp -d)
 clones="$cache/review-council/clones"
 mkdir -p "$clones"
@@ -148,7 +181,7 @@ for n in old1 old2 old3; do
 	touch -t 202001010000 "$clones/$n"
 done
 PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" REVIEW_COUNCIL_CLONE_CACHE_MAX=2 \
-	bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 --head feature-x >/dev/null 2>&1
+	bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 >/dev/null 2>&1
 # The cap counts clone entries; the hidden run trees under .runs/ are not one.
 remaining=$(find "$clones" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')
 if [[ "$remaining" -eq 2 ]]; then
@@ -172,7 +205,7 @@ echo "Test 5b: REVIEW_COUNCIL_CLONE_CACHE_MAX parsing"
 for case in "08:8" "abc:10"; do
 	cap_value="${case%%:*}" want="${case##*:}"
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main"
+	make_mockbin "$bin" ok "$other_sha"
 	cache=$(mktemp -d)
 	clones="$cache/review-council/clones"
 	mkdir -p "$clones"
@@ -181,7 +214,7 @@ for case in "08:8" "abc:10"; do
 		touch -t 202001010000 "$clones/old$n"
 	done
 	PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" REVIEW_COUNCIL_CLONE_CACHE_MAX="$cap_value" \
-		bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 --head feature-x >/dev/null 2>&1
+		bash "$SCRIPT" --forge github --owner acme --repo widgets --pr 7 >/dev/null 2>&1
 	remaining=$(find "$clones" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')
 	assert_equals "$remaining" "$want" "cap '$cap_value' keeps $want entries"
 	rm -rf "$bin" "$cache"
@@ -191,10 +224,10 @@ done
 # false-clean empty tree), and the empty tree does not outlive the run
 echo "Test 6: checkout failure falls back to skip"
 bin=$(mktemp -d)
-make_mockbin "$bin" worktreefail "main"
+make_mockbin "$bin" worktreefail "$other_sha"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip on checkout failure"
 assert_json_field "$result" "review_root" "." "review_root falls back to ."
 assert_json_field "$result" "message" \
@@ -209,10 +242,10 @@ rm -rf "$bin" "$cache"
 # apart from the clone- and checkout-failure fallbacks — assert the message.
 echo "Test 6b: fetch failure falls back to skip"
 bin=$(mktemp -d)
-make_mockbin "$bin" fetchfail "main"
+make_mockbin "$bin" fetchfail "$other_sha"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip on fetch failure"
 assert_json_field "$result" "review_root" "." "review_root falls back to ."
 assert_json_field "$result" "message" \
@@ -229,10 +262,10 @@ rm -rf "$bin" "$cache"
 echo "Test 7: owner/repo/pr character gate"
 while IFS='|' read -r label bad_owner bad_repo bad_pr; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main"
+	make_mockbin "$bin" ok "$other_sha"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner "$bad_owner" --repo "$bad_repo" --pr "$bad_pr" --head feature-x 2>/dev/null)
+		--forge github --owner "$bad_owner" --repo "$bad_repo" --pr "$bad_pr" 2>/dev/null)
 	assert_json_field "$result" "status" "skip" "$label: status is skip"
 	assert_json_field "$result" "review_root" "." "$label: review_root stays ."
 	if [[ -s "$bin/git.log" ]]; then
@@ -276,36 +309,36 @@ GHMOCK
 # evidence-verified against whatever review_root names, so following a foreign
 # origin verifies foreign file content as if it were the PR.
 echo "Test 8: foreign origin host"
-for tc_branch in feature-x main; do
+for tc_head in "$pr_sha" "$other_sha"; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "$tc_branch" "https://evil.attacker.test/acme/widgets.git"
+	make_mockbin "$bin" ok "$tc_head" "https://evil.attacker.test/acme/widgets.git"
 	make_gh_mock "$bin"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+		--forge github --owner acme --repo widgets --pr 7 --head-sha "$pr_sha" 2>/dev/null)
 	status=$(echo "$result" | jq -r '.status // empty')
 	root=$(echo "$result" | jq -r '.review_root // empty')
 	if [[ "$status" == "in_place" || "$root" == "." ]]; then
-		echo "  FAIL: branch=$tc_branch: reused a foreign-host working tree (status '$status', review_root '$root')"
+		echo "  FAIL: head=${tc_head:0:7}: reused a foreign-host working tree (status '$status', review_root '$root')"
 		FAIL=$((FAIL + 1))
 	else
-		echo "  PASS: branch=$tc_branch: did not review the foreign-host working tree"
+		echo "  PASS: head=${tc_head:0:7}: did not review the foreign-host working tree"
 		PASS=$((PASS + 1))
 	fi
 	# gh is only ever handed OWNER/REPO, so it cannot reach the foreign host;
 	# git is the only way there.
 	if grep -qF 'evil.attacker.test' "$bin/git.log"; then
-		echo "  FAIL: branch=$tc_branch: cloned from the foreign host"
+		echo "  FAIL: head=${tc_head:0:7}: cloned from the foreign host"
 		FAIL=$((FAIL + 1))
 	else
-		echo "  PASS: branch=$tc_branch: never contacted the foreign host"
+		echo "  PASS: head=${tc_head:0:7}: never contacted the foreign host"
 		PASS=$((PASS + 1))
 	fi
 	if grep -qF 'https://github.com/acme/widgets.git' "$bin/git.log" || grep -qF 'repo clone' "$bin/gh.log" 2>/dev/null; then
-		echo "  PASS: branch=$tc_branch: fell back to the host --forge github implies"
+		echo "  PASS: head=${tc_head:0:7}: fell back to the host --forge github implies"
 		PASS=$((PASS + 1))
 	else
-		echo "  FAIL: branch=$tc_branch: no clone attempted against github.com"
+		echo "  FAIL: head=${tc_head:0:7}: no clone attempted against github.com"
 		FAIL=$((FAIL + 1))
 	fi
 	rm -rf "$bin" "$cache"
@@ -316,15 +349,15 @@ done
 # origin. With the two in agreement the working tree is the target, so the
 # in-place path must fire on a host that is not github.com.
 echo "Test 9: enterprise target named by --url"
-for tc_branch in main feature-x; do
+for tc_head in "$other_sha" "$pr_sha"; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "$tc_branch" "https://github.example.com/acme/widgets.git"
+	make_mockbin "$bin" ok "$tc_head" "https://github.example.com/acme/widgets.git"
 	make_gh_mock "$bin"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--forge github --owner acme --repo widgets --pr 7 --head-sha "$pr_sha" \
 		--url https://github.example.com/acme/widgets.git 2>/dev/null)
-	if [[ "$tc_branch" == "feature-x" ]]; then
+	if [[ "$tc_head" == "$pr_sha" ]]; then
 		assert_json_field "$result" "status" "in_place" "at the PR head: status is in_place"
 		assert_json_field "$result" "review_root" "." "at the PR head: review_root is ."
 	else
@@ -340,10 +373,10 @@ for tc_branch in main feature-x; do
 	# A gh clone counts as a github.com resolution whatever the caller asked
 	# for: gh resolves OWNER/REPO against its own default host.
 	if grep -qF 'https://github.com/' "$bin/git.log" || grep -qF 'repo clone' "$bin/gh.log" 2>/dev/null; then
-		echo "  FAIL: branch=$tc_branch: resolved against github.com"
+		echo "  FAIL: head=${tc_head:0:7}: resolved against github.com"
 		FAIL=$((FAIL + 1))
 	else
-		echo "  PASS: branch=$tc_branch: never resolved against github.com"
+		echo "  PASS: head=${tc_head:0:7}: never resolved against github.com"
 		PASS=$((PASS + 1))
 	fi
 	rm -rf "$bin" "$cache"
@@ -352,7 +385,7 @@ done
 # Test 10: an explicit --url outranks the host derived from the origin
 echo "Test 10: --url override"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main"
+make_mockbin "$bin" ok "$other_sha"
 cat >"$bin/gh" <<GHMOCK
 #!/usr/bin/env bash
 echo "gh \$*" >>"$bin/gh.log"
@@ -361,7 +394,7 @@ GHMOCK
 chmod +x "$bin/gh"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+	--forge github --owner acme --repo widgets --pr 7 \
 	--url https://git.corp.example/acme/widgets.git 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 if grep -qF 'https://git.corp.example/acme/widgets.git' "$bin/git.log"; then
@@ -390,11 +423,11 @@ rm -rf "$bin" "$cache"
 echo "Test 11: a ported --url never matches a portless origin"
 for tc_url in https://github.com:8443/acme/widgets.git https://ghe.corp.net:8443/acme/widgets.git; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "feature-x" "${tc_url/:8443/}"
+	make_mockbin "$bin" ok "$pr_sha" "${tc_url/:8443/}"
 	make_gh_mock "$bin"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--forge github --owner acme --repo widgets --pr 7 \
 		--url "$tc_url" 2>/dev/null)
 	status=$(echo "$result" | jq -r '.status // empty')
 	if [[ "$status" == "in_place" ]]; then
@@ -436,11 +469,11 @@ done
 echo "Test 12: cache entries are per target endpoint"
 while IFS='|' read -r label url_a url_b; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main"
+	make_mockbin "$bin" ok "$other_sha"
 	make_gh_mock "$bin"
 	cache=$(mktemp -d)
 	first=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--forge github --owner acme --repo widgets --pr 7 \
 		--url "$url_a" 2>/dev/null)
 	assert_json_field "$first" "status" "ok" "$label: first endpoint materialized"
 	root_a=$(echo "$first" | jq -r '.review_root')
@@ -454,7 +487,7 @@ while IFS='|' read -r label url_a url_b; do
 		FAIL=$((FAIL + 1))
 	fi
 	second=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--forge github --owner acme --repo widgets --pr 7 \
 		--url "$url_b" 2>/dev/null)
 	root_b=$(echo "$second" | jq -r '.review_root')
 	entry_b=$(awk -v r="$root_b" '$4 == "worktree" && $8 == r { print $3 }' "$bin/git.log")
@@ -545,7 +578,7 @@ sha_b=2222222222222222222222222222222222222222
 # g/sub/p is $entry; each run's own tree is review_root, under $clones/.runs.
 gl_fixture() {
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main" "https://gitlab.com/other/repo.git"
+	make_mockbin "$bin" ok "$other_sha" "https://gitlab.com/other/repo.git"
 	make_glab_mock "$bin"
 	make_archive "$bin/archive.tgz" "$sha_a" "head-a"
 	echo "{\"sha\":\"$sha_a\"}" >"$bin/mr.json"
@@ -555,7 +588,7 @@ gl_fixture() {
 }
 gl_run() { # [VAR=value...]
 	env PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" "$@" bash "$SCRIPT" \
-		--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x 2>/dev/null
+		--forge gitlab --owner g/sub --repo p --pr 7 2>/dev/null
 }
 gl_cleanup() {
 	chmod -R u+w "$bin" "$cache" 2>/dev/null || true
@@ -654,7 +687,7 @@ echo "Test 13a: --head-sha skips the merge request lookup"
 for tc_sha in "$sha_a" "1111" "--x" "${sha_a//1/A}"; do
 	gl_fixture
 	result=$(env PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x --head-sha "$tc_sha" 2>/dev/null)
+		--forge gitlab --owner g/sub --repo p --pr 7 --head-sha "$tc_sha" 2>/dev/null)
 	if [[ "$tc_sha" == "$sha_a" ]]; then
 		assert_entry_listing "${sha_a}.tar.gz " "valid --head-sha: the archive at that sha"
 		lookups=$(grep -c 'merge_requests/7$' "$bin/glab.log" || true)
@@ -1139,7 +1172,7 @@ gl_cleanup
 echo "Test 14: GitLab archive failures fall back to skip"
 while IFS='|' read -r label tc_case want_msg; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main" "https://gitlab.com/other/repo.git"
+	make_mockbin "$bin" ok "$other_sha" "https://gitlab.com/other/repo.git"
 	make_glab_mock "$bin"
 	make_archive "$bin/archive.tgz" "$sha_a" "head-a"
 	echo "{\"sha\":\"$sha_a\"}" >"$bin/mr.json"
@@ -1178,7 +1211,7 @@ while IFS='|' read -r label tc_case want_msg; do
 		;;
 	esac
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x 2>/dev/null)
+		--forge gitlab --owner g/sub --repo p --pr 7 2>/dev/null)
 	assert_json_field "$result" "status" "skip" "$label: status is skip"
 	assert_json_field "$result" "review_root" "." "$label: review_root stays ."
 	assert_json_field "$result" "message" "$want_msg" "$label: message names the failure"
@@ -1217,14 +1250,14 @@ ARCHIVECASES
 # locally for an unconfigured H, so the only call made is that question.
 echo "Test 14b: GitLab host gate"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main" "https://gitlab.com/other/repo.git"
+make_mockbin "$bin" ok "$other_sha" "https://gitlab.com/other/repo.git"
 make_glab_mock "$bin"
 make_archive "$bin/archive.tgz" "$sha_a" "head-a"
 echo "{\"sha\":\"$sha_a\"}" >"$bin/mr.json"
 echo "git.example.org" >"$bin/hosts"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x \
+	--forge gitlab --owner g/sub --repo p --pr 7 \
 	--url https://evil.example.net/g/sub/p 2>/dev/null)
 assert_json_field "$result" "status" "skip" "unconfigured host: status is skip"
 assert_json_field "$result" "review_root" "." "unconfigured host: review_root stays ."
@@ -1238,11 +1271,11 @@ rm -rf "$bin" "$cache"
 
 # A ported host cannot be addressed: glab takes a bare host name.
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main" "https://gitlab.com/other/repo.git"
+make_mockbin "$bin" ok "$other_sha" "https://gitlab.com/other/repo.git"
 make_glab_mock "$bin"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x \
+	--forge gitlab --owner g/sub --repo p --pr 7 \
 	--url https://git.example.org:8443/g/sub/p 2>/dev/null)
 assert_json_field "$result" "status" "skip" "ported host: status is skip"
 assert_json_field "$result" "message" \
@@ -1263,7 +1296,7 @@ rm -rf "$bin" "$cache"
 # bound to (here GITLAB_API_HOST's, which is not the one addressed).
 echo "Test 14c: GitLab calls carry only the addressed host's credentials"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main" "https://gitlab.com/other/repo.git"
+make_mockbin "$bin" ok "$other_sha" "https://gitlab.com/other/repo.git"
 make_glab_mock "$bin"
 make_archive "$bin/archive.tgz" "$sha_a" "head-a"
 echo "{\"sha\":\"$sha_a\"}" >"$bin/mr.json"
@@ -1271,7 +1304,7 @@ echo "git.example.org" >"$bin/hosts"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" GITLAB_TOKEN=tok-a GITLAB_ACCESS_TOKEN=tok-b \
 	OAUTH_TOKEN=tok-c GITLAB_API_HOST=other.example.com GLAB_ENABLE_CI_AUTOLOGIN=true bash "$SCRIPT" \
-	--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x \
+	--forge gitlab --owner g/sub --repo p --pr 7 \
 	--url https://git.example.org/g/sub/p 2>/dev/null)
 assert_json_field "$result" "status" "ok" "configured host: status is ok"
 calls=$(wc -l <"$bin/glab-env.log")
@@ -1288,7 +1321,7 @@ rm -rf "$bin" "$cache"
 # reuse Test 12 rules out between hosts.
 echo "Test 15: nested GitLab owner cache key"
 bin=$(mktemp -d)
-make_mockbin "$bin" ok "main" "https://gitlab.com/other/repo.git"
+make_mockbin "$bin" ok "$other_sha" "https://gitlab.com/other/repo.git"
 make_gh_mock "$bin"
 make_glab_mock "$bin"
 make_archive "$bin/archive.tgz" "$sha_a" "head-a"
@@ -1298,7 +1331,7 @@ clones="$cache/review-council/clones"
 roots=()
 for tc_owner in g/sub g-sub; do
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge gitlab --owner "$tc_owner" --repo p --pr 7 --head feature-x 2>/dev/null)
+		--forge gitlab --owner "$tc_owner" --repo p --pr 7 2>/dev/null)
 	assert_json_field "$result" "status" "ok" "owner $tc_owner: status is ok"
 	root=$(echo "$result" | jq -r '.review_root')
 	roots+=("$root")
@@ -1343,11 +1376,11 @@ rm -rf "$bin" "$cache"
 echo "Test 16: GitLab project path segment gate"
 while IFS='|' read -r label bad_owner bad_repo; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main"
+	make_mockbin "$bin" ok "$other_sha"
 	make_glab_mock "$bin"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge gitlab --owner "$bad_owner" --repo "$bad_repo" --pr 7 --head feature-x 2>/dev/null)
+		--forge gitlab --owner "$bad_owner" --repo "$bad_repo" --pr 7 2>/dev/null)
 	assert_json_field "$result" "status" "skip" "$label: status is skip"
 	assert_json_field "$result" "review_root" "." "$label: review_root stays ."
 	if [[ -s "$bin/git.log" || -e "$bin/glab.log" ]]; then
@@ -1381,14 +1414,14 @@ GITLABGATECASES
 echo "Test 17: GitLab in-place detection"
 while IFS='|' read -r label origin want; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "feature-x" "$origin"
+	make_mockbin "$bin" ok "$sha_a" "$origin"
 	make_glab_mock "$bin"
 	make_archive "$bin/archive.tgz" "$sha_a" "head-a"
 	echo "{\"sha\":\"$sha_a\"}" >"$bin/mr.json"
 	echo "git.example.org" >"$bin/hosts"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge gitlab --owner g/sub --repo p --pr 7 --head feature-x \
+		--forge gitlab --owner g/sub --repo p --pr 7 --head-sha "$sha_a" \
 		--url https://git.example.org/g/sub/p 2>/dev/null)
 	assert_json_field "$result" "status" "$want" "$label: status is $want"
 	rm -rf "$bin" "$cache"
@@ -1410,7 +1443,7 @@ INPLACECASES
 echo "Test 18: network calls run without credential prompts"
 want_env="GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS="
 bin=$(mktemp -d)
-make_mockbin "$bin" partialfail "main" "https://example.invalid/other/repo.git"
+make_mockbin "$bin" partialfail "$other_sha" "https://example.invalid/other/repo.git"
 cat >"$bin/gh" <<GHMOCK
 #!/usr/bin/env bash
 echo "GIT_TERMINAL_PROMPT=\${GIT_TERMINAL_PROMPT-unset} GCM_INTERACTIVE=\${GCM_INTERACTIVE-unset} GIT_ASKPASS=\${GIT_ASKPASS-unset} SSH_ASKPASS=\${SSH_ASKPASS-unset}" >>"$bin/env.log"
@@ -1420,7 +1453,7 @@ chmod +x "$bin/gh"
 cache=$(mktemp -d)
 result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" GIT_TERMINAL_PROMPT=1 GCM_INTERACTIVE=always \
 	GIT_ASKPASS=/bin/false SSH_ASKPASS=/bin/false bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 # gh, the blobless clone, the shallow clone and the fetch.
 want_calls=4
@@ -1438,7 +1471,7 @@ rm -rf "$bin" "$cache"
 echo "Test 19: --url must name --owner/--repo"
 while IFS='|' read -r label tc_forge tc_owner tc_url want; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main" "https://example.invalid/other/repo.git"
+	make_mockbin "$bin" ok "$other_sha" "https://example.invalid/other/repo.git"
 	make_gh_mock "$bin"
 	make_glab_mock "$bin"
 	make_archive "$bin/archive.tgz" "$sha_a" "head-a"
@@ -1446,7 +1479,7 @@ while IFS='|' read -r label tc_forge tc_owner tc_url want; do
 	echo "git.example.org" >"$bin/hosts"
 	cache=$(mktemp -d)
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge "$tc_forge" --owner "$tc_owner" --repo widgets --pr 7 --head feature-x \
+		--forge "$tc_forge" --owner "$tc_owner" --repo widgets --pr 7 \
 		--url "$tc_url" 2>/dev/null)
 	assert_json_field "$result" "status" "$want" "$label: status is $want"
 	if [[ "$want" == "skip" ]]; then
@@ -1477,11 +1510,11 @@ URLCASES
 # `--` ends git clone's options, so a URL starting with `-` is a URL.
 echo "Test 20: clone URL follows --"
 bin=$(mktemp -d)
-make_mockbin "$bin" partialfail "main"
+make_mockbin "$bin" partialfail "$other_sha"
 make_gh_mock "$bin"
 cache=$(mktemp -d)
 PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x >/dev/null 2>&1
+	--forge github --owner acme --repo widgets --pr 7 >/dev/null 2>&1
 for tc_flags in "--filter=blob:none --no-checkout" "--depth 50"; do
 	if grep -qF "git clone ${tc_flags} -- https://github.com/acme/widgets.git" "$bin/git.log"; then
 		echo "  PASS: clone ${tc_flags}: URL follows --"
@@ -1537,7 +1570,7 @@ while IFS='|' read -r label tc_url tc_env want_helper want_key0; do
 	[[ -n "$tc_url" ]] && url_args=(--url "$tc_url")
 	# shellcheck disable=SC2086 # tc_env is a list of VAR=value words
 	result=$(env $tc_env PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+		--forge github --owner acme --repo widgets --pr 7 \
 		"${url_args[@]}" 2>/dev/null)
 	assert_json_field "$result" "status" "ok" "$label: status is ok"
 	for sub in clone fetch worktree; do
@@ -1561,13 +1594,13 @@ CREDCASES
 echo "Test 22: no run trees means a clean stderr"
 for tc_runs in missing empty; do
 	bin=$(mktemp -d)
-	make_mockbin "$bin" ok "main" "https://example.invalid/other/repo.git"
+	make_mockbin "$bin" ok "$other_sha" "https://example.invalid/other/repo.git"
 	make_gh_mock "$bin"
 	cache=$(mktemp -d)
 	[[ "$tc_runs" == empty ]] && mkdir -p "$cache/review-council/clones/.runs"
 	errfile="$bin/stderr"
 	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-		--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>"$errfile")
+		--forge github --owner acme --repo widgets --pr 7 2>"$errfile")
 	assert_json_field "$result" "status" "ok" ".runs $tc_runs: status is ok"
 	assert_equals "$(<"$errfile")" "" ".runs $tc_runs: nothing on stderr"
 	rm -rf "$bin" "$cache"
@@ -1665,7 +1698,7 @@ cache=$(mktemp -d)
 clones="$cache/review-council/clones"
 clone="$clones/github.com-acme-widgets"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 root=$(echo "$result" | jq -r '.review_root')
 assert_github_run_tree "$root" "review_root is this run's tree"
@@ -1690,7 +1723,7 @@ ln -s "$canary" "$clone/planted"
 assert_equals "$([[ -L "$clone/leak" && -L "$clone/planted" ]] && echo live)" "live" \
 	"precondition: the cache clone holds live links"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 root=$(echo "$result" | jq -r '.review_root')
 assert_github_run_tree "$root" "review_root is this run's tree, not the clone"
@@ -1707,7 +1740,7 @@ cache=$(mktemp -d)
 clones="$cache/review-council/clones"
 clone="$clones/github.com-acme-widgets"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" LATE_LINK="late" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip"
 assert_json_field "$result" "review_root" "." "review falls back to the diff"
 left=$(find "$clones/.runs" -mindepth 1 | wc -l | tr -d ' ')
@@ -1723,8 +1756,9 @@ git -C "$op/w" fetch -q origin pull/7/head
 git -C "$op/w" checkout -q -b feature-x FETCH_HEAD
 git -C "$op/w" remote set-url origin https://github.com/acme/widgets.git
 cache=$(mktemp -d)
+op_head=$(git -C "$op/w" rev-parse HEAD)
 result=$(cd "$op/w" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 --head-sha "$op_head" 2>/dev/null)
 assert_json_field "$result" "status" "ok" "reviewed from the cache, not in place"
 if [[ -L "$op/w/leak" ]]; then
 	echo "  PASS: the operator's checkout is untouched"
@@ -1738,8 +1772,9 @@ rm -rf "$cache"
 echo "Test 26b: a checkout whose links stay inside is still reviewed in place"
 git -C "$op/w" rm -q leak
 git -C "$op/w" commit -qm "drop leak"
+op_head=$(git -C "$op/w" rev-parse HEAD)
 result=$(cd "$op/w" && PATH="$gbin:$PATH" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 --head-sha "$op_head" 2>/dev/null)
 assert_json_field "$result" "status" "in_place" "status is in_place"
 rm -rf "$op"
 
@@ -1757,10 +1792,10 @@ sha7=$(git -C "$fixture/origin" rev-parse refs/pull/7/head)
 sha8=$(git -C "$fixture/origin" rev-parse refs/pull/8/head)
 base_sha=$(git -C "$fixture/origin" rev-parse 'refs/pull/7/head~1')
 result7=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 root7=$(echo "$result7" | jq -r '.review_root')
 result8=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 8 --head feature-y 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 8 2>/dev/null)
 root8=$(echo "$result8" | jq -r '.review_root')
 assert_github_run_tree "$root7" "PR 7 has a run tree"
 assert_github_run_tree "$root8" "PR 8 has a run tree"
@@ -1775,13 +1810,13 @@ assert_equals "$(git -C "$root8" rev-parse HEAD 2>/dev/null)" "$sha8" "PR 8's tr
 # --head-sha is the commit the diff was read at; the tree is pinned to it, not
 # to wherever the fetched ref points.
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x --head-sha "$base_sha" 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 7 --head-sha "$base_sha" 2>/dev/null)
 assert_json_field "$result" "status" "ok" "--head-sha: status is ok"
 root=$(echo "$result" | jq -r '.review_root')
 # shellcheck disable=SC2312 # a missing tree must fail this assertion, not abort the suite.
 assert_equals "$(git -C "$root" rev-parse HEAD 2>/dev/null)" "$base_sha" "--head-sha pins the tree to that commit"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 7 --head feature-x \
+	--forge github --owner acme --repo widgets --pr 7 \
 	--head-sha 0123456789abcdef0123456789abcdef01234567 2>/dev/null)
 assert_json_field "$result" "status" "skip" "unknown --head-sha: status is skip"
 assert_json_field "$result" "review_root" "." "unknown --head-sha: review_root stays ."
@@ -1796,7 +1831,7 @@ echo "Test 28: GitHub run tree age prune"
 stamp=$(stamp_ago $((7 * 3600)))
 touch -t "$stamp" "$root7"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
-	--forge github --owner acme --repo widgets --pr 8 --head feature-y 2>/dev/null)
+	--forge github --owner acme --repo widgets --pr 8 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
 # shellcheck disable=SC2312 # the false test is the outcome asserted.
 assert_equals "$([[ -e "$root7" ]] && echo present)" "" "the seven-hour-old tree is removed"

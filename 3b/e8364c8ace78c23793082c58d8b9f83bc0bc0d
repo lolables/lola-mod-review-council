@@ -13,6 +13,7 @@ module/tests/test-rc-post-comment-github.sh
   s_0b4aca1b6a7ce1::t_85c70501c12de8 362,364-365,376,400
   s_0b4aca1b6a7ce1::t_8ced2ffc7f07e4 361
   s_0b4aca1b6a7ce1::t_50208dffe066a8 360
+  s_5be937f6084625::t_eddfc41efcb67c 441
 module/tests/helpers.sh
   s_0b4aca1b6a7ce1::t_41b5207933e3f9 420,451-454,456,458,460-461
   s_0b4aca1b6a7ce1::t_85c70501c12de8 390-392,428,448-450,455,457,459
@@ -43,6 +44,14 @@ module/skills/review-council/scripts/rc-post-comment-github.sh
       "agent_id": {
         "tool": "claude",
         "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_5be937f6084625": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "39795641-2f2d-43d4-8c2e-8fafbda622ad",
         "model": "claude-opus-5-5"
       },
       "human_author": "LLM (riotbox) <llm@riotbox>"

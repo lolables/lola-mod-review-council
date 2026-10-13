@@ -1,0 +1,44 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Verify tag matches VERSION
+        # Bound as an env var and quoted at every use. Git ref names may
+        # contain shell metacharacters ($, ;, backtick are all legal), so the
+        # tag never reaches the shell as unquoted text.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          file="$(cat VERSION)"
+          if [ "${TAG#v}" != "${file}" ]; then
+            echo "Tag ${TAG} does not match VERSION (${file})" >&2
+            exit 1
+          fi
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Notes come from the CHANGELOG.md that `task release:bump` committed
+          # alongside this tag, so the published release and the file in the
+          # repository cannot disagree. The extraction is a script rather than
+          # inline awk so .taskfiles/tests/release.venom.yml covers it.
+          .taskfiles/scripts/changelog-section.sh "${TAG#v}" CHANGELOG.md > release-notes.md
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --notes-file release-notes.md

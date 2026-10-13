@@ -82,6 +82,11 @@ require_command shfmt "needed by 'task lint' — macOS: brew install shfmt | any
 # the ones a given contributor happens to use first.
 require_command uv "needed by 'task lola-eval:*' — macOS: brew bundle | any: curl -LsSf https://astral.sh/uv/install.sh | sh"
 
+# git-cliff generates CHANGELOG.md and suggests the next version for
+# `task release:bump`, and `task test:release` exercises both. Only maintainers
+# cutting a release need it, but `task doctor` answers for every entry point.
+require_command git-cliff "needed by 'task release:*' — see docs/dev/releasing.md#prerequisites"
+
 # Advisory only: coreutils' unprefixed GNU tools on PATH. This never fails the
 # task — a contributor may want gnubin for unrelated work — but it silently
 # changes what a local run proves, so it is worth saying out loud.

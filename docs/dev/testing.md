@@ -1,12 +1,13 @@
 # Testing
 
-Four layers, each catching a class the others structurally cannot. Run
+Five layers, each catching a class the others structurally cannot. Run
 everything locally with `task check`.
 
 | Command | What it runs |
 |---------|--------------|
 | `task test` (alias for `task test:unit`) | Unit suites — one script each |
 | `task test:e2e` | Venom pipeline suite — the scripts in sequence, black box |
+| `task test:release` | Venom suite for `task release:bump` and the changelog tooling — see [releasing.md](releasing.md) |
 | `task test:degraded` | Re-runs the unit suites once per optional tool hidden from `PATH`, narrowed to the suites that can reach that tool |
 | `task test:mutate` | Reintroduces each fixed defect, asserts a suite catches it |
 | `task check` | Lint plus all of the above |
@@ -22,8 +23,8 @@ layer by layer, as separate jobs, rather than calling that target.
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
 
 `test.yml` is a two-dimensional matrix — layers by operating systems — plus a
-gating job that depends on all of them. Pushes and pull requests run three
-layers (unit, e2e, degraded), six jobs; the nightly schedule and a manual
+gating job that depends on all of them. Pushes and pull requests run four
+layers (unit, e2e, release, degraded), eight jobs; the nightly schedule and a manual
 dispatch run the mutation layer alone, two jobs. The matrix job and the gating
 job are easy to confuse: the matrix job has the id `test` and displays per leg
 as `<layer> (<os>)`, while the gating job has the id `test-result` and displays
@@ -78,11 +79,12 @@ one entry a plain `task test` never touches. Add a macOS prerequisite to the
 condition for most users, and `task test:degraded` exercises that fallback
 explicitly.
 
-## Why four layers
+## Why five layers
 
 The suite was once a single layer — one unit suite per script — and a live run
-found six defects in an afternoon. Each layer below exists because of a defect
-that got past everything else.
+found six defects in an afternoon. Each layer below except Release exists
+because of a defect that got past everything else; Release guards a risk
+instead.
 
 **Unit** (`module/tests/test-*.sh`). Of the 45 files, 23 pin one script with
 `SCRIPT=` and exercise it in isolation. Every file matching `test-*.sh` runs
@@ -167,6 +169,12 @@ this layer exists to prevent:
 `module/tests/test-degraded-selection.sh` pins both, along with the cases that
 have already gone wrong once — see the SIGPIPE note in
 [writing-tests.md](writing-tests.md).
+
+**Release** (`.taskfiles/tests/release.venom.yml`). Unlike the other layers it
+answers no past defect; it guards scripts that write commits and tags, where a
+regression creates a bad release that is awkward to undo once pushed. The suite
+runs them against throw-away git repositories that copy the real `cliff.toml`,
+never against this checkout. See [releasing.md](releasing.md).
 
 **Mutation** (`.taskfiles/scripts/mutate-check.sh`). A green suite proves
 nothing on its own. Two regression tests written for these defects passed on

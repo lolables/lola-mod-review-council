@@ -273,7 +273,9 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   concrete model ID where the host exposes one, and appends the coordinator and validator roles it alone knows
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
   canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
-  and, when the change touches a symlink, the script verdict `rc-check-symlinks.json`
+  and, when the change touches a symlink, the script verdict `rc-check-symlinks.json`. `findings.json.stale` is a
+  previous run's `findings.json`, which `rc-verify-evidence.sh` moves aside before checking anything; it is kept for
+  debugging only, and neither the renderers nor `rc-decide-verdict.sh` read it
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
   the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render

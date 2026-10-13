@@ -226,7 +226,7 @@ fi
 # an orchestrator reads first, and a status with no edge reads as unreachable.
 echo "Test: SKILL.md Step 4 branches on the evidence check's nothing_to_do (RC-014)"
 if grep -qF 'the script exited before writing' <<<"$skill_flat" &&
-	grep -qF 'from an earlier iteration may still be on disk' <<<"$skill_flat"; then
+	grep -qF 'Do NOT read, restore or rename' <<<"$skill_flat"; then
 	echo "  PASS: nothing_to_do branch tells the orchestrator not to read a stale file"
 	PASS=$((PASS + 1))
 else
@@ -236,17 +236,16 @@ fi
 
 # Telling the orchestrator not to read findings.json does not stop Step 6 from
 # rendering it: rc-render-report.sh opens verdicts/findings.json itself, for the
-# findings list and again for the per-agent verdict table. On a re-run that hits
-# an early return with the session directory otherwise intact, the previous
-# iteration's file is still there and gets rendered as this run's result. The
-# rename is what makes "renders a report with zero findings" true, in both
-# documents that claim it.
-echo "Test: the nothing_to_do arm moves a leftover findings.json aside (RC-014)"
+# findings list and again for the per-agent verdict table. rc-verify-evidence.sh
+# moves a previous run's file to findings.json.stale itself (#55,
+# test-rc-verify-evidence.sh Tests 38-43); both documents that claim "renders a
+# report with zero findings" must say so, or an orchestrator may restore it.
+echo "Test: both documents say the script moves a leftover findings.json aside (RC-014, #55)"
 if grep -qF 'findings.json.stale' <<<"$skill_flat" && grep -qF 'findings.json.stale' <<<"$verify_flat"; then
-	echo "  PASS: stale findings file renamed out of the renderer's path"
+	echo "  PASS: stale findings file documented as moved out of the renderer's path"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: nothing_to_do leaves a stale findings.json where Step 6 will render it"
+	echo "  FAIL: SKILL.md or verify.md no longer documents findings.json.stale"
 	FAIL=$((FAIL + 1))
 fi
 

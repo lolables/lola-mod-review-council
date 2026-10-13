@@ -1416,6 +1416,20 @@ check_mutation "RC-090 in place only at the PR head commit" \
 	's/ && \[\[ "\$cur_commit" == "\$head_sha" \]\]//' \
 	test-rc-clone-target.sh
 
+# A previous run's findings.json survived every nothing_to_do exit, so the
+# renderers and rc-decide-verdict.sh reported its findings as this run's (#55).
+check_mutation "RC-094 verification moves a stale findings.json aside" \
+	rc-verify-evidence.sh \
+	's|^\([[:space:]]*\)mv -f "\$findings_file" "\$findings_file\.stale"$|\1:|' \
+	test-rc-verify-evidence.sh
+
+# -e is false for a dangling link: without -L it stays put and the findings.json
+# write follows it out of the session directory.
+check_mutation "RC-095 a dangling findings.json symlink is moved aside too" \
+	rc-verify-evidence.sh \
+	's/ || -L "\$findings_file"//' \
+	test-rc-verify-evidence.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

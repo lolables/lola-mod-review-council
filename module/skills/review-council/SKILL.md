@@ -766,16 +766,12 @@ whenever it is non-empty.
 
 - `status: "nothing_to_do"` — the script exited before writing
   `findings.json`, so this run produced no findings file at all.
-  - Do NOT read `${session_dir}/verdicts/findings.json`. A stale copy from an
-    earlier iteration may still be on disk, and reading it would present a
-    previous run's findings as this one's.
-  - Not reading it is not enough. `rc-render-report.sh` opens that path
-    itself, for both the findings list and the per-agent verdict table, so
-    **rename `${session_dir}/verdicts/findings.json` to
-    `${session_dir}/verdicts/findings.json.stale`** before Step 6 runs.
-    Renaming inside the session directory is session bookkeeping, permitted
-    by the hard gate; the rename preserves the audit trail while making the
-    file invisible to the renderer. Nothing to do if the path does not exist.
+  - Script moved any earlier run's `findings.json` to
+    `${session_dir}/verdicts/findings.json.stale` before checking anything, on
+    every exit path. Step 6 renderers and `rc-decide-verdict.sh` open
+    `findings.json` themselves, so they now find none. Do NOT read, restore or
+    rename `findings.json.stale`: previous run's findings, kept for debugging
+    only.
   - Write the abbreviated verification record to
     `${session_dir}/verdicts/_meta/verification.txt` — its shape is in
     `${PHASES_DIR}/verify.md`, under the `nothing_to_do` heading. Step 6's
@@ -886,9 +882,8 @@ Proceed to Step 4.5 (Disposition).
 effort is not `quick` AND the evidence check returned `ok`.** The last
 condition is not redundant with Step 4's skip: this phase edits
 `findings.json`, and on `nothing_to_do` this run wrote no such file — the
-only thing that could be at that path is the stale copy Step 4 renamed
-aside. This is the phase that reads the PR conversation
-thread — attacker-controlled input by construction — and lets verified
+script moved any earlier copy to `findings.json.stale`. This is the phase
+that reads the PR conversation thread — attacker-controlled input by construction — and lets verified
 claims about it change finding disposition. It exists
 only for re-reviews; a first-time review has no prior verdict to have drawn
 replies.

@@ -20,6 +20,14 @@ vdir="$session_dir/verdicts"
 	json_output "nothing_to_do" "No verdicts directory found."
 	exit 0
 }
+# A findings.json already here belongs to an earlier run. Move it aside before
+# anything can exit: rc-decide-verdict.sh and the renderers read this path
+# directly, so one left behind by a nothing_to_do or a failed run would be
+# reported as this run's findings and verdict. Kept as .stale for debugging.
+findings_file="$vdir/findings.json"
+if [[ -e "$findings_file" || -L "$findings_file" ]]; then
+	mv -f "$findings_file" "$findings_file.stale"
+fi
 
 # Gather agent JSON files. Allow-list by agent-name prefix, and kept that way
 # even now that orchestrator-written state lives in verdicts/_meta/ rather than
@@ -236,7 +244,7 @@ jq -n \
 	  stripped:($stripped[0] | ids($nv + $nc)),
 	  total_findings:$total, duplicates_consolidated:$dedup, verdicts:$vmap[0],
 	  missing_verdicts:$missing}' \
-	>"$vdir/findings.json"
+	>"$findings_file"
 # Ids restart at F1 on every run, so a validator or correction-round reply
 # saved against the previous findings.json would apply to this run's unrelated
 # findings.

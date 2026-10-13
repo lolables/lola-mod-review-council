@@ -1,0 +1,19 @@
+module/skills/review-council/phases/delegate.md
+  s_9c22974dd19e6d::t_bcff6eb89ac8f2 61-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c29e2cf8e547277b07ec433fc1ce7d5af9e3f039",
+  "prompts": {},
+  "sessions": {
+    "s_9c22974dd19e6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "002e7564-1aa3-486e-ae0a-5f70ca441bcb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

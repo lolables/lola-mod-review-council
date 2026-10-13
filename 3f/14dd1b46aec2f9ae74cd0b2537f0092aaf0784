@@ -1,0 +1,25 @@
+module/tests/test-rc-post-comment-github.sh
+  s_7ad781133fa434::t_be1168875b49db 442-455
+module/tests/test-rc-post-comment-gitlab.sh
+  s_7ad781133fa434::t_822b332feade9c 613-626
+README.md
+  s_7ad781133fa434::t_831938526d9c5e 341-345
+module/tests/test-rc-prepare-clone.sh
+  s_7ad781133fa434::t_3ffbe6c6724efe 30-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f14dd1b46aec2f9ae74cd0b2537f0092aaf0784",
+  "prompts": {},
+  "sessions": {
+    "s_7ad781133fa434": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae507a68-4ce8-4037-8450-3c82311f6925",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

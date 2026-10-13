@@ -1,0 +1,46 @@
+module/skills/review-council/phases/disposition.md
+  s_9c22974dd19e6d::t_9dbe8fb28e1932 53
+module/skills/review-council/phases/delegate.md
+  s_9c22974dd19e6d::t_9f6d4821169962 59,61-62,65
+  s_9c22974dd19e6d::t_07013b81636603 181-182
+module/skills/review-council/phases/verify.md
+  s_9c22974dd19e6d::t_c31fbd93d65931 533-537
+module/agents/divisor-adversary-code.md
+  s_9c22974dd19e6d::t_d25c7bad777e54 15-19,22-26
+module/agents/divisor-adversary-spec.md
+  s_9c22974dd19e6d::t_2c8a8c3c16a6c0 15-19,22-26
+module/agents/divisor-curator-code.md
+  s_9c22974dd19e6d::t_43ae812f7f6930 30-34
+module/agents/divisor-curator-spec.md
+  s_9c22974dd19e6d::t_324150d641bd49 15-19,22-26
+module/agents/divisor-guard-code.md
+  s_9c22974dd19e6d::t_64c5cef5dabb77 15-19,22-26
+module/agents/divisor-guard-spec.md
+  s_9c22974dd19e6d::t_39cf8ea5275446 15-19,22-26
+module/agents/divisor-sre-code.md
+  s_9c22974dd19e6d::t_857e91fdf6eccc 15-19,22-26
+module/agents/divisor-sre-spec.md
+  s_9c22974dd19e6d::t_bb78e66dcc2145 15-19,22-26
+module/agents/divisor-testing-code.md
+  s_9c22974dd19e6d::t_7d82cdf6edf857 15-19,22-26
+module/agents/divisor-testing-spec.md
+  s_9c22974dd19e6d::t_400dfd0ba093ed 15-19,22-26
+module/tests/test-rc-doc-guards.sh
+  s_9c22974dd19e6d::t_95590379fd9632 2198-2201,2207-2208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b39bd3f7a5775424db8017484432f6056e9fede3",
+  "prompts": {},
+  "sessions": {
+    "s_9c22974dd19e6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "002e7564-1aa3-486e-ae0a-5f70ca441bcb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

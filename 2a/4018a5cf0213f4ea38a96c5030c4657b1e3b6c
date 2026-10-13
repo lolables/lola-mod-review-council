@@ -1,0 +1,70 @@
+Taskfile.yml
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 9-10
+  s_0b4aca1b6a7ce1::t_14012bff411de4 21
+.taskfiles/test.yml
+  s_0b4aca1b6a7ce1::t_858587af0e5deb 104,108
+  s_0b4aca1b6a7ce1::t_c7e5869ad6a834 62-84
+.github/workflows/release.yml
+  s_0b4aca1b6a7ce1::t_71a8fc11eb5d69 1-44
+.taskfiles/scripts/changelog-section.sh
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 1-6,8-42
+  s_0b4aca1b6a7ce1::t_d4faedb117f51e 7
+docs/dev/releasing.md
+  s_0b4aca1b6a7ce1::t_6416fcee75f351 1-32,35-37,40-49,54-55,65,69-84,89-117
+  s_0b4aca1b6a7ce1::t_8ffb13893194f1 33-34,38-39,50-53,56-64,66-68,85-88,118-119
+.github/workflows/test.yml
+  s_0b4aca1b6a7ce1::t_62d888d156a8e5 151
+  s_0b4aca1b6a7ce1::t_71a8fc11eb5d69 26,35,54,83-86,92,119-150
+cliff.toml
+  s_0b4aca1b6a7ce1::t_67b28d8590747a 57-59,64
+  s_0b4aca1b6a7ce1::t_a8aa344810fbad 1-56,65-128
+  s_0b4aca1b6a7ce1::t_9c693c4130f544 60-63
+VERSION
+  s_0b4aca1b6a7ce1::t_10a5feda956df3 1
+.taskfiles/tests/release.venom.yml
+  s_0b4aca1b6a7ce1::t_8e52127b53a9b2 415
+  s_0b4aca1b6a7ce1::t_31166a863491e6 647
+  s_0b4aca1b6a7ce1::t_159b4c4d66718d 357-386,416-460,627-646
+  s_0b4aca1b6a7ce1::t_365a94929288b1 23,54,81,99,193,212,231,255,279,308,338,467,490,513,535,557,581,589,591,594,596,613,620
+  s_0b4aca1b6a7ce1::t_c4ce224565b984 1-22,24-53,55-80,82-92,94-98,100-101,107,111-113,186-192,194-211,213-230,232-254,256-258,262-263,265-268,270-278,280-307,309-337,339-356,461-466,468-472,476-480,482-489,491-512,514-534,536-556,558-580,582-588,590,592-593,595,597-612,614-619,621-626,648-660
+  s_0b4aca1b6a7ce1::t_e5f6e76a300b7a 93,102-106,108-110,114-185,387-414
+  s_0b4aca1b6a7ce1::t_c35acb1eb9fae5 259-261,264,269,473-475,481
+.taskfiles/scripts/release-bump.sh
+  s_0b4aca1b6a7ce1::t_9c693c4130f544 11-16,54-65,84-87,104,139-145,148
+  s_0b4aca1b6a7ce1::t_d4faedb117f51e 17,147,149-155
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 1-10,18-28,30-53,66-83,88-103,105-138,146,156-157
+  s_0b4aca1b6a7ce1::t_67b28d8590747a 29
+  s_0b4aca1b6a7ce1::t_157ba4298c5f35 158
+.taskfiles/tests/lib/release-test-helpers.sh
+  s_0b4aca1b6a7ce1::t_ffc76deee22a68 1-62
+AGENTS.md
+  s_0b4aca1b6a7ce1::t_38d9bb8d9f36bd 32-37
+.taskfiles/scripts/doctor.sh
+  s_0b4aca1b6a7ce1::t_38d9bb8d9f36bd 85-89
+.taskfiles/release.yml
+  s_0b4aca1b6a7ce1::t_ecc6888740c767 1-5,8-22
+  s_0b4aca1b6a7ce1::t_d4faedb117f51e 6-7
+CHANGELOG.md
+  s_0b4aca1b6a7ce1::t_86bb4acdfe0ea6 41
+  s_0b4aca1b6a7ce1::t_df6f0dc3c7bfb5 3-40,42-135
+docs/dev/testing.md
+  s_0b4aca1b6a7ce1::t_ce130bf5997a71 178
+  s_0b4aca1b6a7ce1::t_8ffb13893194f1 85-87,173-177
+  s_0b4aca1b6a7ce1::t_38d9bb8d9f36bd 3,10,26-27,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a4018a5cf0213f4ea38a96c5030c4657b1e3b6c",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

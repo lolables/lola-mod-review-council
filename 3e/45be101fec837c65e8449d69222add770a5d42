@@ -13,6 +13,7 @@ module/tests/test-rc-verify-evidence.sh
   s_0b4aca1b6a7ce1::t_0a275d65a51732 1005-1018
   s_0b4aca1b6a7ce1::t_8b7fdcde341b3a 1065
   s_0b4aca1b6a7ce1::t_a57558c0cc1892 1122-1155
+  s_e22be38d3daf3d::t_9a2bffbacdbcc3 1121
 module/skills/review-council/phases/verify.md
   s_0b4aca1b6a7ce1::t_d2775f62cb682f 192-194,196-197
 module/skills/review-council/scripts/rc-verify-evidence.sh
@@ -142,6 +143,14 @@ AGENTS.md
       "agent_id": {
         "tool": "claude",
         "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_e22be38d3daf3d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01ad1045-3cb1-4e29-9295-3aa332aa422d",
         "model": "claude-opus-5-5"
       },
       "human_author": "LLM (riotbox) <llm@riotbox>"

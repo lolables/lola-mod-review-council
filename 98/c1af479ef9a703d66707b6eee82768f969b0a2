@@ -1,0 +1,97 @@
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_0b4aca1b6a7ce1::t_e7d8366db9dbce 253-255
+module/tests/test-rc-idempotency.sh
+  s_0b4aca1b6a7ce1::t_ea07c76c9b85f5 179-203
+module/tests/helpers.sh
+  s_0b4aca1b6a7ce1::t_eb243c4bdf6440 257-284
+module/skills/review-council/scripts/rc-lib.sh
+  s_0b4aca1b6a7ce1::t_6a48d0e783af1f 86,88,90,92-128,131-137
+  s_0b4aca1b6a7ce1::t_70837df67cdd13 83-85,87,89,91,129-130
+module/tests/test-rc-state-vocab.sh
+  s_0b4aca1b6a7ce1::t_353afcdb6d18d7 49-52
+module/tests/test-rc-disposition-rules.sh
+  s_0b4aca1b6a7ce1::t_8170c21f896808 117-135
+  s_0b4aca1b6a7ce1::t_d93968a6821db2 7-14
+module/tests/test-rc-check-disposition.sh
+  s_0b4aca1b6a7ce1::t_70837df67cdd13 81,83-84,111-112,264,274
+  s_0b4aca1b6a7ce1::t_7be51568657bc3 1-80,82,85-89,101-110,113-121,123-139,147-157,159-192,194-209,211-256,259-263,266-273,275-298,300-338,352-354
+  s_0b4aca1b6a7ce1::t_2161d893b1d2ba 265,299
+  s_0b4aca1b6a7ce1::t_84d5aecca9b9ae 122
+  s_0b4aca1b6a7ce1::t_c59e9cebaf79a8 90-100,158,193,210
+  s_0b4aca1b6a7ce1::t_601a30f06b663b 140-145
+  s_0b4aca1b6a7ce1::t_0467339c8d7d4f 257-258
+  s_0b4aca1b6a7ce1::t_6a0614377984bd 339-351
+  s_0b4aca1b6a7ce1::t_23b6155f89a31c 146
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_0b4aca1b6a7ce1::t_43be2824e847ac 1-59,61,63-138,140-143
+  s_0b4aca1b6a7ce1::t_0467339c8d7d4f 60,62
+  s_0b4aca1b6a7ce1::t_5abdd4fd39128d 139
+module/tests/test-rc-render-report.sh
+  s_0b4aca1b6a7ce1::t_1debb18cd05ea2 1364-1411
+module/skills/review-council/phases/disposition.md
+  s_0b4aca1b6a7ce1::t_b8f24ad12d4323 43-45,50
+  s_0b4aca1b6a7ce1::t_cd4038ec1e7a23 321-322,325-340,346-349
+  s_0b4aca1b6a7ce1::t_626fe8d5c17171 323-324,341-345
+  s_0b4aca1b6a7ce1::t_e2c2c297a0547d 386-387
+  s_0b4aca1b6a7ce1::t_94ab4bb358d87f 46-49
+  s_0b4aca1b6a7ce1::t_191b66566262a1 76-78,89,182-184,216-217
+  s_0b4aca1b6a7ce1::t_687cc61caeea03 185
+module/skills/review-council/references/pipeline-states.md
+  s_0b4aca1b6a7ce1::t_1a5d47370282d9 21,23-24,61,65-68
+  s_0b4aca1b6a7ce1::t_274fe29172670c 69-70
+docs/dev/pipeline.md
+  s_0b4aca1b6a7ce1::t_1cb5a37e8a1cd1 291-293
+  s_0b4aca1b6a7ce1::t_864d2648ec9d1a 170-174,214,232-233,255-260,270,272
+  s_0b4aca1b6a7ce1::t_adae5d50c634a3 26
+.taskfiles/scripts/mutate-check.sh
+  s_0b4aca1b6a7ce1::t_4d46ef33dbf431 1444
+  s_0b4aca1b6a7ce1::t_6bbe638c2073c7 1177-1178,1180,1427-1443,1445
+  s_0b4aca1b6a7ce1::t_5763c71fa4094c 1446
+module/tests/test-rc-post-comment-gitlab.sh
+  s_0b4aca1b6a7ce1::t_70837df67cdd13 597-598
+.lola-eval/tests/case-022-disposition-injection/starter/.rc-session/verdicts/findings.json
+  s_0b4aca1b6a7ce1::t_f7e2b335fbdb83 13-14
+module/tests/test-rc-render-comment.sh
+  s_0b4aca1b6a7ce1::t_70837df67cdd13 1736-1737
+  s_0b4aca1b6a7ce1::t_ba5eca898167a5 1690,1692-1693,1722-1735,1738-1770,1780-1784
+  s_0b4aca1b6a7ce1::t_6a0614377984bd 1771-1779
+  s_0b4aca1b6a7ce1::t_cd579f5837c1c6 1785-1786
+.lola-eval/tests/case-023-disposition-false-fix/starter/.rc-session/verdicts/findings.json
+  s_0b4aca1b6a7ce1::t_f7e2b335fbdb83 13-14
+module/skills/review-council/SKILL.md
+  s_0b4aca1b6a7ce1::t_db74fd5047a89f 892-893,895-901,930-935,1236
+  s_0b4aca1b6a7ce1::t_3e2ff3e52cc4f2 939-940
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_0b4aca1b6a7ce1::t_4194ab5ec01030 1-114,116-117,119-121,124-132
+  s_0b4aca1b6a7ce1::t_70837df67cdd13 115,118,122-123
+module/tests/test-rc-post-comment-github.sh
+  s_0b4aca1b6a7ce1::t_70837df67cdd13 421-422
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_0b4aca1b6a7ce1::t_78958ab95ce74d 31-34
+.lola-eval/tests/case-025-disposition-scoping-hint/starter/.rc-session/verdicts/findings.json
+  s_0b4aca1b6a7ce1::t_f7e2b335fbdb83 13-14,26-27
+docs/dev/testing.md
+  s_0b4aca1b6a7ce1::t_adae5d50c634a3 117
+module/skills/review-council/scripts/rc-render-report.sh
+  s_0b4aca1b6a7ce1::t_5ac682f6072442 107-117
+module/tests/test-rc-verify-evidence.sh
+  s_0b4aca1b6a7ce1::t_a57558c0cc1892 1087-1121
+.lola-eval/tests/case-024-disposition-true-fix/starter/.rc-session/verdicts/findings.json
+  s_0b4aca1b6a7ce1::t_f7e2b335fbdb83 13-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98c1af479ef9a703d66707b6eee82768f969b0a2",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

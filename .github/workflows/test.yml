@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   test:
-    # The four layers are independent — each starts from a clean checkout and
+    # The five layers are independent — each starts from a clean checkout and
     # shares no state with the others — so running them in one job only made
     # the leg's wall clock their sum. Serially they reached 24m48s on macOS
     # against a 25m limit, and the next commit tipped it over. As separate jobs
@@ -32,7 +32,7 @@ jobs:
     #
     # `degraded` and `mutate` are re-runs of the unit suites (three PATH
     # configurations, and one targeted suite per mutation), so they are the two
-    # long poles; `unit` and `e2e` finish in a few minutes.
+    # long poles; `unit`, `e2e` and `release` finish in a few minutes.
     #
     # `mutate` runs only on the schedule and on dispatch, and those events run
     # nothing else. At 18–20 minutes per OS it was about twice the next-slowest
@@ -51,7 +51,7 @@ jobs:
             (github.event_name == 'schedule'
               || github.event_name == 'workflow_dispatch')
             && '["mutate"]'
-            || '["unit", "e2e", "degraded"]'
+            || '["unit", "e2e", "release", "degraded"]'
           ) }}
     name: ${{ matrix.layer }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -80,15 +80,16 @@ jobs:
         run: brew bundle install --file=Brewfile
 
       - name: Install Venom
-        # Only the e2e layer runs venom, and it is the one layer that hard-fails
-        # without it (`task test:e2e` has it as a precondition). The other three
-        # never invoke it, so they skip a download and a checksum.
+        # Only the e2e and release layers run venom, and they are the layers
+        # that hard-fail without it (`task test:e2e` and `task test:release`
+        # have it as a precondition). The others never invoke it, so they skip
+        # a download and a checksum.
         #
         # Pinned by tag AND by the SHA-256 of each published asset: ovh/venom
         # publishes no checksum file, and an unverified binary download is an
         # unreviewed dependency running with the workspace mounted. Bump the tag
         # and all three digests together.
-        if: matrix.layer == 'e2e'
+        if: matrix.layer == 'e2e' || matrix.layer == 'release'
         env:
           VENOM_VERSION: v1.3.0
           SHA_LINUX_AMD64: 89832ec25e820c605cf0d3c09122e60bad43d13c1724aa6d375ef7109fbfe201
@@ -114,6 +115,39 @@ jobs:
           chmod +x venom
           sudo mv venom /usr/local/bin/venom
           venom version
+
+      - name: Install git-cliff
+        # Only the release layer needs it. Pinned by tag AND by the SHA-512 of
+        # each asset, taken from the .sha512 files git-cliff publishes beside
+        # them and re-computed locally on download. Bump the version and all
+        # three digests together; .taskfiles/scripts/release-bump.sh names the
+        # same version in its install hint.
+        if: matrix.layer == 'release'
+        env:
+          GIT_CLIFF_VERSION: 2.14.2
+          SHA_LINUX_AMD64: 26d1f7c8ea2400f2ccb0b2e7f321635f600b583bf4cd1f7afaa5e8c24068ad1088a2504e0a4d9f4333d4bb20a80329327d9462634343ee3af91e1a7fbdc6f18a
+          SHA_DARWIN_ARM64: 6ec30660233fcd73b92e9d888965945b6435d6fcd7120df8d7c0799faa46cf06d563d49de721ccf4387e6d61bdc5b37c8eb73273c7d9a0883b90cd9857c6ad9f
+          SHA_DARWIN_AMD64: 4d32c50a010cbff65e46f1f36347c2dd1a20f17efea7b77115d3166146ad467dc803cd07b839fc35e0a6639aa8d1af9eab7cf8f7984bcd819513f46a396ff801
+        run: |
+          set -euo pipefail
+          case "${RUNNER_OS}-$(uname -m)" in
+            Linux-x86_64) target=x86_64-unknown-linux-gnu; sha=$SHA_LINUX_AMD64;  verify=(sha512sum -c -) ;;
+            macOS-arm64)  target=aarch64-apple-darwin;     sha=$SHA_DARWIN_ARM64; verify=(shasum -a 512 -c -) ;;
+            macOS-x86_64) target=x86_64-apple-darwin;      sha=$SHA_DARWIN_AMD64; verify=(shasum -a 512 -c -) ;;
+            *)
+              echo "No pinned git-cliff asset for ${RUNNER_OS}-$(uname -m)." >&2
+              echo "Add its digest rather than falling back to an unverified download." >&2
+              exit 1
+              ;;
+          esac
+          archive="git-cliff-${GIT_CLIFF_VERSION}-${target}.tar.gz"
+          curl -fsSL -o "${archive}" \
+            "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/${archive}"
+          echo "${sha}  ${archive}" | "${verify[@]}"
+          tar -xzf "${archive}"
+          sudo install -m 755 "git-cliff-${GIT_CLIFF_VERSION}/git-cliff" /usr/local/bin/git-cliff
+          rm -rf "${archive}" "git-cliff-${GIT_CLIFF_VERSION}"
+          git-cliff --version
 
       - name: Run test layer
         # The layer name reaches the shell through the environment rather than

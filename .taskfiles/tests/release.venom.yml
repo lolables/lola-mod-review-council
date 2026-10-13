@@ -1,0 +1,660 @@
+name: release tooling — version suggestion, changelog generation, and refusals
+vars:
+  root: "."
+
+# Covers .taskfiles/scripts/release-bump.sh, .taskfiles/scripts/changelog-section.sh
+# and the cliff.toml they drive. Ported from trevor-vaughan/claude-riotbox.
+#
+# Every case builds a throwaway checkout (init_release_repo) that copies the
+# project's real cliff.toml, so the levels and grouping asserted here are what
+# the shipped config produces. Requires git-cliff on PATH.
+#
+# Every script starts with `#!/bin/bash`: venom runs scripts with /bin/sh
+# otherwise (dash on Ubuntu, which has no `source`), and it takes the whole
+# shebang line as the program path, so `#!/usr/bin/env bash` cannot be used.
+
+testcases:
+  - name: the first release from 0.0.0 with no tag accepts an explicit 0.1.0
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.0.0
+          commit_in "${REPO_DIR}" "feat(cli): add a first command"
+          commit_in "${REPO_DIR}" "fix(cli): correct the exit code"
+          run_bump "0.1.0"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          printf 'TAGTYPE=%s\n' "$(git -C "${REPO_DIR}" cat-file -t v0.1.0)"
+          printf 'SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s)"
+          printf 'COMMITTED=%s\n' "$(git -C "${REPO_DIR}" show --name-only --format= HEAD | sort | tr '\n' ' ')"
+          cat "${REPO_DIR}/CHANGELOG.md"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "no v* release tag found"
+          - result.systemout ShouldContainSubstring "New version [0.0.1]"
+          - result.systemout ShouldContainSubstring "VERSION=0.1.0"
+          - result.systemout ShouldContainSubstring "TAGS=v0.1.0"
+          - result.systemout ShouldContainSubstring "TAGTYPE=tag"
+          - 'result.systemout ShouldContainSubstring "SUBJECT=chore(release): v0.1.0"'
+          - result.systemout ShouldContainSubstring "COMMITTED=CHANGELOG.md VERSION"
+          - result.systemout ShouldContainSubstring "## [0.1.0]"
+          - result.systemout ShouldContainSubstring "Add a first command"
+          - result.systemout ShouldNotContainSubstring "## [unreleased]"
+
+  - name: a breaking change suggests a minor bump under 0.x and Enter accepts it
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(api)!: drop the legacy socket
+
+          BREAKING CHANGE: the socket transport is gone."
+          run_bump ""
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          grep -F '## [0.6.0]' "${REPO_DIR}/CHANGELOG.md"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          # Single-quoted: venom splits an unquoted assertion on spaces and the
+          # colon in the expected substring lands as a stray operand.
+          - 'result.systemout ShouldContainSubstring "Current version: 0.5.0"'
+          - result.systemout ShouldContainSubstring "New version [0.6.0]"
+          - result.systemout ShouldContainSubstring "VERSION=0.6.0"
+          - result.systemout ShouldContainSubstring "TAGS=v0.5.0 v0.6.0"
+          - result.systemout ShouldContainSubstring "## [0.6.0]"
+
+  - name: a feature alone suggests a patch bump under 0.x
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          run_bump ""
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "New version [0.5.1]"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.1"
+
+  - name: nothing releasable since the tag is refused
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "chore(deps): bump foo"
+          code=0
+          out="$(run_bump "")" || code=$?
+          printf '%s\n' "${out}"
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "nothing releasable since v0.5.0"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "TAGS=v0.5.0 "
+          - result.systemout ShouldNotContainSubstring "v0.5.1"
+          - result.systemout ShouldContainSubstring "CHANGELOG=absent"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
+
+  - name: an explicit version with nothing releasable is refused
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "chore(deps): bump foo"
+          code=0
+          out="$(ROOT_DIR="${REPO_DIR}" bash "${RELEASE_BUMP}" 0.5.1 </dev/null 2>&1)" || code=$?
+          printf '%s\n' "${out}"
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "nothing releasable since v0.5.0"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "TAGS=v0.5.0 "
+          - result.systemout ShouldNotContainSubstring "v0.5.1"
+          - result.systemout ShouldContainSubstring "CHANGELOG=absent"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
+
+  - name: a changelog with no section for the new version is refused and restored
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          # init_release_repo's seed commit is releasable, so build a repo
+          # whose only commit is not: no tag means the tag-based refusal
+          # cannot fire and only the post-generation guard can catch it.
+          TEST_DIR="$(mktemp -d)"
+          REPO_DIR="${TEST_DIR}/project"
+          RELEASE_BUMP="{{.root}}/.taskfiles/scripts/release-bump.sh"
+          git init -q --initial-branch=main "${REPO_DIR}"
+          cp "{{.root}}/cliff.toml" "${REPO_DIR}/cliff.toml"
+          printf '0.0.0\n' >"${REPO_DIR}/VERSION"
+          git -C "${REPO_DIR}" add VERSION cliff.toml
+          git -C "${REPO_DIR}" commit -qm "chore(deps): seed"
+          code=0
+          out="$(ROOT_DIR="${REPO_DIR}" bash "${RELEASE_BUMP}" 0.1.0 </dev/null 2>&1)" || code=$?
+          printf '%s\n' "${out}"
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list | tr '\n' ' ')"
+          printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "has no section for 0.1.0"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.0.0"
+          - result.systemout ShouldContainSubstring "TAGS= "
+          - result.systemout ShouldContainSubstring "CHANGELOG=absent"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
+
+  - name: typing a version at the prompt overrides the suggestion
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
+          run_bump "1.0.0"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          git -C "${REPO_DIR}" rev-parse -q --verify refs/tags/v1.0.0 >/dev/null
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "New version [0.5.1]"
+          - result.systemout ShouldContainSubstring "VERSION=1.0.0"
+
+  - name: an explicit argument skips the prompt entirely
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          out="$(ROOT_DIR="${REPO_DIR}" bash "${RELEASE_BUMP}" 0.7.0 </dev/null 2>&1)"
+          printf '%s\n' "${out}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldNotContainSubstring "New version ["
+          - result.systemout ShouldContainSubstring "VERSION=0.7.0"
+
+  - name: a VERSION ahead of the last tag warns about drift and falls back to a patch bump
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          printf '0.5.2\n' >"${REPO_DIR}/VERSION"
+          git -C "${REPO_DIR}" add VERSION
+          git -C "${REPO_DIR}" commit -qm "chore: hand-edit VERSION out of band"
+          commit_in "${REPO_DIR}" "feat(api)!: drop the legacy socket
+
+          BREAKING CHANGE: the socket transport is gone."
+          run_bump ""
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "does not match VERSION"
+          - result.systemout ShouldContainSubstring "New version [0.5.3]"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.3"
+
+  - name: backup and other non-release tags do not derail the suggestion
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          # Created after v0.5.0 and the feat commit, and containing v+digit:
+          # an unanchored tag_pattern would take this for the latest release.
+          git -C "${REPO_DIR}" tag -a backup/review-v2 -m backup
+          run_bump ""
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'BACKUP_HEADINGS=%s\n' "$(grep -c '^## \[backup' "${REPO_DIR}/CHANGELOG.md" || true)"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldNotContainSubstring "Semver error"
+          - result.systemout ShouldContainSubstring "BACKUP_HEADINGS=0"
+          - result.systemout ShouldContainSubstring "New version [0.5.1]"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.1"
+
+  - name: the release commit is kept out of the next release and regeneration is reproducible
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
+          run_bump "" >/dev/null
+          commit_in "${REPO_DIR}" "fix(cli): correct the exit code"
+          run_bump "" >/dev/null
+          printf 'RELEASE_LINES=%s\n' "$(grep -c 'chore(release)' "${REPO_DIR}/CHANGELOG.md" || true)"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          git-cliff --config "${REPO_DIR}/cliff.toml" --repository "${REPO_DIR}" \
+            --output "${TEST_DIR}/regenerated.md" 2>/dev/null
+          if cmp -s "${REPO_DIR}/CHANGELOG.md" "${TEST_DIR}/regenerated.md"; then
+            echo "REGENERATED=identical"
+          else
+            echo "REGENERATED=differs"
+          fi
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "RELEASE_LINES=0"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.2"
+          - result.systemout ShouldContainSubstring "REGENERATED=identical"
+
+  - name: the changelog groups by type and drops merge commits
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
+          commit_in "${REPO_DIR}" "build(task): give lint and fmt one definition"
+          git -C "${REPO_DIR}" checkout -q -b side
+          commit_in "${REPO_DIR}" "docs: describe the release flow"
+          git -C "${REPO_DIR}" checkout -q main
+          git -C "${REPO_DIR}" merge -q --no-ff -m "Merge pull request #14 from lolables/side" side
+          run_bump "" >/dev/null
+          cat "${REPO_DIR}/CHANGELOG.md"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "Features"
+          - result.systemout ShouldContainSubstring "Bug Fixes"
+          - result.systemout ShouldContainSubstring "Documentation"
+          - result.systemout ShouldContainSubstring "Miscellaneous Tasks"
+          - result.systemout ShouldContainSubstring "Add a subcommand"
+          - result.systemout ShouldContainSubstring "Give lint and fmt one definition"
+          - result.systemout ShouldNotContainSubstring "Merge pull request"
+          - result.systemout ShouldNotContainSubstring "Other"
+
+  - name: a dirty working tree aborts before anything is written
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          printf 'dirty\n' >"${REPO_DIR}/scratch"
+          git -C "${REPO_DIR}" add scratch
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "uncommitted changes"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "CHANGELOG=absent"
+
+  - name: a rejected commit restores VERSION and CHANGELOG.md
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          printf '#!/bin/sh\nexit 1\n' >"${REPO_DIR}/.git/hooks/pre-commit"
+          chmod +x "${REPO_DIR}/.git/hooks/pre-commit"
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "commit failed"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "CHANGELOG=absent"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
+          - result.systemout ShouldContainSubstring "TAGS=v0.5.0 "
+          - result.systemout ShouldNotContainSubstring "v0.5.1"
+
+  - name: a rejected commit restores a tracked CHANGELOG.md
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          printf 'ORIGINAL\n' >"${REPO_DIR}/CHANGELOG.md"
+          git -C "${REPO_DIR}" add CHANGELOG.md
+          git -C "${REPO_DIR}" commit -qm "docs: track a changelog"
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          printf '#!/bin/sh\nexit 1\n' >"${REPO_DIR}/.git/hooks/pre-commit"
+          chmod +x "${REPO_DIR}/.git/hooks/pre-commit"
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'CHANGELOG=%s\n' "$(cat "${REPO_DIR}/CHANGELOG.md")"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "CHANGELOG=ORIGINAL"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
+
+  - name: a failed tag keeps the commit and names the recovery command
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          mkdir -p "${REPO_DIR}/.git/refs/tags"
+          : >"${REPO_DIR}/.git/refs/tags/v0.5.1.lock"
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s)"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - 'result.systemout ShouldContainSubstring "git tag -a v0.5.1 -m v0.5.1"'
+          - 'result.systemout ShouldContainSubstring "SUBJECT=chore(release): v0.5.1"'
+
+  - name: an unstaged change aborts before anything is written
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          printf '# stray edit\n' >>"${REPO_DIR}/cliff.toml"
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "uncommitted changes"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+
+  - name: a non-semver version is rejected
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          code=0
+          run_bump "v0.6" || code=$?
+          leading_zero=0
+          run_bump "0.6.00" || leading_zero=$?
+          printf 'CODE=%s LEADING_ZERO=%s\n' "${code}" "${leading_zero}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "not a semantic version"
+          - result.systemout ShouldContainSubstring "CODE=1 LEADING_ZERO=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+
+  - name: a version that is not greater than the current one is rejected
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          same=0
+          run_bump "0.5.0" || same=$?
+          lower=0
+          run_bump "0.4.9" || lower=$?
+          printf 'SAME=%s LOWER=%s\n' "${same}" "${lower}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "is not greater than the current version"
+          - result.systemout ShouldContainSubstring "SAME=1 LOWER=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+
+  - name: an existing tag for the target version is rejected
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          git -C "${REPO_DIR}" tag -a v0.6.0 -m "tagged out of band"
+          code=0
+          run_bump "0.6.0" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "tag v0.6.0 already exists"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+
+  - name: no argument and no stdin fails instead of hanging
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          code=0
+          out="$(ROOT_DIR="${REPO_DIR}" bash "${RELEASE_BUMP}" </dev/null 2>&1)" || code=$?
+          printf '%s\n' "${out}"
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "no version given"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+
+  - name: a missing git-cliff fails with install instructions
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          code=0
+          out="$(GIT_CLIFF="${TEST_DIR}/absent-git-cliff" ROOT_DIR="${REPO_DIR}" \
+            bash "${RELEASE_BUMP}" 0.6.0 </dev/null 2>&1)" || code=$?
+          printf '%s\n' "${out}"
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "git-cliff not found"
+          - result.systemout ShouldContainSubstring "git-cliff.org"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+
+  - name: the release workflow's notes extraction pulls exactly one section
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          run_bump "" >/dev/null
+          commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
+          run_bump "" >/dev/null
+          echo "--- notes for 0.5.2 ---"
+          bash "{{.root}}/.taskfiles/scripts/changelog-section.sh" 0.5.2 "${REPO_DIR}/CHANGELOG.md"
+          echo "--- notes for 0.5.1 ---"
+          bash "{{.root}}/.taskfiles/scripts/changelog-section.sh" 0.5.1 "${REPO_DIR}/CHANGELOG.md"
+          echo "--- end ---"
+          missing=0
+          bash "{{.root}}/.taskfiles/scripts/changelog-section.sh" 9.9.9 "${REPO_DIR}/CHANGELOG.md" >/dev/null 2>&1 || missing=$?
+          nofile=0
+          bash "{{.root}}/.taskfiles/scripts/changelog-section.sh" 0.5.2 "${TEST_DIR}/absent.md" >/dev/null 2>&1 || nofile=$?
+          printf 'MISSING_CODE=%s NOFILE_CODE=%s\n' "${missing}" "${nofile}"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "Stop dropping arguments"
+          - result.systemout ShouldContainSubstring "Add a subcommand"
+          - result.systemout ShouldNotContainSubstring "# Changelog"
+          - result.systemout ShouldNotContainSubstring "## ["
+          - result.systemout ShouldContainSubstring "MISSING_CODE=1 NOFILE_CODE=1"
+
+  - name: the 0.5.2 section does not leak the 0.5.1 entries
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          run_bump "" >/dev/null
+          commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
+          run_bump "" >/dev/null
+          bash "{{.root}}/.taskfiles/scripts/changelog-section.sh" 0.5.2 "${REPO_DIR}/CHANGELOG.md"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "Stop dropping arguments"
+          - result.systemout ShouldNotContainSubstring "Add a subcommand"
+
+  - name: a middle section does not leak the next older release
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          run_bump "" >/dev/null
+          commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
+          run_bump "" >/dev/null
+          bash "{{.root}}/.taskfiles/scripts/changelog-section.sh" 0.5.1 "${REPO_DIR}/CHANGELOG.md"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "Add a subcommand"
+          - result.systemout ShouldNotContainSubstring "Stop dropping arguments"
+          - result.systemout ShouldNotContainSubstring "Seed the scratch checkout"
+
+  - name: task release:bump is wired to the script
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          cd "{{.root}}"
+          task --list
+          grep -F 'release-bump.sh' .taskfiles/release.yml
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "release:bump"
+          - result.systemout ShouldContainSubstring "release-bump.sh"

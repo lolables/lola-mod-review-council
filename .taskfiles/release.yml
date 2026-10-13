@@ -1,0 +1,22 @@
+version: "3"
+
+tasks:
+  default:
+    silent: true
+    cmd: |
+      task --list 2>/dev/null
+
+  bump:
+    desc: "Bump the version, regenerate CHANGELOG.md, commit and tag (prompts; or: task release:bump -- 0.2.0)"
+    # interactive so the version prompt reaches the terminal unbuffered, silent
+    # so task does not echo the command over it. Validation, the suggested
+    # version and the changelog all live in the script — duplicating any of it
+    # as preconditions here would give two answers that drift apart.
+    interactive: true
+    silent: true
+    cmd: '"{{.ROOT_DIR}}/.taskfiles/scripts/release-bump.sh" {{.CLI_ARGS}}'
+
+  current:
+    desc: Show the current version
+    silent: true
+    cmd: cat "{{.ROOT_DIR}}/VERSION"

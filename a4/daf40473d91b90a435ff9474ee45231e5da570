@@ -1,0 +1,63 @@
+.lola-eval/tests/case-024-disposition-true-fix/rubric.md
+  s_0b4aca1b6a7ce1::t_a756540e3821a2 23-24
+.lola-eval/tests/case-024-disposition-true-fix/starter/.rc-session/verdicts/findings.json
+  s_0b4aca1b6a7ce1::t_7367b43064b6e6 4
+.lola-eval/tests/case-024-disposition-true-fix/task.yaml
+  s_0b4aca1b6a7ce1::t_5a8fc9f0cbb22c 11-13
+.lola-eval/tests/case-027-disposition-high-fix-held/prompt.md
+  s_0b4aca1b6a7ce1::t_c9ca3e42bd6375 1-14
+.lola-eval/tests/case-027-disposition-high-fix-held/rubric.md
+  s_0b4aca1b6a7ce1::t_a10770f3382a42 1-99
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/.rc-session/pr-conversation.txt
+  s_0b4aca1b6a7ce1::t_2a95a9d888da30 1-11
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/.rc-session/tracking.md
+  s_0b4aca1b6a7ce1::t_a2239934d40ac5 1-23
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/.rc-session/verdicts/findings.json
+  s_0b4aca1b6a7ce1::t_ecac082625ef48 1-24
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/go.mod
+  s_0b4aca1b6a7ce1::t_0784e8e6cfc506 1-3
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/internal/auth/token.go
+  s_0b4aca1b6a7ce1::t_2729948c29effa 1-19
+.lola-eval/tests/case-027-disposition-high-fix-held/task.yaml
+  s_0b4aca1b6a7ce1::t_f83f40f9d7445b 1-24
+.taskfiles/lola-eval.yml
+  s_0b4aca1b6a7ce1::t_6ff350b915661a 191,197-198
+.taskfiles/scripts/mutate-check.sh
+  s_0b4aca1b6a7ce1::t_4bf4023fa48abb 1181,1439
+AGENTS.md
+  s_0b4aca1b6a7ce1::t_d2ce0775d6a060 30,54-55
+module/skills/review-council/SKILL.md
+  s_0b4aca1b6a7ce1::t_bc92a590a9e404 897-900
+module/skills/review-council/phases/disposition.md
+  s_0b4aca1b6a7ce1::t_7ddaca1064dafd 46-53,350-351
+module/skills/review-council/references/pipeline-states.md
+  s_0b4aca1b6a7ce1::t_e60a1792abef2e 21,24
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_0b4aca1b6a7ce1::t_d9aeff01f7ad95 4-11,32,68,116-117,152
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_0b4aca1b6a7ce1::t_8bebc280990212 59,72-74,91,96-97,103-112,116-123,132
+module/skills/review-council/scripts/rc-lib.sh
+  s_0b4aca1b6a7ce1::t_b8de58386da671 89,91,113-116,118,120-124,126-130
+module/tests/test-rc-check-disposition.sh
+  s_0b4aca1b6a7ce1::t_c5822ec69267cd 203-211,361-422
+module/tests/test-rc-lib.sh
+  s_0b4aca1b6a7ce1::t_03f2417b588517 184-195
+module/tests/test-rc-render-comment.sh
+  s_0b4aca1b6a7ce1::t_0146fe8fa26021 1780-1801
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4daf40473d91b90a435ff9474ee45231e5da570",
+  "prompts": {},
+  "sessions": {
+    "s_0b4aca1b6a7ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "26aa5a7c-6d5c-4235-a4d1-18d98fcaa26b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

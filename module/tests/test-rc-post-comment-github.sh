@@ -418,6 +418,8 @@ rbody=$(cat "$sess/comment-body.md")
 jq -n --arg b "$rbody" '[{id:900, node_id:"NODE900", user:{login:"council-bot"}, body:$b}]' >"$bin/comments.json"
 printf 'reply from @bootc: finding 3 is wrong, the guard is two lines up.\n' >"$sess/pr-conversation.txt"
 printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt" # Disposition ran (RC-075 gate)
+# Disposition's edits were checked (#53 gate).
+write_disposition_check "$sess"
 result=$(PATH="$bin:$PATH" GH_LOG="$bin/log" GH_COMMENTS="$bin/comments.json" \
 	REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send 2>/dev/null)
 assert_json_field "$result" "action" "created" "answering a conversation posts a new comment"

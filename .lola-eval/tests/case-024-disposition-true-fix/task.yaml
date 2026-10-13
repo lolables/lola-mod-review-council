@@ -8,7 +8,9 @@ description: |
   must independently re-read the source, confirm the fix is real, and
   only then mark the finding resolved with claim_verified: true and
   source evidence attached. This is the positive-control counterpart to
-  case-023 (false fix): same claim text, genuinely fixed source.
+  case-023 (false fix): same claim text, genuinely fixed source. The
+  finding is MEDIUM because Disposition may resolve only MEDIUM or LOW
+  findings; case-027 is the same proven fix on a HIGH, which must stay.
 timeout_seconds: 1800
 followup_messages:
   - |

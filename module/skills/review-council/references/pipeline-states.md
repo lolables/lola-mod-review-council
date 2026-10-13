@@ -18,9 +18,10 @@ Read `status` and take the edge the table names.
 | Correction       | `rc-apply-corrections.sh` | `ok` \| `correction_error` \| `nothing_to_do` | `ok`->Calibrate; `nothing_to_do` (no correctable findings)->Calibrate; `correction_error`->fix `corrections.json`, nothing applied ->Correction |
 | Consolidate      | `rc-consolidate.sh`     | `ok` \| `consolidate_error` \| `nothing_to_do`       | `ok`->Validate; `consolidate_error`->stop; `nothing_to_do`->stop (no session dir or no findings.json). Skipped entirely when effort is `quick`              |
 | Validate         | `rc-apply-validation.sh` | `ok` \| `retry` \| `validation_error` \| `nothing_to_do` | `ok`->Report; `retry`->re-ask validator for `pending` ids, judge retractions->Validate `--final` [`--dispute`] (once); `validation_error`->stop (or, for an unknown `--dispute` id, correct it and re-run the pass); `nothing_to_do`->stop (session or `findings.json` missing). Skipped entirely when effort is `quick` or the gate's skip rule holds |
+| Disposition      | `rc-check-disposition.sh` | `ok` \| `validation_error` \| `nothing_to_do` \| `skip` | Run with `--snapshot` before dispatch (`ok`->dispatch; `nothing_to_do` (no findings.json)->skip Disposition; `validation_error`: snapshot exists->check, no unique ids->stop), then without it after Step 4 moves. `ok`->Decide verdict; `validation_error` with `violations`->snapshot already restored, record them, re-run check (`ok` on restored file); `validation_error`, no snapshot->never snapshot current findings.json (may hold unchecked edits): Verify (`rc-verify-evidence.sh`) rebuilds it, then Step 4.5 in order (`--snapshot` before dispatch, then check); `nothing_to_do`->stop; `skip` (no `sha256sum`/`shasum`)->install, re-run |
 | Decide verdict   | `rc-decide-verdict.sh`  | `ok` \| `nothing_to_do` \| `validation_error`        | `ok`->Render; `nothing_to_do` (no findings.json: nothing reviewed, no verdict)->Render (empty, no comment); `validation_error`->stop                        |
-| Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip` \| `error`                      | `rendered`->post/Report; `skip`->Report; `error`->the message names the missing phase (Disposition): run it, then render again; or verdict.txt is not the verdict the findings decide (run rc-decide-verdict.sh), or there is no findings.json (no verdict to post) |
-| Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report. Prints "**Not rendered.**" instead for a missing `verification.txt` or a verdict.txt the findings do not decide |
+| Render (comment) | `rc-render-comment.sh`  | `rendered` \| `skip` \| `error`                      | `rendered`->post/Report; `skip`->Report; `error`->the message names the missing phase (Disposition) or its missing, failed or outdated check (`rc-check-disposition.sh`): run it, then render again; or verdict.txt is not the verdict the findings decide (run rc-decide-verdict.sh), or there is no findings.json (no verdict to post) |
+| Render (report)  | `rc-render-report.sh`   | (markdown to stdout)                                 | ->Report. Prints "**Not rendered.**" instead for a missing `verification.txt`, the same Disposition refusal as the comment (a snapshot without a passing check refuses at any effort), or a verdict.txt the findings do not decide |
 
 Select and Triage are the two stages that can change WHO reviews, and they
 write into the same three coverage states in `session-manifest.json`: `agents`
@@ -57,11 +58,13 @@ complete and un-consolidated rather than partial. Stop and report the guard
 rather than rendering — a set that a broken reducer has silently thinned is the
 one thing no downstream state can detect.
 
-Disposition is an orchestrator-run state too, but unlike the others it has no
-script `status` — it dispatches a fresh-context subagent, not a script. It
+Disposition is both too: a fresh-context subagent judges, a script checks. It
 runs after the verify cluster (Calibrate/Validate), gated on
 `${session_dir}/pr-conversation.txt` existing AND effort != `quick`; when the
 gate fails, execution passes straight to Render as before. When the gate
-holds, the subagent consumes the untrusted PR conversation thread and moves
-resolved findings from `verified` to `stripped` in `findings.json`
-(provenance only — it never adds new findings). See `phases/disposition.md`.
+holds, `rc-check-disposition.sh --snapshot` copies `findings.json`, the
+subagent consumes the untrusted PR conversation thread and moves resolved
+findings from `verified` to `stripped` in `findings.json` (provenance only —
+it never adds new findings), and `rc-check-disposition.sh` diffs the result
+against the snapshot. Any rule broken restores the snapshot whole. Both
+script runs emit a state token. See `phases/disposition.md`.

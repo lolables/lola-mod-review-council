@@ -1174,10 +1174,11 @@ check_mutation "RC-074 the adapter refuses a page that is not an array" \
 # --- RC-075: a re-review rendered without its Disposition phase --------------
 #
 # Disposition was an instruction only; a standard re-review skipped it and
-# posted anyway. The render refuses until disposition.txt exists.
+# posted anyway. The render refuses until disposition.txt exists. The gate
+# lives in rc-lib.sh so the report shares it.
 check_mutation "RC-075 rendering refuses a re-review that skipped Disposition" \
-	rc-render-comment.sh \
-	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || return 0$/return 0/' \
+	rc-lib.sh \
+	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || needed=false$/needed=false/' \
 	test-rc-render-comment.sh
 
 # --- RC-076: committed symlinks reached reviewers live -----------------------
@@ -1429,6 +1430,26 @@ check_mutation "RC-095 a dangling findings.json symlink is moved aside too" \
 	rc-verify-evidence.sh \
 	's/ || -L "\$findings_file"//' \
 	test-rc-verify-evidence.sh
+
+# --- #53: Disposition's edits to findings.json, checked by script ------------
+#
+# The subagent reads replies the PR author writes and edits findings.json; the
+# verdict depends only on severities left in verified. One injected reply that
+# moved a HIGH to stripped flipped REQUEST CHANGES to APPROVE.
+check_mutation "RC-097 the Disposition check refuses a resolved HIGH" \
+	jq/check-disposition.jq \
+	's/\$act == "resolved" and \$o\.severity != "MEDIUM"/false/' \
+	test-rc-check-disposition.sh
+
+check_mutation "RC-099 a broken Disposition rule restores the snapshot" \
+	rc-check-disposition.sh \
+	's|^\([[:space:]]*\)mv -f "\$restore" "\$findings"$|\1:|' \
+	test-rc-check-disposition.sh
+
+check_mutation "RC-100 rendering refuses findings.json changed since the Disposition check" \
+	rc-lib.sh \
+	'/^rc_disposition_gate() {/,/^}$/s/^\([[:space:]]*\)\[\[ "\$have" == "\$want" \]\] && return 0$/\1return 0/' \
+	test-rc-render-comment.sh
 
 total=$((caught + missed + broken))
 echo ""

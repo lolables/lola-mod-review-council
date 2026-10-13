@@ -594,6 +594,8 @@ prior=$(cat "$sess/comment-body.md")
 jq -n --arg b "$prior" "${GL_NOTE_DEF}"'[note(900; $b)]' >"$st/notes.json"
 printf 'reply from @bootc: finding 3 is wrong, the guard is two lines up.\n' >"$sess/pr-conversation.txt"
 printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt" # Disposition ran (RC-075 gate)
+# Disposition's edits were checked (#53 gate).
+write_disposition_check "$sess"
 result=$(post "$sess" "$st")
 assert_json_field "$result" "action" "created" "answering a conversation posts a new note"
 assert_json_field "$result" "superseded" "1" "the prior verdict is retired, the new one is not"

@@ -249,29 +249,10 @@ _rc_section() { # level start end -> _RC_OUT
 	_RC_OUT="$out"
 }
 
-# Why the verdict may not be rendered yet, or nothing.
-#
-# SKILL.md Step 4.5 requires Disposition on a re-review — pr-conversation.txt
-# exists, and prepare-context.sh writes it only when there is a reply — at any
-# effort but quick, unless the evidence check found nothing (no findings.json).
-# The phase was an instruction and nothing more: live, a standard re-review
-# skipped it without a word. The findings were kept, so the outcome was safe,
-# but the replies it existed to answer were never weighed. Every posting path
-# renders through here, so this is where the phase is enforced. A session with
-# no recorded effort is held to the gate rather than excused from it.
-rc_disposition_gate() { # session_dir
-	local sdir="$1" effort
-	[[ -f "$sdir/pr-conversation.txt" ]] || return 0
-	[[ -f "$sdir/verdicts/findings.json" ]] || return 0
-	[[ -f "$sdir/verdicts/_meta/disposition.txt" ]] && return 0
-	effort=$(rc_parse_kv "$sdir/session.txt" "Effort")
-	[[ "$effort" == "quick" ]] && return 0
-	printf '%s' "Not rendering: this re-review has replies to weigh (pr-conversation.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
-}
-
 # Why the PR comment may not be rendered, or nothing: the first refusal among
-# the render gates. Every comment entry point (standalone and both posters)
-# asks this one function, so a gate added later reaches all three. With no
+# the render gates (rc_disposition_gate and rc_verdict_refusal, rc-lib.sh).
+# Every comment entry point (standalone and both posters) asks this one
+# function, so a gate added later reaches all three. With no
 # findings.json nothing was reviewed: there is no verdict to post, and the
 # old fallback of rendering APPROVE would announce a review that never ran.
 rc_comment_refusal() { # session_dir

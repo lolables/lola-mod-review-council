@@ -254,6 +254,34 @@ write_verification_log() {
 		>"$session/verdicts/_meta/verification.txt"
 }
 
+# Print the SHA-256 of <file> as bare hex, as rc_sha256 in rc-lib.sh does
+# (that library is not sourced here; see assert_track). sha256sum on GNU hosts,
+# shasum on macOS.
+# Usage: hex=$(sha256_of "$file")
+sha256_of() {
+	local out
+	if command -v sha256sum >/dev/null 2>&1; then
+		out=$(sha256sum <"$1")
+	else
+		out=$(shasum -a 256 <"$1")
+	fi
+	printf '%s' "${out%% *}"
+}
+
+# Write the disposition-check.json rc-check-disposition.sh leaves after a clean
+# check of the session's findings.json as it stands now. A fixture modelling a
+# re-review whose Disposition ran needs it beside disposition.txt: the render
+# gate requires both, and the hash must match. Suites exercising the check
+# itself run the real script instead.
+# Usage: write_disposition_check "$session"
+write_disposition_check() {
+	local session="$1" hex
+	hex=$(sha256_of "$session/verdicts/findings.json")
+	jq -n --arg h "$hex" \
+		'{status: "ok", resolved: 0, suppressed_low: 0, kept: 0, verdicts_upgraded: 0, findings_sha256: $h}' \
+		>"$session/verdicts/_meta/disposition-check.json"
+}
+
 # Assert the value of a "- Key: value" line in a session's tracking.md.
 #
 # Anchored at the start of the line, matching rc_parse_kv in rc-lib.sh, which is

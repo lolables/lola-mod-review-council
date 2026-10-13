@@ -1118,6 +1118,41 @@ else
 fi
 rm -rf "$s" "$src" "$target"
 
+echo "Test 44: a previous run's Disposition snapshot and check are discarded (#53)"
+# Ids restart at F1 every run. A snapshot left behind would make
+# rc-check-disposition.sh --snapshot refuse this run's, or check this run's
+# edits against the last run's findings; a check file left behind describes a
+# findings.json that no longer exists. Discarded on every exit, the stale
+# findings.json's own.
+assert_disposition_reset() { # session label
+	local f
+	for f in findings.pre-disposition.json disposition-check.json; do
+		if [[ ! -e "$1/verdicts/_meta/$f" ]]; then
+			echo "  PASS: $2: stale $f removed"
+			PASS=$((PASS + 1))
+		else
+			echo "  FAIL: $2: stale $f survived a re-verification"
+			FAIL=$((FAIL + 1))
+		fi
+	done
+}
+s=$(new_session)
+printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+printf '%s' "$stale_findings" >"$s/verdicts/_meta/findings.pre-disposition.json"
+printf '{"status":"ok"}' >"$s/verdicts/_meta/disposition-check.json"
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "nothing_to_do" "no verdicts: nothing_to_do"
+assert_disposition_reset "$s" "nothing_to_do"
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+printf '%s' "$stale_findings" >"$s/verdicts/_meta/findings.pre-disposition.json"
+printf '{"status":"ok"}' >"$s/verdicts/_meta/disposition-check.json"
+result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "ok"
+assert_disposition_reset "$s" "ok"
+rm -rf "$s" "$src"
+
 echo "Test S1: the script verdict is read, and its finding survives a diff-only root (RC-076)"
 sess=$(new_session)
 root=$(mktemp -d) # an empty review root: the diff-only fallback reviews '.' with no such file

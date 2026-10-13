@@ -1687,9 +1687,10 @@ fi
 
 echo "Test D2: each gate input admits the render on its own (RC-075)"
 printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt"
+write_disposition_check "$sess"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
-assert_json_field "$result" "status" "rendered" "Disposition ran: rendered"
-rm -f "$sess/verdicts/_meta/disposition.txt" "$sess/comment-body.md"
+assert_json_field "$result" "status" "rendered" "Disposition ran and was checked: rendered"
+rm -f "$sess/verdicts/_meta/disposition.txt" "$sess/verdicts/_meta/disposition-check.json" "$sess/comment-body.md"
 set_effort "$sess" quick
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "quick effort: rendered"
@@ -1716,6 +1717,93 @@ printf 'reply\n' >"$sess/pr-conversation.txt"
 set_effort "$sess" ""
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "error" "missing Effort line: refused"
+rm -rf "$sess"
+
+# --- Disposition check gate (#53) ----------------------------------------------
+#
+# disposition.txt is the model's own account. The subagent edits findings.json
+# after reading text the PR author wrote, so the render also requires the record
+# rc-check-disposition.sh leaves after checking those edits, and the hash in it
+# must be the findings.json about to be rendered.
+# refused_for <label> <message-fragment>: the render is refused, names why, and
+# writes nothing.
+refused_for() {
+	assert_json_field "$result" "status" "error" "$1: refused"
+	if jq -r '.message' <<<"$result" | grep -qF -- "$2"; then
+		echo "  PASS: $1: the message says why"
+		PASS=$((PASS + 1))
+	else
+		msg=$(jq -r .message <<<"$result")
+		echo "  FAIL: $1: message lacks '$2': $msg"
+		FAIL=$((FAIL + 1))
+	fi
+	if [[ ! -e "$sess/comment-body.md" ]]; then
+		echo "  PASS: $1: nothing written"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $1: a body was written despite the refusal"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+echo "Test D4: Disposition ran but its edits were never checked"
+sess=$(mktemp -d)
+make_review_session "$sess"
+printf 'reply\n' >"$sess/pr-conversation.txt"
+printf 'Result: ran\n' >"$sess/verdicts/_meta/disposition.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+refused_for "no disposition-check.json" "rc-check-disposition.sh"
+
+echo "Test D5: a check that is not ok is no check"
+write_disposition_check "$sess"
+jq '.status = "validation_error"' "$sess/verdicts/_meta/disposition-check.json" >"$sess/check.next"
+mv "$sess/check.next" "$sess/verdicts/_meta/disposition-check.json"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+refused_for "check status not ok" "missing or not ok"
+
+echo "Test D6: findings.json edited after the check"
+write_disposition_check "$sess"
+jq '.verified = []' "$sess/verdicts/findings.json" >"$sess/findings.next"
+mv "$sess/findings.next" "$sess/verdicts/findings.json"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+refused_for "hash mismatch" "changed after rc-check-disposition.sh accepted it"
+
+echo "Test D6b: with no SHA-256 tool the check cannot be matched"
+write_disposition_check "$sess"
+maskdir=$(mktemp -d)
+masked=$(path_without_command sha256sum "$maskdir")
+masked=$(PATH="$masked" path_without_command shasum "$maskdir")
+result=$(PATH="$masked" bash "$SCRIPT" "$sess" 2>/dev/null)
+refused_for "no hash tool" "neither sha256sum nor shasum"
+rm -rf "$maskdir"
+
+echo "Test D8: a snapshot means Disposition ran, so its check is required at any effort"
+# The quick-effort and no-conversation exemptions excuse a session that never
+# ran Disposition. A snapshot says it did run, so its edits must be checked.
+sess2=$(mktemp -d)
+make_review_session "$sess2"
+printf 'reply\n' >"$sess2/pr-conversation.txt"
+set_effort "$sess2" quick
+result=$(bash "$SCRIPT" "$sess2" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "quick, no snapshot: rendered as before"
+rm -f "$sess2/comment-body.md"
+cp "$sess2/verdicts/findings.json" "$sess2/verdicts/_meta/findings.pre-disposition.json"
+result=$(bash "$SCRIPT" "$sess2" 2>/dev/null)
+assert_json_field "$result" "status" "error" "quick, snapshot, no check: refused"
+rm -f "$sess2/pr-conversation.txt" "$sess2/comment-body.md"
+set_effort "$sess2" standard
+result=$(bash "$SCRIPT" "$sess2" 2>/dev/null)
+assert_json_field "$result" "status" "error" "no conversation, snapshot, no check: refused"
+write_disposition_check "$sess2"
+result=$(bash "$SCRIPT" "$sess2" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "no conversation, snapshot, matching check: rendered"
+rm -rf "$sess2"
+
+echo "Test D7: a matching check renders"
+write_disposition_check "$sess"
+printf 'APPROVE\n' >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "checked findings.json: rendered"
 rm -rf "$sess"
 
 echo "Test S1: the symlink check has its own row in the agent table (RC-076)"

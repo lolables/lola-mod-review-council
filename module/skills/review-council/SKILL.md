@@ -889,10 +889,18 @@ only for re-reviews; a first-time review has no prior verdict to have drawn
 replies.
 
 The gate is enforced at render time: `rc-render-comment.sh` and both post
-scripts refuse with `status: "error"`, writing and posting nothing, when
+scripts refuse with `status: "error"`, writing and posting nothing, and
+`rc-render-report.sh` prints **Not rendered.**, when
 `pr-conversation.txt` and `verdicts/findings.json` exist, effort is not
-`quick`, and `verdicts/_meta/disposition.txt` is missing. On that error, run
-this phase, then render again.
+`quick`, and `verdicts/_meta/disposition.txt` is missing — or
+`verdicts/_meta/disposition-check.json` is missing, not `ok`, or records a
+hash `findings.json` no longer has. A Disposition snapshot
+(`verdicts/_meta/findings.pre-disposition.json`) means the phase ran, so its
+check is required then even at `quick` effort or with no conversation. On
+that error, run this phase (or its check), then render again.
+
+**Before dispatch:** `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir} --snapshot`
+(`disposition.md` Step 2). Never dispatch without the snapshot.
 
 **Read `${PHASES_DIR}/disposition.md`** for the full procedure. Dispatch a
 single fresh-context subagent (has not seen prior review phases) using **the
@@ -921,11 +929,19 @@ After the subagent returns:
   `resolved` removals count toward that check — `suppressed-low` removals are
   verdict-neutral and do NOT (`disposition.md` Step 4).
 - Findings marked `provenance.validator.result: "SCRIPT"` (from `rc-check-symlinks`) are never handed to the subagent and never moved.
+- Run `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir}`
+  (`disposition.md` Step 4, "Check"). A reply never clears HIGH/CRITICAL:
+  `resolved` only on MEDIUM/LOW, `suppressed-low` only on LOW. On
+  `validation_error` the script restored `findings.json` to the snapshot —
+  every finding stays verified; record the violations, run the check again,
+  never re-apply the edits by hand. On `validation_error` with no snapshot,
+  `findings.json` may hold unchecked edits: never snapshot it then; re-run
+  `rc-verify-evidence.sh`, then Step 4.5 in order (snapshot before dispatch).
 - Write `${session_dir}/verdicts/_meta/disposition.txt` as the audit trail
   (`disposition.md` Step 5).
 
-**Update tracking:** Append `## Phase: Disposition` with gate result,
-comments processed, resolved/kept/suppressed counts, verdicts upgraded.
+**Update tracking:** Append `## Phase: Disposition` with gate result, check
+result, comments processed, resolved/kept/suppressed counts, verdicts upgraded.
 
 Proceed to Step 5.
 
@@ -1221,6 +1237,7 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 ## Phase: Disposition (re-review only)
 
 - Gate: {skipped (no conversation) | skipped (quick effort) | ran}
+- Check: {ok | edits rejected ({count} violations), snapshot restored}
 - Comments processed: {count}
 - Findings resolved: {count}
 - Findings kept: {count}

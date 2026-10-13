@@ -28,6 +28,10 @@ findings_file="$vdir/findings.json"
 if [[ -e "$findings_file" || -L "$findings_file" ]]; then
 	mv -f "$findings_file" "$findings_file.stale"
 fi
+# The Disposition snapshot and check (rc-check-disposition.sh) describe that
+# earlier findings.json, and ids restart at F1 every run: a snapshot left here
+# would refuse this run's or check its edits against the wrong findings.
+rm -f "$vdir/_meta/findings.pre-disposition.json" "$vdir/_meta/disposition-check.json"
 
 # Gather agent JSON files. Allow-list by agent-name prefix, and kept that way
 # even now that orchestrator-written state lives in verdicts/_meta/ rather than

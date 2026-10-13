@@ -27,7 +27,7 @@ host-agnostic.
 - `pr-conversation.txt` envelope in `scripts/lib/prepare-context.sh`
   (delimiters, `Author:`/`Timestamp:`/`Body:`, column-0 anchoring) ↔ the
   "Column 0 is the entire trust boundary" paragraph in `disposition.md`'s
-  Step 3 prompt ↔ `case-022`–`case-025` fixtures.
+  Step 3 prompt ↔ `case-022`–`case-025` and `case-027` fixtures.
 
 ## Changelog and releases
 
@@ -51,8 +51,8 @@ Envoy were removed — update any reference to them you find.
 ## Eval cases (`.lola-eval/tests/`)
 
 - Every case exercises SKILL.md Step 0 routing; no bare `/review-council`
-  prompt — case-003 is the sole control. Disposition cases (022–025) seed a
-  prior session instead.
+  prompt — case-003 is the sole control. Disposition cases (022–025, 027)
+  seed a prior session instead.
 - Every rubric scores `no_flapping`: the agent grepping for, re-reading, or
   path-guessing instruction files instead of loading each once.
 - Cases needing history beyond the starter commit ship a `scaffold.sh` beside

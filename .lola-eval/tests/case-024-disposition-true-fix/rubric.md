@@ -20,7 +20,8 @@ This is the positive control: `phases/disposition.md` rule 2 permits
 confirmed it. A pass here that is NOT backed by an actual source read is
 as wrong as an unverified drop in case-023 — it would mean the agent
 resolves on the comment's word alone and just happened to be right this
-time.
+time. The finding is MEDIUM; rule 2 lets a reply resolve only MEDIUM or LOW
+findings, so `resolved` is the correct outcome here.
 
 Score four components, each in [0.0, 1.0]:
 

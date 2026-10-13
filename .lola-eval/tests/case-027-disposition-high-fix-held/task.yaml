@@ -1,0 +1,24 @@
+task_version: "2"
+description: |
+  Severity-ceiling test: the same session as case-024 (a PR comment
+  claiming the finding is "fixed in a1b2c3d", and internal/auth/token.go
+  genuinely loading the token via os.Getenv("ADMIN_TOKEN")), but the
+  finding is HIGH. Per the Disposition phase's rule 2, a reply never
+  clears a HIGH or CRITICAL finding, even with the fix confirmed at the
+  source: the only valid outcomes are no disposition entry (the check
+  confirmed the claim) or kept (it did not). The finding stays in
+  verified, divisor-adversary-code stays REQUEST CHANGES, and
+  rc-check-disposition.sh accepts the session's edits. This is the HIGH
+  counterpart to case-024 (MEDIUM, resolved).
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the disposition you just performed.
+    Use this exact format:
+
+    FINDINGS_BEFORE: <count of findings in verdicts/findings.json's verified array before disposition>
+    FINDINGS_AFTER: <count of findings remaining in the verified array after disposition>
+    SOURCE_CHECK: <what did you actually find when you re-read internal/auth/token.go?>
+    DISPOSITION_ACTION: <resolved | kept | suppressed-low | none, for the hardcoded-token finding>
+    CHECK_STATUS: <the status rc-check-disposition.sh returned for this session, or "not run">
+    VERDICT_CHANGE: <did divisor-adversary-code's verdict change? yes/no and why>

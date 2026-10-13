@@ -23,7 +23,7 @@ conditional:
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
-| **Disposition**       | `phases/disposition.md` (re-review only)                           | Triage untrusted PR-conversation replies against findings |
+| **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
 | **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
 | **Post**              | `rc-render-comment.sh` + `rc-post-comment.sh` (opt-in, PR only)    | Publish or update the verdict comment on the PR           |
@@ -167,8 +167,11 @@ flowchart TD
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
     claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
-    never the verdict itself). Comments are treated as data, never instructions. See `phases/disposition.md` for
-    the full contract.
+    never the verdict itself). Comments are treated as data, never instructions. A reply never clears a HIGH or
+    CRITICAL finding. `rc-check-disposition.sh` snapshots `findings.json` before the subagent runs and diffs its
+    edits against that snapshot afterwards; any edit outside the allowed set restores the snapshot whole, and the
+    renderers refuse unless the check passed on the exact `findings.json` they render (its SHA-256 is recorded in
+    `disposition-check.json`). See `phases/disposition.md` for the full contract.
 12. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
     runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
     behind
@@ -208,6 +211,7 @@ flowchart TD
   vval["Verify: rc-apply-validation.sh"]
   vorc["Verify: orchestrator write-up"]
   dsp["Disposition subagent"]
+  vdck["Disposition: rc-check-disposition.sh"]
   rrep["Report: rc-render-report.sh"]
 
   subgraph sess["session directory"]
@@ -225,6 +229,8 @@ flowchart TD
       valj["validation.json"]
       corj["corrections.json"]
       dtxt["disposition.txt"]
+      snap["findings.pre-disposition.json"]
+      dchk["disposition-check.json"]
     end
   end
 
@@ -246,6 +252,12 @@ flowchart TD
   vval -->|"outcomes applied in place"| find
   vorc --> vtxt
   dsp --> dtxt
+  find -->|"--snapshot"| snap
+  dsp -->|"edits in place"| find
+  snap --> vdck
+  vdck -->|"rule broken: snapshot restored"| find
+  vdck --> dchk
+  dchk -->|"missing or hash mismatch: the renderers refuse"| rrep
   find --> rrep
   vtxt -->|"missing or empty: the renderer refuses"| rrep
   rrep --> learn
@@ -255,9 +267,9 @@ flowchart TD
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
   classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
-  class vevi,vcor,vcon,vval,vorc,dsp sysC
+  class vevi,vcor,vcon,vval,vorc,dsp,vdck sysC
   class rrep sysD
-  class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,meta1,learn sysE
+  class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,snap,dchk,meta1,learn sysE
 ```
 
 Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>-<random>/` containing:
@@ -278,8 +290,9 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   debugging only, and neither the renderers nor `rc-decide-verdict.sh` read it
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
   the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), and, on a re-review,
-  `disposition.txt` (the untrusted-conversation triage audit trail). `rc-render-report.sh` refuses to render
-  without `verification.txt`
+  `disposition.txt` (the untrusted-conversation triage audit trail), `findings.pre-disposition.json` (the snapshot
+  Disposition's edits are checked against) and `disposition-check.json` (the check's result and the SHA-256 of the
+  `findings.json` it accepted). `rc-render-report.sh` refuses to render without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 
 The directory is created exclusively (`mktemp -d`), so runs started in the same second never share a session.

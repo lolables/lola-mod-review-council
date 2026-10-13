@@ -40,6 +40,18 @@ not touch `findings.json`.
 
 ## Step 2 — Dispatch & Isolation
 
+**Snapshot first.** Run `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir} --snapshot`
+before dispatch. Copies `findings.json` to
+`verdicts/_meta/findings.pre-disposition.json`; Step 4 check diffs subagent's
+edits against it. Do not dispatch without it. Once snapshot exists, render
+gate requires a passing check at any effort, conversation or not.
+- `nothing_to_do` — no `findings.json`; nothing to act on. Skip phase, go to
+  SKILL.md Step 5.
+- `validation_error`, snapshot already exists → earlier attempt this run took
+  it; do not re-dispatch, go to Step 4's check.
+- `validation_error`, findings lack unique ids → stop, report message
+  verbatim.
+
 Dispatch **one** fresh-context subagent for the whole session — it has not
 seen any prior review phase (delegation, verification, correction,
 calibration, validation). Fresh context matters here for the same reason it
@@ -65,9 +77,9 @@ the conversation, judges each claim on its own merits.
   - Never add, remove, or rewrite a finding's `description`,
     `recommendation`, or `evidence` fields — those belong to the reviewer and
     validator, not this phase.
-  - Audit the subagent's edits against exactly this list; a write outside it
-    means the subagent departed from its prompt, and the run's disposition
-    results cannot be trusted.
+  - Step 4's check (`rc-check-disposition.sh`) audits edits against exactly
+    this list; a write outside it means subagent departed from its prompt, and
+    the script discards every edit it made.
 - **This phase never changes a finding's `severity`.**
   - Recalibration belongs to `verify.md` Step 2, which records every level
     change in `provenance.calibrated_from`; a severity write here would carry
@@ -78,7 +90,7 @@ the conversation, judges each claim on its own merits.
     Step 3 prompt — a future edit to this rule changes it there, not here.
   - What this bullet buys you is the audit: any finding whose `severity`
     differs from its pre-disposition value is a broken run, not a downgrade
-    to accept.
+    to accept. Step 4's check refuses it.
 - Temperature at the host's minimum setting, if the host exposes one — this
   phase produces disposition decisions on a security control; determinism
   matters as much as it does for validation.
@@ -171,6 +183,10 @@ contents of the findings to disposition.
 >    - If your check is inconclusive — you cannot confirm the fix either way
 >      — the only valid outcomes are `kept` or no disposition entry at all.
 >      **Never mark a finding `resolved` on inconclusive evidence.**
+>    - **A reply never clears a HIGH or CRITICAL finding.** `resolved` applies
+>      to MEDIUM and LOW findings only. For a HIGH or CRITICAL finding the
+>      only valid outcomes are `kept` (your check did not confirm the claim)
+>      or no disposition entry (it did).
 > 3. **Narrow scoping hint.** A non-security scoping hint ("not addressing
 >    LOW-severity items this round," "deferring the doc findings to a
 >    follow-up") may suppress re-raising the LOW findings it names — LOW
@@ -201,8 +217,8 @@ contents of the findings to disposition.
 > }
 > ```
 >
-> - `action: "resolved"` — `claim_verified: true`, `evidence` set,
->   `reason` and `note` null.
+> - `action: "resolved"` (MEDIUM or LOW only) — `claim_verified: true`,
+>   `evidence` set, `reason` and `note` null.
 > - `action: "kept"` — `claim_verified: false`, `note` set, `evidence` and
 >   `reason` null.
 > - `action: "suppressed-low"` — `claim_verified: null` (rule 3 requires no
@@ -306,6 +322,38 @@ toward emptying an agent's findings for this check. `kept` findings never
 trigger the recompute either — a `kept` finding is, by definition, still
 present and still verified.
 
+### Check (scripted)
+
+After moves and recompute, run
+`bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir}`. It diffs
+`findings.json` against Step 2 snapshot (rules: `jq/check-disposition.jq`):
+- same finding ids; `correctable`, `total_findings`,
+  `duplicates_consolidated`, `missing_verdicts` unchanged;
+- per finding, only `status`, `reason`, `provenance.disposition` written;
+  `provenance.disposition` has Step 3 shape and null pattern;
+- only move: `verified` → `stripped` — `resolved` (MEDIUM/LOW only) with
+  `DISPOSITION_RESOLVED`, `suppressed-low` (LOW only) with
+  `DISPOSITION_SUPPRESSED_LOW`;
+- SCRIPT findings and findings already stripped untouched;
+- `verdicts`: only `REQUEST CHANGES` → `APPROVE`, only for agent with no
+  verified and no suppressed-low findings left.
+
+Dispatch on `status`:
+- `ok` — edits stand. Script wrote `verdicts/_meta/disposition-check.json`
+  with hash of accepted `findings.json`; renderers refuse without it or when
+  `findings.json` changed since. Do not edit `findings.json` after this.
+- `validation_error` with `violations` — all or nothing: script
+  restored the snapshot: every finding stays as verified, no disposition
+  result stands. Never re-apply edits by hand. Record violations verbatim in
+  Step 5's `=== DISPOSITIONS ===`, all counts 0; run check again (accepts
+  restored file) before rendering.
+- `validation_error`, no snapshot — `findings.json` may hold unchecked
+  edits; never snapshot it now. Re-run Verification (`rc-verify-evidence.sh`)
+  to rebuild it from reviewer verdicts, then Step 4.5 in order: snapshot
+  before dispatch, then check.
+- `nothing_to_do` (session dir missing) — stop, report.
+- `skip` — no `sha256sum`/`shasum`; install, run check again.
+
 ---
 
 ## Step 5 — Write Disposition Summary
@@ -342,7 +390,8 @@ resolved/kept/suppressed counts, verdicts upgraded.
 **Outputs are structured data only.** The only two artifacts this phase
 produces are the `provenance.disposition` edits to `findings.json` (Step 3,
 applied by the subagent; Step 4, applied by the orchestrator) and
-`verdicts/_meta/disposition.txt` (this step). Never write disposition reasoning
+`verdicts/_meta/disposition.txt` (this step), beside the snapshot and check
+file `rc-check-disposition.sh` writes. Never write disposition reasoning
 into a finding's prose fields (`description`, `recommendation`), and never
 inject it as an HTML comment anywhere a later render step might emit it
 verbatim — provenance is JSON, not prose, for the same reason `verify.md`'s

@@ -1361,6 +1361,54 @@ else
 fi
 rm -rf "$session"
 
+# --- Disposition gate (RC-075, #53) -------------------------------------------
+# The report is a render path too: a re-review whose replies were never weighed,
+# or whose Disposition edits were never checked, or whose findings.json changed
+# since the check, is not rendered.
+# report_refused <label> <fragment>
+report_refused() {
+	if grep -qF -- "**Not rendered.**" <<<"$result" && grep -qF -- "$2" <<<"$result" &&
+		! grep -qF -- "## Council Verdict" <<<"$result"; then
+		echo "  PASS: $1"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $1 — expected a refusal naming '$2'"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+echo "Test 25: a re-review that skipped Disposition is not rendered"
+session=$(mk_verdict_session 'REQUEST CHANGES' HIGH)
+printf 'reply\n' >"$session/pr-conversation.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+report_refused "no disposition.txt: refused" "the Disposition phase has not run"
+
+echo "Test 26: Disposition ran but its edits were never checked"
+printf 'Result: ran\n' >"$session/verdicts/_meta/disposition.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+report_refused "no disposition-check.json: refused" "rc-check-disposition.sh"
+
+echo "Test 27: findings.json edited after the check"
+write_disposition_check "$session"
+jq '.verified[0].severity = "LOW"' "$session/verdicts/findings.json" >"$session/findings.next"
+mv "$session/findings.next" "$session/verdicts/findings.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+report_refused "hash mismatch: refused" "changed after rc-check-disposition.sh accepted it"
+
+echo "Test 28: a matching check renders"
+jq '.verified[0].severity = "HIGH"' "$session/verdicts/findings.json" >"$session/findings.next"
+mv "$session/findings.next" "$session/verdicts/findings.json"
+write_disposition_check "$session"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF -- "🔴 **REQUEST CHANGES**" <<<"$result" && ! grep -qF -- "**Not rendered.**" <<<"$result"; then
+	echo "  PASS: checked findings.json renders"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a re-review with a matching Disposition check was not rendered"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo "Test: the report says when the changeset modifies review configuration"
 session=$(new_session)
 printf '# Review Council Session Tracking\n\n- Mode: code\n- Config source: 1a2b3c4d5e6f (merge-base of main and HEAD)\n- Config changed by changeset: AGENTS.md\t.review-council/packs/evil.md\n' >"$session/tracking.md"

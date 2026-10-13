@@ -10,7 +10,8 @@
       "agent": "divisor-adversary-code",
       "verdict": "REQUEST CHANGES",
       "status": "verified",
-      "provenance": {}
+      "provenance": {},
+      "id": "F1"
     },
     {
       "severity": "LOW",
@@ -22,7 +23,8 @@
       "agent": "divisor-architect-code",
       "verdict": "REQUEST CHANGES",
       "status": "verified",
-      "provenance": {}
+      "provenance": {},
+      "id": "F2"
     }
   ],
   "correctable": [],

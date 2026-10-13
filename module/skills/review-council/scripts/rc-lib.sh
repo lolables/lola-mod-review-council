@@ -80,6 +80,72 @@ rc_verdict_refusal() { # session_dir
 	printf '%s' "Not rendering: verdict.txt records '${have:-nothing}', but the verified findings decide '${want}'. Run rc-decide-verdict.sh ${sdir} to record it, then render again."
 }
 
+# SHA-256 of <file> as bare hex, or nothing. GNU coreutils ships sha256sum;
+# macOS ships shasum instead. With neither, or an unreadable file, this prints
+# nothing rather than invent a digest; callers treat empty as no digest.
+rc_sha256() { # file
+	local out=""
+	if command -v sha256sum >/dev/null 2>&1; then
+		out=$(sha256sum 2>/dev/null <"$1") || out=""
+	elif command -v shasum >/dev/null 2>&1; then
+		out=$(shasum -a 256 2>/dev/null <"$1") || out=""
+	fi
+	printf '%s' "${out%% *}"
+}
+
+# Why the verdict may not be rendered yet, or nothing.
+#
+# SKILL.md Step 4.5 requires Disposition on a re-review — pr-conversation.txt
+# exists, and prepare-context.sh writes it only when there is a reply — at any
+# effort but quick, unless the evidence check found nothing (no findings.json).
+# The phase was an instruction and nothing more: live, a standard re-review
+# skipped it without a word. The findings were kept, so the outcome was safe,
+# but the replies it existed to answer were never weighed. Every render path
+# (the comment, both posters, the report) asks this, so this is where the phase
+# is enforced. A session with no recorded effort is held to the gate rather
+# than excused from it.
+#
+# disposition.txt is the model's own account, so it is not enough on its own.
+# The subagent edits findings.json after reading text the PR author wrote;
+# rc-check-disposition.sh checks those edits and records the hash of the
+# findings.json it accepted. A missing check, or a findings.json edited since,
+# means the findings about to be rendered are not the ones that were checked.
+#
+# The quick-effort and no-conversation exemptions excuse a session that never
+# ran Disposition. A snapshot (findings.pre-disposition.json) says it did run,
+# whatever those say, so its check is required then too.
+rc_disposition_gate() { # session_dir
+	local sdir="$1" effort check have want snap needed=true ran=false
+	[[ -f "$sdir/verdicts/findings.json" ]] || return 0
+	snap="$sdir/verdicts/_meta/findings.pre-disposition.json"
+	if [[ -e "$snap" || -L "$snap" ]]; then
+		ran=true
+	fi
+	[[ -f "$sdir/pr-conversation.txt" ]] || needed=false
+	effort=$(rc_parse_kv "$sdir/session.txt" "Effort")
+	[[ "$effort" == "quick" ]] && needed=false
+	if ! $needed && ! $ran; then
+		return 0
+	fi
+	if $needed && [[ ! -f "$sdir/verdicts/_meta/disposition.txt" ]]; then
+		printf '%s' "Not rendering: this re-review has replies to weigh (pr-conversation.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
+		return 0
+	fi
+	check="$sdir/verdicts/_meta/disposition-check.json"
+	have=$(jq -r 'if .status == "ok" then (.findings_sha256 // "" | tostring) else "" end' "$check" 2>/dev/null) || have=""
+	if [[ -z "$have" ]]; then
+		printf '%s' "Not rendering: Disposition ran, but its edits to findings.json were never checked: verdicts/_meta/disposition-check.json is missing or not ok. Run rc-check-disposition.sh ${sdir} (phases/disposition.md Step 4), then render again."
+		return 0
+	fi
+	want=$(rc_sha256 "$sdir/verdicts/findings.json")
+	if [[ -z "$want" ]]; then
+		printf '%s' "Not rendering: neither sha256sum nor shasum is installed, so findings.json cannot be matched to the Disposition check. Install coreutils, then render again."
+		return 0
+	fi
+	[[ "$have" == "$want" ]] && return 0
+	printf '%s' "Not rendering: verdicts/findings.json changed after rc-check-disposition.sh accepted it. Run rc-check-disposition.sh ${sdir} again, then render again."
+}
+
 # The opening of a marker as rc-render-comment.sh emits it, which is always the
 # first thing on a line of its own. Both readers match on THIS rather than on
 # the key alone, and both anchor it to the start of a line: GitHub's "Quote

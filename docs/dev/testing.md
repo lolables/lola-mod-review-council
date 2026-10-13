@@ -114,7 +114,7 @@ A *phase script* is one of the `rc-*.sh` scripts under
 `module/skills/review-council/scripts/` that a phase document in
 `module/skills/review-council/phases/` invokes against a session directory —
 `rc-consolidate.sh`, `rc-apply-validation.sh`, `rc-apply-corrections.sh`, `rc-verify-evidence.sh`, `rc-extract-verdict.sh`,
-`rc-render-report.sh` and `rc-render-comment.sh` today.
+`rc-check-disposition.sh`, `rc-render-report.sh` and `rc-render-comment.sh` today.
 
 `test-rc-idempotency.sh` covers a property across *every* phase script: re-run
 it against a live session and its state must not change.

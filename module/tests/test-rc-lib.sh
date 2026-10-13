@@ -181,6 +181,18 @@ non-control UTF-8 is kept|caf\303\251 \342\200\224 ok|café — ok
 trailing newline|a\n|a 
 SINGLELINE
 
+echo "Test: rc_sha256 hashes a file, and a missing file is no digest and no noise"
+f=$(mktemp)
+printf 'abc' >"$f"
+digest=$(rc_sha256 "$f")
+assert_equals "$digest" "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" "SHA-256 of 'abc'"
+err=$(mktemp)
+digest=$(rc_sha256 "$f.missing" 2>"$err")
+assert_equals "$digest" "" "missing file: empty digest"
+noise=$(<"$err")
+assert_equals "$noise" "" "missing file: nothing on stderr"
+rm -f "$f" "$err"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

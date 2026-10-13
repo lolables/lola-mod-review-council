@@ -104,6 +104,17 @@ if [[ -n "$verification_refusal" ]]; then
 	exit 0
 fi
 
+# A re-review must have run Disposition, and its edits to findings.json must be
+# the ones rc-check-disposition.sh accepted (rc_disposition_gate, rc-lib.sh).
+# The same gate as the PR comment's: the report states the same verdict.
+disposition_refusal=$(rc_disposition_gate "$session_dir")
+if [[ -n "$disposition_refusal" ]]; then
+	echo "# Review Council Report"
+	echo ""
+	echo "**Not rendered.** ${disposition_refusal#Not rendering: }"
+	exit 0
+fi
+
 # The verdict must be the one the findings decide (rc_verdict_refusal,
 # rc-lib.sh). An empty review (no findings.json, no verdict.txt) passes here
 # and renders "not recorded" below, which is the truth for it. The refusal

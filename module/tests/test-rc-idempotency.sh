@@ -176,6 +176,31 @@ assert_idempotent "rc-apply-corrections.sh" "$s/verdicts/findings.json" \
 	bash "$SCRIPTS/rc-apply-corrections.sh" "$s" "$root"
 rm -rf "$s" "$root"
 
+echo "Test 9: rc-check-disposition.sh is idempotent"
+# After a violation the first run restores the snapshot, which is a change of
+# state by design; it is the runs after that which must agree with each other.
+s=$(new_session)
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"divisor-guard-code","severity":"HIGH","file":"a.go","line":3,"evidence":"x","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+ {"id":"F2","agent":"divisor-guard-code","severity":"MEDIUM","file":"b.go","line":9,"evidence":"y","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{"divisor-guard-code":"REQUEST CHANGES"}}
+FJ
+bash "$SCRIPTS/rc-check-disposition.sh" "$s" --snapshot >/dev/null
+jq '.verified[1] += {status: "stripped", reason: "DISPOSITION_RESOLVED",
+	provenance: {disposition: {source: "pr-comment", action: "resolved", claim: "fixed", claim_verified: true,
+	evidence: "b.go:9 reads y := 0", reason: null, note: null}}}
+	| .stripped = [.verified[1]] | .verified = [.verified[0]]' \
+	"$s/verdicts/findings.json" >"$s/edited.json"
+cp "$s/edited.json" "$s/verdicts/findings.json"
+assert_idempotent "rc-check-disposition.sh (edits accepted)" "$s/verdicts" \
+	bash "$SCRIPTS/rc-check-disposition.sh" "$s"
+jq '.stripped[0].severity = "HIGH"' "$s/edited.json" >"$s/verdicts/findings.json"
+bash "$SCRIPTS/rc-check-disposition.sh" "$s" >/dev/null
+assert_idempotent "rc-check-disposition.sh (after a restore)" "$s/verdicts" \
+	bash "$SCRIPTS/rc-check-disposition.sh" "$s"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

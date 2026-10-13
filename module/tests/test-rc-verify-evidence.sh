@@ -988,6 +988,136 @@ for reply in validation corrections; do
 done
 rm -rf "$s" "$src"
 
+# A previous run's findings.json, as the renderers and rc-decide-verdict.sh
+# would read it. Its one marker finding must never surface in this run.
+stale_findings='{"verified":[{"id":"F1","description":"from the previous run"}],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,"verdicts":{"divisor-old-code":"REQUEST CHANGES"},"missing_verdicts":[]}'
+
+# Assert a run left no findings.json and kept the previous one as .stale.
+# Usage: assert_moved_aside <session> <label>
+assert_moved_aside() {
+	if [[ ! -e "$1/verdicts/findings.json" ]]; then
+		echo "  PASS: $2: no findings.json left for the renderers"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $2: a previous run's findings.json survived"
+		FAIL=$((FAIL + 1))
+	fi
+	assert_stale_kept "$1" "$2"
+}
+
+# Assert the previous run's findings.json is kept as findings.json.stale. A
+# missing file is a FAIL rather than a jq error, which would abort the suite.
+# Usage: assert_stale_kept <session> <label>
+assert_stale_kept() {
+	if [[ -f "$1/verdicts/findings.json.stale" ]]; then
+		assert_jq "$1/verdicts/findings.json.stale" '.verified[0].description' "from the previous run" \
+			"$2: previous findings kept as findings.json.stale"
+	else
+		echo "  FAIL: $2: no findings.json.stale kept"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+echo "Test 38: a stale findings.json is moved aside when there is no agent verdict (#55)"
+s=$(new_session)
+printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "nothing_to_do" "no verdicts: nothing_to_do"
+assert_moved_aside "$s" "no verdicts"
+rm -rf "$s"
+
+echo "Test 39: a stale findings.json is moved aside when the review root is missing (#55)"
+s=$(new_session)
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+result=$(bash "$SCRIPT" "$s" "/nonexistent-review-root" 2>/dev/null)
+assert_json_field "$result" "status" "nothing_to_do" "missing root: nothing_to_do"
+assert_moved_aside "$s" "missing root"
+rm -rf "$s"
+
+echo "Test 40: a stale findings.json is moved aside when the run fails part-way (#55)"
+s=$(new_session)
+printf 'not json' >"$s/verdicts/divisor-adversary-code.json"
+printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+if bash "$SCRIPT" "$s" >/dev/null 2>&1; then
+	echo "  FAIL: a malformed verdict did not fail the run"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: a malformed verdict fails the run"
+	PASS=$((PASS + 1))
+fi
+assert_moved_aside "$s" "failed run"
+rm -rf "$s"
+
+echo "Test 41: a normal run over a stale findings.json writes only this run's findings (#55)"
+s=$(new_session)
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
+ {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"this run","recommendation":"r"}]'
+printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "ok"
+assert_jq "$s/verdicts/findings.json" '[.verified[].description] | join(",")' "this run" \
+	"findings.json holds this run's finding only"
+assert_jq "$s/verdicts/findings.json" '.verdicts | keys | join(",")' "divisor-adversary-code" \
+	"verdict table holds this run's agents only"
+assert_stale_kept "$s" "normal run"
+rm -rf "$s" "$src"
+
+echo "Test 42: with no previous findings.json nothing is moved aside (#55)"
+s=$(new_session)
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "nothing_to_do" "no verdicts: nothing_to_do"
+src=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "ok"
+assert_jq "$s/verdicts/findings.json" '.total_findings' "0" "findings.json written"
+if [[ ! -e "$s/verdicts/findings.json.stale" ]]; then
+	echo "  PASS: no findings.json.stale created"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: findings.json.stale created with nothing to move aside"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s" "$src"
+
+# -e is false for a dangling link, so only the -L arm moves it; left in place,
+# the findings.json write would follow it and create the target.
+echo "Test 43: a dangling symlink at findings.json is moved aside, not written through (#55)"
+s=$(new_session)
+src=$(mktemp -d)
+target=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
+ln -s "$target/written-through" "$s/verdicts/findings.json"
+result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "ok"
+if [[ -f "$s/verdicts/findings.json" && ! -L "$s/verdicts/findings.json" ]]; then
+	echo "  PASS: findings.json written as a regular file"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: findings.json is still a symlink or was not written"
+	FAIL=$((FAIL + 1))
+fi
+if [[ ! -e "$target/written-through" ]]; then
+	echo "  PASS: the link target was not created"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: findings.json was written through the symlink"
+	FAIL=$((FAIL + 1))
+fi
+if [[ -L "$s/verdicts/findings.json.stale" ]]; then
+	echo "  PASS: the dangling link kept as findings.json.stale"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the dangling link was not moved to findings.json.stale"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s" "$src" "$target"
+
 echo "Test S1: the script verdict is read, and its finding survives a diff-only root (RC-076)"
 sess=$(new_session)
 root=$(mktemp -d) # an empty review root: the diff-only fallback reviews '.' with no such file

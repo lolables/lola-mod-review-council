@@ -189,12 +189,12 @@ actually ran. Do not pad it with the sections whose steps did not run — an
 `=== VALIDATION GATE ===` heading over an empty body asserts a gate that never
 opened, which is the fabrication the Pre-condition Gate exists to catch.
 
-SKILL.md Step 4 renames any leftover `findings.json` to
-`findings.json.stale` and then goes straight to the report, which renders zero
-findings. The rename is what makes that true: `rc-render-report.sh` reads
+SKILL.md Step 4 then goes straight to the report, which renders zero findings.
+`rc-verify-evidence.sh` makes that true: it moves any leftover `findings.json`
+to `findings.json.stale` before checking anything. `rc-render-report.sh` reads
 `verdicts/findings.json` directly for both the findings list and the per-agent
-verdict table, so a copy left behind by an earlier iteration would be rendered
-as this run's result.
+verdict table, so a copy left behind by an earlier iteration would otherwise
+render as this run's result.
 
 This is **not** the `nothing_to_do` in Step 0 below. That one comes from
 `rc-extract-verdict.sh` and means the delegation produced no verdict blocks at

@@ -1,0 +1,85 @@
+module/agents/divisor-curator-code.md
+  s_9c22974dd19e6d::t_fb5c35fe504eff 29,36
+  s_9c22974dd19e6d::t_43ae812f7f6930 30-32
+  s_9c22974dd19e6d::t_d138bfa4bd73d3 33-35
+module/tests/test-rc-doc-guards.sh
+  s_9c22974dd19e6d::t_87f93427b7b531 2223-2226,2231-2235,2238-2252
+  s_9c22974dd19e6d::t_95590379fd9632 2227-2230,2236-2237
+module/agents/divisor-guard-spec.md
+  s_9c22974dd19e6d::t_72bae349457b11 21
+  s_9c22974dd19e6d::t_2e22d3952f381a 25-27
+  s_9c22974dd19e6d::t_39cf8ea5275446 15-19,22-24
+  s_9c22974dd19e6d::t_a30a008a9ade76 20
+module/agents/divisor-guard-code.md
+  s_9c22974dd19e6d::t_2321f523d677d8 25-27
+  s_9c22974dd19e6d::t_900a6553715478 21
+  s_9c22974dd19e6d::t_64c5cef5dabb77 15-19,22-24
+  s_9c22974dd19e6d::t_6a53b1024be480 20
+module/agents/divisor-adversary-code.md
+  s_9c22974dd19e6d::t_73ba954df2a5dd 21
+  s_9c22974dd19e6d::t_b5609d1deb3771 25-27
+  s_9c22974dd19e6d::t_d25c7bad777e54 15-19,22-24
+  s_9c22974dd19e6d::t_5af63a240567e6 20
+module/agents/divisor-sre-code.md
+  s_9c22974dd19e6d::t_b2733011614b00 25-27
+  s_9c22974dd19e6d::t_9aee33b7ce1292 21
+  s_9c22974dd19e6d::t_857e91fdf6eccc 15-19,22-24
+  s_9c22974dd19e6d::t_9cb2a9cd51ae16 20
+module/skills/review-council/phases/triage.md
+  s_9c22974dd19e6d::t_654d8e2844b0f9 55-56
+module/skills/review-council/phases/delegate.md
+  s_9c22974dd19e6d::t_2d01d7c01cf1cc 59
+  s_9c22974dd19e6d::t_9f6d4821169962 61-62,65
+  s_9c22974dd19e6d::t_07013b81636603 181-182
+  s_9c22974dd19e6d::t_38e4172c4c82e6 57-58,60,66-67
+  s_9c22974dd19e6d::t_bcff6eb89ac8f2 63-64
+module/agents/divisor-testing-spec.md
+  s_9c22974dd19e6d::t_400dfd0ba093ed 15-19,22-24
+  s_9c22974dd19e6d::t_228e397c200ecc 21
+  s_9c22974dd19e6d::t_a353bf6b38ae12 25-27
+  s_9c22974dd19e6d::t_03827e915d4d3d 20
+module/skills/review-council/phases/verify.md
+  s_9c22974dd19e6d::t_91da06527e378b 538
+  s_9c22974dd19e6d::t_c31fbd93d65931 533-537
+module/skills/review-council/phases/report.md
+  s_9c22974dd19e6d::t_8dabf0bd74486e 156-157
+module/agents/divisor-testing-code.md
+  s_9c22974dd19e6d::t_7d82cdf6edf857 15-19,22-24
+  s_9c22974dd19e6d::t_69b85f4395a075 25-27
+  s_9c22974dd19e6d::t_49ee278cffa75d 21
+  s_9c22974dd19e6d::t_3c9618ff157195 20
+module/agents/divisor-sre-spec.md
+  s_9c22974dd19e6d::t_96feb4f0ba3c8e 21
+  s_9c22974dd19e6d::t_bb78e66dcc2145 15-19,22-24
+  s_9c22974dd19e6d::t_22d5052a08409d 25-27
+  s_9c22974dd19e6d::t_c961e568668e03 20
+module/agents/divisor-adversary-spec.md
+  s_9c22974dd19e6d::t_73105c4ed820d3 25-27
+  s_9c22974dd19e6d::t_9de0797b5ea0da 21
+  s_9c22974dd19e6d::t_2c8a8c3c16a6c0 15-19,22-24
+  s_9c22974dd19e6d::t_d8bf4e57a42026 20
+module/agents/divisor-curator-spec.md
+  s_9c22974dd19e6d::t_f686ab35ec1b18 25-27
+  s_9c22974dd19e6d::t_7b82fa4d5745a8 21
+  s_9c22974dd19e6d::t_324150d641bd49 15-19,22-24
+  s_9c22974dd19e6d::t_cb9c1876907c4e 20
+module/skills/review-council/phases/disposition.md
+  s_9c22974dd19e6d::t_fdeda86875c55d 66-68
+  s_9c22974dd19e6d::t_9dbe8fb28e1932 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7cf42e1f2971f5886a733db4cd4cfbaa5094ddc3",
+  "prompts": {},
+  "sessions": {
+    "s_9c22974dd19e6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "002e7564-1aa3-486e-ae0a-5f70ca441bcb",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

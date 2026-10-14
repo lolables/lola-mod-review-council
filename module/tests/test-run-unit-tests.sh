@@ -86,6 +86,15 @@ echo "Test 4: a named suite that does not exist is an error, not a silent skip"
 bash "$RUNNER" "$work/test-absent.sh" >/dev/null 2>&1 && status=0 || status=$?
 assert_equals "$status" "1" "an unreadable suite path fails the run"
 
+echo "Test 5: each suite is announced, with its position, before it runs"
+# The runner captures a suite's output and prints it only once the suite exits,
+# so without an announcement a slow suite looks like a hung `task check`.
+out=$(bash "$RUNNER" "$work/test-alpha.sh" "$work/test-beta.sh" 2>&1) || true
+first_line=$(head -1 <<<"$out")
+assert_equals "$first_line" "--> test-alpha.sh (1/2)" "the first suite is announced before any output"
+beta_announced=$(grep -cxF -- '--> test-beta.sh (2/2)' <<<"$out") || beta_announced=0
+assert_equals "$beta_announced" "1" "the second suite is announced with its position"
+
 # Discovery with no arguments is not re-tested here: it is what `task test:unit`
 # runs on every CI leg, and asserting it would mean executing all 40 real
 # suites — minutes, to re-check a path already covered by every run.

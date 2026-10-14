@@ -50,8 +50,13 @@ deleted_cwd=()
 total_pass=0
 total_fail=0
 
+position=0
 for suite in "${suites[@]}"; do
 	name="$(basename "$suite")"
+	position=$((position + 1))
+	# The suite's output is captured and only printed once it exits, so this
+	# line is the sole sign of which suite a long run is waiting on.
+	echo "--> $name ($position/${#suites[@]})"
 	output=$(bash "$suite" 2>&1)
 	status=$?
 	echo "$output"

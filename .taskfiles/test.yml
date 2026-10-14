@@ -103,8 +103,18 @@ tasks:
   all:
     desc: Run unit, end-to-end, release, degraded and mutation checks
     cmds:
+      - cmd: echo "==> test:unit (1/5)"
+        silent: true
       - task: unit
+      - cmd: echo "==> test:e2e (2/5)"
+        silent: true
       - task: e2e
+      - cmd: echo "==> test:release (3/5)"
+        silent: true
       - task: release
+      - cmd: echo "==> test:degraded (4/5)"
+        silent: true
       - task: degraded
+      - cmd: echo "==> test:mutate (5/5)"
+        silent: true
       - task: mutate

@@ -43,7 +43,11 @@ tasks:
     cmds:
       # --enable=all turns on the optional checks (SC2310/SC2312 masking,
       # quoting strictness); -S info fails on notes, not just warnings.
-      - find {{.SH_PATHS}} -name '*.sh' -print0 | xargs -0 shellcheck -x --enable=all -S info
+      # One file per shellcheck call, named first: a single batched call is
+      # silent for the ~2 minutes it takes, and per-file costs no extra time
+      # (-x reparses sourced files either way). xargs still checks every file
+      # and exits non-zero if any fail.
+      - find {{.SH_PATHS}} -name '*.sh' -print0 | sort -z | xargs -0 -n1 sh -c 'echo "--> $1"; shellcheck -x --enable=all -S info "$1"' shellcheck
       - task: _shfmt
         vars:
           SHFMT_MODE: '-d'
@@ -73,7 +77,11 @@ tasks:
   check:
     desc: Run all quality gates — lint plus the full test matrix
     cmds:
+      - cmd: echo "==> lint (1/2)"
+        silent: true
       - task: lint
+      - cmd: echo "==> test:all (2/2)"
+        silent: true
       - task: test:all
 
   clean:

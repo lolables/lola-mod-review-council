@@ -1,0 +1,29 @@
+module/tests/test-run-unit-tests.sh
+  s_68eb9d9b3a12e9::t_fcc8c82f86a47b 89-97
+Taskfile.yml
+  s_68eb9d9b3a12e9::t_41b5c920b58467 80-81,83-84
+  s_68eb9d9b3a12e9::t_74d3efd8830962 46-50
+.taskfiles/scripts/run-unit-tests.sh
+  s_68eb9d9b3a12e9::t_cf5f246ad8fd98 53,56-59
+docs/dev/testing.md
+  s_68eb9d9b3a12e9::t_543ab02049659c 15,18-20
+  s_68eb9d9b3a12e9::t_49cc3c00ae8547 16-17
+.taskfiles/test.yml
+  s_68eb9d9b3a12e9::t_41b5c920b58467 106-107,109-110,112-113,115-116,118-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "383a4f36200224358cffc19a3196ef3ac249bd53",
+  "prompts": {},
+  "sessions": {
+    "s_68eb9d9b3a12e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd0985f4-8eca-4bcb-bb05-b9542c4ab182",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

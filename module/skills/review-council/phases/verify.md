@@ -530,9 +530,12 @@ Do not send `rc-check-symlinks` findings to the validator. `rc-verify-evidence.s
 ### Agent Profile
 
 The validation agent operates read-only with restricted shell access:
-may read files and run search commands (`grep`, `find`, `wc`, `head`,
-`tail`). Must not write, edit, or delete files. Must not fetch external
-resources. Temperature should be set to minimum (most deterministic)
+may read files and run read-only inspection commands (`grep`, `find`,
+`jq` filters, `wc`, `head`, `tail`, `sed -n`). Must not write, edit, or
+delete files. Must not fetch external resources. Must not execute anything
+from reviewed repository or review tooling — no Makefile/Taskfile targets,
+tests, scripts, interpreter or `jq -f` on a file they ship (`delegate.md`
+"Tool Profile"). Temperature should be set to minimum (most deterministic)
 if the hosting tool supports it.
 
 Validator does NOT receive:

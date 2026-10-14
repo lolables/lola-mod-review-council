@@ -2220,6 +2220,36 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: no subagent executes the reviewed repository or review tooling (RC-101)"
+# "Shell command execution beyond grep and find is not permitted" did not hold:
+# a Testing reviewer piped a fixture through `jq -f check-disposition.jq` to
+# confirm its own finding, reading a probe that confirms a claim as allowed. A
+# review runs on a host whose state nobody has inspected, so what the repo or
+# review tooling ships -- Makefile/Taskfile targets, tests, scripts, a shipped
+# jq program -- never runs, and the confirm-a-finding excuse is ruled out.
+# Read-only inspection (jq filters, grep, sed -n) stays allowed on purpose.
+rc101_missing=""
+for rc101_persona in adversary curator guard sre testing; do
+	for rc101_sfx in code spec; do
+		rc101_flat=$(tr '\n' ' ' <"$AGENTS/divisor-${rc101_persona}-${rc101_sfx}.md" | tr -s ' ')
+		grep -qF 'Never execute anything from reviewed repository or review tooling' <<<"$rc101_flat" &&
+			grep -qF 'not to confirm a finding' <<<"$rc101_flat" &&
+			grep -qF 'Makefile/Taskfile targets' <<<"$rc101_flat" ||
+			rc101_missing+=" divisor-${rc101_persona}-${rc101_sfx}"
+	done
+done
+grep -q '^## Tool Profile$' "$DELEGATE_MD" || rc101_missing+=" delegate.md(Tool Profile)"
+for rc101_doc in "$VERIFY_MD" "$DISPOSITION_MD" "$REPORT_MD" "$SKILLS/phases/triage.md"; do
+	grep -qF '"Tool Profile"' "$rc101_doc" || rc101_missing+=" $(basename "$rc101_doc")"
+done
+if [[ -z "$rc101_missing" ]]; then
+	echo "  PASS: every persona and phase subagent profile forbids execution"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: execution not forbidden in:${rc101_missing}"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

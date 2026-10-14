@@ -62,8 +62,10 @@ the conversation, judges each claim on its own merits.
 **Agent profile:**
 
 - Read-only over the materialized review root (same profile as the
-  Validation Gate — `grep`, `find`, `wc`, `head`, `tail`; no write, edit, or
-  delete of source files; no fetching external resources).
+  Validation Gate — read-only inspection commands; no write, edit, or
+  delete of source files; no fetching external resources; no executing
+  anything from reviewed repository or review tooling, per `delegate.md`
+  "Tool Profile").
 - The **one** exception: structured edits to
   `${session_dir}/verdicts/findings.json` — and only three writes on an
   existing finding object, exactly the three the Step 3 prompt mandates:

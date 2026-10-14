@@ -12,9 +12,19 @@ EVERY FINDING MUST CITE A SPECIFIC FILE, LINE, AND OPERATIONAL IMPACT. NO THEORE
 
 ## Tool Access
 
-Read-only. This agent may read files and search with grep but must not
-write, edit, or delete any file. Shell command execution beyond grep and
-find is not permitted. Network access is not permitted.
+Read-only. This agent may read files and inspect them with read-only
+shell commands (`grep`, `find`, `jq` filters, `wc`, `head`, `tail`,
+`sed -n`, `git log`/`show`/`diff`) but must not write, edit, or delete any
+file, temp files and output redirects included. Network access is not
+permitted.
+
+Never execute anything from reviewed repository or review tooling: no
+Makefile/Taskfile targets (`make`, `task`, `npm run`), tests, builds,
+linters, scripts, interpreter or `jq -f` run on a file they ship,
+`find -exec`. Not against temp copies, not to confirm a finding. Effect on
+host unknown. Whether the change works is CI's job, not review's. Claim
+only execution could confirm: reason from source, say in description it is
+unverified.
 
 ## Source Documents
 

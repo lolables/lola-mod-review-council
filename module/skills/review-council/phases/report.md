@@ -153,7 +153,8 @@ is prose only — it never touches structure.
    stdout to `${session_dir}/report.md`.
 
 2. **Dispatch a prose subagent** with **only** `${session_dir}/verdicts/findings.json`
-   as input — no report template, no other session files. It returns two
+   as input — no report template, no other session files, and executes
+   nothing (`phases/delegate.md` "Tool Profile"). It returns two
    plain-text blobs and nothing else:
 
    - A one-line TL;DR (plain-language, under 25 words) — write to

@@ -54,6 +54,17 @@ Use discovered agent filename **minus `.md` extension** as subagent identifier (
 
 If orchestrating tool lacks named subagent dispatch, read agent `.md` file from `${AGENTS_DIR}` (e.g., `${AGENTS_DIR}/divisor-adversary-code.md`) and include full content at top of delegation prompt.
 
+## Tool Profile
+
+Subagents never execute anything from reviewed repository or review tooling — Makefile/Taskfile targets, tests, builds, scripts, interpreter or `jq -f` run on a file they ship; temp copies included. Effect on host unknown. Whether the change works is CI's job, not review's: where forge CI data exists, SKILL.md Step 2.5 hands its results to reviewers instead. Read-only inspection commands stay allowed (`grep`, `find`, `jq` filters, `wc`, `head`, `tail`, `sed -n`, `git log`/`show`/`diff`), with no writes, temp files or redirects. Applies to every subagent this skill dispatches: reviewers, correction round, triage, validator, Disposition, prose.
+
+- Host can allowlist shell commands: allow only read-only inspection commands above, no write tools. Two exceptions, neither granting more than its purpose:
+  - Curator code reviewer: its sanctioned forge issue query (its own `Tool Access` narrows shell further).
+  - Disposition subagent: file edit on `${session_dir}/verdicts/findings.json` only, through host's edit tool, never shell (`disposition.md` "Agent profile").
+- Orchestrator is not a subagent. Rule never applies to the pipeline scripts this skill runs itself (`rc-*.sh`).
+- Host can only grant or deny shell wholesale, or cannot restrict tools: dispatch normally. Persona `Tool Access` section and phase agent profiles carry the rule as prose.
+- A reply reporting that it executed something: keep its findings, disclose the execution in `verification.txt` and report narrative.
+
 ## Prompt Discipline
 
 **Do NOT inject investigative questions, leading hints, or speculative prompts** into delegation prompts. Template provides changeset, diff, focus area, severity calibration, grounding requirements. Sufficient.
@@ -167,8 +178,8 @@ used to open on every other forge.
 
 Include it in the code-review prompt only. The field states which CLI is
 *available*, not that its holder may run it — each persona's own contract still
-governs, and four of the code-mode personas forbid shell beyond `grep`/`find`
-and permit no network at all. The Curator is the one persona whose contract
+governs, and four of the code-mode personas permit only read-only inspection
+commands and no network at all. The Curator is the one persona whose contract
 grants the sanctioned query. Do not add the field to the Spec Review Delegation
 prompt below: `divisor-curator-spec.md` states network access is not permitted
 and names no forge tool, so it would advertise a capability that contract denies.

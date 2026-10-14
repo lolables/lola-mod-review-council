@@ -21,8 +21,9 @@ rc_require_timeout # this script makes forge calls; fail before any side effect
 # "minimize" — a retired note keeps its obsolete banner and stays expanded.
 #
 # Merge request presence is guaranteed by the router; this script reads it for
-# the API. Posting is gated by REVIEW_COUNCIL_ALLOW_POST=1 — a hard,
-# machine-checkable backstop to the orchestrator's Step 7 confirmation.
+# the API. Posting needs the user's recorded `Post intent: yes` in session.txt
+# AND REVIEW_COUNCIL_ALLOW_POST=1 — hard, machine-checkable backstops to the
+# orchestrator's Step 7 confirmation.
 #
 # Every glab call goes through the adapter's rc_forge_glab, addressed to the
 # host recorded in session.txt, and only after rc_forge_glab_admits has let that
@@ -199,6 +200,18 @@ body_payload=$(jq -n --arg b "$body_file" \
 	--argjson dropped "$RC_COMMENT_DROPPED" \
 	--args '{body_file:$b, parts:$parts, pare_level:$level, findings_dropped:$dropped, part_files:$ARGS.positional}' \
 	"${RC_COMMENT_PART_FILES[@]}")
+
+# --- Intent gate: a --send writes upstream only when the user asked to post. ---
+#
+# Ahead of the glab-absent degrade and the env gate, so a run the user never asked
+# to post is told so, rather than invited to post by hand or to confirm.
+if [[ "$send" == "yes" ]]; then
+	intent_msg=$(rc_post_intent_refusal "$session_dir")
+	if [[ -n "$intent_msg" ]]; then
+		json_output "intent_required" "$intent_msg" "$body_payload"
+		exit 0
+	fi
+fi
 
 # --- Dry-run / degrade: render only ---
 #

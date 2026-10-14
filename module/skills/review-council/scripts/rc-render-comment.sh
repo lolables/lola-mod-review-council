@@ -265,6 +265,26 @@ rc_comment_refusal() { # session_dir
 	printf '%s' "$msg"
 }
 
+# Why a --send may not write upstream although rendering may go ahead, or
+# nothing. REVIEW_COUNCIL_ALLOW_POST is set by the orchestrator, so on its own
+# it proves only that the orchestrator chose to post. `Post intent:` in
+# session.txt is written only by preparation (prepare-emit.sh), from the user's
+# own --post-comment / --post-auto-send, as `yes (auto-send: no)` and the like,
+# so it is what proves the user asked for a post in this run. tracking.md holds
+# a copy, but the orchestrator appends to tracking.md in later phases, so that
+# copy is never consulted here. The intent is the value's first whitespace-
+# delimited token, and only an exact `yes` opens the gate: `no`, `yesno`,
+# `yes;`, an empty value, a missing line or a missing session.txt all refuse,
+# because a run that cannot show the user asked must not write to the pull
+# request. Both posters ask this one function.
+rc_post_intent_refusal() { # session_dir
+	local recorded intent
+	recorded=$(rc_parse_kv "$1/session.txt" "Post intent")
+	intent="${recorded%%[[:space:]]*}"
+	[[ "$intent" == "yes" ]] && return 0
+	printf '%s' "Not posting: the user did not ask to post in this run (session.txt records Post intent: '${recorded:-unrecorded}'). Show the rendered body to the user and do not post it. To post, the user re-runs the review asking for it (--post-comment or --post-auto-send)."
+}
+
 # --- Main renderer. Sets globals RC_FORGE_WEB / RC_SHORT_SHA / RC_HEAD_SHA /
 # RC_EVIDENCE (no `local`) so the sourcing per-forge script can build its own
 # forge-specific links (e.g. #issuecomment-<id>). ---

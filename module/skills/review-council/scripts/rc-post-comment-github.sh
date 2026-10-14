@@ -14,8 +14,9 @@ rc_require_timeout # this script makes forge calls; fail before any side effect
 #   rc-post-comment-github.sh <session_dir> [--send]
 #
 # PR presence is guaranteed by the router; this script reads it for the API.
-# Posting is gated by REVIEW_COUNCIL_ALLOW_POST=1 — a hard, machine-checkable
-# backstop to the orchestrator's Step 7 confirmation.
+# Posting needs the user's recorded `Post intent: yes` in session.txt AND
+# REVIEW_COUNCIL_ALLOW_POST=1 — hard, machine-checkable backstops to the
+# orchestrator's Step 7 confirmation.
 
 # --- Forge URL hooks the renderer calls (empty => renderer uses plain spans) ---
 #
@@ -233,6 +234,18 @@ body_payload=$(jq -n --arg b "$body_file" \
 # Same GitHub default as the rc_url_* hooks above, for the supersede-notice
 # URL built directly from RC_FORGE_WEB below (it doesn't go through a hook).
 [[ -z "$RC_FORGE_WEB" ]] && RC_FORGE_WEB="https://github.com/${owner}/${repo}"
+
+# --- Intent gate: a --send writes upstream only when the user asked to post. ---
+#
+# Ahead of the gh-absent degrade and the env gate, so a run the user never asked
+# to post is told so, rather than invited to post by hand or to confirm.
+if [[ "$send" == "yes" ]]; then
+	intent_msg=$(rc_post_intent_refusal "$session_dir")
+	if [[ -n "$intent_msg" ]]; then
+		json_output "intent_required" "$intent_msg" "$body_payload"
+		exit 0
+	fi
+fi
 
 # --- Dry-run / degrade: render only ---
 if [[ "$send" != "yes" ]] || ! command -v gh >/dev/null 2>&1; then

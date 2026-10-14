@@ -1451,6 +1451,15 @@ check_mutation "RC-100 rendering refuses findings.json changed since the Disposi
 	'/^rc_disposition_gate() {/,/^}$/s/^\([[:space:]]*\)\[\[ "\$have" == "\$want" \]\] && return 0$/\1return 0/' \
 	test-rc-render-comment.sh
 
+# The orchestrator sets REVIEW_COUNCIL_ALLOW_POST, so that gate alone let a run
+# post although the user never asked to (#56). The intent session.txt records
+# is the user's; opening it unconditionally posts on `Post intent: no`. The
+# function is shared, so one suite proves it for both posters.
+check_mutation "RC-091 --send requires the user's recorded post intent" \
+	rc-render-comment.sh \
+	's/^\([[:space:]]*\)\[\[ "\$intent" == "yes" \]\] && return 0$/\1return 0/' \
+	test-rc-post-comment-github.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

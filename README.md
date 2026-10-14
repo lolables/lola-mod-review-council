@@ -338,8 +338,11 @@ For PR/URL reviews you can ask the council to post its verdict back to the PR
 ("review PR 42 and post the result"). Posting is **opt-in and PR-only**. The
 council renders a human-first summary comment — verdict, TL;DR, severity and
 per-agent tables, findings in collapsible sections — and **shows it to you and
-asks before sending** (say "post without asking" to skip the prompt). Re-reviews
-edit the same comment (matched by a hidden marker) instead of posting new ones.
+asks before sending** (say "post without asking" to skip the prompt). Ask for the
+post in the same request as the review: a review that was not asked to post
+refuses to, so asking afterwards means running the review again with the post
+request. Re-reviews edit the same comment (matched by a hidden marker) instead
+of posting new ones.
 
 GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
 gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is

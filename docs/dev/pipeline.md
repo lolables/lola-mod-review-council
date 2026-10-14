@@ -180,7 +180,9 @@ flowchart TD
     depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
 14. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
     in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
-    the report can never disagree
+    the report can never disagree. The post script writes upstream only when `session.txt` (written by preparation
+    alone, unlike the model-appended `tracking.md`) records the user's `Post intent: yes` and the orchestrator sets
+    `REVIEW_COUNCIL_ALLOW_POST=1`; the env var alone is refused
 
 ## Session Cache
 

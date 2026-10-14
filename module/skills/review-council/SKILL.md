@@ -1104,6 +1104,13 @@ there is nothing to post to and stop.
      prose slip can never post silently. Set it ONLY after an affirmative
      confirmation or standing auto-send — never pre-emptively, never exported
      for the whole session.
+   - Env var alone never enough. Script also requires `Post intent: yes` in
+     `session.txt` (written only by rc-prepare.sh from user's flags; first
+     token must be exactly `yes`). tracking.md's copy ignored. `no`, missing
+     file or line, or any other value refuses with `status: intent_required`.
+     On `intent_required`: do NOT post, do NOT edit session.txt to retry. Show
+     user the rendered body (`body_file`), say posting was not requested this
+     run; to post, user re-runs with `--post-comment` / `--post-auto-send`.
    - If the script returns `status: rendered` with a "post manually" message
      (`gh`/`glab` absent or unsupported forge), relay the body and instruction
      to the user instead of claiming it was posted.

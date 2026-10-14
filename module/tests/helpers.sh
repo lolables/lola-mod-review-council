@@ -387,7 +387,9 @@ git_init_sandbox() {
 
 # Build a fixture review session under <dir>: a git checkout at a known commit
 # (origin set to an enterprise host to exercise host derivation), tracking.md
-# (Forge/PR), session.txt (Owner/Repo/Effort/Review root), one verified finding,
+# (Forge/PR/Post intent), session.txt (Owner/Repo/Effort/Review root, and
+# Post intent: yes in prepare-emit.sh's format so --send reaches the posting
+# path), one verified finding,
 # a REQUEST CHANGES verdict, and a one-line TL;DR.
 # Usage: make_review_session <dir> [forge=github] [pr=42] [origin=https://github.example.com/acme/widgets.git]
 # Pass origin="" to build a checkout with NO origin remote (exercises the
@@ -415,6 +417,7 @@ make_review_session() {
 - Tooling: gh
 - PR: ${pr}
 - Mode: code (code files changed)
+- Post intent: yes
 TRK
 	cat >"$s/session.txt" <<SES
 Review Council Session
@@ -422,6 +425,7 @@ Owner:        acme
 Repo:         widgets
 Effort:       high
 Review root:  ${repo}
+Post intent:  yes (auto-send: no)
 SES
 	cat >"$s/verdicts/findings.json" <<'FJ'
 {
@@ -439,6 +443,20 @@ SES
 FJ
 	echo "REQUEST CHANGES" >"$s/verdict.txt"
 	echo "One high-severity boundary bug in token expiry." >"$s/comment-summary.md"
+}
+
+# Rewrite a fixture session's recorded `Post intent:` in session.txt — the line
+# the posters' intent gate reads — to <value>, or remove the line when <value>
+# is empty. tracking.md's copy is left alone.
+# Usage: set_post_intent <dir> <value>
+set_post_intent() {
+	local s="$1" value="$2"
+	if [[ -n "$value" ]]; then
+		sed -e "s|^Post intent: .*|Post intent:  ${value}|" "$s/session.txt" >"$s/session.next"
+	else
+		sed -e '/^Post intent:/d' "$s/session.txt" >"$s/session.next"
+	fi
+	mv "$s/session.next" "$s/session.txt"
 }
 
 # Overwrite a fixture session's findings.json with MANY findings, in the

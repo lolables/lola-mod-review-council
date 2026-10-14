@@ -2191,6 +2191,35 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-098: lola 0.7.1 registers `lola mod add <git URL>` under a name derived
+# from the URL (lola-mod-review-council), so the README's bare
+# `lola install review-council` failed with "Module 'review-council' not found"
+# for every first-time user. The registration must name the module, and the
+# install must pick an assistant and scope, which lola otherwise prompts for.
+echo "Test: README Via Lola block registers the module under the name it installs (RC-098)"
+rc098_block=$(sed -n '/^### Via Lola/,/^### Manual/p' "$README_MD")
+rc098_missing=0
+if ! grep -qE '^lola mod add https://github\.com/lolables/lola-mod-review-council\.git -n review-council$' <<<"$rc098_block"; then
+	echo "  missing: mod add does not register the module with -n review-council"
+	rc098_missing=$((rc098_missing + 1))
+fi
+if ! grep -qE '^lola install review-council -a claude-code -s user$' <<<"$rc098_block"; then
+	echo "  missing: install does not pass -a claude-code -s user"
+	rc098_missing=$((rc098_missing + 1))
+fi
+if grep -qE '^lola install review-council$' <<<"$rc098_block"; then
+	echo "  present: bare 'lola install review-council' fails after an unnamed mod add"
+	rc098_missing=$((rc098_missing + 1))
+fi
+if [[ "$rc098_missing" -eq 0 ]]; then
+	echo "  PASS: documented lola install sequence names the module it installs"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc098_missing install-command rule(s) wrong — a reader following"
+	echo "        the README gets \"Module 'review-council' not found\""
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

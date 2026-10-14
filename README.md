@@ -182,9 +182,15 @@ Install it per [the go-task instructions](https://taskfile.dev/installation/).
 ### Via Lola (recommended)
 
 ```bash
-lola mod add https://github.com/lolables/lola-mod-review-council.git
-lola install review-council
+lola mod add https://github.com/lolables/lola-mod-review-council.git -n review-council
+lola install review-council -a claude-code -s user
 ```
+
+`-n review-council` is required: without it lola registers the module under the
+name `lola-mod-review-council`, and `lola install review-council` fails with
+`Module 'review-council' not found`. `-a` names your AI tool (`lola install --help`
+lists the others) and `-s user` installs for every project; omit either and lola
+prompts for it.
 
 ### Manual
 

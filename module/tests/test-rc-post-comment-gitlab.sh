@@ -531,6 +531,99 @@ else
 fi
 rm -rf "$sess" "$st"
 
+# Tests 8a-8e: --send also needs the user's recorded Post intent (#56). The env
+# gate is set by the orchestrator; session.txt's intent is written only by
+# preparation from the user's own flags, so the user's request is what opens it.
+# tracking.md's copy is model-writable and must not open it (the fixture's
+# tracking.md says yes throughout the refusal cases).
+echo "Test 8a: intent yes with allow-post reaches the posting path"
+sess=$(mktemp -d)
+st=$(mktemp -d)
+make_gl_session "$sess"
+make_glab "$st"
+result=$(post "$sess" "$st")
+assert_json_field "$result" "status" "posted" "status is posted when the user asked to post"
+rm -rf "$sess" "$st"
+
+for intent in "no (auto-send: no)" "" maybe yesno "yes;" "Yes (auto-send: no)"; do
+	echo "Test 8b: intent '${intent:-<missing>}' refuses even with allow-post"
+	sess=$(mktemp -d)
+	st=$(mktemp -d)
+	make_gl_session "$sess"
+	set_post_intent "$sess" "$intent"
+	make_glab "$st"
+	result=$(post "$sess" "$st")
+	assert_json_field "$result" "status" "intent_required" "status is intent_required for intent '${intent:-<missing>}'"
+	assert_json_field "$result" "body_file" "$sess/comment-body.md" "the refusal still names the rendered body"
+	if [[ ! -s "$st/log" ]]; then
+		echo "  PASS: glab never invoked"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: glab invoked despite no recorded intent"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess" "$st"
+done
+
+echo "Test 8c: without --send the body renders whatever the intent"
+sess=$(mktemp -d)
+st=$(mktemp -d)
+make_gl_session "$sess"
+set_post_intent "$sess" "no (auto-send: no)"
+make_glab "$st"
+result=$(PATH="$st:$PATH" GLAB_STATE="$st" REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "dry-run renders with intent no"
+rm -rf "$sess" "$st"
+
+echo "Test 8d: tracking.md's yes does not stand in for session.txt's no"
+sess=$(mktemp -d)
+st=$(mktemp -d)
+make_gl_session "$sess"
+assert_track "$sess" "Post intent" "yes" "tracking.md records yes"
+set_post_intent "$sess" "no (auto-send: no)"
+make_glab "$st"
+result=$(post "$sess" "$st")
+assert_json_field "$result" "status" "intent_required" "session.txt's no refuses although tracking.md says yes"
+if [[ ! -s "$st/log" ]]; then
+	echo "  PASS: glab never invoked"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: glab invoked despite no recorded intent"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$st"
+
+echo "Test 8e: a missing session.txt refuses"
+sess=$(mktemp -d)
+st=$(mktemp -d)
+make_gl_session "$sess"
+rm -f "$sess/session.txt"
+make_glab "$st"
+result=$(post "$sess" "$st")
+assert_json_field "$result" "status" "intent_required" "status is intent_required without session.txt"
+if [[ ! -s "$st/log" ]]; then
+	echo "  PASS: glab never invoked"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: glab invoked despite no recorded intent"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess" "$st"
+
+# The intent gate sits ahead of the glab-absent degrade and the env gate, so a
+# run the user never asked to post is told so rather than invited to post by
+# hand (rendered) or to confirm (confirm_required). With glab masked and no
+# allow-post, moving the gate below either check changes the status.
+echo "Test 8f: no intent outranks a missing glab and a missing allow-post"
+sess=$(mktemp -d)
+make_gl_session "$sess"
+set_post_intent "$sess" "no (auto-send: no)"
+gbin=$(mktemp -d)
+noglab=$(path_without_command glab "$gbin")
+result=$(PATH="$noglab" bash "$SCRIPT" "$sess" --send 2>/dev/null)
+assert_json_field "$result" "status" "intent_required" "intent_required ahead of the degrade and the env gate"
+rm -rf "$sess" "$gbin"
+
 echo "Test 9: a host glab is not logged in to is refused before any other call"
 sess=$(mktemp -d)
 st=$(mktemp -d)

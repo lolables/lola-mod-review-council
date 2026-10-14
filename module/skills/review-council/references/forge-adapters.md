@@ -791,9 +791,20 @@ session directory and instruct the user to post it manually:
 
 ## Safety
 
-- Posting is gated by `REVIEW_COUNCIL_ALLOW_POST=1`, a hard machine backstop to
-  the orchestrator's Step 7 confirmation. The router never writes; the
-  render-only fallback never writes.
+- `--send` writes upstream only when both gates pass, hard machine backstops to
+  the orchestrator's Step 7 confirmation:
+  - user's intent: `session.txt` records `Post intent: yes (auto-send: …)`,
+    written only by `rc-prepare.sh` from user's `--post-comment` /
+    `--post-auto-send`. First token must be exactly `yes`; `no`, `yesno`,
+    missing file or line, or any other value refuses with
+    `status: intent_required`. tracking.md's copy ignored: orchestrator
+    appends to tracking.md, so it is model-writable.
+    Per-forge scripts ask `rc_post_intent_refusal` (`rc-render-comment.sh`).
+  - orchestrator's confirmation: `REVIEW_COUNCIL_ALLOW_POST=1`, else
+    `status: confirm_required`.
+
+  Env var alone never enough: orchestrator sets it. Rendering without `--send`
+  ignores both. The router never writes; the render-only fallback never writes.
 - Cloning fetches source only. Reviewers never execute cloned project code
   (SKILL.md HARD-GATE).
 - Superseding a prior review edits and hides earlier council comments on the

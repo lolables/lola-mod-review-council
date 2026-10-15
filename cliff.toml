@@ -57,10 +57,8 @@ conventional_commits = true
 # Only consider release tags. This is a regex, not a glob, and git-cliff leaves
 # it unanchored: without the anchors a tag such as `backup/review-v9` matches
 # and is treated as a release. Anchored, only `vMAJOR.MINOR.PATCH` tags count.
-# release-bump.sh's `git describe --match 'v[0-9]*'` glob is looser (it also
-# matches e.g. v0.6.0-rc1); a nearest tag that is not exactly v<VERSION> makes
-# the script suggest a patch bump with a warning. The changelog itself always
-# uses this anchored pattern.
+# release-bump.sh repeats this regex (RELEASE_TAG_RE) to find the last release;
+# keep the two identical. The changelog always uses this anchored pattern.
 tag_pattern = "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 # Exclude commits that do not match the conventional commits specification.
 # This is what keeps "Merge pull request #14 from ..." and the five commits

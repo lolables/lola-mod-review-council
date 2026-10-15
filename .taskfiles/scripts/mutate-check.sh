@@ -280,7 +280,7 @@ check_mutation "RC-15 clone target host identity" \
 # before the fix.
 check_mutation "RC-16 clone cache endpoint key" \
 	rc-clone-target.sh \
-	's#^[[:space:]]*dest="\$.cache_root./\$.host_slug.-#dest="${cache_root}/#' \
+	's#^[[:space:]]*dest="\$.cache_root./\$.host_slug.+#dest="${cache_root}/#' \
 	test-rc-clone-target.sh
 
 # The coherence gate fired and left no trace. The rejection buys one
@@ -1497,6 +1497,42 @@ check_mutation "RC-103 the correction round refuses with no review root" \
 	rc-apply-corrections.sh \
 	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
 	test-rc-apply-corrections.sh
+
+# findings.json is assembled in a temp file and renamed into place; a redirect
+# straight onto it truncates it before jq runs, so a jq that dies leaves a
+# partial file for the verdict script and renderers to trust (#82).
+check_mutation "RC-106 findings.json is written directly, not renamed into place" \
+	rc-verify-evidence.sh \
+	's|>"\$findings_tmp"$|>"\$findings_file"|;s|^mv -f "\$findings_tmp" "\$findings_file"$|:|' \
+	test-rc-verify-evidence.sh
+
+# Same defect in the validation gate: its write replaces the findings the
+# verdict script and renderers trust, so a jq that dies must leave them as they
+# were (#82).
+check_mutation "RC-107 validated findings are written directly, not renamed into place" \
+	rc-apply-validation.sh \
+	's|>"\$findings_tmp"$|>"\$findings"|;s|^mv -f "\$findings_tmp" "\$findings"$|:|' \
+	test-rc-apply-validation.sh
+
+# A GitHub cache entry was reused without looking at its origin, so an entry
+# filed by another repository (or hand-placed) had the pull request fetched from
+# the wrong repository and the run still reported ok (#64). Taking the exact-URL
+# arm as always true removes the whole origin comparison and reuses every entry.
+check_mutation "RC-108 cache entry reused without checking its origin" \
+	rc-clone-target.sh \
+	's#^\([[:space:]]*\)if \[\[ "\$entry_origin" == "\$clone_url" \]\] ||$#\1if true ||#' \
+	test-rc-clone-target.sh
+
+# GitHub owner and repo names may hold `-`, so the old `-` join filed a-b/c and
+# a/b-c under one entry and the second run fetched its pull request from the
+# first's repository (#64). Reverting the join to `-` renames every entry and
+# fails nearly every assertion on a hard-coded path, which proves nothing about
+# the collision. This keeps the `+` layout but folds `-` into `+` in the owner
+# and repo, so both names land on github.com+a+b+c, as they did under `-`.
+check_mutation "RC-109 cache key folds hyphens, so a-b/c and a/b-c share an entry" \
+	rc-clone-target.sh \
+	's#^dest="\${cache_root}/\${host_slug}+\${owner//\\//+}+\${repo}"$#dest="${cache_root}/${host_slug}+${owner//[\\/-]/+}+${repo//-/+}"#' \
+	test-rc-clone-target.sh
 
 total=$((caught + missed + broken + applied))
 echo ""

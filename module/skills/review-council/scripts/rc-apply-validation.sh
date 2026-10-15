@@ -102,7 +102,13 @@ fi
 # A missing or unparsable reply is no outcomes, not a failure: every finding
 # stays pending, and the retry is exactly the recovery it needs.
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+# The result is built beside findings.json and renamed over it: a redirect
+# straight onto it truncates it before jq runs, so a jq that dies leaves a
+# partial file that rc-decide-verdict.sh and the renderers read as the
+# validated findings (#82).
+findings_tmp=""
+trap 'rm -rf "$work" ${findings_tmp:+"$findings_tmp"}' EXIT
+findings_tmp=$(mktemp "$vdir/.findings.XXXXXX")
 note=""
 if [[ ! -f "$results_file" ]]; then
 	note=" No validation.json was found, so no outcomes were applied."
@@ -135,7 +141,8 @@ if ((verified_out + retracted != verified_in || stripped_out != stripped_in + re
 	exit 0
 fi
 
-jq '.doc' <<<"$result" >"$findings"
+jq '.doc' <<<"$result" >"$findings_tmp"
+mv -f "$findings_tmp" "$findings"
 
 payload=$(jq '.report | {confirmed: (.confirmed | length), corrected: (.corrected | length),
 	retracted: (.retracted | length), rejected, pending, unvalidated}' <<<"$result")

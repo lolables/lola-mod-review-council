@@ -237,7 +237,13 @@ stripped=$(echo "$stripped" | jq "$addprov")
 # the phase died with "Argument list too long" before findings.json was
 # written. The count arguments stay on the command line — they cannot grow.
 argdir=$(mktemp -d)
-trap 'rm -rf "$argdir"' EXIT
+# findings.json is built beside its final path and renamed into place (as
+# rc-decide-verdict.sh does for verdict.txt): a redirect straight onto it
+# truncates it before jq runs, so a jq that dies leaves a partial or empty file
+# for rc-decide-verdict.sh and the renderers to read as this run's result.
+findings_tmp=""
+trap 'rm -rf "$argdir" ${findings_tmp:+"$findings_tmp"}' EXIT
+findings_tmp=$(mktemp "$vdir/.findings.XXXXXX")
 printf '%s' "$verified" >"$argdir/verified.json"
 printf '%s' "$correctable" >"$argdir/correctable.json"
 printf '%s' "$stripped" >"$argdir/stripped.json"
@@ -259,7 +265,8 @@ jq -n \
 	  stripped:($stripped[0] | ids($nv + $nc)),
 	  total_findings:$total, duplicates_consolidated:$dedup, verdicts:$vmap[0],
 	  missing_verdicts:$missing}' \
-	>"$findings_file"
+	>"$findings_tmp"
+mv -f "$findings_tmp" "$findings_file"
 # Ids restart at F1 on every run, so a validator or correction-round reply
 # saved against the previous findings.json would apply to this run's unrelated
 # findings.

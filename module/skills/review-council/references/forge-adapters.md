@@ -733,34 +733,43 @@ evidence verification strips every finding as `FILE_NOT_FOUND`: re-run
 preparation rather than resuming.
 
 **Cache key.** The entry is named for the endpoint, not for the repository
-alone: `<host>-<owner>-<repo>`, so `github.com-acme-widgets` and
-`ghe.corp.example-acme-widgets` are separate checkouts. Without the host, a
+alone: `<host>+<owner>+<repo>`, so `github.com+acme+widgets` and
+`ghe.corp.example+acme+widgets` are separate checkouts. Without the host, a
 clone of `acme/widgets` taken from one host would be served back for an
 `acme/widgets` named on another; the head-ref fetch above
 then runs against the wrong origin and the review grounds every finding in a
 foreign repository while still reporting `ok`. That is the `in_place` host
 test's failure mode one layer down.
 
-GitLab entries are joined with `+` instead: `<host>+<segment>+…+<repo>`, so
-`gitlab.com+g+sub+p` for project `g/sub/p`, holding `<sha>.tar.gz`. A subgroup's `/` must not become a
-nested directory, and folding it into `-` would file group `g/sub` project `p`
-and group `g-sub` project `p` under one entry. Neither a gated segment nor a
-host slug can contain `+`, so the name splits back into exactly one host and
-path. GitHub keeps the `-` key so existing cache entries remain valid.
+GitLab entries follow the same shape with every path segment:
+`<host>+<segment>+…+<repo>`, so `gitlab.com+g+sub+p` for project `g/sub/p`,
+holding `<sha>.tar.gz`. A subgroup's `/` must not become a nested directory,
+and folding it into `-` would file group `g/sub` project `p` and group `g-sub`
+project `p` under one entry. GitHub owner and repository names may hold `-`
+too, so `-` as the joiner would file `a-b/c` and `a/b-c` together. Neither a
+gated segment nor a host slug can contain `+`, so the name splits back into
+exactly one host and path.
+
+A GitHub clone found under its key is reused only if its `origin` names the
+repository asked for, compared by host and project path (so an ssh or
+credentialed remote still matches), or equals the clone URL exactly (a ported
+host, which the path comparison cannot name). Otherwise the entry is removed and
+cloned afresh. The URLs are never printed: they may carry a credential.
 
 The host is not character-gated the way `<owner>` and `<repo>` are, so it is
 lowercased and reduced to their alphabet (`[a-z0-9._-]`, everything else
 becomes `_`) before it becomes a path component. `parse_remote` already refuses
-a host holding `/` or `:`, and the entry always ends in `-<owner>-<repo>` with
+a host holding `/` or `:`, and the entry always ends in `+<owner>+<repo>` with
 both non-empty, so the name cannot escape the cache root or resolve to `.` or
 `..`. A URL `parse_remote` will not name — one carrying a port, for instance —
 leaves the host empty, which would file every unnamable endpoint under one key;
-those are keyed `url-<cksum of the clone URL>-<owner>-<repo>` instead, which
+those are keyed `url-<cksum of the clone URL>+<owner>+<repo>` instead, which
 keeps two ported hosts apart.
 
-Entries written under an earlier key shape are orphaned rather than migrated.
-Nothing touches them again, so they sort oldest in the `ls -dt` listing and the
-LRU prune evicts them first.
+Entries written under an earlier key shape (GitHub's `-` join) are orphaned
+rather than migrated. Nothing touches them again, so their mtime stops
+advancing and they sort oldest in the `ls -dt` listing; the LRU prune evicts
+them first once newer entries displace them.
 
 ## Generic fallback
 

@@ -1,0 +1,27 @@
+module/tests/test-mutate-check.sh
+  s_1bd89af5b82261::t_d64e804f7a6eb4 112-126
+docs/dev/testing.md
+  s_1bd89af5b82261::t_cf6ef981b91d5f 13,29,34-37,65-67,72-83
+.taskfiles/test.yml
+  s_1bd89af5b82261::t_9860f25b2174ca 103-113
+.taskfiles/scripts/mutate-check.sh
+  s_1bd89af5b82261::t_1a16d1033b59df 34,113-122,1501,1504-1508
+.github/workflows/test.yml
+  s_1bd89af5b82261::t_2a2baf100d6118 62-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eba2bdebf8bec90afc7bbfa8024bec05381d3bc1",
+  "prompts": {},
+  "sessions": {
+    "s_1bd89af5b82261": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17d9b8c2-4975-42f5-8362-5a8c64bc0a0c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

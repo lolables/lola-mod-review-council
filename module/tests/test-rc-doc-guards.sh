@@ -2250,6 +2250,45 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: shared severity table and testing persona rate Tester examples alike (RC-104)"
+# severity.md rated "shallow assertions" HIGH while divisor-testing-code.md rates
+# them MEDIUM; the validator judges against the shared table and could keep a
+# HIGH the persona calls an advisory. The two tables phrase their examples
+# differently, so each pair below names the Tester-column phrase and the
+# persona row phrase that describe the same condition; the levels themselves
+# are read from the files, so either table moving fails the guard. Tester
+# examples with no code-persona row (fixture spec, isolation, naming) are not
+# paired.
+rc104_levels() { # <severity.md> <shared phrase> <persona phrase>: prints "shared persona"
+	local shared persona
+	shared=$(awk -F'|' -v p="$2" 'index($4, p) { gsub(/ /, "", $2); print $2 }' "$1")
+	persona=$(awk -F'|' -v p="$3" 'index($2, p) { gsub(/ /, "", $(NF - 1)); print $(NF - 1) }' "$TESTING_MD")
+	echo "${shared:-absent} ${persona:-absent}"
+}
+rc104_check() { # <severity.md>: prints one line per disagreeing or unreadable pair
+	local pair levels
+	for pair in \
+		'Coverage strategy missing|Constitution-mandated coverage strategy absent' \
+		'test masks real failure|Test conceals a wrong result' \
+		'shallow assertions|Shallow assertions on critical behavior' \
+		'missing regression test|Missing regression test for bug fix'; do
+		levels=$(rc104_levels "$1" "${pair%%|*}" "${pair#*|}")
+		case "$levels" in
+		'CRITICAL CRITICAL' | 'HIGH HIGH' | 'MEDIUM MEDIUM' | 'LOW LOW') ;;
+		*) echo "  '${pair%%|*}' (shared persona): $levels" ;;
+		esac
+	done
+}
+rc104_drift=$(rc104_check "$SEVERITY_MD")
+if [[ -z "$rc104_drift" ]]; then
+	echo "  PASS: every paired Tester example has one level in both tables"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: severity.md and divisor-testing-code.md disagree:"
+	echo "$rc104_drift"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

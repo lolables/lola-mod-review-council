@@ -82,9 +82,9 @@ version is 0:
 | Anything else releasable (`feat:`, `fix:`, …) | patch (0.5.0 → 0.5.1) |
 
 Nothing suggests 1.0.0; type it when you mean it. The task suggests a patch bump
-and says why when there is no release tag yet, or when the nearest `v[0-9]*`
-tag is not exactly `v<VERSION>` (`VERSION` drifted, or a tag such as
-`v0.6.0-rc1` is nearest). If no commit since the tag is releasable, it refuses
+and says why when there is no release tag yet, or when the highest release tag
+(`vMAJOR.MINOR.PATCH` only, as in `cliff.toml`; pre-release tags such as
+`v0.6.0-rc1` are ignored) is not exactly `v<VERSION>` (`VERSION` drifted). If no commit since the tag is releasable, it refuses
 instead of suggesting.
 
 ## What appears in the changelog

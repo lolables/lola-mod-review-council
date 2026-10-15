@@ -34,7 +34,7 @@ testcases:
           rm -rf "${TEST_DIR}"
         assertions:
           - result.code ShouldEqual 0
-          - result.systemout ShouldContainSubstring "no v* release tag found"
+          - result.systemout ShouldContainSubstring "no vMAJOR.MINOR.PATCH release tag found"
           - result.systemout ShouldContainSubstring "New version [0.0.1]"
           - result.systemout ShouldContainSubstring "VERSION=0.1.0"
           - result.systemout ShouldContainSubstring "TAGS=v0.1.0"
@@ -245,6 +245,30 @@ testcases:
           - result.systemout ShouldContainSubstring "does not match VERSION"
           - result.systemout ShouldContainSubstring "New version [0.5.3]"
           - result.systemout ShouldContainSubstring "VERSION=0.5.3"
+
+  - name: a pre-release tag nearer than the last release does not hide a breaking change
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(api)!: drop the legacy socket
+
+          BREAKING CHANGE: the socket transport is gone."
+          # Nearer than v0.5.0 and matched by a v[0-9]* glob, but cliff.toml's
+          # anchored tag_pattern does not count it as a release.
+          git -C "${REPO_DIR}" tag -a v0.6.0-rc1 -m v0.6.0-rc1
+          run_bump ""
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldNotContainSubstring "does not match VERSION"
+          - result.systemout ShouldContainSubstring "New version [0.6.0]"
+          - result.systemout ShouldContainSubstring "VERSION=0.6.0"
 
   - name: backup and other non-release tags do not derail the suggestion
     steps:

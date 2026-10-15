@@ -80,15 +80,18 @@ fi
 current="$(cat "${ROOT_DIR}/VERSION")"
 [[ "${current}" =~ ${SEMVER_RE} ]] || die "VERSION (${current}) is not a semantic version"
 
-# --abbrev=0 yields the nearest reachable tag rather than a describe string.
-# The describe glob v[0-9]* is looser than cliff.toml's anchored tag_pattern: it
-# also matches e.g. v0.6.0-rc1. Any nearest tag that is not exactly v<VERSION>
-# makes this script fall back to a patch suggestion with a warning; the
-# changelog itself always uses cliff.toml's anchored pattern.
-last_tag="$(git -C "${ROOT_DIR}" describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || true)"
+# The last release is the highest vMAJOR.MINOR.PATCH tag reachable from HEAD.
+# RELEASE_TAG_RE must stay identical to tag_pattern in cliff.toml, the source
+# of truth: a looser match (git describe's v[0-9]* glob also takes v0.6.0-rc1)
+# would make this script baseline on a tag the changelog ignores, and the
+# patch-bump fallback below could then hide a breaking change. Highest rather
+# than nearest ancestor: the next release must outrank every merged one, and
+# on linear release history the two are the same tag.
+RELEASE_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+$'
+last_tag="$(git -C "${ROOT_DIR}" tag --merged HEAD --list 'v*' --sort=-v:refname 2>/dev/null | grep -E -m1 "${RELEASE_TAG_RE}" || true)"
 
 if [[ -z "${last_tag}" ]]; then
-	printf 'note: no v* release tag found; suggesting a patch bump instead of reading the commit history\n' >&2
+	printf 'note: no vMAJOR.MINOR.PATCH release tag found; suggesting a patch bump instead of reading the commit history\n' >&2
 	suggested="$(patch_bump "${current}")"
 elif [[ "${last_tag#v}" != "${current}" ]]; then
 	printf 'warning: last release tag %s does not match VERSION (%s); suggesting a patch bump instead of reading the commit history\n' \

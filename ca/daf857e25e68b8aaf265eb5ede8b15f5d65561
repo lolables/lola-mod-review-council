@@ -1,0 +1,19 @@
+.github/workflows/test.yml
+  s_1bd89af5b82261::t_6f30e434fd95bd 179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cadaf857e25e68b8aaf265eb5ede8b15f5d65561",
+  "prompts": {},
+  "sessions": {
+    "s_1bd89af5b82261": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17d9b8c2-4975-42f5-8362-5a8c64bc0a0c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

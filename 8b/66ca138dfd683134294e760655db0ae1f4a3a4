@@ -1,8 +1,13 @@
 .github/workflows/test.yml
   s_1bd89af5b82261::t_a2dc74a3ac9ff1 56-68,179
+  s_1bd89af5b82261::t_43f0e8feb86cbe 56-68
+  s_1bd89af5b82261::t_6f30e434fd95bd 179
 docs/dev/testing.md
   s_1bd89af5b82261::t_bdc787ee094054 69-74
   s_1bd89af5b82261::t_a2dc74a3ac9ff1 28,33-35,63-68
+  s_1bd89af5b82261::t_f9ca387b41c049 63-68
+  s_1bd89af5b82261::t_0fec0043af5757 28
+  s_1bd89af5b82261::t_5b8dba2002175e 33-35
 ---
 {
   "schema_version": "authorship/3.0.0",

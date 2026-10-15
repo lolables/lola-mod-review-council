@@ -160,7 +160,7 @@ jq -s '
 # Tested before the cd: `cd ""` succeeds and stays put, which is the cwd
 # fallback this replaced.
 [[ -n "$review_root" ]] || {
-	json_output "nothing_to_do" "No review root: pass it as argument 2 or REVIEW_ROOT, or run rc-prepare.sh, which records it in session.txt."
+	json_output "nothing_to_do" "No review root: pass it as argument 2 or REVIEW_ROOT, or record it in session.txt (the Preparation phase writes it)."
 	exit 0
 }
 root_abs=$(cd "$review_root" 2>/dev/null && pwd -P) || {

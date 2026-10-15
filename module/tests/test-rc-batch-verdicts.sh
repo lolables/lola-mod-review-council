@@ -78,7 +78,7 @@ src=$(mktemp -d)
 mkdir -p "$src/cmd" "$src/internal/api"
 echo 'os.Exit(0)' >"$src/cmd/main.go"
 echo 'package api' >"$src/internal/api/handler.go"
-result=$(cd "$src" && bash "$VERIFY" "$s")
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
 assert_json_field "$result" "status" "ok" "verify batched status ok"
 total=$(jq -r '.total_findings' "$s/verdicts/findings.json")
 if [[ "$total" -eq 1 ]]; then
@@ -141,7 +141,7 @@ src=$(mktemp -d)
 mkdir -p "$src/auth"
 echo 'if exp < now' >"$src/auth/token.go"
 echo 'package auth' >"$src/auth/keys.go"
-result=$(cd "$src" && bash "$VERIFY" "$s")
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
 assert_json_field "$result" "status" "ok" "verify deep+batched status ok"
 agg=$(jq -r '.verdicts."divisor-adversary-code"' "$s/verdicts/findings.json")
 if [[ "$agg" == "REQUEST CHANGES" ]]; then

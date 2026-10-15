@@ -29,11 +29,16 @@ rc_trap_errors
 # and re-run rather than costing a finding its one correction.
 
 session_dir="${1:-}"
-review_root="${2:-${REVIEW_ROOT:-.}}"
 [[ -n "$session_dir" && -d "$session_dir" ]] || {
 	json_output "nothing_to_do" "Session directory does not exist."
 	exit 0
 }
+# Argument 2, then REVIEW_ROOT, then the root rc-prepare.sh recorded in
+# session.txt. There is no default: the working directory is whatever tree the
+# caller stands in, and evidence checked against the wrong tree is verified or
+# stripped wrongly while the run still reports ok (#54). A recorded "." is the
+# in-place review, resolved from the caller as before.
+review_root="${2:-${REVIEW_ROOT:-$(rc_parse_kv "$session_dir/session.txt" "Review root")}}"
 vdir="$session_dir/verdicts"
 findings="$vdir/findings.json"
 results_file="$vdir/_meta/corrections.json"
@@ -83,6 +88,12 @@ if [[ -n "$problem" ]]; then
 	exit 0
 fi
 
+# Tested before the cd: `cd ""` succeeds and stays put, which is the cwd
+# fallback this replaced.
+[[ -n "$review_root" ]] || {
+	json_output "nothing_to_do" "No review root: pass it as argument 2 or REVIEW_ROOT, or run rc-prepare.sh, which records it in session.txt."
+	exit 0
+}
 root_abs=$(cd "$review_root" 2>/dev/null && pwd -P) || {
 	json_output "nothing_to_do" "Review root does not exist: $review_root"
 	exit 0

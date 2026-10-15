@@ -224,6 +224,30 @@ assert_jq "$d/session/verdicts/findings.json" '[.verified[].provenance.consolida
 assert_jq "$d/session/verdicts/findings.json" '.duplicates_consolidated' "0" "nothing is counted as merged"
 rm -rf "$d"
 
+# The root used to default to the working directory, so a correction round run
+# without it re-checked quotes against whatever tree the shell stood in (#54).
+echo "Test 10: with no root passed, session.txt's Review root is used (#54)"
+d=$(mktemp -d)
+mk_session "$d"
+printf 'Owner:        none\nReview root:  %s\n' "$d/root" >"$d/session/session.txt"
+corrections "$d" '{"results":[{"id":"F2","outcome":"CORRECTED","evidence":"y := 2"}]}'
+result=$(cd "$d/session" && env -u REVIEW_ROOT bash "$SCRIPT" "$d/session")
+assert_json_field "$result" "status" "ok" "status ok"
+assert_jq "$d/session/verdicts/findings.json" '[.verified[] | select(.id == "F2")] | length' "1" \
+	"F2's correction is checked against the recorded root"
+rm -rf "$d"
+
+echo "Test 11: with no root from any source, the round refuses (#54)"
+d=$(mktemp -d)
+mk_session "$d"
+corrections "$d" '{"results":[{"id":"F2","outcome":"CORRECTED","evidence":"y := 2"}]}'
+before=$(findings "$d")
+result=$(cd "$d/root" && env -u REVIEW_ROOT bash "$SCRIPT" "$d/session")
+assert_json_field "$result" "status" "nothing_to_do" "nothing_to_do, not the cwd"
+assert_jq_str "$result" '.message | startswith("No review root")' "true" "refused for the missing root"
+unchanged "$d" "$before" "findings.json unchanged"
+rm -rf "$d"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

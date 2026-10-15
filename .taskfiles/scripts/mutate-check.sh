@@ -1460,6 +1460,33 @@ check_mutation "RC-091 --send requires the user's recorded post intent" \
 	's/^\([[:space:]]*\)\[\[ "\$intent" == "yes" \]\] && return 0$/\1return 0/' \
 	test-rc-post-comment-github.sh
 
+# --- #54: the evidence scripts checked against the caller's directory --------
+#
+# The review root defaulted to `.`, so an orchestrator that forgot to pass it
+# had quotes checked against whatever tree it stood in, and the run reported ok.
+# The recorded root replaces that default; with no root from any source the
+# scripts refuse, and the refusal precedes the cd because `cd ""` succeeds and
+# stays put.
+check_mutation "RC-102 verification falls back to session.txt's Review root" \
+	rc-verify-evidence.sh \
+	's|\$(rc_parse_kv "\$session_dir/session.txt" "Review root")|.|' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-102 the correction round falls back to session.txt's Review root" \
+	rc-apply-corrections.sh \
+	's|\$(rc_parse_kv "\$session_dir/session.txt" "Review root")|.|' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-103 verification refuses with no review root" \
+	rc-verify-evidence.sh \
+	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-103 the correction round refuses with no review root" \
+	rc-apply-corrections.sh \
+	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
+	test-rc-apply-corrections.sh
+
 total=$((caught + missed + broken))
 echo ""
 echo "========================================"

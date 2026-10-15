@@ -145,8 +145,9 @@ to the format gate and the correction round.
 
 **When `rc-verify-evidence.sh` returns `status: "nothing_to_do"`**, it never
 reached the verification loop: the session directory is missing, `verdicts/`
-is missing, no reviewer (`divisor-*.json`) or script (`rc-check-symlinks.json`) verdict file was found, or the review root
-does not resolve. All four sites return before `findings.json` is written, so
+is missing, no reviewer (`divisor-*.json`) or script (`rc-check-symlinks.json`) verdict file was found, no review root was
+passed or recorded in `session.txt`, or the review root does not resolve. All
+five sites return before `findings.json` is written, so
 there is no findings file — and Steps 1-4 and Step 6 below do not run, because
 there is nothing to correct, calibrate, consolidate, validate, or upgrade.
 
@@ -328,8 +329,9 @@ verified evidence. Record each agent's reply, keyed on the finding `id`, in
 `evidence` is the agent's corrected quote, verbatim; `line` is optional and
 replaces the cited line. Omit a finding the agent did not answer — the script
 strips it as `NO_CORRECTION`. Then run
-`bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}`, prefixed with
-`REVIEW_ROOT="<review_root>"` exactly as the evidence check was. It checks each
+`bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}` from the same
+directory as the evidence check. Like that check, it reads the review root from
+`session.txt` and refuses (`nothing_to_do`) when none is recorded. It checks each
 correction with the matcher `rc-verify-evidence.sh` used, applies the rules
 above, and deduplicates promoted findings against the verified set.
 
@@ -341,7 +343,9 @@ above, and deduplicates promoted findings against the verified set.
   finding that is not correctable. Nothing was applied: fix the file as the
   message says and re-run. To strip every correctable finding as unanswered,
   write `{"results": []}`.
-- `nothing_to_do` — no correctable findings remain (a re-run after `ok`).
+- `nothing_to_do` — no correctable findings remain (a re-run after `ok`), or
+  no usable review root: none passed or recorded, or the one given does not
+  resolve. Relay its message; nothing was applied.
 
 **Efficiency**: batch all correctable findings for same agent into single correction prompt. Do not dispatch separate rounds per finding.
 

@@ -313,8 +313,8 @@ issues, prior reviews (if PR), initializes tracking file.
 rc-prepare.sh materializes the PR or MR head (via `rc-clone-target.sh`) when
 the current working tree is not already that repo at that branch, and returns
 `review_root` (the checkout path, or `.`). Reviewers and evidence verification
-read files under `review_root` (see `delegate.md` "Review root" and pass
-`REVIEW_ROOT` to `rc-verify-evidence.sh` in Step 4). When materialization is
+read files under `review_root` (see `delegate.md` "Review root"; the Step 4
+scripts read it from `session.txt` themselves). When materialization is
 skipped (a forge other than GitHub or GitLab, no credentials for a private
 repo, or clone failure),
 `review_root` stays `.` and review proceeds from the diff — note this to the
@@ -729,14 +729,16 @@ Proceed to Step 4.
 
 ### Step 4: VERIFICATION (iteration N)
 
-**First, run the evidence check.** Read `Review root:` from
-`${session_dir}/tracking.md`. If it is `.`, run:
+**First, run the evidence check** from the directory the review started in:
 
 `bash ${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`
 
-If it is a path (materialized checkout), pass it so on-disk checks resolve:
-
-`REVIEW_ROOT="<review_root>" bash ${SCRIPTS_DIR}/rc-verify-evidence.sh ${session_dir}`
+Do not pass the review root. The script reads `Review root:` from
+`${session_dir}/session.txt`, which `rc-prepare.sh` wrote; a root passed as
+argument 2 or `REVIEW_ROOT` overrides it, so copying one from `tracking.md`
+only adds a chance to get it wrong. A recorded `.` means the working tree you
+are in. With no root recorded the script refuses (`nothing_to_do`) instead of
+checking evidence against the current directory.
 
 Script consumes `verdicts/{agent-name}.json` (written in Step 3 by
 `rc-extract-verdict.sh`), checks file existence, review-root containment,
@@ -810,8 +812,8 @@ these in this order:
     `findings.json`.** Record each reply in
     `${session_dir}/verdicts/_meta/corrections.json` per verify.md Step 1,
     then run `bash ${SCRIPTS_DIR}/rc-apply-corrections.sh ${session_dir}`
-    (prefixed with `REVIEW_ROOT="<review_root>"` exactly as the evidence check
-    above was). It re-checks every corrected quote with the same matcher:
+    (no review root: like the evidence check above, it reads `session.txt`).
+    It re-checks every corrected quote with the same matcher:
     a match is **verified** under its own id; a quote that still does not
     match, or no reply at all, is **stripped**; a withdrawal is removed.
     There is no second attempt. Branch on `status`: `ok` or `nothing_to_do`

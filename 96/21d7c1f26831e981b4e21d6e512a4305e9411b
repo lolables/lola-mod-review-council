@@ -1,0 +1,25 @@
+cliff.toml
+  s_d93b8f7de864b5::t_09911c2dd3ae0d 60-61
+.taskfiles/tests/release.venom.yml
+  s_d93b8f7de864b5::t_f97ea8376a9ce1 249-272
+docs/dev/releasing.md
+  s_d93b8f7de864b5::t_f97ea8376a9ce1 85-87
+.taskfiles/scripts/release-bump.sh
+  s_d93b8f7de864b5::t_09911c2dd3ae0d 83-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9621d7c1f26831e981b4e21d6e512a4305e9411b",
+  "prompts": {},
+  "sessions": {
+    "s_d93b8f7de864b5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e948f17-9933-42e8-b101-389f66344a00",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

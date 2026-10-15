@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_1bd89af5b82261::t_4dc67b69b2709c 163
+module/skills/review-council/scripts/rc-apply-corrections.sh
+  s_1bd89af5b82261::t_4dc67b69b2709c 94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1521b3deda6cf8b14b6f525dabcb4f539513d395",
+  "prompts": {},
+  "sessions": {
+    "s_1bd89af5b82261": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17d9b8c2-4975-42f5-8362-5a8c64bc0a0c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

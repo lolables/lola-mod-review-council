@@ -319,6 +319,42 @@ for args in "--dispute" "--dispute f1" "--dispute F1,,F2" "--dispute F1;ls" "--d
 done
 rm -rf "$s"
 
+echo "Test 22: a failing final write leaves findings.json untouched and no temp file (#82)"
+s=$(mk_session)
+bin=$(mktemp -d)
+cp "$s/verdicts/findings.json" "$s/before.json"
+validation "$s" '{"results":[{"id":"F1","file":"a.go","result":"CONFIRMED","reason":"r"}]}'
+# Only the call that writes the document runs the bare '.doc' program. It
+# prints half a document and dies, as jq does when the disk fills or it is
+# killed.
+real_jq=$(command -v jq)
+cat >"$bin/jq" <<MOCKJQ
+#!/usr/bin/env bash
+if [[ "\$1" == ".doc" ]]; then
+	printf '{"verified":['
+	exit 5
+fi
+exec "$real_jq" "\$@"
+MOCKJQ
+chmod +x "$bin/jq"
+if PATH="$bin:$PATH" bash "$SCRIPT" "$s" >/dev/null 2>&1; then
+	echo "  FAIL: a failing final jq did not fail the run"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: a failing final jq fails the run"
+	PASS=$((PASS + 1))
+fi
+if cmp -s "$s/before.json" "$s/verdicts/findings.json"; then
+	echo "  PASS: findings.json is byte-for-byte what it was"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: findings.json was altered by a failed write"
+	FAIL=$((FAIL + 1))
+fi
+leftover=$(find "$s/verdicts" -maxdepth 1 -name '.findings.*' | wc -l | tr -d ' ')
+assert_equals "$leftover" "0" "no findings temp file left in verdicts/"
+rm -rf "$s" "$bin"
+
 echo "Test S1: a script finding cannot be retracted or corrected (RC-076)"
 # rc-verify-evidence.sh marks a script finding final (SCRIPT); any outcome for
 # it is rejected, and it is never left pending or marked UNVALIDATED.

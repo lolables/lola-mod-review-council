@@ -1084,6 +1084,40 @@ else
 fi
 rm -rf "$s" "$src"
 
+echo "Test 42a: a failing final write leaves no findings.json and no temp file (#82)"
+s=$(new_session)
+src=$(mktemp -d)
+bin=$(mktemp -d)
+echo 'if exp < now' >"$src/token.go"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
+ {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"this run","recommendation":"r"}]'
+printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+# Only the call that assembles findings.json takes --slurpfile vmap. It prints
+# half a document and dies, as jq does when the disk fills or it is killed.
+real_jq=$(command -v jq)
+cat >"$bin/jq" <<MOCKJQ
+#!/usr/bin/env bash
+for arg in "\$@"; do
+	if [[ "\$arg" == vmap ]]; then
+		printf '{"verified":['
+		exit 5
+	fi
+done
+exec "$real_jq" "\$@"
+MOCKJQ
+chmod +x "$bin/jq"
+if (cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s" . >/dev/null 2>&1); then
+	echo "  FAIL: a failing final jq did not fail the run"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: a failing final jq fails the run"
+	PASS=$((PASS + 1))
+fi
+assert_moved_aside "$s" "failed final write"
+leftover=$(find "$s/verdicts" -maxdepth 1 -name '.findings.*' | wc -l | tr -d ' ')
+assert_equals "$leftover" "0" "no findings temp file left in verdicts/"
+rm -rf "$s" "$src" "$bin"
+
 # -e is false for a dangling link, so only the -L arm moves it; left in place,
 # the findings.json write would follow it and create the target.
 echo "Test 43: a dangling symlink at findings.json is moved aside, not written through (#55)"

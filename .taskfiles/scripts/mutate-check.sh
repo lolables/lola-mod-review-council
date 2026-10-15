@@ -1498,6 +1498,22 @@ check_mutation "RC-103 the correction round refuses with no review root" \
 	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
 	test-rc-apply-corrections.sh
 
+# findings.json is assembled in a temp file and renamed into place; a redirect
+# straight onto it truncates it before jq runs, so a jq that dies leaves a
+# partial file for the verdict script and renderers to trust (#82).
+check_mutation "RC-106 findings.json is written directly, not renamed into place" \
+	rc-verify-evidence.sh \
+	's|>"\$findings_tmp"$|>"\$findings_file"|;s|^mv -f "\$findings_tmp" "\$findings_file"$|:|' \
+	test-rc-verify-evidence.sh
+
+# Same defect in the validation gate: its write replaces the findings the
+# verdict script and renderers trust, so a jq that dies must leave them as they
+# were (#82).
+check_mutation "RC-107 validated findings are written directly, not renamed into place" \
+	rc-apply-validation.sh \
+	's|>"\$findings_tmp"$|>"\$findings"|;s|^mv -f "\$findings_tmp" "\$findings"$|:|' \
+	test-rc-apply-validation.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

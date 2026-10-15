@@ -581,10 +581,14 @@ Present each surviving verified finding under its `id` (from `findings.json`), w
 >
 > `reason` is required for every outcome.
 >
-> Reply with one JSON object and nothing else, one entry per finding, copying each finding's `id` and `file` exactly as given:
+> Reply with one JSON object and nothing else, one entry per finding, copying each finding's `id` and `file` exactly as given. The example below shows one entry of each outcome in its exact shape (changed fields go inside `corrections`, never beside `result`; `evidence` is for RETRACTED only). Your reply has one entry per finding, each with whichever outcome applies:
 >
 > ```json
-> {"results":[{"id":"F1","file":"auth/token.go","result":"CONFIRMED","reason":"..."}]}
+> {"results":[
+> {"id":"F1","file":"auth/token.go","result":"CONFIRMED","reason":"line 42 compares the token with =="},
+> {"id":"F2","file":"auth/session.go","result":"CORRECTED","reason":"the cookie is HttpOnly but not Secure","corrections":{"severity":"MEDIUM"}},
+> {"id":"F3","file":"api/handler.go","result":"RETRACTED","reason":"the input is validated before use","evidence":"api/handler.go:17 calls validateInput(req) before the query"}
+> ]}
 > ```
 
 ### Processing Validator Output

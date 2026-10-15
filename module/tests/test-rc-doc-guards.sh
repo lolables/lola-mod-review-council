@@ -2289,6 +2289,74 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: validator reply example in verify.md shows each outcome in a shape the gate accepts (RC-105)"
+# RC-105: the validator prompt's reply example must show each outcome in the
+# shape the gate accepts. A CONFIRMED-only example once led a validator to put
+# a corrected severity beside `result` instead of under `corrections`, which
+# the gate rejects as BAD_CORRECTION. The example is extracted from verify.md,
+# not copied here. It is checked two ways: structurally with jq against the
+# constraints validation-schema.json states (no JSON-Schema validator is
+# available, so this is a conformance check, not full schema validation), and
+# by running it through jq/apply-validation.jq against matching findings, which
+# must accept all three and reject none.
+VALIDATION_SCHEMA="$SKILLS/references/validation-schema.json"
+APPLY_VALIDATION_JQ="$SKILLS/scripts/jq/apply-validation.jq"
+rc105_example() { # <verify.md>: prints the first json fence after the reply instruction
+	awk '/^> Reply with one JSON object/ { on = 1 }
+		on && /^> ```json/ { grab = 1; next }
+		grab && /^> ```/ { exit }
+		grab { sub(/^> ?/, ""); print }' "$1"
+}
+rc105_check() { # <verify.md>: prints one line per problem
+	local example
+	example=$(rc105_example "$1")
+	if ! jq -e . >/dev/null 2>&1 <<<"$example"; then
+		echo "  no parsable json example after the reply instruction"
+		return
+	fi
+	jq -r --slurpfile schema "$VALIDATION_SCHEMA" '
+		$schema[0].properties.results.items as $item
+		| $item.properties.corrections.properties.severity.enum as $sev
+		| def nonblank: type == "string" and test("\\S");
+		(if (keys - ($schema[0].properties | keys)) != [] then "unexpected top-level key" else empty end),
+		(if (.results | type) != "array" then "results is not an array" else empty end),
+		(.results // [])[] as $r
+		| ($r.id // "?") as $id
+		| ((($item.required - ($r | keys))[] | "\($id): missing required key \(.)"),
+		((($r | keys) - ($item.properties | keys))[] | "\($id): unexpected key \(.)"),
+		(if (($r.id // "") | test($item.properties.id.pattern)) | not then "\($id): id fails pattern" else empty end),
+		(if ($item.properties.result.enum | index($r.result)) == null then "\($id): result not in enum" else empty end),
+		(if ($r.reason | nonblank) | not then "\($id): blank reason" else empty end),
+		(if $r.result == "CORRECTED" and (($r.corrections // {}) | length) == 0 then "\($id): CORRECTED without corrections" else empty end),
+		(if $r.result != "CORRECTED" and ($r | has("corrections")) then "\($id): corrections on \($r.result)" else empty end),
+		(if $r.result == "RETRACTED" and (($r.evidence // null) | nonblank | not) then "\($id): RETRACTED without evidence" else empty end),
+		(if $r.result != "RETRACTED" and ($r | has("evidence")) then "\($id): evidence on \($r.result)" else empty end),
+		((($r.corrections // {}) | keys - ($item.properties.corrections.properties | keys))[] | "\($id): unexpected correction field \(.)"),
+		(if ($r.corrections.severity // "LOW") as $s | ($sev | index($s)) == null then "\($id): correction severity not in enum" else empty end))
+	' <<<"$example"
+	local outcomes
+	outcomes=$(jq -r '[.results[].result] | unique | join(",")' <<<"$example")
+	[[ "$outcomes" == "CONFIRMED,CORRECTED,RETRACTED" ]] || echo "  outcomes shown: ${outcomes:-none}, want all three"
+	# The gate itself: findings matching the example's ids and files.
+	jq -c '.results' <<<"$example" >"$RC105_TMP/results.json"
+	jq '{verified: [.results[] | {id, file}], stripped: []}' <<<"$example" >"$RC105_TMP/findings.json"
+	jq -r --slurpfile results "$RC105_TMP/results.json" --argjson final false --argjson disputed '[]' \
+		-f "$APPLY_VALIDATION_JQ" "$RC105_TMP/findings.json" |
+		jq -r '.report | (.rejected[] | "  gate rejected \(.id): \(.reason)"),
+			(if (.confirmed | length) == 1 and (.corrected | length) == 1 and (.retracted | length) == 1 then empty else "  gate did not accept one of each outcome" end)'
+}
+RC105_TMP=$(mktemp -d)
+trap 'rm -rf "$RC105_TMP"' EXIT
+rc105_drift=$(rc105_check "$VERIFY_MD")
+if [[ -z "$rc105_drift" ]]; then
+	echo "  PASS: verify.md reply example shows all three outcomes and the gate accepts each"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: verify.md validator reply example is wrong:"
+	echo "$rc105_drift"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

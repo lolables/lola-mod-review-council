@@ -310,7 +310,7 @@ clone_url="${url:-https://${target_host}/${owner}/${repo}.git}"
 # refuses a host holding `/` or `:`; folding everything else down to `_` leaves
 # nothing that could escape the cache root, and nothing that could carry a
 # newline past the `ls -dt` listing the LRU prune splits on. The entry always
-# ends in `-${owner}-${repo}` (GitHub) or `+${repo}` (GitLab, below) with every
+# ends in `+${owner}+${repo}` (GitHub) or `+${repo}` (GitLab, below) with every
 # part non-empty, so it can never be `.` or `..` either.
 host_slug="${target_host,,}"
 host_slug="${host_slug//[^a-z0-9._-]/_}"
@@ -326,15 +326,14 @@ fi
 # directory under the cache root. Folding it into the `-` the GitHub key joins
 # with would file group `g/sub` project `p` and group `g-sub` project `p` under
 # one entry — the cross-repository reuse described above, between two projects
-# on one host. GitLab keys are therefore joined with `+`, which neither a gated
-# segment nor a host slug can contain: splitting the name on `+` recovers the
-# host and every path segment exactly, so distinct projects never share an
-# entry. GitHub keeps its `-` key so existing cache entries stay valid.
-if [[ "$forge" == "gitlab" ]]; then
-	dest="${cache_root}/${host_slug}+${owner//\//+}+${repo}"
-else
-	dest="${cache_root}/${host_slug}-${owner}-${repo}"
-fi
+# on one host. The same holds for GitHub, whose owner and repository names may
+# both hold `-`: `a-b/c` and `a/b-c` joined with `-` share one entry. Keys are
+# therefore joined with `+`, which neither a gated segment nor a host slug can
+# contain: splitting the name on `+` recovers the host and every path segment
+# exactly, so distinct projects never share an entry. Entries an earlier
+# release filed under the `-` key are never named again, so the LRU prune
+# below ages them out.
+dest="${cache_root}/${host_slug}+${owner//\//+}+${repo}"
 
 mkdir -p "$cache_root" 2>/dev/null || {
 	review_root="."
@@ -644,10 +643,32 @@ if [[ "$forge" == "gitlab" ]]; then
 	ok_message="Materialized ${owner}/${repo} at ${head_label} (${head_sha}) from its archive into a tree for this run, changed files fetched exactly; removed ${special_files_removed} link(s) or special file(s)."
 else
 	clone_ok=false
+	# A clone is reused only if its origin is the repository asked for. The key
+	# above keeps distinct projects apart, but an entry may predate it, or have
+	# been filed by hand, and the `git fetch origin pull/N/head` below would run
+	# against whatever repository the entry holds while the run reported `ok`.
+	# The origin is compared by host and project path, as the in-place test is,
+	# so an ssh or credentialed remote still names the same repository; the
+	# exact clone URL is accepted too, for a ported host parse_remote refuses to
+	# name. The host+path arm takes only an scp-like, ssh:// or https:// origin:
+	# an http:// (or git://) entry would let the fetch below leave in plaintext
+	# for an https target, so it falls to the exact-URL arm and is re-cloned.
+	# Neither URL is ever printed: it may carry a credential. A mismatch
+	# removes the entry (it is under cache_root by construction) and falls
+	# through to the clone below.
 	if [[ -d "$dest/.git" ]]; then
-		# Reuse existing clone.
-		clone_ok=true
-	else
+		entry_origin=$(git -C "$dest" remote get-url origin 2>/dev/null || echo "")
+		parse_remote "$entry_origin"
+		if [[ "$entry_origin" == "$clone_url" ]] ||
+			{ [[ "$entry_origin" != *://* || "${entry_origin,,}" == ssh://* || "${entry_origin,,}" == https://* ]] &&
+				[[ -n "$rc_remote_host" ]] && [[ "${rc_remote_host,,}" == "${target_host,,}" ]] &&
+				[[ "${rc_remote_path,,}" == "${owner,,}/${repo,,}" ]]; }; then
+			clone_ok=true
+		else
+			rm_tree "$dest"
+		fi
+	fi
+	if [[ "$clone_ok" != true ]]; then
 		# Prefer gh (auth); flags after -- are passed to git clone.
 		# `gh repo clone OWNER/REPO` resolves against gh's own default host, so on
 		# any other host it would clone a same-named repository from github.com
@@ -780,7 +801,7 @@ touch "$dest" 2>/dev/null || true
 cap=$(cap_from_env REVIEW_COUNCIL_CLONE_CACHE_MAX 10)
 # shellcheck disable=SC2012,SC2312 # `find -printf`/`-newermt` sorting is GNU-only
 # and this cap must hold on macOS too. Entry names are
-# "${host_slug}-${owner}-${repo}" or "${host_slug}+<segments joined by +>",
+# "${host_slug}+<segments joined by +>",
 # every part reduced to ^[a-zA-Z0-9._-]+$ before it gets here, and mapfile
 # splits on newlines, so the non-alphanumeric-filename hazard SC2012 warns
 # about cannot arise. Entries left behind by an older key

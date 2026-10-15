@@ -30,9 +30,13 @@ esac
 # \`git -C DEST fetch\` / \`git -C DEST worktree add\`, so "\$1" is -C.
 if [[ "$mode" == "worktreefail" ]] && printf '%s\n' "\$@" | grep -qx 'worktree'; then exit 1; fi
 if [[ "$mode" == "fetchfail" ]] && printf '%s\n' "\$@" | grep -qx 'fetch'; then exit 1; fi
-if [[ "\$1" == "-C" ]]; then shift 2; fi
+# A clone records the URL it was made from; \`git -C DEST remote get-url\`
+# reads it back. An entry without one reports the default remote.
+cdir=""
+if [[ "\$1" == "-C" ]]; then cdir="\$2"; shift 2; fi
 case "\$1" in
-	remote) echo "$remote" ;;
+	remote)
+		if [[ -n "\$cdir" && -f "\$cdir/.git/mock-origin" ]]; then cat "\$cdir/.git/mock-origin"; else echo "$remote"; fi ;;
 	rev-parse)
 		if [[ "\$2" == "--abbrev-ref" ]]; then echo "feature-x"
 		elif [[ " \$* " == *" HEAD^{commit} "* ]]; then echo "$head_commit"
@@ -43,7 +47,9 @@ case "\$1" in
 		fi
 		# Create the destination dir (last non-flag arg).
 		for a in "\$@"; do dest="\$a"; done
-		mkdir -p "\$dest/.git" ;;
+		mkdir -p "\$dest/.git"
+		args=("\$@")
+		echo "\${args[\${#args[@]}-2]}" >"\$dest/.git/mock-origin" ;;
 	*) : ;;
 esac
 exit 0
@@ -102,7 +108,7 @@ result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 assert_json_field "$result" "status" "ok" "status is ok"
 root=$(echo "$result" | jq -r '.review_root')
 clones="$cache/review-council/clones"
-if [[ "$root" == "$clones/.runs/github@github.com-acme-widgets."* && -d "$root" ]]; then
+if [[ "$root" == "$clones/.runs/github@github.com+acme+widgets."* && -d "$root" ]]; then
 	echo "  PASS: review_root is this run's tree of the cache clone"
 	PASS=$((PASS + 1))
 else
@@ -110,7 +116,7 @@ else
 	FAIL=$((FAIL + 1))
 fi
 # The mock resolves every rev-parse to deadbeef.
-if grep -qxF "git -C $clones/github.com-acme-widgets worktree add -q --detach $root deadbeef" "$bin/git.log"; then
+if grep -qxF "git -C $clones/github.com+acme+widgets worktree add -q --detach $root deadbeef" "$bin/git.log"; then
 	echo "  PASS: the tree is a detached worktree of the cache clone at the resolved head"
 	PASS=$((PASS + 1))
 else
@@ -191,7 +197,7 @@ else
 	echo "  FAIL: expected 2 clones, got $remaining"
 	FAIL=$((FAIL + 1))
 fi
-if [[ -d "$clones/github.com-acme-widgets" ]]; then
+if [[ -d "$clones/github.com+acme+widgets" ]]; then
 	echo "  PASS: fresh clone retained"
 	PASS=$((PASS + 1))
 else
@@ -256,7 +262,7 @@ rm -rf "$bin" "$cache"
 # Test 7: malformed identifiers are rejected before any git runs
 # owner/repo are forge-derived and interpolate into both the constructed clone
 # URL and the cache directory path
-# (`${cache_root}/${host_slug}-${owner}-${repo}`), so the character gate has to
+# (`${cache_root}/${host_slug}+${owner}+${repo}`), so the character gate has to
 # reject them up front — a clone that merely happens to fail afterwards is not
 # the same guarantee.
 echo "Test 7: owner/repo/pr character gate"
@@ -510,6 +516,83 @@ done <<'ENDPOINTPAIRS'
 named hosts|https://github.example.com/acme/widgets.git|https://ghe.corp.example/acme/widgets.git
 ported hosts|https://github.example.com:8443/acme/widgets.git|https://ghe.corp.example:8443/acme/widgets.git
 ENDPOINTPAIRS
+# Test 12b: GitHub owner and repo names may hold `-`, so `a-b/c` and `a/b-c`
+# must not share an entry (#64). The `-` join filed both under
+# github.com-a-b-c, and the second run fetched its pull request from the
+# first's repository.
+echo "Test 12b: GitHub entries for a-b/c and a/b-c are distinct"
+bin=$(mktemp -d)
+make_mockbin "$bin" ok "$other_sha"
+cache=$(mktemp -d)
+clones="$cache/review-council/clones"
+PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner a-b --repo c --pr 7 >/dev/null 2>&1
+# Only ever write inside the cache: a missing entry must fail this test, not
+# abort the suite under set -e.
+if [[ -d "$clones/github.com+a-b+c" ]]; then
+	echo first >"$clones/github.com+a-b+c/FROM_A_B_C"
+else
+	echo "  FAIL: first run left no github.com+a-b+c entry under the cache"
+	FAIL=$((FAIL + 1))
+fi
+PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+	--forge github --owner a --repo b-c --pr 7 >/dev/null 2>&1
+entries=$(find "$clones" -mindepth 1 -maxdepth 1 -type d ! -name '.*' | wc -l | tr -d ' ')
+assert_equals "$entries" "2" "two repositories, two cache entries"
+# shellcheck disable=SC2312 # a missing file must fail this assertion, not abort the suite.
+assert_equals "$(cat "$clones/github.com+a+b-c/.git/mock-origin" 2>/dev/null)" "https://github.com/a/b-c.git" \
+	"a/b-c has an entry of its own, cloned from its own URL"
+# shellcheck disable=SC2312 # the false test is the outcome asserted.
+assert_equals "$([[ -e "$clones/github.com+a+b-c/FROM_A_B_C" ]] && echo shared)" "" \
+	"a/b-c did not inherit a-b/c's checkout"
+rm -rf "$bin" "$cache"
+
+# Test 12c: an entry is reused only if its origin is the repository asked for
+# (#64). A mismatched entry is removed and cloned afresh, so the pull request
+# is fetched from the right repository; a matching one is kept, whether its
+# origin is the https URL, the ssh form gh may have written, or carries a
+# credential, and none of those URLs reaches the output.
+echo "Test 12c: cache entry origin must name the target"
+while IFS='|' read -r label seeded_origin expect; do
+	bin=$(mktemp -d)
+	make_mockbin "$bin" ok "$other_sha"
+	cache=$(mktemp -d)
+	clones="$cache/review-council/clones"
+	mkdir -p "$clones/github.com+acme+widgets/.git"
+	echo "$seeded_origin" >"$clones/github.com+acme+widgets/.git/mock-origin"
+	echo planted >"$clones/github.com+acme+widgets/PLANTED"
+	result=$(PATH="$bin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
+		--forge github --owner acme --repo widgets --pr 7 2>"$bin/stderr")
+	assert_json_field "$result" "status" "ok" "$label: status is ok"
+	if [[ "$expect" == reuse ]]; then
+		# shellcheck disable=SC2312 # a missing file must fail this assertion, not abort the suite.
+		assert_equals "$(cat "$clones/github.com+acme+widgets/PLANTED" 2>/dev/null)" "planted" "$label: entry kept"
+		# shellcheck disable=SC2312 # grep exits 1 on no match, and no match is what is asserted.
+		assert_equals "$(grep -c ' clone ' "$bin/git.log")" "0" "$label: no needless re-clone"
+	else
+		# shellcheck disable=SC2312 # the false test is the outcome asserted.
+		assert_equals "$([[ -e "$clones/github.com+acme+widgets/PLANTED" ]] && echo kept)" "" "$label: foreign entry removed"
+		# shellcheck disable=SC2312 # a missing file must fail this assertion, not abort the suite.
+		assert_equals "$(cat "$clones/github.com+acme+widgets/.git/mock-origin")" "https://github.com/acme/widgets.git" \
+			"$label: re-cloned from the right repository"
+	fi
+	leaked=$(
+		cat "$bin/stderr"
+		printf '%s' "$result"
+	)
+	assert_equals "${leaked//hunter2/}" "$leaked" "$label: no credential in the output"
+	rm -rf "$bin" "$cache"
+done <<'ORIGINS'
+another repo|https://github.com/acme/widgets-fork.git|replace
+other owner|https://github.com/a-b/widgets.git|replace
+other host|https://evil.attacker.test/acme/widgets.git|replace
+plaintext http|http://github.com/acme/widgets.git|replace
+no origin||replace
+same https|https://github.com/acme/widgets.git|reuse
+ssh form|git@github.com:acme/widgets.git|reuse
+credentialed|https://user:hunter2@github.com/acme/widgets|reuse
+other case|https://GitHub.com/ACME/Widgets.git|reuse
+ORIGINS
 # A GitLab merge request is materialized from the repository archive glab
 # fetches at the MR's head sha, not by git: an unauthenticated clone of a
 # private project fails, and glab is the one client holding a credential bound
@@ -1623,6 +1706,12 @@ make_fixture_git() { # bindir fixture
 	cat >"$dir/git" <<WRAP
 #!/usr/bin/env bash
 args=("\$@")
+# The fixture stands in for acme/widgets, so a cache entry's origin reads as
+# that repository, the way a real clone's would, not as the fixture's path.
+if [[ "\$1" == "-C" && "\$3 \$4 \$5" == "remote get-url origin" ]]; then
+	echo "https://github.com/acme/widgets.git"
+	exit 0
+fi
 if printf '%s\n' "\$@" | grep -qx clone; then
 	for i in "\${!args[@]}"; do
 		if [[ "\${args[\$i]}" == "--" ]]; then
@@ -1677,7 +1766,7 @@ live_links() { # root -> count of symlinks outside .git
 # <root> <label> — passes when <root> is a GitHub run tree of the cache under
 # $clones.
 assert_github_run_tree() {
-	if [[ "$1" == "$clones/.runs/github@github.com-acme-widgets."* && -d "$1" ]]; then
+	if [[ "$1" == "$clones/.runs/github@github.com+acme+widgets."* && -d "$1" ]]; then
 		echo "  PASS: $2"
 		PASS=$((PASS + 1))
 	else
@@ -1696,7 +1785,7 @@ make_fixture_git "$gbin" "$fixture/origin"
 echo "Test 23: GitHub checkout writes committed symlinks as inert files (RC-076)"
 cache=$(mktemp -d)
 clones="$cache/review-council/clones"
-clone="$clones/github.com-acme-widgets"
+clone="$clones/github.com+acme+widgets"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "ok" "status is ok"
@@ -1738,7 +1827,7 @@ rm -rf "$cache"
 echo "Test 25: a link that survives materializing fails closed (RC-076)"
 cache=$(mktemp -d)
 clones="$cache/review-council/clones"
-clone="$clones/github.com-acme-widgets"
+clone="$clones/github.com+acme+widgets"
 result=$(cd "$fixture" && PATH="$gbin:$PATH" XDG_CACHE_HOME="$cache" LATE_LINK="late" bash "$SCRIPT" \
 	--forge github --owner acme --repo widgets --pr 7 2>/dev/null)
 assert_json_field "$result" "status" "skip" "status is skip"
@@ -1787,7 +1876,7 @@ rm -rf "$op"
 echo "Test 27: concurrent reviews of one repository keep their own trees"
 cache=$(mktemp -d)
 clones="$cache/review-council/clones"
-clone="$clones/github.com-acme-widgets"
+clone="$clones/github.com+acme+widgets"
 sha7=$(git -C "$fixture/origin" rev-parse refs/pull/7/head)
 sha8=$(git -C "$fixture/origin" rev-parse refs/pull/8/head)
 base_sha=$(git -C "$fixture/origin" rev-parse 'refs/pull/7/head~1')

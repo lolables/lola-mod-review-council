@@ -20,7 +20,7 @@ src=$(mktemp -d)
 echo 'func main() { fmt.Println("hi") }' >"$src/main.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"main.go","line":1,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 assert_json_field "$result" "status" "ok" "ok"
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
@@ -46,7 +46,7 @@ src=$(mktemp -d)
 echo "package main" >"$src/real.go"
 agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"CRITICAL","file":"fake.go","line":10,"evidence":"db.Query(x)","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 sc=$(echo "$result" | jq '.stripped')
 if [[ "$sc" -eq 1 ]]; then
 	echo "  PASS: stripped 1"
@@ -63,7 +63,7 @@ src=$(mktemp -d)
 echo 'func main() { fmt.Println("hi") }' >"$src/main.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[{"severity":"HIGH","file":"main.go","line":1,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"}]'
 agent_json "$s" "divisor-guard-code" "REQUEST CHANGES" '[{"severity":"MEDIUM","file":"main.go","line":1,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: dedup to 1"
@@ -80,7 +80,7 @@ src=$(mktemp -d)
 printf 'func main() {}\n' >"$src/main.go"
 for i in $(seq 2 20); do echo "l$i" >>"$src/main.go"; done
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[{"severity":"HIGH","file":"main.go","line":20,"evidence":"func main() {}","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 cc=$(echo "$result" | jq '.correctable')
 if [[ "$cc" -eq 1 ]]; then
 	echo "  PASS: correctable 1"
@@ -104,7 +104,7 @@ s=$(new_session)
 src=$(mktemp -d)
 printf '\tif cfg.TLS {\n' >"$src/c.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[{"severity":"MEDIUM","file":"c.go","line":1,"evidence":"\tif cfg.TLS {","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: tab evidence verified"
@@ -138,7 +138,7 @@ src=$(mktemp -d)
 echo 'func main() { fmt.Println("hi") }' >"$src/main.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"main.go","line":null,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"},{"severity":"HIGH","file":"main.go","line":3,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 2 ]]; then
 	echo "  PASS: mixed null/non-null line not deduped (2)"
@@ -155,7 +155,7 @@ src=$(mktemp -d)
 echo 'func main() { fmt.Println("hi") }' >"$src/main.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"main.go","line":null,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"},{"severity":"HIGH","file":"main.go","line":null,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: null/null line dedup to 1"
@@ -172,7 +172,7 @@ src=$(mktemp -d)
 printf -- '- **Managed** block\n' >"$src/README.md"
 agent_json "$s" "divisor-curator-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"README.md","line":1,"evidence":"- **Managed** block","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: dash-leading evidence verified"
@@ -190,7 +190,7 @@ echo 'x := install()' >"$src/a.go"
 # One agent, LOW first then HIGH, same file+evidence+line -> deterministic merge order.
 agent_json "$s" "divisor-guard-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"a.go","line":1,"evidence":"x := install()","description":"low","recommendation":"r"},{"severity":"HIGH","file":"a.go","line":1,"evidence":"x := install()","description":"high","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 sev=$(jq -r '.verified[0].severity' "$s/verdicts/findings.json")
 if [[ "$vc" -eq 1 && "$sev" == "HIGH" ]]; then
@@ -213,7 +213,7 @@ src=$(mktemp -d)
 printf 'package main\n\nfunc a() {\n\treturn\n}\n\nfunc b() {\n\treturn\n}\n' >"$src/x.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"CRITICAL","file":"x.go","line":3,"evidence":"\tdb.Exec(\"DROP TABLE users\") // entirely fabricated\n}","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 0 ]]; then
 	echo "  PASS: fabricated block not verified"
@@ -250,7 +250,7 @@ src=$(mktemp -d)
 } >"$src/x.go"
 agent_json "$s" "divisor-guard-code" "REQUEST CHANGES" \
 	'[{"severity":"MEDIUM","file":"x.go","line":30,"evidence":"func b() {\n\treturn\n}","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: verbatim block verified"
@@ -278,7 +278,7 @@ src=$(mktemp -d)
 # (9..19) excludes the first occurrence the old probe always returned.
 agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"m_test.go","line":14,"evidence":"\terr := root.Execute()\n\trequire.Error(t, err)","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: third occurrence accepted"
@@ -294,7 +294,7 @@ fi
 s3=$(new_session)
 agent_json "$s3" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"m_test.go","line":9,"evidence":"\terr := root.Execute()\n\trequire.Error(t, err)","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s3")
+result=$(cd "$src" && bash "$SCRIPT" "$s3" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: second occurrence accepted"
@@ -309,7 +309,7 @@ rm -rf "$s3"
 s2=$(new_session)
 agent_json "$s2" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"m_test.go","line":40,"evidence":"\terr := root.Execute()\n\trequire.Error(t, err)","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s2")
+result=$(cd "$src" && bash "$SCRIPT" "$s2" .)
 r=$(jq -r '.correctable[0].reason // "none"' "$s2/verdicts/findings.json")
 if [[ "$r" == "LINE_MISMATCH" ]]; then
 	echo "  PASS: citation far from every occurrence still LINE_MISMATCH"
@@ -330,7 +330,7 @@ for _ in $(seq 1 20000); do printf 'func b() {\n\treturn\n}\n'; done >"$src/big.
 agent_json "$s" "divisor-sre-code" "APPROVE" \
 	'[{"severity":"LOW","file":"big.go","line":1,"evidence":"func b() {\n\treturn\n}","description":"d","recommendation":"r"}]'
 rc=0
-result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null) || rc=$?
+result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null) || rc=$?
 if [[ $rc -eq 0 && -f "$s/verdicts/findings.json" ]]; then
 	echo "  PASS: completed without SIGPIPE abort"
 	PASS=$((PASS + 1))
@@ -358,7 +358,7 @@ src=$(mktemp -d)
 printf 'func run() { db.Exec(query); return nil }\n' >"$src/d.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"d.go","line":1,"evidence":"db.Exec(query)","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: mid-line fragment verified"
@@ -377,7 +377,7 @@ src=$(mktemp -d)
 printf 'if m[.*] == a|b then\n' >"$src/r.go"
 agent_json "$s" "divisor-guard-code" "APPROVE" \
 	'[{"severity":"LOW","file":"r.go","line":1,"evidence":"m[.*] == a|b","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then
 	echo "  PASS: metacharacters matched literally"
@@ -392,7 +392,7 @@ src2=$(mktemp -d)
 printf 'if mX == a then\n' >"$src2/r.go"
 agent_json "$s2" "divisor-guard-code" "APPROVE" \
 	'[{"severity":"LOW","file":"r.go","line":1,"evidence":"m[.*] == a|b","description":"d","recommendation":"r"}]'
-result=$(cd "$src2" && bash "$SCRIPT" "$s2")
+result=$(cd "$src2" && bash "$SCRIPT" "$s2" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 0 ]]; then
 	echo "  PASS: regex-only match rejected"
@@ -411,7 +411,7 @@ src=$(mktemp -d)
 echo 'package main' >"$src/e.go"
 agent_json "$s" "divisor-guard-code" "APPROVE" \
 	'[{"severity":"LOW","file":"e.go","line":1,"evidence":"","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 0 ]]; then
 	echo "  PASS: empty evidence not verified"
@@ -435,7 +435,7 @@ cat >"$s/verdicts/clusters.json" <<'CJ'
 {"clusters":[{"members":[{"file":"main.go","line":1,"agent":"divisor-adversary-code"}]}]}
 CJ
 rc=0
-result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null) || rc=$?
+result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null) || rc=$?
 if [[ $rc -eq 0 ]]; then
 	echo "  PASS: clean exit with clusters.json present"
 	PASS=$((PASS + 1))
@@ -803,7 +803,7 @@ agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"MEDIUM","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"MEDIUM","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
-result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s")
+result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s" .)
 assert_json_field "$result" "verified" "1" "duplicate merged to one finding"
 assert_jq "$s/verdicts/findings.json" '.duplicates_consolidated' "1" "counted as consolidated"
 assert_jq "$s/verdicts/findings.json" \
@@ -833,7 +833,7 @@ agent_json "$s" "divisor-testing-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"no test covers the boundary","recommendation":"add a boundary case"}]'
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"boundary off by one","recommendation":"use <="}]'
-result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s")
+result=$(cd "$src" && PATH="$bin:$PATH" bash "$SCRIPT" "$s" .)
 assert_jq "$s/verdicts/findings.json" \
 	'.verified[0] | [.agent, .severity, .description] | join("|")' \
 	"divisor-testing-code|HIGH|no test covers the boundary" "the HIGH finding survives with its own text"
@@ -852,7 +852,7 @@ echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"LOW","file":"token.go","line":1,"evidence":"if exp < now","description":"first pass","recommendation":"use <="},
 	  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"second pass","recommendation":"use <="}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 assert_json_field "$result" "verified" "1" "self-duplicate merged to one finding"
 assert_jq "$s/verdicts/findings.json" '.verified[0].severity' "HIGH" "severity still escalated"
 assert_jq "$s/verdicts/findings.json" \
@@ -875,7 +875,7 @@ cat >"$s/session-manifest.json" <<'MJ'
 MJ
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 	'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 assert_json_field "$result" "status" "ok" "status still ok — a missing verdict is reported, not fatal"
 assert_jq_str "$result" '.missing_verdicts // [] | tojson' \
 	'["divisor-guard-code","divisor-sre-code"]' "both silent agents named"
@@ -895,7 +895,7 @@ for body in '{"council":"divisor-guard-code"}' '[1,2]' '{"council":["divisor-gua
 	printf '%s\n' "$body" >"$s/session-manifest.json"
 	agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
 		'[{"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]'
-	result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null) || result='{"status":"crashed"}'
+	result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null) || result='{"status":"crashed"}'
 	assert_json_field "$result" "status" "ok" "manifest $body: verification completes"
 	assert_jq_str "$result" '.missing_verdicts // "absent" | tojson' '[]' "manifest $body: no missing verdicts claimed"
 	rm -rf "$s" "$src"
@@ -909,7 +909,7 @@ cat >"$s/session-manifest.json" <<'MJ'
 {"mode":"code","suffix":"code","agents":["divisor-adversary-code"],"absent":[]}
 MJ
 agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 assert_jq_str "$result" '.missing_verdicts // [] | tojson' '[]' "no agent reported missing"
 rm -rf "$s" "$src"
 
@@ -920,7 +920,7 @@ s=$(new_session)
 src=$(mktemp -d)
 echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 assert_json_field "$result" "status" "ok" "runs without a manifest"
 assert_jq_str "$result" '.missing_verdicts // [] | tojson' '[]' "no false accusation without a manifest"
 rm -rf "$s" "$src"
@@ -943,7 +943,7 @@ cat >"$s/session-manifest.json" <<'MJ'
  "selection":{"applied":true,"shape":"docs-only","reason":"prose only","pinned":[]}}
 MJ
 agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
-result=$(cd "$src" && bash "$SCRIPT" "$s")
+result=$(cd "$src" && bash "$SCRIPT" "$s" .)
 assert_jq_str "$result" '.missing_verdicts // [] | tojson' '["divisor-curator-code"]' \
 	"only the dispatched-but-silent agent is named"
 rm -rf "$s" "$src"
@@ -958,7 +958,7 @@ agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d1","recommendation":"r"},
  {"severity":"MEDIUM","file":"token.go","line":1,"evidence":"not in the file","description":"d2","recommendation":"r"},
  {"severity":"LOW","file":"missing.go","line":1,"evidence":"x","description":"d3","recommendation":"r"}]'
-(cd "$src" && bash "$SCRIPT" "$s" >/dev/null)
+(cd "$src" && bash "$SCRIPT" "$s" . >/dev/null)
 fj="$s/verdicts/findings.json"
 assert_jq_str "$(<"$fj")" '[.verified[], .correctable[], .stripped[] | .id] | tojson' '["F1","F2","F3"]' \
 	"ids run F1..F3 across verified, correctable, stripped"
@@ -976,7 +976,7 @@ agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"d1","recommendation":"r"}]'
 printf '{"results":[]}' >"$s/verdicts/_meta/validation.json"
 printf '{"results":[]}' >"$s/verdicts/_meta/corrections.json"
-(cd "$src" && bash "$SCRIPT" "$s" >/dev/null)
+(cd "$src" && bash "$SCRIPT" "$s" . >/dev/null)
 for reply in validation corrections; do
 	if [[ ! -e "$s/verdicts/_meta/$reply.json" ]]; then
 		echo "  PASS: stale $reply.json removed"
@@ -1056,7 +1056,7 @@ echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" '[
  {"severity":"HIGH","file":"token.go","line":1,"evidence":"if exp < now","description":"this run","recommendation":"r"}]'
 printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
-result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null)
 assert_json_field "$result" "status" "ok" "ok"
 assert_jq "$s/verdicts/findings.json" '[.verified[].description] | join(",")' "this run" \
 	"findings.json holds this run's finding only"
@@ -1072,7 +1072,7 @@ assert_json_field "$result" "status" "nothing_to_do" "no verdicts: nothing_to_do
 src=$(mktemp -d)
 echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
-result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null)
 assert_json_field "$result" "status" "ok" "ok"
 assert_jq "$s/verdicts/findings.json" '.total_findings' "0" "findings.json written"
 if [[ ! -e "$s/verdicts/findings.json.stale" ]]; then
@@ -1093,7 +1093,7 @@ target=$(mktemp -d)
 echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
 ln -s "$target/written-through" "$s/verdicts/findings.json"
-result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null)
 assert_json_field "$result" "status" "ok" "ok"
 if [[ -f "$s/verdicts/findings.json" && ! -L "$s/verdicts/findings.json" ]]; then
 	echo "  PASS: findings.json written as a regular file"
@@ -1148,10 +1148,52 @@ echo 'if exp < now' >"$src/token.go"
 agent_json "$s" "divisor-adversary-code" "APPROVE" '[]'
 printf '%s' "$stale_findings" >"$s/verdicts/_meta/findings.pre-disposition.json"
 printf '{"status":"ok"}' >"$s/verdicts/_meta/disposition-check.json"
-result=$(cd "$src" && bash "$SCRIPT" "$s" 2>/dev/null)
+result=$(cd "$src" && bash "$SCRIPT" "$s" . 2>/dev/null)
 assert_json_field "$result" "status" "ok" "ok"
 assert_disposition_reset "$s" "ok"
 rm -rf "$s" "$src"
+
+# The root used to default to the working directory, so an orchestrator that
+# forgot to pass it had evidence checked against whatever tree it stood in, and
+# the run still reported ok (#54). Each test runs from a directory that is NOT
+# the review root, or from one that holds the cited file when nothing names a
+# root, so a silent cwd fallback shows up as a wrong count.
+echo "Test 45: with no root passed, session.txt's Review root is used (#54)"
+s=$(new_session)
+src=$(mktemp -d)
+elsewhere=$(mktemp -d)
+echo 'func main() { fmt.Println("hi") }' >"$src/main.go"
+agent_json "$s" "divisor-adversary-code" "APPROVE" \
+	'[{"severity":"LOW","file":"main.go","line":1,"evidence":"func main() { fmt.Println(\"hi\") }","description":"d","recommendation":"r"}]'
+printf 'Owner:        none\nReview root:  %s\nPost intent:  no (auto-send: no)\n' "$src" >"$s/session.txt"
+result=$(cd "$elsewhere" && env -u REVIEW_ROOT bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "ok"
+assert_json_field "$result" "verified" "1" "the finding is checked against the recorded root"
+
+echo "Test 46: an argument or REVIEW_ROOT still outranks session.txt (#54)"
+printf 'Review root:  %s\n' "$elsewhere" >"$s/session.txt"
+result=$(cd "$elsewhere" && env -u REVIEW_ROOT bash "$SCRIPT" "$s" "$src" 2>/dev/null)
+assert_json_field "$result" "verified" "1" "argument 2 outranks session.txt"
+result=$(cd "$elsewhere" && REVIEW_ROOT="$src" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "verified" "1" "REVIEW_ROOT outranks session.txt"
+
+echo "Test 47: a recorded '.' is the in-place review, resolved from the caller (#54)"
+printf 'Review root:  .\n' >"$s/session.txt"
+result=$(cd "$src" && env -u REVIEW_ROOT bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "verified" "1" "'.' resolves against the working directory"
+
+echo "Test 48: with no root from any source, verification refuses (#54)"
+for case in "no session.txt" "no Review root line"; do
+	rm -f "$s/session.txt" "$s/verdicts/findings.json.stale"
+	printf '%s' "$stale_findings" >"$s/verdicts/findings.json"
+	[[ "$case" == "no session.txt" ]] ||
+		printf 'Owner:        none\nPost intent:  no (auto-send: no)\n' >"$s/session.txt"
+	result=$(cd "$src" && env -u REVIEW_ROOT bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_json_field "$result" "status" "nothing_to_do" "$case: nothing_to_do, not the cwd"
+	assert_jq_str "$result" '.message | startswith("No review root")' "true" "$case: refused for the missing root"
+	assert_moved_aside "$s" "$case"
+done
+rm -rf "$s" "$src" "$elsewhere"
 
 echo "Test S1: the script verdict is read, and its finding survives a diff-only root (RC-076)"
 sess=$(new_session)

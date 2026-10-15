@@ -31,6 +31,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 caught=0
 missed=0
 broken=0
+applied=0
 snapshot=""
 
 # Freeze module/ once, and hand every mutation a copy of that rather than of the
@@ -105,6 +106,16 @@ check_mutation() {
 		echo "BROKEN  $label"
 		echo "        expression no longer matches $script, so this defect is unguarded here"
 		broken=$((broken + 1))
+		rm -rf "$work"
+		return
+	fi
+
+	# MUTATE_EXPRESSIONS_ONLY=1 stops here, once sed has shown it applies the
+	# expression. The macOS CI leg runs this mode: BSD sed is what it exists to
+	# check, and the suites it would skip run nightly on Ubuntu.
+	if [[ "${MUTATE_EXPRESSIONS_ONLY:-}" == "1" ]]; then
+		echo "applies $label"
+		applied=$((applied + 1))
 		rm -rf "$work"
 		return
 	fi
@@ -1460,10 +1471,41 @@ check_mutation "RC-091 --send requires the user's recorded post intent" \
 	's/^\([[:space:]]*\)\[\[ "\$intent" == "yes" \]\] && return 0$/\1return 0/' \
 	test-rc-post-comment-github.sh
 
-total=$((caught + missed + broken))
+# --- #54: the evidence scripts checked against the caller's directory --------
+#
+# The review root defaulted to `.`, so an orchestrator that forgot to pass it
+# had quotes checked against whatever tree it stood in, and the run reported ok.
+# The recorded root replaces that default; with no root from any source the
+# scripts refuse, and the refusal precedes the cd because `cd ""` succeeds and
+# stays put.
+check_mutation "RC-102 verification falls back to session.txt's Review root" \
+	rc-verify-evidence.sh \
+	's|\$(rc_parse_kv "\$session_dir/session.txt" "Review root")|.|' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-102 the correction round falls back to session.txt's Review root" \
+	rc-apply-corrections.sh \
+	's|\$(rc_parse_kv "\$session_dir/session.txt" "Review root")|.|' \
+	test-rc-apply-corrections.sh
+
+check_mutation "RC-103 verification refuses with no review root" \
+	rc-verify-evidence.sh \
+	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
+	test-rc-verify-evidence.sh
+
+check_mutation "RC-103 the correction round refuses with no review root" \
+	rc-apply-corrections.sh \
+	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
+	test-rc-apply-corrections.sh
+
+total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"
-echo "Mutations: $total  caught: $caught  missed: $missed  broken: $broken"
+if [[ "${MUTATE_EXPRESSIONS_ONLY:-}" == "1" ]]; then
+	echo "Mutation expressions: $total  applied: $applied  broken: $broken (no suite run)"
+else
+	echo "Mutations: $total  caught: $caught  missed: $missed  broken: $broken"
+fi
 echo "========================================"
 [[ $missed -eq 0 && $broken -eq 0 ]] || exit 1
 exit 0

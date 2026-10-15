@@ -217,9 +217,9 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
-# RC-014: rc-verify-evidence.sh returns `nothing_to_do` from four sites that all
+# RC-014: rc-verify-evidence.sh returns `nothing_to_do` from five sites that all
 # precede the write of findings.json — missing session dir, missing verdicts dir,
-# no agent verdict JSON, unresolvable review root. SKILL.md Step 4 documented the
+# no agent verdict JSON, no review root (#54), unresolvable review root. SKILL.md Step 4 documented the
 # status but then told the orchestrator to read findings.json unconditionally, so
 # on that status it reads a previous iteration's file or fails outright. Pin the
 # branch, and pin the matching edge in the state diagram: the diagram is the map

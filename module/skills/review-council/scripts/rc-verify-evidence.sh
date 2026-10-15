@@ -10,11 +10,16 @@ rc_trap_errors
 # Verdict is copied verbatim from each agent's JSON — never re-derived.
 
 session_dir="${1:-}"
-review_root="${2:-${REVIEW_ROOT:-.}}"
 [[ -n "$session_dir" && -d "$session_dir" ]] || {
 	json_output "nothing_to_do" "Session directory does not exist."
 	exit 0
 }
+# Argument 2, then REVIEW_ROOT, then the root rc-prepare.sh recorded in
+# session.txt. There is no default: the working directory is whatever tree the
+# caller stands in, and evidence checked against the wrong tree is verified or
+# stripped wrongly while the run still reports ok (#54). A recorded "." is the
+# in-place review, resolved from the caller as before.
+review_root="${2:-${REVIEW_ROOT:-$(rc_parse_kv "$session_dir/session.txt" "Review root")}}"
 vdir="$session_dir/verdicts"
 [[ -d "$vdir" ]] || {
 	json_output "nothing_to_do" "No verdicts directory found."
@@ -152,6 +157,12 @@ jq -s '
 ' "${verdict_files[@]}" >"$vdir/verdicts-map.json"
 
 # Absolute, symlink-resolved review root, for the containment check below.
+# Tested before the cd: `cd ""` succeeds and stays put, which is the cwd
+# fallback this replaced.
+[[ -n "$review_root" ]] || {
+	json_output "nothing_to_do" "No review root: pass it as argument 2 or REVIEW_ROOT, or record it in session.txt (the Preparation phase writes it)."
+	exit 0
+}
 root_abs=$(cd "$review_root" 2>/dev/null && pwd -P) || {
 	json_output "nothing_to_do" "Review root does not exist: $review_root"
 	exit 0

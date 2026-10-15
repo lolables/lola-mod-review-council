@@ -150,8 +150,9 @@ over a pipeline that never ran:
   `FILE_NOT_FOUND`.
 - The mock session is the review root, and Step 3 must say so. The
   review root is the directory each finding's `file` is resolved
-  against; it defaults to `.`. Step 3's "Point the review root at the
-  mock" sub-step sets it.
+  against. The mock has no `session.txt`, so it has no root until
+  Step 3's "Point the review root at the mock" sub-step sets it, and
+  verification refuses without one.
 
 Two rules govern the mock's lifetime, and both exist because a
 diagnostic that destroys its own evidence fails the same way a broken
@@ -253,18 +254,12 @@ session directory this step ran against.
 The mock consumes `verdicts/divisor-test-code.json` that
 `rc-extract-verdict.sh` just wrote.
 
-1. **Point the review root at the mock.** The root defaults to `.`:
+1. **Point the review root at the mock.** The mock has no `session.txt`:
 
-   - That resolves the finding's `file` against the current working
-     directory instead of the mock, and the finding is stripped
-     (`FILE_NOT_FOUND`, or `PATH_OUTSIDE_ROOT` when it does resolve but
-     lands outside the root) before the evidence matcher -- the one
-     component this step exists to exercise -- ever runs.
-   - The script still exits 0 with `status: "ok"`, so nothing in the
-     output says the match never happened.
-   - Two inputs set the root, and the script reads them as
-     `review_root="${2:-${REVIEW_ROOT:-.}}"`: positional argument 2
-     outranks the `REVIEW_ROOT` environment variable.
+   - The script takes the root from positional argument 2, then the
+     `REVIEW_ROOT` environment variable, then `Review root:` in
+     `session.txt`. With none of the three it returns
+     `status: "nothing_to_do"` and the matcher never runs.
    - The block below uses the environment variable and passes only the
      session argument, so there is no argument 2 to override it.
 

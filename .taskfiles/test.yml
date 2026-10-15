@@ -100,6 +100,17 @@ tasks:
       GIT_CONFIG_SYSTEM: /dev/null
     cmd: '{{.SCRATCH}} bash "{{.ROOT_DIR}}/.taskfiles/scripts/mutate-check.sh"'
 
+  # The macOS CI leg's whole mutation check: seconds, against the 18-20 minutes
+  # the suites take, which run nightly on Ubuntu instead.
+  mutate-expressions:
+    desc: Check that sed applies every mutation expression, without running suites
+    env:
+      MUTATE_EXPRESSIONS_ONLY: '1'
+      GIT_CONFIG_NOSYSTEM: '1'
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_SYSTEM: /dev/null
+    cmd: '{{.SCRATCH}} bash "{{.ROOT_DIR}}/.taskfiles/scripts/mutate-check.sh"'
+
   all:
     desc: Run unit, end-to-end, release, degraded and mutation checks
     cmds:

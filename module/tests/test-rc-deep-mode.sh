@@ -63,7 +63,7 @@ src=$(mktemp -d)
 mkdir -p "$src/auth" "$src/api"
 echo 'if exp < now' >"$src/auth/token.go"
 echo 'package api' >"$src/api/handler.go"
-result=$(cd "$src" && bash "$VERIFY" "$s")
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
 assert_json_field "$result" "status" "ok" "verify deep status ok"
 total=$(jq -r '.total_findings' "$s/verdicts/findings.json")
 if [[ "$total" -eq 1 ]]; then
@@ -101,7 +101,7 @@ bash "$EXTRACT" "$s" >/dev/null
 src=$(mktemp -d)
 mkdir -p "$src/auth"
 echo 'if exp < now' >"$src/auth/token.go"
-result=$(cd "$src" && bash "$VERIFY" "$s")
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
 assert_json_field "$result" "status" "ok" "verdict aggregation status ok"
 agg=$(jq -r '.verdicts."divisor-adversary-code"' "$s/verdicts/findings.json")
 if [[ "$agg" == "REQUEST CHANGES" ]]; then
@@ -128,7 +128,7 @@ cat >"$s/verdicts/api/divisor-guard-code.raw.md" <<'RAW'
 RAW
 bash "$EXTRACT" "$s" >/dev/null
 src=$(mktemp -d)
-result=$(cd "$src" && bash "$VERIFY" "$s")
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
 assert_json_field "$result" "status" "ok" "all-approve status ok"
 agg=$(jq -r '.verdicts."divisor-guard-code"' "$s/verdicts/findings.json")
 if [[ "$agg" == "APPROVE" ]]; then
@@ -160,7 +160,7 @@ else
 fi
 src=$(mktemp -d)
 echo 'x := 1' >"$src/a.go"
-result=$(cd "$src" && bash "$VERIFY" "$s")
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
 assert_json_field "$result" "status" "ok" "flat verify status ok"
 vc=$(echo "$result" | jq '.verified')
 if [[ "$vc" -eq 1 ]]; then

@@ -103,8 +103,8 @@ Averages across all six cases, per CLI/model cell:
 case on both CLIs, and costs roughly half of what Opus does per review. Opus matches Sonnet on detection quality but
 does not meaningfully outperform it on any dimension while costing 2-4x more.
 
-Haiku passes the majority of cases but struggles with false-positive suppression on clean codebases and convention pack
-attribution. It is suitable for quick scans where cost matters more than precision.
+Haiku passes four of six cases but falls below the pass threshold on Go clean code (0.40) and TS convention pack (0.45).
+It is suitable for quick scans where cost matters more than precision.
 
 Per-case scores, **one column per CLI/model cell** — `CC` is Claude Code, `OC` is OpenCode. The per-case table in
 `references/model-guidance.md` reports the same run **averaged across both CLIs**, so its figures are the row-wise

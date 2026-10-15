@@ -9,7 +9,7 @@ Empirical data from eval suite (6 cases: Go security, TypeScript/React architect
 
 ## Summary
 
-Sonnet-class best quality-to-cost ratio. Matches or exceeds opus-class on detection, costs 2-4x less. Haiku-class passes most cases but struggles with false-positive suppression and convention pack attribution.
+Sonnet-class best quality-to-cost ratio. Matches or exceeds opus-class on detection, costs 2-4x less. Haiku-class passes four of six cases but falls below the pass threshold on Go clean code (0.40) and TS convention pack (0.45).
 
 ## Scores by Model Class
 
@@ -27,7 +27,7 @@ Composites (0.0-1.0) across weighted rubric dimensions. Pass thresholds: 0.60-0.
 
 Scores averaged across multiple CLI hosts.
 
-> Haiku scores 0.40 on clean codebases (Go clean code), indicating 60% false positive rate — primary reason not recommended for reviewer subagents.
+> Haiku's composite on the clean-code case (Go clean code) is 0.40, below that case's 0.70 pass threshold. The composite blends verdict correctness, false-positive count, routing and flapping, so it is not a false-positive rate. The table does not record which component cost the points. This miss is the main reason Haiku is not recommended for reviewer subagents.
 
 ## Cost Per Review
 
@@ -148,7 +148,7 @@ that case has not been run, and this document will say so until it has.
 - **Capable tier** (Adversary, Guard): Sonnet or above. Requires judgment on intent, security, governance.
 - **Standard tier** (Tester, Operator, Curator): Sonnet. Checklist-driven but needs accurate code reading and false-positive control.
 
-Haiku not recommended for reviewers. Budget option for Standard tier only — expect lower false-positive control and convention detection. Never use haiku for Capable tier.
+Haiku not recommended for reviewers. Budget option for Standard tier only — expect composites below the pass threshold on some cases (see scores above). Never use haiku for Capable tier.
 
 ## Limitations
 

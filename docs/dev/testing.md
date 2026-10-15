@@ -12,6 +12,12 @@ everything locally with `task check`.
 | `task test:mutate` | Reintroduces each fixed defect, asserts a suite catches it |
 | `task check` | Lint plus all of the above |
 
+`task check` and `task test:all` print a `==> <stage> (n/N)` line as each stage
+starts, `task lint` prints `--> <file>` before shellcheck checks each file, and
+the unit runner prints `--> <suite> (n/N)` before each suite. A
+suite's own output appears only once it finishes, so these lines tell you which
+stage and suite a long run is currently on.
+
 ## What CI runs
 
 Two workflows split the work. Neither invokes `task check`: CI reproduces it

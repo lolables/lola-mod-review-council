@@ -52,6 +52,8 @@ compare it against.
 - Read-only. No writes anywhere, including the session directory — the
   orchestrator writes the reply to `triage.raw.md` itself.
 - No forge access. Triage needs the diff, not the conversation around it.
+- Executes nothing from reviewed repository or review tooling (`delegate.md`
+  "Tool Profile").
 - It is **not** given a persona file. The personas are described in the prompt
   below in one line each, because triage judges *surface*, not defects; loading
   a reviewer's full contract would invite it to start reviewing.

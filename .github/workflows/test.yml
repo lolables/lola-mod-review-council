@@ -53,6 +53,27 @@ jobs:
             && '["mutate"]'
             || '["unit", "e2e", "release", "degraded"]'
           ) }}
+        # macOS is here to prove the shipped scripts run under BSD userland
+        # (sed, readlink, date, mktemp), and unit plus e2e are the layers that
+        # run them. degraded, release and mutate re-run the same scripts under
+        # PATH, release-tooling and harness variations whose logic does not
+        # depend on the OS, so Ubuntu covers them; on macOS degraded alone ran
+        # 9-20 minutes against the 20-minute limit.
+        #
+        # The one BSD-specific thing mutate checked is whether BSD sed applies
+        # each mutation expression. mutate-expressions checks exactly that in
+        # seconds, without the suites; no Linux sed reproduces BSD's regex
+        # dialect (`\|`, `\t`, `\+` are literal there), so it stays on macOS.
+        include:
+          - os: macos-latest
+            layer: mutate-expressions
+        exclude:
+          - os: macos-latest
+            layer: degraded
+          - os: macos-latest
+            layer: release
+          - os: macos-latest
+            layer: mutate
     name: ${{ matrix.layer }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # Per layer, not per leg. The slowest layer runs well under half of this;
@@ -163,7 +184,7 @@ jobs:
         run: task "test:${LAYER}"
 
   # A single stable check name that summarises the matrix, so branch protection
-  # has one thing to require and does not have to enumerate eight job names that
+  # has one thing to require and does not have to enumerate the job names that
   # change whenever a layer or an OS is added.
   test-result:
     name: test

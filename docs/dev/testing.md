@@ -10,6 +10,7 @@ everything locally with `task check`.
 | `task test:release` | Venom suite for `task release:bump` and the changelog tooling — see [releasing.md](releasing.md) |
 | `task test:degraded` | Re-runs the unit suites once per optional tool hidden from `PATH`, narrowed to the suites that can reach that tool |
 | `task test:mutate` | Reintroduces each fixed defect, asserts a suite catches it |
+| `task test:mutate-expressions` | Checks `sed` applies every mutation expression, runs no suite (seconds) |
 | `task check` | Lint plus all of the above |
 
 `task check` and `task test:all` print a `==> <stage> (n/N)` line as each stage
@@ -25,13 +26,15 @@ layer by layer, as separate jobs, rather than calling that target.
 
 | Workflow | Runs | On |
 |----------|------|-----|
-| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` and `macos-latest` |
+| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` (every layer); `macos-latest` (unit, e2e, mutate-expressions) |
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
 
 `test.yml` is a two-dimensional matrix — layers by operating systems — plus a
 gating job that depends on all of them. Pushes and pull requests run four
-layers (unit, e2e, release, degraded), eight jobs; the nightly schedule and a manual
-dispatch run the mutation layer alone, two jobs. The matrix job and the gating
+layers (unit, e2e, release, degraded) on Ubuntu and three (unit, e2e,
+mutate-expressions) on macOS, seven jobs; the nightly schedule and a manual
+dispatch run the mutation layer on Ubuntu and mutate-expressions on macOS, two
+jobs. The matrix job and the gating
 job are easy to confuse: the matrix job has the id `test` and displays per leg
 as `<layer> (<os>)`, while the gating job has the id `test-result` and displays
 as `test`.
@@ -59,12 +62,25 @@ branch with `gh workflow run test.yml --ref <branch>`. GitHub disables a public
 repository's schedules after 60 days without activity, so a quiet repository
 also stops running this layer until a schedule is re-enabled.
 
-Every test layer runs on both operating systems. None is gated by OS. That is
-deliberate: the mutation harness is the layer that caught GNU-only `sed`
-constructs, so restricting it to Linux would retire the check that justifies
-having a macOS leg at all. If a layer ever genuinely cannot run on macOS, gate
-it with an explicit `if:` condition and record the reason here — do not quietly
-narrow what the workflow invokes.
+macOS runs only the unit, e2e and mutate-expressions layers: the others are
+excluded per layer in the matrix's `exclude:` list, and mutate-expressions is
+added for macOS alone by its `include:` entry. The macOS leg exists to prove the shipped scripts run under BSD
+userland (`sed`, `readlink`, `date`, `mktemp`), and those two layers are the
+ones that run them. degraded, release and mutate re-run the same scripts under
+PATH, release-tooling and harness variations whose logic does not depend on the
+OS, so Ubuntu covers them; on macOS degraded alone took 9–20 minutes against
+the 20-minute limit.
+
+The one thing the mutation layer checked that only macOS can is whether BSD
+`sed` applies each expression in `.taskfiles/scripts/mutate-check.sh`; one that
+does not is reported `BROKEN`. `task test:mutate-expressions` sets
+`MUTATE_EXPRESSIONS_ONLY=1`, which stops each mutation once `sed` has changed
+the target and reports it `applies`, so it runs every expression through BSD
+`sed` in seconds without the suites. It cannot move to Linux: no Linux build of
+BSD `sed` reproduces its regex dialect, because each links the host's regex
+library (glibc or musl), and both treat `\|`, `\t` and `\+` as GNU operators
+where macOS does not. To move a layer back onto macOS, delete its `exclude:`
+entry and update this paragraph.
 
 `test.yml` installs Venom on the `e2e` jobs only — it is the one layer with a
 hard precondition on it — pinned to a tag and to the SHA-256 of each published

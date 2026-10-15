@@ -109,6 +109,21 @@ check_mutation "probe" "probe.sh" 's/GOOD/BAD/' "probe-suite.sh" >"$out"
 read -r report <"$out"
 assert_equals "${report%% *}" "caught" "the run continues against the snapshot it started with"
 
+echo ""
+echo "Test: expressions-only mode applies each expression and runs no suite"
+
+# The macOS CI leg runs this mode: it proves BSD sed applies every expression
+# without paying for the suites, which Ubuntu runs nightly. probe-suite.sh would
+# go red on this mutation, so `applies` rather than `caught` shows it never ran.
+MUTATE_EXPRESSIONS_ONLY=1 check_mutation "probe" "probe.sh" 's/GOOD/BAD/' "probe-suite.sh" >"$out"
+read -r report <"$out"
+assert_equals "${report%% *}" "applies" "a matching expression is reported as applying, suite not run"
+
+# The one finding this mode exists to report must survive it.
+MUTATE_EXPRESSIONS_ONLY=1 check_mutation "probe" "probe.sh" 's/ABSENT/BAD/' "probe-suite.sh" >"$out"
+read -r report <"$out"
+assert_equals "${report%% *}" "BROKEN" "an expression that changes nothing is still BROKEN"
+
 # The harness only arms its own EXIT trap when executed, so a sourced copy
 # leaves its snapshot for the caller to remove.
 rm -rf "$fake" "$out" "${snapshot:?snapshot was never taken}"

@@ -31,6 +31,7 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 caught=0
 missed=0
 broken=0
+applied=0
 snapshot=""
 
 # Freeze module/ once, and hand every mutation a copy of that rather than of the
@@ -105,6 +106,16 @@ check_mutation() {
 		echo "BROKEN  $label"
 		echo "        expression no longer matches $script, so this defect is unguarded here"
 		broken=$((broken + 1))
+		rm -rf "$work"
+		return
+	fi
+
+	# MUTATE_EXPRESSIONS_ONLY=1 stops here, once sed has shown it applies the
+	# expression. The macOS CI leg runs this mode: BSD sed is what it exists to
+	# check, and the suites it would skip run nightly on Ubuntu.
+	if [[ "${MUTATE_EXPRESSIONS_ONLY:-}" == "1" ]]; then
+		echo "applies $label"
+		applied=$((applied + 1))
 		rm -rf "$work"
 		return
 	fi
@@ -1487,10 +1498,14 @@ check_mutation "RC-103 the correction round refuses with no review root" \
 	's#^\[\[ -n "\$review_root" \]\] || {$#true || {#' \
 	test-rc-apply-corrections.sh
 
-total=$((caught + missed + broken))
+total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"
-echo "Mutations: $total  caught: $caught  missed: $missed  broken: $broken"
+if [[ "${MUTATE_EXPRESSIONS_ONLY:-}" == "1" ]]; then
+	echo "Mutation expressions: $total  applied: $applied  broken: $broken (no suite run)"
+else
+	echo "Mutations: $total  caught: $caught  missed: $missed  broken: $broken"
+fi
 echo "========================================"
 [[ $missed -eq 0 && $broken -eq 0 ]] || exit 1
 exit 0

@@ -1,0 +1,25 @@
+README.md
+  s_990f2ef699e987::t_f23a08e2c9dff1 380-386
+module/AGENTS.md
+  s_990f2ef699e987::t_a3da2ebb215133 49-53
+module/tests/test-rc-doc-guards.sh
+  s_990f2ef699e987::t_4c338b5a2b0d65 2424-2462
+docs/dev/pipeline.md
+  s_990f2ef699e987::t_a3da2ebb215133 352-422
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "469007901cf5362bed59eb7cbf700fb3024fc105",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

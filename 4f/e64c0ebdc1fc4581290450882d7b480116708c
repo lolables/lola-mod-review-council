@@ -1,0 +1,22 @@
+module/tests/test-rc-doc-guards.sh
+  s_990f2ef699e987::t_7e2c4a20f8f526 2522-2525,2548
+  s_990f2ef699e987::t_7cab7a4f54cf7a 2532
+module/skills/review-council/references/severity.md
+  s_990f2ef699e987::t_1c9b4b7fab2717 44-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4fe64c0ebdc1fc4581290450882d7b480116708c",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

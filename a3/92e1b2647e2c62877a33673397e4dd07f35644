@@ -1,0 +1,48 @@
+.taskfiles/scripts/mutate-check.sh
+  s_36e5204fa666f9::t_efc1b0ffa58c08 1626-1639
+module/skills/review-council/scripts/lib/render-provenance.sh
+  s_36e5204fa666f9::t_e4a7b25ab525e6 36,190-199,201-210,235-238
+  s_36e5204fa666f9::t_f5ba9159891e7b 200
+module/tests/test-rc-decide-verdict.sh
+  s_36e5204fa666f9::t_7be8c3a1054e1f 4-6,90-113
+  s_36e5204fa666f9::t_2e1f0fdd6cf7ae 114
+module/tests/test-rc-doc-guards.sh
+  s_36e5204fa666f9::t_f5ba9159891e7b 2411-2413
+  s_36e5204fa666f9::t_53e7f0f4faee07 2397-2410,2414-2423
+module/skills/review-council/phases/verify.md
+  s_36e5204fa666f9::t_cd165a647965e8 135-148
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_36e5204fa666f9::t_e4a7b25ab525e6 398-410
+  s_36e5204fa666f9::t_10ba30c3238867 411-412
+module/skills/review-council/phases/report.md
+  s_36e5204fa666f9::t_cd165a647965e8 439-443,452
+module/skills/review-council/scripts/rc-lib.sh
+  s_36e5204fa666f9::t_0246a0502f664f 52-58,60,62
+  s_36e5204fa666f9::t_f5ba9159891e7b 87
+README.md
+  s_36e5204fa666f9::t_cd165a647965e8 372-374
+module/tests/test-rc-render-comment.sh
+  s_36e5204fa666f9::t_0850096705c7cf 2215-2292,2294-2317
+  s_36e5204fa666f9::t_e1c80bcf548fce 2293
+module/skills/review-council/SKILL.md
+  s_36e5204fa666f9::t_cd165a647965e8 764-765,987-988
+module/tests/test-rc-render-report.sh
+  s_36e5204fa666f9::t_44418a0c2cbebf 1580-1609
+  s_36e5204fa666f9::t_f5ba9159891e7b 1311
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a392e1b2647e2c62877a33673397e4dd07f35644",
+  "prompts": {},
+  "sessions": {
+    "s_36e5204fa666f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "942ddf6c-fc5e-468b-ba23-802b53c43472",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

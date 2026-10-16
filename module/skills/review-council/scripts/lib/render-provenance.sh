@@ -7,15 +7,22 @@
 # ways. They differ only in links: the comment passes its forge's rc_url_commit
 # hook and the SHAs become links; the report passes no hook.
 #
-# Every value comes from a file a script wrote, never from model prose. A
+# Every value comes from a file a script wrote, except in models.json:
+# `requested` is written by the orchestrator and `reported` is each agent's
+# self-claim. Those are trusted only through the allow-lists below. A
 # value that can come from the change or the forge (the base branch name, the
 # configured constitution path, pack names, the effort, the report's
 # config_changed paths) is printed only inside a code span sized to it
 # (rc_md_code_span). A SHA is printed only when it is 40 lowercase hex
 # characters, shortened to 12; any other value is left out, never shown raw.
-# Model IDs and role names are never escaped: they are checked against an
-# allow-list and replaced with `unrecognised` when they fail it, because a
-# value that needs escaping is not an ID or a role.
+# Model IDs (`allowed`, printed code-spanned) and role names (`allowed_role`,
+# printed bare) are never escaped: they are replaced with `unrecognised` when
+# they fail their allow-list, because a value that needs escaping is not an ID
+# or a role.
+# The Verdict format check line is one of three fixed strings chosen from
+# verdicts/_meta/schema-validation.txt; that file's text is never interpolated.
+# The Coverage gap line names findings.json .missing_verdicts through
+# allowed_role.
 #
 # Source this file after rc-lib.sh; do not execute it. It defines functions and
 # the jq programs below, and sets nothing else.
@@ -191,18 +198,20 @@ _rc_prov_format_check() { # session_dir
 # returned no verdict, or nothing. Names are agent roles and pass the role
 # allow-list before they are put in a code span, the same check the reviewer
 # table applies to the rows it prints bare. The cap sentence is added only when
-# the verdict is not REQUEST CHANGES: a missing verdict lowers APPROVE to
-# APPROVE WITH ADVISORIES (RC_COUNCIL_VERDICT_JQ) and leaves a blocking verdict
-# alone.
+# the cap decided the verdict: it is APPROVE WITH ADVISORIES and no finding was
+# verified (RC_COUNCIL_VERDICT_JQ lowers APPROVE for a missing verdict; verified
+# findings give ADVISORIES on their own, and a blocking verdict is left alone).
+# A missing or non-array .verified counts as empty, as it does there.
 _rc_prov_coverage() { # session_dir
-	local f="$1/verdicts/findings.json" names verdict line
+	local f="$1/verdicts/findings.json" names verdict line verified
 	[[ -f "$f" ]] || return 0
 	names=$(jq -r "${RC_PROV_JQ_DEFS}"'[(.missing_verdicts // []) | if type == "array" then .[] | (if allowed_role then "`" + . + "`" else "unrecognised" end) else empty end] | join(", ")' "$f" 2>/dev/null) || names=""
 	[[ -n "$names" ]] || return 0
 	line="> ⚠️ **Coverage gap:** no verdict from ${names}."
 	# shellcheck disable=SC2154 # set by rc-lib.sh, which every caller sources first.
 	verdict=$(jq -r "$RC_COUNCIL_VERDICT_JQ" "$f" 2>/dev/null) || verdict=""
-	if [[ "$verdict" != "REQUEST CHANGES" ]]; then
+	verified=$(jq -r '(.verified // []) | if type == "array" then length else 0 end' "$f" 2>/dev/null) || verified=""
+	if [[ "$verdict" == "APPROVE WITH ADVISORIES" && "$verified" == "0" ]]; then
 		line+=" Verdict capped at APPROVE WITH ADVISORIES."
 	fi
 	printf '\n%s' "$line"
@@ -210,9 +219,9 @@ _rc_prov_coverage() { # session_dir
 
 # The provenance block, as lines with no trailing blank line. Every line above
 # the Models line ends in <br>, so the block reads as one line per fact under
-# any markdown renderer: <br> rather than a trailing backslash because the
-# comment body is kept free of backslashes, and rather than two trailing spaces
-# because editors strip those. A models.json that is missing, unreadable or
+# any markdown renderer: <br> rather than a trailing backslash because that hard
+# break is CommonMark-only and <br> renders on both forges, and rather than two
+# trailing spaces because editors strip those. A models.json that is missing, unreadable or
 # holds no entry renders the not-recorded line.
 rc_render_provenance() { # session_dir head_sha [commit_link_hook] [forge_web]
 	local session_dir="$1" head="$2" hook="${3:-}" web="${4:-}" line models

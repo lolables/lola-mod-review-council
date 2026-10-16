@@ -79,7 +79,7 @@ MJ
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
 	rc_url_file() { printf '%s/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
-	# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
+	# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/body.md"
 	{
@@ -386,7 +386,7 @@ make_review_session "$sess" github 42 ""
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
 	rc_url_file() { printf '%s/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
-	# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
+	# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/body.md"
 	{ echo "$RC_FORGE_WEB"; } >"$sess/exports"
@@ -1561,7 +1561,7 @@ forge_web_for() { # owner repo host_line
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 		source "$SCRIPT"
 		rc_url_file() { printf '%s/-/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
-		# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
+		# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 		rc_url_commit() { printf '%s/-/commit/%s' "$1" "$2"; }
 		rc_render_comment_body "$s" "$s/body.md"
 		echo "$RC_FORGE_WEB"
@@ -2059,7 +2059,7 @@ make_facts_session "$sess"
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
-	# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
+	# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/comment-body.md"
 )
@@ -2256,6 +2256,18 @@ bash "$SCRIPT" "$sess" >/dev/null 2>&1
 assert_body_line "$sess" 'Coverage gap' \
 	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`.' \
 	"REQUEST CHANGES stands; no cap sentence"
+rm -rf "$sess"
+
+echo "Test: a verified MEDIUM finding already decides the verdict, so the cap is not claimed (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.verified = [.verified[0] | .severity = "MEDIUM"] | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`.' \
+	"the findings decided ADVISORIES; no cap sentence"
 rm -rf "$sess"
 
 echo "Test: no missing verdict, no coverage line and no No-verdict row (#57)"

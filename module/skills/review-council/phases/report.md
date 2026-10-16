@@ -115,7 +115,8 @@ Two roles the selector cannot know are yours to add:
 
 - `coordinator` (this orchestrator): `requested` is `host default`, since
   nothing dispatched you with a named model; `reported` is your own model ID
-  if you know it, otherwise `[]`.
+  if you know it, otherwise `[]`. Replace `<your-model-id>` in the command below with that
+  ID, or with nothing (`[]`) when you do not know it.
 - `validator`, if the validation gate ran: `requested` is the model ID you
   passed when you dispatched it, otherwise `host default`; `reported` is the
   model ID the validator reported, otherwise `[]`.
@@ -125,7 +126,7 @@ them, so a re-render stays one entry per role:
 
 ```bash
 jq '[.[] | select(.role != "coordinator" and .role != "validator")]
-    + [{"role": "coordinator", "requested": "host default", "reported": ["claude-opus-4-8"]},
+    + [{"role": "coordinator", "requested": "host default", "reported": ["<your-model-id>"]},
        {"role": "validator", "requested": "host default", "reported": []}]' \
   "${session_dir}/models.json" >"${session_dir}/models.json.tmp"
 mv "${session_dir}/models.json.tmp" "${session_dir}/models.json"

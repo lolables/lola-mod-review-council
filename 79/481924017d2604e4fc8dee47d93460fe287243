@@ -1,0 +1,23 @@
+module/agents/review-council-arbiter.md
+  s_990f2ef699e987::t_d9f0e5c567739a 1-132
+module/tests/test-rc-doc-guards.sh
+  s_990f2ef699e987::t_7bb22fcfe3a8bb 25,49,2012-2034,2074-2075,2105,2267-2271,2323,2327-2330,2336-2341,2344,2384,2386,2389,2559-2562,2573,2576,2599,2617,2619-2622,2624,2626-2627,2630-2631,2635-2636,2639-2640,2644,2647
+module/tests/test-rc-prepare.sh
+  s_990f2ef699e987::t_e6eb8376b0dc57 135-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "79481924017d2604e4fc8dee47d93460fe287243",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

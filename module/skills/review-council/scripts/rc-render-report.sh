@@ -210,7 +210,10 @@ fi
 
 # How the review ran, as the scripts recorded it. Shared with the PR comment
 # (lib/render-provenance.sh), so the two cannot describe one run differently.
-provenance=$(rc_render_provenance "$session_dir")
+# The head is resolved by the function the comment's marker uses, and no link
+# hook is passed: the report holds no forge knowledge.
+head_sha=$(rc_session_head_sha "$session_dir")
+provenance=$(rc_render_provenance "$session_dir" "$head_sha")
 
 # Council verdict. rc-decide-verdict.sh decides it (phases/report.md, "Final
 # Verdict Determination") and records it as the first line of verdict.txt; this

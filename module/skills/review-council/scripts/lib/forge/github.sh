@@ -19,6 +19,10 @@
 #       Writes the PR diff to out_file. A failure leaves the file empty rather
 #       than aborting: the changeset falls back to the local range.
 #
+#   rc_forge_fetch_merge_base <pr> <owner> <repo> <head_sha>   (optional)
+#       Prints the 40-hex merge-base the PR diff is taken against, or nothing.
+#       Call after rc_forge_fetch_pr, whose baseRefOid it uses.
+#
 # Every function is a no-op-on-failure by design. Preparation must survive a
 # forge that is down, rate-limiting, or refusing auth — the review continues
 # against the diff with less context, which is the module's stated degradation
@@ -61,14 +65,20 @@ RC_FORGE_GH_STATUS_CHECKS_JQ='
   | "\($check_name): \(.conclusion // .state)"
 '
 
+# The base branch's tip as rc_forge_fetch_pr read it, kept for
+# rc_forge_fetch_merge_base. Adapter-private, and global so it survives being
+# sourced from inside a function, as RC_FORGE_GL_GATE does in gitlab.sh.
+declare -g RC_FORGE_GH_BASE_OID=""
+
 rc_forge_fetch_pr() {
 	local pr_number="$1" owner="$2" repo="$3"
 	local repo_flag pr_json
 	repo_flag=$(build_repo_flag "$owner" "$repo")
+	RC_FORGE_GH_BASE_OID=""
 
 	# shellcheck disable=SC2086 # repo_flag is a two-token flag or empty.
 	pr_json=$(rc_timeout 30 gh pr view "$pr_number" $repo_flag \
-		--json number,title,body,baseRefName,headRefName,headRefOid,url,state,statusCheckRollup \
+		--json number,title,body,baseRefName,baseRefOid,headRefName,headRefOid,url,state,statusCheckRollup \
 		2>/dev/null || echo "")
 
 	[[ -n "$pr_json" ]] || return 0
@@ -83,6 +93,8 @@ rc_forge_fetch_pr() {
 	pr_url=$(echo "$pr_json" | jq -r '.url // ""')
 	pr_state=$(echo "$pr_json" | jq -r '.state // ""')
 	pr_status_checks=$(echo "$pr_json" | jq -r "$RC_FORGE_GH_STATUS_CHECKS_JQ")
+	RC_FORGE_GH_BASE_OID=$(echo "$pr_json" | jq -r '.baseRefOid // ""')
+	[[ "$RC_FORGE_GH_BASE_OID" =~ ^[0-9a-f]{40}$ ]] || RC_FORGE_GH_BASE_OID=""
 }
 
 rc_forge_fetch_diff() {
@@ -255,4 +267,29 @@ rc_forge_fetch_links() {
 		entries+="$entry"$'\n'
 	done <<<"$link_rows"
 	jq -sc '.' <<<"$entries"
+}
+
+# <sha> — the merge-base the PR's diff is taken against, or no output.
+#
+# Optional capability (prepare-target.sh asks `declare -F`). GitHub's PR diff
+# is the three-dot diff of its base and head, so the commit it starts from is
+# the merge-base, which the compare endpoint reports as `merge_base_commit`
+# (REST "Compare two commits": GET repos/{owner}/{repo}/compare/{base}...{head},
+# which takes commit SHAs as well as refs). The base end is the baseRefOid read
+# with the diff rather than the branch name: it is the tip that diff was cut
+# from, and a SHA needs no URL encoding where a branch name may hold `#`, `%`
+# or `?`. The merge base is on every page of the response, so no pagination.
+# Like every other call in this file it goes through gh's own host and
+# credentials, and its URL holds only validated segments and two commit ids.
+#
+# Empty unless both ends and the answer are full commit ids, on any failure.
+rc_forge_fetch_merge_base() {
+	local owner="$2" repo="$3" head_sha="$4" compare_json merge_base
+	[[ "$RC_FORGE_GH_BASE_OID" =~ ^[0-9a-f]{40}$ && "$head_sha" =~ ^[0-9a-f]{40}$ ]] || return 0
+	compare_json=$(rc_timeout 30 gh api "repos/${owner}/${repo}/compare/${RC_FORGE_GH_BASE_OID}...${head_sha}" 2>/dev/null) ||
+		return 0
+	merge_base=$(jq -r 'if type == "object" then .merge_base_commit.sha // empty else empty end' \
+		<<<"$compare_json" 2>/dev/null) || return 0
+	[[ "$merge_base" =~ ^[0-9a-f]{40}$ ]] || return 0
+	printf '%s' "$merge_base"
 }

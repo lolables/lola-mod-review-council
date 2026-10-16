@@ -276,7 +276,10 @@ flowchart TD
 
 Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>-<random>/` containing:
 
-- `session.txt` — human-readable run metadata
+- `session.txt` — human-readable run metadata, and the source of the verdict header's Reviewed and Rules lines
+  (`Base SHA`, `Base`, `Head SHA`, `Effort`, `Constitution path`, `Packs`), because no model writes it.
+  `Constitution path` is written only for an accepted constitution and holds the path as configured; the
+  `Constitution` line (session copy plus source, or the refusal) is never parsed by the renderers
 - `tracking.md` — structured phase-by-phase state
 - `changeset.txt` — reviewed file list
 - `diff.patch` — full patch (code review)

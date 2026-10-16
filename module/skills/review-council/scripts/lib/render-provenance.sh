@@ -4,14 +4,18 @@
 #
 # Both renderers emit it from rc_render_provenance, so the comment a PR reader
 # sees and the report.md the operator keeps cannot describe one run in two
-# ways.
+# ways. They differ only in links: the comment passes its forge's rc_url_commit
+# hook and the SHAs become links; the report passes no hook.
 #
 # Every value comes from a file a script wrote, never from model prose. A
-# value that can come from the change (the report's config_changed paths) is
-# printed only inside a code span sized to it (rc_md_code_span). Model IDs and
-# role names are never escaped: they are checked against an allow-list and
-# replaced with `unrecognised` when they fail it, because a value that needs
-# escaping is not an ID or a role.
+# value that can come from the change or the forge (the base branch name, the
+# configured constitution path, pack names, the effort, the report's
+# config_changed paths) is printed only inside a code span sized to it
+# (rc_md_code_span). A SHA is printed only when it is 40 lowercase hex
+# characters, shortened to 12; any other value is left out, never shown raw.
+# Model IDs and role names are never escaped: they are checked against an
+# allow-list and replaced with `unrecognised` when they fail it, because a
+# value that needs escaping is not an ID or a role.
 #
 # Source this file after rc-lib.sh; do not execute it. It defines functions and
 # the jq programs below, and sets nothing else.
@@ -67,10 +71,121 @@ rc_md_code_span() { # value
 	printf '%s' "${delim}${pad}${value}${pad}${delim}"
 }
 
-# The provenance block, as lines with no trailing blank line. A models.json
-# that is missing, unreadable or holds no entry renders the not-recorded line.
-rc_render_provenance() { # session_dir
-	local session_dir="$1" models
+# The commit a session reviewed, or nothing, in order: the PR/MR head the forge
+# reported ("Head SHA:", recorded by prepare-emit.sh), the materialized
+# checkout's HEAD, else the working tree's HEAD, but only for a local review.
+# A review by PR number or URL ("Input:" pr_number/url) standing in "." was
+# launched from some checkout that need not be the PR's, so its HEAD would name
+# a commit nobody reviewed; it stays unknown instead. A GitLab review root is
+# an extracted archive with no .git, so only the recorded head names it.
+rc_session_head_sha() { # session_dir
+	local session_txt="$1/session.txt" rr recorded input_type head=""
+	rr=$(rc_parse_kv "$session_txt" "Review root")
+	recorded=$(rc_parse_kv "$session_txt" "Head SHA")
+	input_type=$(rc_parse_kv "$session_txt" "Input")
+	if [[ "$recorded" =~ ^[0-9a-f]{40}$ ]]; then
+		head="$recorded"
+	elif [[ -n "$rr" && "$rr" != "." && -d "$rr/.git" ]]; then
+		head=$(git -C "$rr" rev-parse HEAD 2>/dev/null || echo "")
+	elif [[ "$rr" == "." && "$input_type" != "pr_number" && "$input_type" != "url" ]]; then
+		head=$(git rev-parse HEAD 2>/dev/null || echo "")
+	fi
+	printf '%s' "$head"
+}
+
+# A SHA as a 12-character code span, linked when the hook returns a URL.
+_rc_prov_sha() { # sha link_hook forge_web
+	local sha="$1" hook="$2" web="$3" url=""
+	if [[ -n "$hook" ]] && declare -F "$hook" >/dev/null 2>&1; then
+		url=$("$hook" "$web" "$sha")
+	fi
+	if [[ -n "$url" ]]; then
+		printf '[`%s`](%s)' "${sha:0:12}" "$url"
+	else
+		printf '`%s`' "${sha:0:12}"
+	fi
+}
+
+# "**Reviewed:** <base> (<branch>) → <head> · effort <effort>", from whatever of
+# those is known. A SHA that is not 40 hex characters is left out, never
+# printed: it is either absent or not a commit. Without a base SHA the line
+# reads "at <head>", and the branch name is shown only beside the base it
+# names. Prints nothing when nothing is known.
+_rc_prov_reviewed() { # session_dir head_sha link_hook forge_web
+	local session_txt="$1/session.txt" head="$2" hook="$3" web="$4"
+	local base_sha base effort base_span effort_span shown commit="" line=""
+	base_sha=$(rc_parse_kv "$session_txt" "Base SHA")
+	base=$(rc_parse_kv "$session_txt" "Base")
+	effort=$(rc_parse_kv "$session_txt" "Effort")
+	[[ "$base_sha" =~ ^[0-9a-f]{40}$ ]] || base_sha=""
+	[[ "$head" =~ ^[0-9a-f]{40}$ ]] || head=""
+	if [[ -n "$base_sha" ]]; then
+		commit=$(_rc_prov_sha "$base_sha" "$hook" "$web")
+		# "none" and "none (explicit range)" are prepare-emit.sh's words for
+		# a run with no base branch, not a branch name.
+		if [[ -n "$base" && "$base" != none* ]]; then
+			base_span=$(rc_md_code_span "$base")
+			commit+=" (${base_span})"
+		fi
+		if [[ -n "$head" ]]; then
+			shown=$(_rc_prov_sha "$head" "$hook" "$web")
+			commit+=" → ${shown}"
+		else
+			commit+=" → head unknown"
+		fi
+	elif [[ -n "$head" ]]; then
+		shown=$(_rc_prov_sha "$head" "$hook" "$web")
+		commit="at ${shown}"
+	fi
+	line="$commit"
+	if [[ -n "$effort" ]]; then
+		effort_span=$(rc_md_code_span "$effort")
+		line+="${line:+ · }effort ${effort_span}"
+	fi
+	if [[ -n "$line" ]]; then
+		printf '%s' "**Reviewed:** ${line}"
+	fi
+}
+
+# "**Rules:** constitution <path> · packs <name>, <name>". Always printed: a
+# review with no constitution and no packs says so rather than leaving the
+# reader to guess. The constitution is read from "Constitution path:", which
+# prepare-emit.sh writes only for an accepted constitution and which holds the
+# path as configured, the one a reader recognises. The "Constitution:" line is
+# never parsed here: it embeds the session path, which the caller's session_dir
+# need not spell the same way, and for a refusal it holds the refusal text,
+# which is security posture and stays off the forge.
+_rc_prov_rules() { # session_dir
+	local session_txt="$1/session.txt" constitution packs name span shown="none" packs_shown=""
+	constitution=$(rc_parse_kv "$session_txt" "Constitution path")
+	if [[ -n "$constitution" ]]; then
+		shown=$(rc_md_code_span "$constitution")
+	fi
+	packs=$(rc_parse_kv "$session_txt" "Packs")
+	if [[ -n "$packs" && "$packs" != "none" ]]; then
+		while IFS= read -r name; do
+			[[ -n "$name" ]] || continue
+			span=$(rc_md_code_span "$name")
+			packs_shown+="${packs_shown:+, }${span}"
+		done < <(printf '%s\n' "${packs//, /$'\n'}")
+	fi
+	printf '%s' "**Rules:** constitution ${shown} · packs ${packs_shown:-none}"
+}
+
+# The provenance block, as lines with no trailing blank line. Every line above
+# the Models line ends in <br>, so the block reads as one line per fact under
+# any markdown renderer: <br> rather than a trailing backslash because the
+# comment body is kept free of backslashes, and rather than two trailing spaces
+# because editors strip those. A models.json that is missing, unreadable or
+# holds no entry renders the not-recorded line.
+rc_render_provenance() { # session_dir head_sha [commit_link_hook] [forge_web]
+	local session_dir="$1" head="$2" hook="${3:-}" web="${4:-}" line models
+	line=$(_rc_prov_reviewed "$session_dir" "$head" "$hook" "$web")
+	if [[ -n "$line" ]]; then
+		printf '%s<br>\n' "$line"
+	fi
+	line=$(_rc_prov_rules "$session_dir")
+	printf '%s<br>\n' "$line"
 	models=$(jq -r "${RC_PROV_JQ_DEFS}${_RC_PROV_MODELS_JQ}" "$session_dir/models.json" 2>/dev/null) || models=""
 	if [[ -n "$models" ]]; then
 		printf '%s\n%s\n' "**Models:**" "$models"

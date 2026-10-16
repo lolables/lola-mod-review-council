@@ -354,6 +354,13 @@ of posting new ones.
 automated-review banner, the comment and `report.md` carry the same provenance
 block, written by scripts rather than by the model:
 
+- **Reviewed**: the base commit the diff was taken against and its branch, the
+  head commit, and the effort tier. For a pull request the base is the
+  merge-base the forge diffed against, as GitHub or GitLab reports it. Without
+  a base (`--scope all`, or a forge that could not report one) the line names
+  only the head.
+- **Rules**: the constitution and the project packs the review ran under, or
+  `none`.
 - **Models**: for each reviewer, the coordinator and the validator, the model
   that was *requested* (`host default` unless the orchestrator named one at
   dispatch) and the model the agent *reported* about itself. A reported ID is
@@ -361,7 +368,8 @@ block, written by scripts rather than by the model:
   means it made none.
 
 An ID or name that is not a plain identifier is shown as `unrecognised` rather
-than printed.
+than printed; a branch name, constitution path or pack name is shown inside a
+code span nothing in it can close.
 
 GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
 gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is

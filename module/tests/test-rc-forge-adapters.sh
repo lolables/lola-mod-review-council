@@ -1031,6 +1031,155 @@ links_call gitlab "$fx"
 assert_equals "$links_rc:$links_out" "1:" "an empty answer: non-zero, no output"
 rm -rf "$fx"
 
+# --------------------------------------------------------------------------
+# The merge-base capability (#79): the commit the forge's PR/MR diff starts
+# from, for the verdict header's Reviewed line. A forge-fetched diff is the
+# forge's to describe; this checkout may be a clone without the base, or hold a
+# stale remote-tracking ref. Each adapter answers with a full commit id or
+# nothing, and never fails the run.
+# --------------------------------------------------------------------------
+mb_base=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+mb_head=9f8e7d6c5b4a39281706f5e4d3c2b1a098765432
+mb_merge=3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c
+
+# Run rc_forge_fetch_pr then rc_forge_fetch_merge_base from the github adapter
+# against a fake gh: `pr view` prints <pr-json>, `api .../compare/...` prints
+# <compare-payload> and exits <compare-exit>. Sets mb_out (what the capability
+# printed) and mb_calls (one gh argv per line).
+# Usage: github_merge_base_run <pr-json> <compare-payload> <compare-exit>
+mb_out="" mb_calls=""
+github_merge_base_run() {
+	local bindir
+	bindir=$(mktemp -d)
+	printf '%s\n' "$1" >"$bindir/pr.json"
+	printf '%s\n' "$2" >"$bindir/compare.json"
+	cat >"$bindir/gh" <<GH
+#!/usr/bin/env bash
+echo "gh \$*" >>"$bindir/calls"
+case "\$1 \$2" in
+"pr view") cat "$bindir/pr.json" ;;
+"api repos/"*"/compare/"*)
+	cat "$bindir/compare.json"
+	exit $3
+	;;
+*) exit 0 ;;
+esac
+GH
+	chmod +x "$bindir/gh"
+	mb_out=$(
+		PATH="$bindir:$PATH"
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/github.sh
+		source "$FORGE_DIR/github.sh"
+		pr_title="" pr_body="" pr_base="" pr_head="" pr_head_sha="" pr_url="" pr_state="" pr_status_checks=""
+		rc_forge_fetch_pr 7 acme widgets
+		rc_forge_fetch_merge_base 7 acme widgets "$pr_head_sha"
+	)
+	mb_calls=$(cat "$bindir/calls" 2>/dev/null || true)
+	rm -rf "$bindir"
+}
+mb_pr_json='{"number":7,"title":"T","body":"B","baseRefName":"main","baseRefOid":"'"$mb_base"'","headRefName":"feat","headRefOid":"'"$mb_head"'","url":"u","state":"OPEN","statusCheckRollup":[]}'
+
+echo "Test: GitHub reports the compare endpoint's merge base (#79)"
+github_merge_base_run "$mb_pr_json" '{"merge_base_commit":{"sha":"'"$mb_merge"'"},"files":[]}' 0
+assert_equals "$mb_out" "$mb_merge" "merge_base_commit.sha is returned"
+if grep -qxF "gh api repos/acme/widgets/compare/${mb_base}...${mb_head}" <<<"$mb_calls"; then
+	echo "  PASS: the compare names baseRefOid...headRefOid, never a branch name"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: unexpected compare call: $mb_calls"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: GitHub drops a merge base that is not a full commit id (#79)"
+for payload in '{"merge_base_commit":{"sha":"3c3c3c3"}}' '{"merge_base_commit":{"sha":"'"$mb_merge"'\n## x"}}' \
+	'{"merge_base_commit":"'"$mb_merge"'"}' '{"merge_base_commit":{}}' '[]' 'not json'; do
+	github_merge_base_run "$mb_pr_json" "$payload" 0
+	assert_equals "$mb_out" "" "payload $payload: nothing returned"
+done
+
+echo "Test: a failing GitHub compare call returns nothing (#79)"
+github_merge_base_run "$mb_pr_json" '{"message":"Not Found"}' 1
+assert_equals "$mb_out" "" "a non-zero gh api exit yields no merge base"
+
+echo "Test: without a full base or head commit id GitHub is not asked (#79)"
+github_merge_base_run '{"number":7,"title":"T","baseRefName":"main","headRefOid":"'"$mb_head"'","statusCheckRollup":[]}' \
+	'{"merge_base_commit":{"sha":"'"$mb_merge"'"}}' 0
+assert_equals "$mb_out" "" "no baseRefOid: no merge base"
+if grep -qF '/compare/' <<<"$mb_calls"; then
+	echo "  FAIL: compare was called with no base commit id"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no compare call without a base commit id"
+	PASS=$((PASS + 1))
+fi
+
+# Run rc_forge_fetch_pr then rc_forge_fetch_merge_base from the gitlab adapter
+# against a fake glab whose `mr view` prints <mr-json> and exits <mr-exit>, on
+# gitlab.com (which needs no login check). Sets mb_out and mb_calls.
+# Usage: gitlab_merge_base_run <mr-json> <mr-exit>
+gitlab_merge_base_run() {
+	local bindir
+	bindir=$(mktemp -d)
+	printf '%s\n' "$1" >"$bindir/mr.json"
+	cat >"$bindir/glab" <<GLAB
+#!/usr/bin/env bash
+echo "glab \$*" >>"$bindir/calls"
+case "\$1 \$2" in
+"mr view")
+	cat "$bindir/mr.json"
+	exit $2
+	;;
+*) exit 0 ;;
+esac
+GLAB
+	chmod +x "$bindir/glab"
+	mb_out=$(
+		PATH="$bindir:$PATH"
+		unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN GITLAB_API_HOST GITLAB_HOST GITLAB_URI GL_HOST \
+			GLAB_ENABLE_CI_AUTOLOGIN
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/gitlab.sh
+		source "$FORGE_DIR/gitlab.sh"
+		forge_host="gitlab.com" forge_owner=acme forge_repo=widgets
+		pr_head_sha=""
+		rc_forge_fetch_pr 7 acme widgets
+		rc_forge_fetch_merge_base 7 acme widgets "$pr_head_sha"
+	)
+	mb_calls=$(cat "$bindir/calls" 2>/dev/null || true)
+	rm -rf "$bindir"
+}
+# An MR whose diff_refs carry <base_sha> and <head_sha>; its own head is $mb_head.
+mb_mr_json() { # base_sha head_sha
+	printf '{"title":"T","description":"B","target_branch":"main","source_branch":"feat","web_url":"u","state":"opened","sha":"%s","diff_refs":{"base_sha":"%s","head_sha":"%s","start_sha":"%s"}}' \
+		"$mb_head" "$1" "$2" "$mb_base"
+}
+
+echo "Test: GitLab reports diff_refs.base_sha from the MR it already read (#79)"
+mr_json=$(mb_mr_json "$mb_merge" "$mb_head")
+gitlab_merge_base_run "$mr_json" 0
+assert_equals "$mb_out" "$mb_merge" "diff_refs.base_sha is returned"
+assert_equals "$mb_calls" "glab mr view 7 -R gitlab.com/acme/widgets --output json" \
+	"answered with no call beyond the MR view"
+
+echo "Test: GitLab drops a malformed or mismatched diff base (#79)"
+mr_json=$(mb_mr_json "3c3c3c3" "$mb_head")
+gitlab_merge_base_run "$mr_json" 0
+assert_equals "$mb_out" "" "a short base_sha is dropped"
+mr_json=$(mb_mr_json "$mb_merge" "$mb_base")
+gitlab_merge_base_run "$mr_json" 0
+assert_equals "$mb_out" "" "a base taken at another head is dropped"
+gitlab_merge_base_run '{"title":"T","sha":"'"$mb_head"'","diff_refs":"not an object"}' 0
+assert_equals "$mb_out" "" "a diff_refs that is not an object is no answer"
+
+echo "Test: a failing GitLab MR view returns nothing (#79)"
+gitlab_merge_base_run '' 1
+assert_equals "$mb_out" "" "no MR, no merge base"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

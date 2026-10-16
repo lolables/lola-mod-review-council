@@ -13,7 +13,8 @@ make_review_session "$sess"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered"
 body=$(cat "$sess/comment-body.md")
-for needle in "Review Council: REQUEST CHANGES" "TL;DR" "Reviewed at commit" "(high effort)" "auth/token.go:1" "🛡️" "<!-- review-council:marker sha=" "Produced by [Review Council]" "💡 **Recommendation:**" "💬 Full reviewer analysis"; do
+# shellcheck disable=SC2016 # literal markdown code spans among the needles.
+for needle in "Review Council: REQUEST CHANGES" "TL;DR" '**Reviewed:** at `' '· effort `high`' "auth/token.go:1" "🛡️" "<!-- review-council:marker sha=" "Produced by [Review Council]" "💡 **Recommendation:**" "💬 Full reviewer analysis"; do
 	if grep -qF "$needle" <<<"$body"; then
 		echo "  PASS: contains '$needle'"
 		PASS=$((PASS + 1))
@@ -78,6 +79,7 @@ MJ
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
 	rc_url_file() { printf '%s/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+	# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/body.md"
 	{
@@ -384,6 +386,7 @@ make_review_session "$sess" github 42 ""
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
 	rc_url_file() { printf '%s/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+	# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/body.md"
 	{ echo "$RC_FORGE_WEB"; } >"$sess/exports"
@@ -1558,6 +1561,7 @@ forge_web_for() { # owner repo host_line
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 		source "$SCRIPT"
 		rc_url_file() { printf '%s/-/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+		# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
 		rc_url_commit() { printf '%s/-/commit/%s' "$1" "$2"; }
 		rc_render_comment_body "$s" "$s/body.md"
 		echo "$RC_FORGE_WEB"
@@ -1978,6 +1982,195 @@ for models in absent '{ not json' '{"role":"x"}' '[]'; do
 	fi
 	rm -rf "$sess"
 done
+
+# --- Provenance: run facts (#79) ----------------------------------------------
+# The Reviewed line names the compared commits and the effort; the Rules line
+# names the constitution and packs. Every value comes from session.txt, which
+# no model writes, and every value that can come from the change or the forge
+# is printed only inside a code span sized to it.
+REPORT_SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-render-report.sh"
+base40=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+head40=9f8e7d6c5b4a39281706f5e4d3c2b1a098765432
+
+# A review session whose session.txt records every run fact.
+make_facts_session() { # dir
+	make_review_session "$1"
+	set_session_kv "$1" "Base" "main"
+	set_session_kv "$1" "Base SHA" "$base40"
+	set_session_kv "$1" "Head SHA" "$head40"
+	set_session_kv "$1" "Effort" "standard"
+	set_session_kv "$1" "Constitution" "$1/review-config/constitution.md (explicit: CONSTITUTION.md)"
+	set_session_kv "$1" "Constitution path" "CONSTITUTION.md"
+	set_session_kv "$1" "Packs" "go, terraform"
+}
+
+# Assert the first line of <session>'s rendered comment that holds <text>; an
+# absent line reads as empty. The read is its own assignment, so a failing grep
+# is not masked inside another command (SC2312).
+assert_body_line() { # session text expected label
+	local got
+	got=$(grep -m1 -F -- "$2" "$1/comment-body.md" || true)
+	assert_equals "$got" "$3" "$4"
+}
+
+# Renders <session> both ways and asserts the provenance blocks match: in the
+# comment it runs from **Reviewed:** to the TL;DR, in the report from
+# **Reviewed:** to the verdict heading. The standalone comment has no forge
+# hook, so neither side carries links.
+assert_same_provenance() { # session label
+	local s="$1" report comment_block report_block
+	bash "$SCRIPT" "$s" >/dev/null 2>&1
+	report=$(bash "$REPORT_SCRIPT" "$s" 2>/dev/null)
+	comment_block=$(awk '/^\*\*Reviewed:\*\*/ { on = 1 } /^\*\*TL;DR:\*\*/ { on = 0 } on' "$s/comment-body.md")
+	report_block=$(awk '/^\*\*Reviewed:\*\*/ { on = 1 } /^## Council Verdict$/ { on = 0 } on' <<<"$report")
+	if [[ -n "$comment_block" && "$comment_block" == "$report_block" ]]; then
+		echo "  PASS: $2"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $2"
+		echo "        comment: ${comment_block//$'\n'/ / }"
+		echo "        report:  ${report_block//$'\n'/ / }"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+echo "Test: the Reviewed and Rules lines carry the recorded run facts (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** `1a2b3c4d5e6f` (`main`) → `9f8e7d6c5b4a` · effort `standard`<br>' "Reviewed line"
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution `CONSTITUTION.md` · packs `go`, `terraform`<br>' "Rules line"
+if grep -qF 'Reviewed at commit' "$sess/comment-body.md"; then
+	echo "  FAIL: the old stamp is still rendered"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the old stamp is gone"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: with the forge hook both SHAs link to their commits (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	# shellcheck disable=SC2317 # called through the link hook rc_render_provenance is passed.
+	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** [`1a2b3c4d5e6f`](https://github.example.com/acme/widgets/commit/'"$base40"') (`main`) → [`9f8e7d6c5b4a`](https://github.example.com/acme/widgets/commit/'"$head40"') · effort `standard`<br>' \
+	"both SHAs linked through rc_url_commit"
+rm -rf "$sess"
+
+echo "Test: each run fact degrades on its own (#79)"
+while IFS='|' read -r label key value prefix want; do
+	sess=$(mktemp -d)
+	make_facts_session "$sess"
+	set_session_kv "$sess" "$key" "$value"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	assert_body_line "$sess" "$prefix" "$want" "$label"
+	rm -rf "$sess"
+done <<'FACTS'
+no Base SHA: the line names only the head|Base SHA||**Reviewed:**|**Reviewed:** at `9f8e7d6c5b4a` · effort `standard`<br>
+a Base SHA that is not 40 hex is left out|Base SHA|1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B|**Reviewed:**|**Reviewed:** at `9f8e7d6c5b4a` · effort `standard`<br>
+a short Base SHA is left out|Base SHA|1a2b3c4|**Reviewed:**|**Reviewed:** at `9f8e7d6c5b4a` · effort `standard`<br>
+no base branch name: the SHA alone|Base|none (explicit range)|**Reviewed:**|**Reviewed:** `1a2b3c4d5e6f` → `9f8e7d6c5b4a` · effort `standard`<br>
+no effort recorded|Effort||**Reviewed:**|**Reviewed:** `1a2b3c4d5e6f` (`main`) → `9f8e7d6c5b4a`<br>
+no constitution|Constitution path||**Rules:**|**Rules:** constitution none · packs `go`, `terraform`<br>
+no packs line|Packs||**Rules:**|**Rules:** constitution `CONSTITUTION.md` · packs none<br>
+FACTS
+# prepare-emit.sh writes no Constitution path for a refused constitution, so
+# the refusal on the Constitution line is all the renderer could leak.
+echo "Test: a refusal that quotes an explicit-looking value leaks nothing (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+set_session_kv "$sess" "Constitution" "none (refused: 'x (explicit: y)' is not a regular file at .review-council.md)"
+set_session_kv "$sess" "Constitution path" ""
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution none · packs `go`, `terraform`<br>' "refusal quoting an explicit-looking value shows none"
+for leak in refused explicit 'is not a regular file'; do
+	if grep -qF -- "$leak" "$sess/comment-body.md"; then
+		echo "  FAIL: refusal text '$leak' reached the comment body"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: '$leak' absent from the comment body"
+		PASS=$((PASS + 1))
+	fi
+done
+rm -rf "$sess"
+
+sess=$(mktemp -d)
+make_facts_session "$sess"
+set_session_kv "$sess" "Base SHA" "1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF '1A2B3C4D5E6F' "$sess/comment-body.md"; then
+	echo "  FAIL: an invalid Base SHA was printed"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: an invalid Base SHA is never printed"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: no head SHA anywhere still shows the base (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+set_session_kv "$sess" "Head SHA" ""
+set_session_kv "$sess" "Review root" "$sess/archive-without-git"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** `1a2b3c4d5e6f` (`main`) → head unknown · effort `standard`<br>' "unknown head"
+rm -rf "$sess"
+
+echo "Test: a base branch or constitution holding backticks renders as one safe span (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+set_session_kv "$sess" "Base" 'evil``branch<img src=x>`'
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+set_session_kv "$sess" "Constitution path" '`gov`.md'
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** `1a2b3c4d5e6f` (``` evil``branch<img src=x>` ```) → `9f8e7d6c5b4a` · effort `standard`<br>' \
+	"the branch sits in a delimiter longer than its backtick run"
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution `` `gov`.md `` · packs `go`, `terraform`<br>' \
+	"the constitution path is padded where it starts with a backtick"
+rm -rf "$sess"
+
+# The renderer's session_dir need not be spelled as prepare spelled it; the
+# constitution must still render, not fall back to none.
+echo "Test: a trailing-slash session_dir still names the constitution (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+bash "$SCRIPT" "$sess/" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution `CONSTITUTION.md` · packs `go`, `terraform`<br>' "trailing-slash session_dir"
+rm -rf "$sess"
+
+echo "Test: the comment and the report render the same provenance block (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+cat >"$sess/models.json" <<'MJ'
+[{"role":"divisor-adversary-code","requested":"host default","reported":["claude-sonnet-5-5"]},
+ {"role":"coordinator","requested":"host default","reported":[]}]
+MJ
+assert_same_provenance "$sess" "Reviewed, Rules and Models match across both renderers"
+rm -rf "$sess"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

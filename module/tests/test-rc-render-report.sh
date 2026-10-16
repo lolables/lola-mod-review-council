@@ -1510,5 +1510,48 @@ else
 fi
 rm -rf "$session"
 
+echo "Test: the report carries the Reviewed and Rules lines, without links (#79)"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+write_verification_log "$session"
+cat >"$session/session.txt" <<'SES'
+Review Council Session
+Base:         main
+Effort:       deep
+Head SHA:     9f8e7d6c5b4a39281706f5e4d3c2b1a098765432
+Base SHA:     1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+Packs:        none
+Constitution: none
+SES
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+for line in '**Reviewed:** `1a2b3c4d5e6f` (`main`) → `9f8e7d6c5b4a` · effort `deep`<br>' \
+	'**Rules:** constitution none · packs none<br>'; do
+	if grep -qxF -- "$line" <<<"$result"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+if grep -qF '/commit/' <<<"$result"; then
+	echo "  FAIL: the report linked a commit; it holds no forge knowledge"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no links in the report"
+	PASS=$((PASS + 1))
+fi
+rm -f "$session/session.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if ! grep -qF '**Reviewed:**' <<<"$result" && grep -qxF -- '**Rules:** constitution none · packs none<br>' <<<"$result"; then
+	echo "  PASS: without session.txt there is no Reviewed line and Rules says none"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a session without session.txt rendered run facts it cannot know"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -247,6 +247,10 @@ fi
 # regular files directly in that directory, with a name that is safe to write
 # into the session, are taken; anything else is reported and skipped.
 project_pack_count=0
+# The loaded packs by name (file name without .md), ", "-joined for the verdict
+# header's Rules line, which reads it from session.txt. The name check below
+# admits no comma or space, so the join cannot split a name.
+project_pack_names=""
 mkdir -p "${config_dir}/packs"
 # NUL-separated entries. At a revision `ls-tree` prints each as the
 # cwd-relative path it was given plus the name; the loop below takes the
@@ -274,6 +278,7 @@ while IFS= read -r -d '' pack_path; do
 	fi
 	if rc_config_read ".review-council/packs/${pack_name}" >"${config_dir}/packs/${pack_name}"; then
 		project_pack_count=$((project_pack_count + 1))
+		project_pack_names+="${project_pack_names:+, }${pack_name%.md}"
 	else
 		rm -f "${config_dir}/packs/${pack_name}"
 		echo "rc-prepare: project pack '${pack_name}' skipped: not a regular file at ${config_source}" >&2

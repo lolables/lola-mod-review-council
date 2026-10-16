@@ -14,7 +14,7 @@ source "$_RC_RENDER_DIR/lib/render-provenance.sh"
 # rc-render-comment.sh — forge-NEUTRAL renderer for the Review Council PR
 # comment. It owns ALL markdown assembly and computes the neutral facts itself
 # (head SHA, forge web host, severity counts, persona labels). It contains ZERO
-# forge knowledge: source deep-links, the commit-stamp link and the comment size
+# forge knowledge: source deep-links, commit links and the comment size
 # limit are delegated to three hook functions a per-forge script defines before
 # calling in:
 #
@@ -292,9 +292,9 @@ rc_post_intent_refusal() { # session_dir
 # forge-specific links (e.g. #issuecomment-<id>). ---
 rc_render_comment_body() { # session_dir body_file
 	local session_dir="$1" body_file="$2"
-	local owner repo effort rr origin host forge_host recorded_head input_type
+	local owner repo rr origin host forge_host
 	local verdict="APPROVE" v emoji tldr provenance
-	local stamp commit_url repo_url
+	local repo_url
 	local c_crit c_high c_med c_low
 	local agent_rows="" name av
 	local limit max_parts
@@ -302,7 +302,6 @@ rc_render_comment_body() { # session_dir body_file
 	RC_EVIDENCE="$session_dir/verdicts/findings.json"
 	owner=$(rc_parse_kv "$session_dir/session.txt" "Owner")
 	repo=$(rc_parse_kv "$session_dir/session.txt" "Repo")
-	effort=$(rc_parse_kv "$session_dir/session.txt" "Effort")
 
 	# Verdict. Single source shared with rc-render-report.sh: the orchestrator
 	# writes verdict.txt at the start of the report phase (SKILL.md Step 6), so
@@ -324,35 +323,18 @@ rc_render_comment_body() { # session_dir body_file
 		tldr=$(normalize_dashes "$tldr")
 	fi
 
-	# How the review ran, shared with the report (lib/render-provenance.sh).
-	provenance=$(rc_render_provenance "$session_dir")
-
 	# Neutral facts: head SHA and forge web host (parsed from the origin remote
 	# — GitHub Enterprise safe). Empty head SHA degrades links to plain spans
-	# via the hooks, and the marker to `sha=unknown`.
-	#
-	# The head is, in order: the PR/MR head the forge reported ("Head SHA:",
-	# recorded by prepare-emit.sh), the materialized checkout's HEAD, else the
-	# working tree's HEAD — but only for a local review. A review by PR number
-	# or URL ("Input:" pr_number/url) standing in "." was launched from some
-	# checkout that need not be the PR's, so its HEAD would stamp the marker
-	# with a commit nobody reviewed; it stays unknown instead. A GitLab
-	# review_root is an extracted archive with no .git, so only the recorded
-	# head names it.
-	RC_HEAD_SHA=""
+	# via the hooks, and the marker to `sha=unknown`. Which commit counts as
+	# the head is rc_session_head_sha's to decide (lib/render-provenance.sh),
+	# so the marker and the provenance block cannot name different commits.
+	RC_HEAD_SHA=$(rc_session_head_sha "$session_dir")
 	RC_FORGE_WEB=""
 	rr=$(rc_parse_kv "$session_dir/session.txt" "Review root")
-	recorded_head=$(rc_parse_kv "$session_dir/session.txt" "Head SHA")
-	input_type=$(rc_parse_kv "$session_dir/session.txt" "Input")
-	[[ "$recorded_head" =~ ^[0-9a-f]{40}$ ]] && RC_HEAD_SHA="$recorded_head"
 	origin=""
 	if [[ -n "$rr" && "$rr" != "." && -d "$rr/.git" ]]; then
-		[[ -n "$RC_HEAD_SHA" ]] || RC_HEAD_SHA=$(git -C "$rr" rev-parse HEAD 2>/dev/null || echo "")
 		origin=$(git -C "$rr" remote get-url origin 2>/dev/null || echo "")
 	elif [[ "$rr" == "." ]]; then
-		if [[ -z "$RC_HEAD_SHA" && "$input_type" != "pr_number" && "$input_type" != "url" ]]; then
-			RC_HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
-		fi
 		origin=$(git remote get-url origin 2>/dev/null || echo "")
 	fi
 	# A review run by MR/PR URL from outside the target checkout has an
@@ -386,6 +368,10 @@ rc_render_comment_body() { # session_dir body_file
 	_RC_RUN_ID=$(CDPATH='' cd "$session_dir" 2>/dev/null && pwd) || _RC_RUN_ID=""
 	_RC_RUN_ID="${_RC_RUN_ID##*/}"
 	[[ "$_RC_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || _RC_RUN_ID=""
+
+	# How the review ran, shared with the report (lib/render-provenance.sh).
+	# Built after RC_FORGE_WEB so the SHAs can link through the forge's hook.
+	provenance=$(rc_render_provenance "$session_dir" "$RC_HEAD_SHA" rc_url_commit "$RC_FORGE_WEB")
 
 	# Severity counts from verified findings.
 	c_crit=$(sev_count CRITICAL)
@@ -450,18 +436,6 @@ rc_render_comment_body() { # session_dir body_file
 		echo ""
 		printf '%s\n' "$provenance"
 		echo ""
-		if [[ -n "$RC_HEAD_SHA" ]]; then
-			commit_url=""
-			declare -F rc_url_commit >/dev/null 2>&1 && commit_url=$(rc_url_commit "$RC_FORGE_WEB" "$RC_HEAD_SHA")
-			if [[ -n "$commit_url" ]]; then
-				stamp="Reviewed at commit [\`${RC_SHORT_SHA}\`](${commit_url})"
-			else
-				stamp="Reviewed at commit \`${RC_SHORT_SHA}\`"
-			fi
-			[[ -n "$effort" ]] && stamp="${stamp} (${effort} effort)"
-			echo "_${stamp}._"
-			echo ""
-		fi
 		echo "**TL;DR:** ${tldr}"
 		echo ""
 		echo "**Findings:** 🔴 ${c_crit} Critical, 🟠 ${c_high} High, 🟡 ${c_med} Medium, 🔵 ${c_low} Low"

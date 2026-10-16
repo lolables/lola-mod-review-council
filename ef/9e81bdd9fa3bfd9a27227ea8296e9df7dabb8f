@@ -1,0 +1,26 @@
+module/skills/review-council/scripts/rc-render-report.sh
+  s_990f2ef699e987::t_0bafe6dcb83315 298-305,308-311
+module/skills/review-council/scripts/lib/render-findings.sh
+  s_990f2ef699e987::t_0bafe6dcb83315 141-142
+module/skills/review-council/phases/report.md
+  s_990f2ef699e987::t_29548e04579ac5 480-481
+module/tests/test-rc-render-report.sh
+  s_990f2ef699e987::t_19f02cf8b9b6a5 605,612,625,634-651
+  s_990f2ef699e987::t_089527f02abcb5 652-653
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ef9e81bdd9fa3bfd9a27227ea8296e9df7dabb8f",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1534,6 +1534,35 @@ check_mutation "RC-109 cache key folds hyphens, so a-b/c and a/b-c share an entr
 	's#^dest="\${cache_root}/\${host_slug}+\${owner//\\//+}+\${repo}"$#dest="${cache_root}/${host_slug}+${owner//[\\/-]/+}+${repo//-/+}"#' \
 	test-rc-clone-target.sh
 
+# The seed wrote each persona's tier label, which every header then printed as
+# the model used on runs that never requested one (#59). Seeding a tier as the
+# request again must fail the seed's own assertions.
+check_mutation "RC-110 models.json seeded with a tier label instead of host default" \
+	rc-select-council.sh \
+	's#{requested: "host default", reported: \[\]}#{requested: "Capable tier", reported: []}#' \
+	test-rc-select-council.sh
+
+# Model IDs and role names reach the header only through the allow-list; any
+# string passing makes a hostile ID (markdown, a newline, a link) render.
+check_mutation "RC-111 provenance prints IDs without the allow-list" \
+	lib/render-provenance.sh \
+	's#def allowed: type == "string" and test([^)]*);#def allowed: type == "string";#' \
+	test-rc-render-comment.sh
+
+# Deep mode and retries report the same model more than once; without the
+# membership test each report is appended again.
+check_mutation "RC-112 reported models are appended without deduplication" \
+	rc-extract-verdict.sh \
+	's#| if any(\.\[\]; \. == \$r\.model) then \. else#| if false then . else#' \
+	test-rc-extract-verdict.sh
+
+# Roles are printed outside a code span, so they get a tighter class than IDs;
+# widening it back lets @org/team, a URL or _a_ reach the header.
+check_mutation "RC-124 provenance checks roles against the general ID class" \
+	lib/render-provenance.sh \
+	's#def allowed_role: type == "string" and test([^)]*);#def allowed_role: allowed;#' \
+	test-rc-render-comment.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

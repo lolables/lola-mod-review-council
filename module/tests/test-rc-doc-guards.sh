@@ -2357,6 +2357,43 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: model provenance records requests and self-reports, never tiers (RC-113)"
+# models.json was seeded with tier labels ("Capable tier") that every header
+# printed as the models used, on runs that never requested a model (#59). Its
+# fields are now `requested` (what the orchestrator asked for) and `reported`
+# (what the agent said about itself). The scripts enforce the shape; the prose
+# is what keeps the orchestrator from writing a tier into `requested`, the
+# reviewers from guessing a `model`, and report.md's coordinator and validator
+# entries in the shape the renderers read.
+rc113_missing=0
+if ! grep -qF '"requested": "host default"' <<<"$delegate_flat" ||
+	! grep -qF 'never copy a tier name' <<<"$delegate_flat"; then
+	echo "  missing: delegate.md does not tie requested to what was actually asked for"
+	rc113_missing=$((rc113_missing + 1))
+fi
+if ! grep -qF 'Set it only if you know it; otherwise leave it out.' <<<"$delegate_flat"; then
+	echo "  missing: the reviewer prompt does not limit model to a known ID"
+	rc113_missing=$((rc113_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
+if ! grep -qF '`model` is the one optional top-level key' <<<"$protocol_flat"; then
+	echo "  missing: reviewer-protocol.md does not list model as optional"
+	rc113_missing=$((rc113_missing + 1))
+fi
+rc113_section=$(sed -n '/^## Provenance Disclosure/,/^## /p' "$REPORT_MD" | tr '\n' ' ' | tr -s ' ')
+if ! grep -qF '"role": "coordinator", "requested": "host default", "reported":' <<<"$rc113_section" ||
+	grep -qE '"role": ?"(coordinator|validator)", ?"id"' <<<"$rc113_section"; then
+	echo "  missing: report.md's coordinator/validator entries are not in the requested/reported shape"
+	rc113_missing=$((rc113_missing + 1))
+fi
+if [[ "$rc113_missing" -eq 0 ]]; then
+	echo "  PASS: requested, reported and model are each described as the scripts read them"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc113_missing model-provenance rule(s) missing from the docs (RC-113)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

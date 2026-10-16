@@ -175,13 +175,15 @@ cat >"$session/tracking.md" <<'TRACKING'
 TRACKING
 cat >"$session/models.json" <<'MODELS'
 [
-  {"role": "coordinator", "id": "claude-opus-4-8"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"}
+  {"role": "coordinator", "requested": "host default", "reported": ["claude-opus-4-8"]},
+  {"role": "divisor-adversary-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]}
 ]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-if echo "$result" | grep -q "claude-opus-4-8" && echo "$result" | grep -q "divisor-adversary-code: claude-sonnet-4-6"; then
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+if grep -qxF -- '- coordinator: requested host default · reported `claude-opus-4-8`' <<<"$result" &&
+	grep -qxF -- '- adversary: requested host default · reported `claude-sonnet-4-6`' <<<"$result"; then
 	echo "  PASS: recorded models appear in report"
 	PASS=$((PASS + 1))
 else
@@ -223,14 +225,15 @@ cat >"$session/tracking.md" <<'TRACKING'
 TRACKING
 cat >"$session/models.json" <<'MODELS'
 [
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
-  {"role": "divisor-guard-code", "id": "claude-sonnet-4-6"}
+  {"role": "divisor-adversary-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]},
+  {"role": "divisor-adversary-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]},
+  {"role": "divisor-guard-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]}
 ]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-dup_count=$(echo "$result" | grep -c "^- divisor-adversary-code: claude-sonnet-4-6$")
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+dup_count=$(grep -cxF -- '- adversary, guard: requested host default · reported `claude-sonnet-4-6`' <<<"$result" || true)
 if [[ "$dup_count" -eq 1 ]]; then
 	echo "  PASS: duplicate model line collapsed to one"
 	PASS=$((PASS + 1))
@@ -252,12 +255,11 @@ fi
 rm -rf "$session"
 
 # Test 6: malformed models.json must degrade gracefully, not abort the report.
-# Every other jq call in this script has a `2>/dev/null || fallback`; the
-# models.json read is a 3-stage pipe (jq | awk | sed) where, under pipefail, a
-# jq parse failure propagates as the pipeline's exit code even though awk and
-# sed both exit 0 - without a fallback that aborts the whole render with zero
-# output. The docs now ask the LLM to hand-maintain this file, so malformed
-# input is a realistic failure mode, not a hypothetical.
+# The report runs under `set -e` with an ERR trap, and the models.json read
+# used to be a pipeline whose jq parse failure aborted the whole render with
+# zero output. rc_render_provenance (lib/render-provenance.sh) reads it with a
+# fallback instead. The orchestrator hand-edits this file, so malformed input
+# is a realistic failure mode, not a hypothetical.
 echo "Test 6: malformed models.json degrades instead of aborting the report"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"

@@ -199,6 +199,7 @@ SCHEMA_FILE="$SCRIPT_DIR/../skills/review-council/references/verdict-schema.json
 # misnames the defect to the one agent trying to fix it, which is the failure
 # this whole message exists to prevent.
 for spec in "RC_TOP_KEYS:.properties|keys" \
+	"RC_REQUIRED_TOP_KEYS:.required" \
 	"RC_FINDING_KEYS:.properties.findings.items.properties|keys" \
 	"RC_REQUIRED_FINDING_KEYS:.properties.findings.items.required"; do
 	varname="${spec%%:*}"
@@ -823,6 +824,144 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$s"
+
+# --- Reviewer self-reported model (#59) ---------------------------------------
+# A verdict may name the model that produced it. The extractor adds it to that
+# role's `reported` list in models.json, once, and only from a verdict that
+# passed every check: a rejected block is not evidence of anything.
+models_session() { # -> session dir with a seeded models.json
+	local s
+	s=$(new_session)
+	printf '%s\n' '[{"role":"divisor-guard-code","requested":"host default","reported":[]},{"role":"divisor-sre-code","requested":"host default","reported":[]}]' >"$s/models.json"
+	printf '%s' "$s"
+}
+
+echo "Test: a verdict's model reaches that role's reported list (#59)"
+s=$(models_session)
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "a verdict carrying model is valid"
+assert_jq "$s/models.json" 'map(select(.role == "divisor-guard-code")) | .[0].reported | join(",")' \
+	"claude-sonnet-5-5" "the guard's self-report is recorded"
+assert_jq "$s/models.json" 'map(select(.role == "divisor-sre-code")) | .[0].reported | length' \
+	"0" "a reviewer that said nothing gets nothing"
+assert_jq "$s/models.json" 'map(select(.role == "divisor-guard-code")) | .[0].requested' \
+	"host default" "the request is left as recorded"
+rm -rf "$s"
+
+echo "Test: a role's reported list stays unique across subsystems and re-runs (#59)"
+s=$(models_session)
+mkdir -p "$s/verdicts/auth" "$s/verdicts/api" "$s/verdicts/db"
+for sub in auth api; do
+	write_raw "$s" "$sub/divisor-guard-code" '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+done
+write_raw "$s" db/divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-opus-5-5"}'
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_jq "$s/models.json" 'map(select(.role == "divisor-guard-code")) | .[0].reported | sort | join(",")' \
+	"claude-opus-5-5,claude-sonnet-5-5" "each distinct value once, after two runs"
+assert_jq "$s/models.json" 'length' "2" "no entry is added for a role already present"
+rm -rf "$s"
+
+echo "Test: a role with no entry gets one at host default (#59)"
+s=$(models_session)
+write_raw "$s" divisor-curator-code '{"agent":"divisor-curator-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-haiku-5"}'
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_jq "$s/models.json" 'map(select(.role == "divisor-curator-code")) | .[0] | "\(.requested)|\(.reported | join(","))"' \
+	"host default|claude-haiku-5" "the new entry claims no request it cannot know"
+rm -rf "$s"
+
+echo "Test: an invalid verdict contributes no model (#59)"
+s=$(models_session)
+# Valid JSON naming a model, refused by the verdict/severity gate.
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","model":"claude-sonnet-5-5","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+# And one refused by the schema: an empty model.
+write_raw "$s" divisor-sre-code '{"agent":"divisor-sre-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":""}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "both blocks are refused"
+assert_jq "$s/models.json" '[.[].reported[]] | length' "0" "neither refused block reported a model"
+rm -rf "$s"
+
+echo "Test: without a models.json the extractor creates none (#59)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "extraction is unaffected"
+if [[ ! -e "$s/models.json" ]]; then
+	echo "  PASS: no models.json invented"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the extractor created models.json"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a models.json that is not an array is left alone and the drop is warned about (#59)"
+s=$(new_session)
+printf '%s\n' '{"not":"an array"}' >"$s/models.json"
+cp "$s/models.json" "$s/models.before"
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+err=$(bash "$SCRIPT" "$s" 2>&1 >/dev/null)
+if grep -qF 'rc-warning: self-reported models were not recorded: models.json is not an array' <<<"$err"; then
+	echo "  PASS: warning names the dropped models"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no rc-warning for the non-array models.json: $err"
+	FAIL=$((FAIL + 1))
+fi
+if cmp -s "$s/models.json" "$s/models.before"; then
+	echo "  PASS: models.json unchanged"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: models.json was rewritten"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: the jq fallback accepts an optional model and rejects a malformed one (#59)"
+model_mask=$(mktemp -d)
+model_nojs=$(path_without_command jsonschema "$model_mask")
+for case_ in 'accept|"claude-sonnet-5-5"' 'reject|""' 'reject|7' 'reject|["a"]'; do
+	expect="${case_%%|*}"
+	model="${case_#*|}"
+	s=$(new_session)
+	write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[],"model":'"$model"'}'
+	result=$(PATH="$model_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+	status=$(jq -r '.status' <<<"$result")
+	if [[ "$expect" == "accept" ]]; then
+		assert_equals "$status" "ok" "fallback accepts model $model"
+	else
+		assert_equals "$status" "extract_error" "fallback rejects model $model"
+		detail=$(jq -r '.invalid[0].detail' <<<"$result")
+		# shellcheck disable=SC2016 # literal markdown code span in the detail.
+		if grep -qF '`model`' <<<"$detail"; then
+			echo "  PASS: the detail for model $model names the field"
+			PASS=$((PASS + 1))
+		else
+			echo "  FAIL: the detail for model $model does not name the field: $detail"
+			FAIL=$((FAIL + 1))
+		fi
+	fi
+	rm -rf "$s"
+done
+
+echo "Test: a block without model is not told that model is missing (#59)"
+# RC_TOP_KEYS now lists an optional key, so it can no longer double as the
+# required list: a missing-key detail built from it would demand `model` from
+# every reviewer that, correctly, left it out.
+s=$(new_session)
+write_raw "$s" divisor-curator-code '{"agent":"divisor-curator-code","verdict":"APPROVE","findings":[]}'
+result=$(PATH="$model_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'files_read' <<<"$detail" && ! grep -qF 'model' <<<"$detail"; then
+	echo "  PASS: only the truly missing key is named"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail misnames the missing key: $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+rm -rf "$model_mask"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

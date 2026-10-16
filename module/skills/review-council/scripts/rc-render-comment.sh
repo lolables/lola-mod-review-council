@@ -8,6 +8,8 @@ _RC_RENDER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_RC_RENDER_DIR/rc-lib.sh"
 # shellcheck source=module/skills/review-council/scripts/lib/render-findings.sh
 source "$_RC_RENDER_DIR/lib/render-findings.sh"
+# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+source "$_RC_RENDER_DIR/lib/render-provenance.sh"
 
 # rc-render-comment.sh — forge-NEUTRAL renderer for the Review Council PR
 # comment. It owns ALL markdown assembly and computes the neutral facts itself
@@ -291,7 +293,7 @@ rc_post_intent_refusal() { # session_dir
 rc_render_comment_body() { # session_dir body_file
 	local session_dir="$1" body_file="$2"
 	local owner repo effort rr origin host forge_host recorded_head input_type
-	local verdict="APPROVE" v emoji tldr models_bullets=""
+	local verdict="APPROVE" v emoji tldr provenance
 	local stamp commit_url repo_url
 	local c_crit c_high c_med c_low
 	local agent_rows="" name av
@@ -322,14 +324,8 @@ rc_render_comment_body() { # session_dir body_file
 		tldr=$(normalize_dashes "$tldr")
 	fi
 
-	# LLM provenance: unique model IDs the host recorded, as bullets.
-	if [[ -f "$session_dir/models.json" ]]; then
-		local model_ids
-		model_ids=$(jq -r '[.[].id] | unique[]' "$session_dir/models.json" 2>/dev/null || true)
-		while IFS= read -r id; do
-			[[ -n "$id" ]] && models_bullets+="> - ${id}"$'\n'
-		done <<<"$model_ids"
-	fi
+	# How the review ran, shared with the report (lib/render-provenance.sh).
+	provenance=$(rc_render_provenance "$session_dir")
 
 	# Neutral facts: head SHA and forge web host (parsed from the origin remote
 	# — GitHub Enterprise safe). Empty head SHA degrades links to plain spans
@@ -451,13 +447,8 @@ rc_render_comment_body() { # session_dir body_file
 		echo "## ${emoji} Review Council: ${verdict}"
 		echo ""
 		echo "> **Automated LLM review, not a human sign-off.** Findings are machine-generated, may contain errors, and are advisory input to human judgment."
-		echo ">"
-		if [[ -n "$models_bullets" ]]; then
-			echo "> Models used:"
-			printf '%s' "$models_bullets"
-		else
-			echo "> Reviewer model IDs were not recorded by the host."
-		fi
+		echo ""
+		printf '%s\n' "$provenance"
 		echo ""
 		if [[ -n "$RC_HEAD_SHA" ]]; then
 			commit_url=""

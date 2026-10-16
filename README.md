@@ -350,6 +350,19 @@ refuses to, so asking afterwards means running the review again with the post
 request. Re-reviews edit the same comment (matched by a hidden marker) instead
 of posting new ones.
 
+**The verdict header says how the review ran.** Under the verdict and the
+automated-review banner, the comment and `report.md` carry the same provenance
+block, written by scripts rather than by the model:
+
+- **Models**: for each reviewer, the coordinator and the validator, the model
+  that was *requested* (`host default` unless the orchestrator named one at
+  dispatch) and the model the agent *reported* about itself. A reported ID is
+  the agent's own claim, not a confirmation from the host; "not reported"
+  means it made none.
+
+An ID or name that is not a plain identifier is shown as `unrecognised` rather
+than printed.
+
 GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
 gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is
 absent or the forge is neither, the comment body is rendered to a file and you

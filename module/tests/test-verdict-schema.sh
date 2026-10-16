@@ -203,6 +203,23 @@ else
 	PASS=$((PASS + 1))
 fi
 
+echo "Test: model is an optional, non-empty top-level string (#59)"
+# A reviewer may name the model it ran as; the extractor records it as that
+# role's self-report. Optional, because a reviewer that does not know its model
+# must be able to leave it out rather than guess, and non-empty, because an
+# empty claim is no claim.
+model_prop=$(jq -c '.properties.model' "$SCHEMA")
+assert_equals "$model_prop" '{"type":"string","minLength":1}' \
+	"model is a non-empty string"
+top_required=$(jq -c '.required' "$SCHEMA")
+if grep -qF '"model"' <<<"$top_required"; then
+	echo "  FAIL: model is required — every reviewer that does not know its model would break"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: model is optional"
+	PASS=$((PASS + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

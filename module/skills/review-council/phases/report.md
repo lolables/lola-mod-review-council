@@ -103,30 +103,36 @@ LLM-generated. **Mandatory, all effort modes** — never remove,
 suppress, or soften. Review artifact a maintainer acts on must declare
 it was produced by an LLM, not a human reviewer.
 
-`${session_dir}/models.json` — a JSON array of `{"role":"...","id":"..."}`
-objects — supplies the provenance header. `rc-select-council.sh` already
-seeded it with one entry per dispatched reviewer, each carrying the tier
-that reviewer was requested at, so the header is never empty. You do not
-create this file.
+`${session_dir}/models.json` supplies the Models part of the provenance block
+both renderers print under the banner. It is a JSON array of
+`{"role": "...", "requested": "...", "reported": [...]}` objects:
+`rc-select-council.sh` seeded one per dispatched reviewer, and
+`rc-extract-verdict.sh` filled each reviewer's `reported` from its verdict. You
+do not create this file. The header shows both fields for every role and labels
+them, so a reader can tell what was asked for from what an agent claimed.
 
-Two roles the selector cannot know are yours to add, to the extent the
-host exposes model identity:
+Two roles the selector cannot know are yours to add:
 
-- Coordinator (this orchestrator) model.
-- Validation-gate agent model, if validation gate ran.
+- `coordinator` (this orchestrator): `requested` is `host default`, since
+  nothing dispatched you with a named model; `reported` is your own model ID
+  if you know it, otherwise `[]`.
+- `validator`, if the validation gate ran: `requested` is the model ID you
+  passed when you dispatched it, otherwise `host default`; `reported` is the
+  model ID the validator reported, otherwise `[]`.
 
-Append them rather than rewriting the file:
+Replace any earlier entries for those two roles rather than appending beside
+them, so a re-render stays one entry per role:
 
 ```bash
-jq '. + [{"role": "coordinator", "id": "claude-opus-4-8"},
-         {"role": "validator", "id": "claude-opus-4-8"}]' \
+jq '[.[] | select(.role != "coordinator" and .role != "validator")]
+    + [{"role": "coordinator", "requested": "host default", "reported": ["claude-opus-4-8"]},
+       {"role": "validator", "requested": "host default", "reported": []}]' \
   "${session_dir}/models.json" >"${session_dir}/models.json.tmp"
 mv "${session_dir}/models.json.tmp" "${session_dir}/models.json"
 ```
 
-Host exposes no ID for either role: omit that role. Do NOT invent model
-IDs — an absent entry is a smaller loss than a wrong one. Renderers
-dedupe entries defensively, so repeated entries are safe.
+Do NOT invent model IDs: an empty `reported` renders as "not reported", a
+smaller loss than a wrong ID. Never put a tier name in either field.
 
 ---
 

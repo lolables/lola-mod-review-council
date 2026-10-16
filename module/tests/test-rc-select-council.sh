@@ -315,10 +315,11 @@ rm -rf "$d"
 # `models.json` used to be the orchestrator's job: phases/delegate.md asked it to
 # append an entry as it dispatched each reviewer. Across 1785 cached sessions the
 # file exists zero times, so every report rendered the renderer's "not recorded"
-# fallback instead of the provenance it promised. The tier a persona is dispatched
-# at is a fixed property of the persona, so the selector — which already knows the
-# roster — seeds the file, and the orchestrator's remaining job is the narrower
-# one of UPGRADING an entry when the host names a concrete model.
+# fallback instead of the provenance it promised. The selector, which already
+# knows the roster, seeds the file. It used to seed each persona's tier label
+# ("Capable tier"), which the header then printed as the model used on runs that
+# never requested one (#59). It now seeds what a dispatch naming no model
+# actually requests, `host default`, and an empty self-report list.
 #
 # Entries are asserted sorted by role, so a case pins the set rather than the
 # order the seeding happens to emit.
@@ -340,12 +341,13 @@ check_models "$d" "roles are the dispatched council" \
 	'map(.role) | sort | join(",")' \
 	"divisor-adversary-code,divisor-curator-code,divisor-guard-code,divisor-sre-code,divisor-testing-code"
 
-echo "Test: seeded tiers follow the delegate.md table"
-check_models "$d" "adversary is Capable" 'map(select(.role == "divisor-adversary-code")) | .[0].id' "Capable tier"
-check_models "$d" "guard is Capable" 'map(select(.role == "divisor-guard-code")) | .[0].id' "Capable tier"
-check_models "$d" "testing is Standard" 'map(select(.role == "divisor-testing-code")) | .[0].id' "Standard tier"
-check_models "$d" "sre is Standard" 'map(select(.role == "divisor-sre-code")) | .[0].id' "Standard tier"
-check_models "$d" "curator is Standard" 'map(select(.role == "divisor-curator-code")) | .[0].id' "Standard tier"
+echo "Test: the seed requests the host default and claims no self-report (#59)"
+check_models "$d" "every request is host default" \
+	'map(.requested) | unique | join(",")' "host default"
+check_models "$d" "no reviewer has reported yet" \
+	'map(.reported | length) | add' "0"
+check_models "$d" "no entry carries the old id key" \
+	'map(select(has("id"))) | length' "0"
 rm -rf "$d"
 
 echo "Test: a deselected reviewer gets no entry, so provenance names only what ran"
@@ -359,32 +361,56 @@ check_models "$d" "entries match the narrowed council" \
 	"divisor-adversary-code,divisor-curator-code,divisor-guard-code"
 rm -rf "$d"
 
-echo "Test: re-running neither duplicates entries nor clobbers a host-supplied model ID"
+echo "Test: a re-run keeps a new-shape entry and adds no duplicates"
 d=$(new_session)
 changeset "$d" "internal/auth/token.go"
 bash "$SELECT" "$d" >/dev/null
-# Stand in for the orchestrator upgrading a seeded tier once the host named the
-# model it actually dispatched on. A re-run that reset this to "Capable tier"
-# would silently downgrade a true record to a requested one.
-jq '(.[] | select(.role == "divisor-guard-code") | .id) = "claude-sonnet-5"' \
+# Stand in for the orchestrator recording a model it passed at dispatch, and
+# the extractor recording what the reviewer reported. A re-run that reseeded
+# this entry would erase both.
+jq '(.[] | select(.role == "divisor-guard-code")) |= (.requested = "claude-sonnet-5" | .reported = ["claude-sonnet-5"])' \
 	"$d/models.json" >"$d/models.json.edited"
 mv "$d/models.json.edited" "$d/models.json"
 bash "$SELECT" "$d" >/dev/null
 check_models "$d" "no duplicate entries on re-run" 'length' "5"
-check_models "$d" "concrete ID survives" \
-	'map(select(.role == "divisor-guard-code")) | .[0].id' "claude-sonnet-5"
-check_models "$d" "unupgraded roles keep their tier" \
-	'map(select(.role == "divisor-adversary-code")) | .[0].id' "Capable tier"
+check_models "$d" "the recorded request survives" \
+	'map(select(.role == "divisor-guard-code")) | .[0].requested' "claude-sonnet-5"
+check_models "$d" "the recorded self-report survives" \
+	'map(select(.role == "divisor-guard-code")) | .[0].reported | join(",")' "claude-sonnet-5"
+check_models "$d" "untouched roles keep the seed" \
+	'map(select(.role == "divisor-adversary-code")) | .[0].requested' "host default"
 rm -rf "$d"
 
-echo "Test: a spec-mode council seeds spec personas at the same tiers"
+echo "Test: an old-shape entry is reseeded, not carried over (#59)"
+d=$(new_session)
+changeset "$d" "internal/auth/token.go"
+# A session prepared before #59: tier labels under `id`. They were never true,
+# so nothing of them survives a resume, not even an ID that looks real.
+printf '%s\n' '[{"role":"divisor-guard-code","id":"Capable tier"},{"role":"divisor-sre-code","id":"claude-sonnet-5"}]' >"$d/models.json"
+bash "$SELECT" "$d" >/dev/null
+check_models "$d" "old guard entry reseeded" \
+	'map(select(.role == "divisor-guard-code")) | .[0] | "\(.requested)|\(.reported | length)|\(has("id"))"' \
+	"host default|0|false"
+check_models "$d" "an old entry holding a real-looking ID is reseeded too" \
+	'map(select(.role == "divisor-sre-code")) | .[0].requested' "host default"
+rm -rf "$d"
+
+echo "Test: a malformed models.json is reseeded rather than aborting the run"
+d=$(new_session)
+changeset "$d" "internal/auth/token.go"
+printf '{ not json' >"$d/models.json"
+bash "$SELECT" "$d" >/dev/null
+check_models "$d" "reseeded from the roster" 'length' "5"
+check_models "$d" "reseeded at host default" 'map(.requested) | unique | join(",")' "host default"
+rm -rf "$d"
+
+echo "Test: a spec-mode council seeds spec personas the same way"
 d=$(new_session spec '["divisor-adversary-spec","divisor-guard-spec","divisor-testing-spec"]')
 changeset "$d" "specs/auth.md"
 bash "$SELECT" "$d" >/dev/null
-check_models "$d" "adversary-spec is Capable" \
-	'map(select(.role == "divisor-adversary-spec")) | .[0].id' "Capable tier"
-check_models "$d" "testing-spec is Standard" \
-	'map(select(.role == "divisor-testing-spec")) | .[0].id' "Standard tier"
+check_models "$d" "spec roles seeded at host default" \
+	'map("\(.role)=\(.requested)") | sort | join(",")' \
+	"divisor-adversary-spec=host default,divisor-guard-spec=host default,divisor-testing-spec=host default"
 rm -rf "$d"
 
 echo ""

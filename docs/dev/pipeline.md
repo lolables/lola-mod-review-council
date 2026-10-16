@@ -282,9 +282,10 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `diff.patch` — full patch (code review)
 - `batch-plan.json` and `batches.txt` — the delegation rounds and the budgets they were measured against, written on
   every run so a changeset that needed no split reads differently from a step that never ran
-- `models.json` — LLM provenance for the report header. Seeded by `rc-select-council.sh` with one entry per dispatched
-  reviewer carrying the tier it was requested at, so the header is never empty; the orchestrator upgrades an entry to a
-  concrete model ID where the host exposes one, and appends the coordinator and validator roles it alone knows
+- `models.json` — model provenance for the verdict header. One `{role, requested, reported}` entry per dispatched
+  reviewer: `rc-select-council.sh` seeds `requested` as `host default` and `reported` as `[]`, the orchestrator replaces
+  `requested` only with a model ID it passed at dispatch, `rc-extract-verdict.sh` adds each valid verdict's optional
+  `model` to `reported`, and the orchestrator adds the coordinator and validator roles it alone knows
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
   canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
   and, when the change touches a symlink, the script verdict `rc-check-symlinks.json`. `findings.json.stale` is a

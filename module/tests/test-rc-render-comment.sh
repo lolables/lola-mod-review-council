@@ -72,7 +72,7 @@ echo "Test 2: sourced render with hooks (deep-links + exports)"
 sess=$(mktemp -d)
 make_review_session "$sess"
 cat >"$sess/models.json" <<'MJ'
-[{"role":"divisor-adversary-code","id":"claude-opus-4-8"},{"role":"divisor-guard-code","id":"claude-opus-4-8"}]
+[{"role":"divisor-adversary-code","requested":"host default","reported":["claude-opus-4-8"]},{"role":"divisor-guard-code","requested":"host default","reported":["claude-opus-4-8"]}]
 MJ
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
@@ -101,10 +101,11 @@ else
 	echo "  FAIL: commit stamp link missing"
 	FAIL=$((FAIL + 1))
 fi
-# two models.json entries share the same id -> deduped to a single bullet
-model_mentions=$(grep -c 'claude-opus-4-8' <<<"$b2")
-if grep -qF "> - claude-opus-4-8" <<<"$b2" && [[ "$model_mentions" -eq 1 ]]; then
-	echo "  PASS: provenance bullet deduped"
+# two roles with the same (requested, reported) pair share a single bullet
+model_mentions=$(grep -c 'claude-opus-4-8' <<<"$b2" || true)
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+if grep -qxF -- '- adversary, guard: requested host default · reported `claude-opus-4-8`' <<<"$b2" && [[ "$model_mentions" -eq 1 ]]; then
+	echo "  PASS: provenance roles grouped by their pair"
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: provenance bullets wrong"
@@ -1860,6 +1861,123 @@ echo "APPROVE" >"$sess/verdict.txt"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "error" "a hand-written verdict without findings is refused"
 rm -rf "$sess"
+
+# --- Provenance: models (#59) -------------------------------------------------
+# The header used to print tier labels as "Models used". It now shows, per
+# (requested, reported) pair, what the orchestrator asked for and what each
+# agent said about itself, and never prints an ID it has not allow-listed.
+
+echo "Test: models.json renders requested and reported, labelled (#59)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+cat >"$sess/models.json" <<'MJ'
+[{"role":"divisor-adversary-code","requested":"host default","reported":["claude-sonnet-5-5"]},
+ {"role":"divisor-guard-code","requested":"claude-opus-5-5","reported":[]},
+ {"role":"coordinator","requested":"host default","reported":["claude-opus-5-5"]}]
+MJ
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+for line in '**Models:**' \
+	'- adversary: requested host default · reported `claude-sonnet-5-5`' \
+	'- guard: requested `claude-opus-5-5` · not reported' \
+	'- coordinator: requested host default · reported `claude-opus-5-5`'; do
+	if grep -qxF -- "$line" <<<"$body"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+if grep -qiF 'tier' <<<"$body"; then
+	echo "  FAIL: a tier label reached the header"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no tier label in the header"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: an ID or role that is not a plain identifier renders as unrecognised (#59)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq -n '[{role: "divisor-adversary-code", requested: "evil`](https://x.invalid)",
+	 reported: ["claude\n## injected", "<img src=x>", "ok-model"]},
+	{role: "divisor-`guard`-code", requested: "host default", reported: []}]' >"$sess/models.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+for line in '- adversary: requested unrecognised · reported unrecognised, `ok-model`' \
+	'- unrecognised: requested host default · not reported'; do
+	if grep -qxF -- "$line" <<<"$body"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+for raw in 'x.invalid' '## injected' '<img' '`guard`'; do
+	if grep -qF -- "$raw" <<<"$body"; then
+		echo "  FAIL: '$raw' from models.json reached the body"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: '$raw' kept out of the body"
+		PASS=$((PASS + 1))
+	fi
+done
+rm -rf "$sess"
+
+echo "Test: a role that can ping, autolink or italicise renders as unrecognised, and a non-array reported does too (#59)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq -n '[{role: "@org/team", requested: "host default", reported: []},
+	{role: "http://x.invalid/a", requested: "host default", reported: []},
+	{role: "www.x.io", requested: "host default", reported: []},
+	{role: "_a_", requested: "host default", reported: []},
+	{role: "divisor-guard-code", requested: "claude-x", reported: "x"}]' >"$sess/models.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+for line in '- unrecognised: requested host default · not reported' \
+	'- guard: requested `claude-x` · reported unrecognised'; do
+	if grep -qxF -- "$line" <<<"$body"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+for raw in '@org' 'x.invalid' 'www.x.io' '_a_'; do
+	if grep -qF -- "$raw" <<<"$body"; then
+		echo "  FAIL: role '$raw' reached the body"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: role '$raw' kept out of the body"
+		PASS=$((PASS + 1))
+	fi
+done
+rm -rf "$sess"
+
+echo "Test: a missing, unreadable or empty models.json renders the not-recorded line (#59)"
+for models in absent '{ not json' '{"role":"x"}' '[]'; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	[[ "$models" == absent ]] || printf '%s' "$models" >"$sess/models.json"
+	result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+	assert_json_field "$result" "status" "rendered" "models.json $models: still renders"
+	if grep -qF '**Models:** _Not recorded by the host' "$sess/comment-body.md"; then
+		echo "  PASS: models.json $models: not-recorded line"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: models.json $models: no not-recorded line"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -1,0 +1,21 @@
+docs/dev/pipeline.md
+  s_990f2ef699e987::t_d7d336e6a4c47f 163-164,167-170
+README.md
+  s_990f2ef699e987::t_d7d336e6a4c47f 64-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a1456a0fda46490a150f73316069424bb52f490",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

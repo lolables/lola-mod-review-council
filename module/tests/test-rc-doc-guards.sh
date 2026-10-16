@@ -2357,6 +2357,70 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: model provenance records requests and self-reports, never tiers (RC-113)"
+# models.json was seeded with tier labels ("Capable tier") that every header
+# printed as the models used, on runs that never requested a model (#59). Its
+# fields are now `requested` (what the orchestrator asked for) and `reported`
+# (what the agent said about itself). The scripts enforce the shape; the prose
+# is what keeps the orchestrator from writing a tier into `requested`, the
+# reviewers from guessing a `model`, and report.md's coordinator and validator
+# entries in the shape the renderers read.
+rc113_missing=0
+if ! grep -qF '"requested": "host default"' <<<"$delegate_flat" ||
+	! grep -qF 'never copy a tier name' <<<"$delegate_flat"; then
+	echo "  missing: delegate.md does not tie requested to what was actually asked for"
+	rc113_missing=$((rc113_missing + 1))
+fi
+if ! grep -qF 'Set it only if you know it; otherwise leave it out.' <<<"$delegate_flat"; then
+	echo "  missing: the reviewer prompt does not limit model to a known ID"
+	rc113_missing=$((rc113_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
+if ! grep -qF '`model` is the one optional top-level key' <<<"$protocol_flat"; then
+	echo "  missing: reviewer-protocol.md does not list model as optional"
+	rc113_missing=$((rc113_missing + 1))
+fi
+rc113_section=$(sed -n '/^## Provenance Disclosure/,/^## /p' "$REPORT_MD" | tr '\n' ' ' | tr -s ' ')
+if ! grep -qF '"role": "coordinator", "requested": "host default", "reported":' <<<"$rc113_section" ||
+	grep -qE '"role": ?"(coordinator|validator)", ?"id"' <<<"$rc113_section"; then
+	echo "  missing: report.md's coordinator/validator entries are not in the requested/reported shape"
+	rc113_missing=$((rc113_missing + 1))
+fi
+if [[ "$rc113_missing" -eq 0 ]]; then
+	echo "  PASS: requested, reported and model are each described as the scripts read them"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc113_missing model-provenance rule(s) missing from the docs (RC-113)"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: a missing verdict is disclosed by the scripts and caps the verdict (RC-121)"
+# `missing_verdicts` was computed and never rendered: verify.md asked the
+# orchestrator to carry it into the report narrative by hand, and the verdict
+# ignored it, so a reviewer that returned nothing read as a clean pass (#57).
+# The renderers now print it and RC_COUNCIL_VERDICT_JQ caps APPROVE. This pins
+# the prose that says so, so a hand-written disclosure does not come back as a
+# second, divergent copy, and the verdict rule names the cap it implements.
+rc121_missing=0
+if ! grep -qF 'Coverage gap' <<<"$verify_flat" ||
+	! grep -qF 'Do not write that disclosure into the report narrative by hand' <<<"$verify_flat"; then
+	echo "  missing: verify.md still has the orchestrator disclose missing verdicts by hand"
+	rc121_missing=$((rc121_missing + 1))
+fi
+rc121_rule=$(sed -n '/^## Final Verdict Determination/,/^## /p' "$REPORT_MD" | tr '\n' ' ' | tr -s ' ')
+if ! grep -qF 'no verified finding remains, but a dispatched reviewer returned no verdict' <<<"$rc121_rule" ||
+	! grep -qF 'missing_verdicts' <<<"$rc121_rule"; then
+	echo "  missing: report.md's verdict rule does not cap APPROVE at APPROVE WITH ADVISORIES for a missing verdict"
+	rc121_missing=$((rc121_missing + 1))
+fi
+if [[ "$rc121_missing" -eq 0 ]]; then
+	echo "  PASS: missing verdicts are script-disclosed and cap the verdict in the docs"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc121_missing missing-verdict rule(s) absent from the docs (RC-121)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

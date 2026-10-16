@@ -199,6 +199,7 @@ SCHEMA_FILE="$SCRIPT_DIR/../skills/review-council/references/verdict-schema.json
 # misnames the defect to the one agent trying to fix it, which is the failure
 # this whole message exists to prevent.
 for spec in "RC_TOP_KEYS:.properties|keys" \
+	"RC_REQUIRED_TOP_KEYS:.required" \
 	"RC_FINDING_KEYS:.properties.findings.items.properties|keys" \
 	"RC_REQUIRED_FINDING_KEYS:.properties.findings.items.required"; do
 	varname="${spec%%:*}"
@@ -823,6 +824,241 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$s"
+
+# --- Reviewer self-reported model (#59) ---------------------------------------
+# A verdict may name the model that produced it. The extractor adds it to that
+# role's `reported` list in models.json, once, and only from a verdict that
+# passed every check: a rejected block is not evidence of anything.
+models_session() { # -> session dir with a seeded models.json
+	local s
+	s=$(new_session)
+	printf '%s\n' '[{"role":"divisor-guard-code","requested":"host default","reported":[]},{"role":"divisor-sre-code","requested":"host default","reported":[]}]' >"$s/models.json"
+	printf '%s' "$s"
+}
+
+echo "Test: a verdict's model reaches that role's reported list (#59)"
+s=$(models_session)
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "a verdict carrying model is valid"
+assert_jq "$s/models.json" 'map(select(.role == "divisor-guard-code")) | .[0].reported | join(",")' \
+	"claude-sonnet-5-5" "the guard's self-report is recorded"
+assert_jq "$s/models.json" 'map(select(.role == "divisor-sre-code")) | .[0].reported | length' \
+	"0" "a reviewer that said nothing gets nothing"
+assert_jq "$s/models.json" 'map(select(.role == "divisor-guard-code")) | .[0].requested' \
+	"host default" "the request is left as recorded"
+rm -rf "$s"
+
+echo "Test: a role's reported list stays unique across subsystems and re-runs (#59)"
+s=$(models_session)
+mkdir -p "$s/verdicts/auth" "$s/verdicts/api" "$s/verdicts/db"
+for sub in auth api; do
+	write_raw "$s" "$sub/divisor-guard-code" '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+done
+write_raw "$s" db/divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-opus-5-5"}'
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_jq "$s/models.json" 'map(select(.role == "divisor-guard-code")) | .[0].reported | sort | join(",")' \
+	"claude-opus-5-5,claude-sonnet-5-5" "each distinct value once, after two runs"
+assert_jq "$s/models.json" 'length' "2" "no entry is added for a role already present"
+rm -rf "$s"
+
+echo "Test: a role with no entry gets one at host default (#59)"
+s=$(models_session)
+write_raw "$s" divisor-curator-code '{"agent":"divisor-curator-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-haiku-5"}'
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_jq "$s/models.json" 'map(select(.role == "divisor-curator-code")) | .[0] | "\(.requested)|\(.reported | join(","))"' \
+	"host default|claude-haiku-5" "the new entry claims no request it cannot know"
+rm -rf "$s"
+
+echo "Test: an invalid verdict contributes no model (#59)"
+s=$(models_session)
+# Valid JSON naming a model, refused by the verdict/severity gate.
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","model":"claude-sonnet-5-5","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+# And one refused by the schema: an empty model.
+write_raw "$s" divisor-sre-code '{"agent":"divisor-sre-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":""}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "both blocks are refused"
+assert_jq "$s/models.json" '[.[].reported[]] | length' "0" "neither refused block reported a model"
+rm -rf "$s"
+
+echo "Test: without a models.json the extractor creates none (#59)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "extraction is unaffected"
+if [[ ! -e "$s/models.json" ]]; then
+	echo "  PASS: no models.json invented"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the extractor created models.json"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a models.json that is not an array is left alone and the drop is warned about (#59)"
+s=$(new_session)
+printf '%s\n' '{"not":"an array"}' >"$s/models.json"
+cp "$s/models.json" "$s/models.before"
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":"claude-sonnet-5-5"}'
+err=$(bash "$SCRIPT" "$s" 2>&1 >/dev/null)
+if grep -qF 'rc-warning: self-reported models were not recorded: models.json is not an array' <<<"$err"; then
+	echo "  PASS: warning names the dropped models"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no rc-warning for the non-array models.json: $err"
+	FAIL=$((FAIL + 1))
+fi
+if cmp -s "$s/models.json" "$s/models.before"; then
+	echo "  PASS: models.json unchanged"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: models.json was rewritten"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: the jq fallback accepts an optional model and rejects a malformed one (#59)"
+model_mask=$(mktemp -d)
+model_nojs=$(path_without_command jsonschema "$model_mask")
+for case_ in 'accept|"claude-sonnet-5-5"' 'reject|""' 'reject|7' 'reject|["a"]'; do
+	expect="${case_%%|*}"
+	model="${case_#*|}"
+	s=$(new_session)
+	write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[],"model":'"$model"'}'
+	result=$(PATH="$model_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+	status=$(jq -r '.status' <<<"$result")
+	if [[ "$expect" == "accept" ]]; then
+		assert_equals "$status" "ok" "fallback accepts model $model"
+	else
+		assert_equals "$status" "extract_error" "fallback rejects model $model"
+		detail=$(jq -r '.invalid[0].detail' <<<"$result")
+		# shellcheck disable=SC2016 # literal markdown code span in the detail.
+		if grep -qF '`model`' <<<"$detail"; then
+			echo "  PASS: the detail for model $model names the field"
+			PASS=$((PASS + 1))
+		else
+			echo "  FAIL: the detail for model $model does not name the field: $detail"
+			FAIL=$((FAIL + 1))
+		fi
+	fi
+	rm -rf "$s"
+done
+
+echo "Test: a block without model is not told that model is missing (#59)"
+# RC_TOP_KEYS now lists an optional key, so it can no longer double as the
+# required list: a missing-key detail built from it would demand `model` from
+# every reviewer that, correctly, left it out.
+s=$(new_session)
+write_raw "$s" divisor-curator-code '{"agent":"divisor-curator-code","verdict":"APPROVE","findings":[]}'
+result=$(PATH="$model_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'files_read' <<<"$detail" && ! grep -qF 'model' <<<"$detail"; then
+	echo "  PASS: only the truly missing key is named"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: detail misnames the missing key: $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+rm -rf "$model_mask"
+
+# --- Validation mode (#70) ----------------------------------------------------
+# When the jsonschema validator is missing the extractor falls back to a jq
+# check, which used to leave no trace but one stderr line. The mode is now in
+# the result of every run that validated a block, and kept worst-of in
+# verdicts/_meta/schema-validation.txt for the verdict header.
+sv_mask=$(mktemp -d)
+sv_nojs=$(path_without_command jsonschema "$sv_mask")
+# A stand-in validator that passes the extractor's self-test, so the `full`
+# path is exercised on every host, with or without sourcemeta installed. It
+# holds the extractor to sourcemeta's calling contract (`validate <schema>
+# <instance>`, exit 2 on misuse), so a wrong invocation fails here too.
+sv_fake=$(mktemp -d)
+# shellcheck disable=SC2016 # $1..$3 belong to the generated stub, not this shell.
+printf '#!/bin/sh\n[ "$1" = validate ] && [ -f "$2" ] && [ -f "$3" ] || exit 2\n' >"$sv_fake/jsonschema"
+chmod +x "$sv_fake/jsonschema"
+sv_block='{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[]}'
+
+# Assert the mode recorded for <session>, "absent" when there is none.
+assert_recorded_mode() { # session expected label
+	local got="absent"
+	if [[ -f "$1/verdicts/_meta/schema-validation.txt" ]]; then
+		got=$(cat "$1/verdicts/_meta/schema-validation.txt")
+	fi
+	assert_equals "$got" "$2" "$3"
+}
+
+echo "Test: the jq fallback reports minimal, in the result and in _meta (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+result=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status ok"
+assert_json_field "$result" "schema_validation" "minimal" "the result says minimal"
+assert_recorded_mode "$s" "minimal" "_meta records minimal"
+rm -rf "$s"
+
+echo "Test: a validator that passes its self-test reports full (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+result=$(PATH="$sv_fake:$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "schema_validation" "full" "the result says full"
+assert_recorded_mode "$s" "full" "_meta records full"
+rm -rf "$s"
+
+echo "Test: the real validator reports full (#70)"
+if [[ "$real_validator" -eq 1 ]]; then
+	s=$(new_session)
+	write_raw "$s" divisor-guard-code "$sv_block"
+	result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_json_field "$result" "schema_validation" "full" "sourcemeta/jsonschema means full"
+	rm -rf "$s"
+else
+	echo "  SKIP: no working sourcemeta/jsonschema binary"
+fi
+
+echo "Test: an extract_error that validated a block says which check ran (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROV","findings":[]}'
+result=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "status extract_error"
+assert_json_field "$result" "schema_validation" "minimal" "the error result says minimal"
+rm -rf "$s"
+
+echo "Test: a run that validated nothing claims no check (#70)"
+s=$(new_session)
+echo "I reviewed it. Verdict: APPROVE" >"$s/verdicts/divisor-guard-code.raw.md"
+result=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "NO_JSON_BLOCK is an extract_error"
+assert_jq_str "$result" 'has("schema_validation")' "false" "no schema_validation without a validated block"
+assert_recorded_mode "$s" "absent" "nothing written to _meta"
+rm -rf "$s"
+
+echo "Test: the session record keeps the worst mode across runs (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+PATH="$sv_fake:$sv_nojs" bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_recorded_mode "$s" "full" "first run: full"
+PATH="$sv_nojs" bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_recorded_mode "$s" "minimal" "a later minimal run lowers it"
+result=$(PATH="$sv_fake:$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "schema_validation" "full" "the run itself still reports what it ran"
+assert_recorded_mode "$s" "minimal" "a later full run does not raise it back"
+rm -rf "$s"
+
+echo "Test: the stderr warning stays (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+warn=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>&1 >/dev/null)
+if grep -qF "rc-warning: 'jsonschema' validator not found" <<<"$warn"; then
+	echo "  PASS: the fallback still warns on stderr"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the stderr warning is gone"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+rm -rf "$sv_mask" "$sv_fake"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

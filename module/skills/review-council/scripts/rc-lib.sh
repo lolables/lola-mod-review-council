@@ -49,10 +49,17 @@ RC_SCRIPT_AGENT="rc-check-symlinks"
 # decide it and write verdict.txt by hand, and both renderers printed whatever
 # that file said. rc-decide-verdict.sh now records it, and the renderers
 # refuse a verdict.txt that disagrees (rc_verdict_refusal).
-# shellcheck disable=SC2016 # a jq program; $s is jq's variable, not the shell's.
+#
+# A dispatched reviewer that returned nothing (`missing_verdicts`) caps the
+# verdict at APPROVE WITH ADVISORIES: its silence is not a clean pass, and an
+# APPROVE over a hole in the council reads as one (#57). It never blocks on
+# its own, so a verdict already at REQUEST CHANGES is unaffected. A value that
+# is not a list claims nothing, as in rc-verify-evidence.sh.
+# shellcheck disable=SC2016 # a jq program; $s and $missing are jq's variables.
 RC_COUNCIL_VERDICT_JQ='[(.verified // [])[] | .severity] as $s
+	| ((.missing_verdicts // []) | if type == "array" then length else 0 end) as $missing
 	| if any($s[]; . == "CRITICAL" or . == "HIGH") then "REQUEST CHANGES"
-	  elif ($s | length) > 0 then "APPROVE WITH ADVISORIES"
+	  elif ($s | length) > 0 or $missing > 0 then "APPROVE WITH ADVISORIES"
 	  else "APPROVE" end'
 
 # Why verdict.txt may not be rendered, or nothing. Three ways it can be wrong:
@@ -77,7 +84,7 @@ rc_verdict_refusal() { # session_dir
 		return 0
 	fi
 	[[ "$have" == "$want" ]] && return 0
-	printf '%s' "Not rendering: verdict.txt records '${have:-nothing}', but the verified findings decide '${want}'. Run rc-decide-verdict.sh ${sdir} to record it, then render again."
+	printf '%s' "Not rendering: verdict.txt records '${have:-nothing}', but the verified findings and missing verdicts decide '${want}'. Run rc-decide-verdict.sh ${sdir} to record it, then render again."
 }
 
 # SHA-256 of <file> as bare hex, or nothing. GNU coreutils ships sha256sum;

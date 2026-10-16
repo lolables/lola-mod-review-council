@@ -57,6 +57,7 @@ stub that pretends to work.
 | `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, created_at, body}]`           | `pr-conversation.txt`   |
 | `rc_forge_current_user`                              | `<login>` (bare string, or empty)        | (no artifact; see below)|
 | `rc_forge_fetch_links <pr> <owner> <repo> <head_sha>` | `[{path, target}]`, target string or null | `head-links.json` (see below) |
+| `rc_forge_fetch_merge_base <pr> <owner> <repo> <head_sha>` | `<sha>` (40 hex, or empty)          | `Base SHA:` in `session.txt` (see below) |
 
 `prior-reviews.txt` needs both review functions and is skipped unless both
 exist, so a half-implemented adapter cannot report "no inline comments" for a
@@ -138,6 +139,22 @@ output as `head-links.json`; a local review lists the operator's index instead.
   answer refused; each target is `repository/blobs/<id>/raw`, which glab copies
   to stdout byte for byte.
 
+`rc_forge_fetch_merge_base` names the commit the forge's PR diff is taken
+against, for the verdict header's Reviewed line. Preparation
+(`lib/prepare-target.sh`) calls it right after `rc_forge_fetch_diff`, after
+`rc_forge_fetch_pr` has run, and `prepare-emit.sh` records it as `Base SHA:`
+whenever the diff came from the forge, whether the PR is reviewed in place or
+from a clone. A diff computed locally takes its base from git instead.
+
+- **Contract.** Print a 40-hex commit id, or nothing; return 0 either way.
+  Preparation drops anything else too, and warns on stderr when there is no
+  answer; the header then names only the head.
+- **GitHub.** `gh api repos/<owner>/<repo>/compare/<baseRefOid>...<head_sha>`,
+  field `merge_base_commit.sha`. Both ends are commit ids (the base is the
+  `baseRefOid` read with the PR), so nothing in the URL needs encoding.
+- **GitLab.** No call: `diff_refs.base_sha` from the MR `rc_forge_fetch_pr`
+  already read, used only when `diff_refs.head_sha` is the recorded head.
+
 ### Why normalized shapes
 
 Adapters return the module's field names, never the forge's. The stages that
@@ -161,6 +178,7 @@ costs the review its context, not its life.
 | `rc_forge_fetch_conversation`    | implemented: MR notes, oldest first, system notes dropped, timestamps normalised to UTC |
 | `rc_forge_current_user`          | implemented: the GitLab username of the account glab is logged in as    |
 | `rc_forge_fetch_links`           | implemented: repository tree at the MR head commit, raw blobs           |
+| `rc_forge_fetch_merge_base`      | implemented: `diff_refs.base_sha` of the MR already fetched, no extra call |
 | `rc_forge_fetch_reviews` / `rc_forge_fetch_review_comments` | absent, so no `prior-reviews.txt` (known gap) |
 | `rc_forge_fetch_issue`           | absent                                                                  |
 
@@ -318,8 +336,10 @@ is how a batch run tells a completed re-review from one that posted nothing.
 Re-posting the same session renders the same body and edits nothing. `run=` is
 always the last field and nothing parses it; a session name outside
 `[A-Za-z0-9._-]` is left off. Both GitHub and GitLab
-render HTML comments invisibly, so the marker is portable. The body also shows a
-visible `Reviewed at commit <short-sha>` line.
+render HTML comments invisibly, so the marker is portable. The body also shows
+the reviewed commits in a visible `**Reviewed:**` line: base and head at 12
+characters, each linked through `rc_url_commit` when the forge defines it, with
+the head resolved by the same `rc_session_head_sha` the marker uses.
 
 A renderer writes the marker as the body's final line, alone. A reader scans back
 for the **last** line that opens one, and matches only against that line — never

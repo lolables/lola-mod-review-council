@@ -42,6 +42,31 @@ if [[ "$input_type" == "pr_number" || "$input_type" == "url" ]]; then
 	[[ -n "${pr_base:-}" ]] && display_base="$pr_base"
 fi
 
+# The commit the diff is taken against, for the verdict header's Reviewed line,
+# from whichever side computed the diff. A pull request's diff came from the
+# forge whenever prepare-target.sh cached one (prepare-changes.sh reads that
+# cache under the same condition), so its base is the merge-base the forge
+# reported (forge_base_sha), whether the PR is reviewed in place or from a
+# clone: this checkout's remote-tracking ref may be stale, and a clone may not
+# hold the base at all. A diff computed here has its base in config_rev, which
+# prepare-config.sh resolved at exactly that commit, since the configuration
+# is read at the diff's base -- the merge-base of the base branch and HEAD for
+# changed and paths scopes (the left side of `${base_branch}...HEAD` in
+# prepare-changes.sh), and the range's start for --scope range. Everything
+# else stays empty rather than name a commit nobody compared against: a review
+# with no diff (--scope all, a spec sweep, no git), and a pull request whose
+# forge diff could not be fetched.
+base_sha=""
+if $has_diff && [[ -n "$pr_diff_cache" ]]; then
+	base_sha="$forge_base_sha"
+elif $has_diff && [[ "$config_kind" == "rev" ]]; then
+	case "$input_type" in
+	auto | dir_scope) [[ -n "$base_branch" ]] && base_sha="$config_rev" ;;
+	ref_range) base_sha="$config_rev" ;;
+	*) ;;
+	esac
+fi
+
 {
 	echo "Review Council Session"
 	echo "======================"
@@ -65,6 +90,10 @@ fi
 	# the PR line, whose title is the PR author's text: rc_parse_kv reads the
 	# first match, so nothing after this line can stand in for it.
 	echo "Head SHA:     ${pr_head_sha:-none}"
+	# Read by the verdict header (lib/render-provenance.sh) and, like Head SHA,
+	# written above the PR line for the same first-match reason.
+	echo "Base SHA:     ${base_sha}"
+	echo "Packs:        ${project_pack_names:-none}"
 	if [[ -n "$pr_number" ]]; then
 		echo "PR:           #${pr_number} \"${pr_title}\" (${pr_url})"
 	else
@@ -74,6 +103,14 @@ fi
 	echo "Issues:       ${linked_issues_count} linked"
 	echo "Reviews:      ${prior_reviews_count} prior"
 	echo "Constitution: ${constitution} ${constitution_source:+(${constitution_source})}"
+	# The configured path of an accepted constitution, for the verdict header
+	# (lib/render-provenance.sh), which then never parses the line above: that
+	# line embeds the session path and, for a refusal, the refusal text. No key
+	# is written for a refused or absent constitution. rc_parse_kv cannot
+	# confuse the two keys: each match requires the colon right after its name.
+	if [[ -n "$constitution_accepted_path" ]]; then
+		echo "Constitution path: ${constitution_value}"
+	fi
 	echo "Config:       ${config_source}"
 	echo "Language:     ${language}"
 	echo "Framework:    ${framework}"

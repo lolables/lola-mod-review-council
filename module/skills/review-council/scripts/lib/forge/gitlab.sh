@@ -47,6 +47,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/../glab-env.sh"
 # refusal. Declared global so it survives being sourced from inside a function.
 declare -gA RC_FORGE_GL_GATE=()
 
+# The merge-base GitLab computed the MR's diff against, and the head it was
+# computed at (the MR's diff_refs), as rc_forge_fetch_pr read them; kept for
+# rc_forge_fetch_merge_base, so that answer costs no second call.
+declare -g RC_FORGE_GL_DIFF_BASE="" RC_FORGE_GL_DIFF_HEAD=""
+
 # rc_forge_glab <secs> <host> <glab-arg>... — run glab against <host> under
 # rc_timeout, without the variables that redirect it and with environment
 # tokens only when they belong to <host>. The policy, and the measurements
@@ -87,6 +92,8 @@ rc_forge_glab_admits() {
 rc_forge_fetch_pr() {
 	local mr_number="$1" owner="$2" repo="$3" host="${forge_host:-gitlab.com}"
 	local mr_json
+	RC_FORGE_GL_DIFF_BASE=""
+	RC_FORGE_GL_DIFF_HEAD=""
 
 	rc_forge_glab_admits "$host" "$owner" "$repo" || return 0
 	mr_json=$(rc_forge_glab 30 "$host" mr view "$mr_number" -R "${host}/${owner}/${repo}" \
@@ -104,6 +111,25 @@ rc_forge_fetch_pr() {
 	[[ "$pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || pr_head_sha=""
 	pr_url=$(echo "$mr_json" | jq -r '.web_url // ""')
 	pr_state=$(echo "$mr_json" | jq -r '.state // ""')
+	# diff_refs.base_sha is the merge-base of the target branch and the head
+	# the diff was taken at (diff_refs.head_sha). A diff_refs that is not an
+	# object reads as no answer rather than failing the fetch.
+	RC_FORGE_GL_DIFF_BASE=$(echo "$mr_json" | jq -r '.diff_refs.base_sha // ""' 2>/dev/null) || RC_FORGE_GL_DIFF_BASE=""
+	RC_FORGE_GL_DIFF_HEAD=$(echo "$mr_json" | jq -r '.diff_refs.head_sha // ""' 2>/dev/null) || RC_FORGE_GL_DIFF_HEAD=""
+}
+
+# <sha> — the merge-base the MR's diff is taken against, or no output.
+#
+# Optional capability (prepare-target.sh asks `declare -F`). Answered from the
+# diff_refs rc_forge_fetch_pr already read, with no further call, so it is
+# gated exactly as that fetch was. Only when those refs were taken at
+# <head_sha>: a base computed for an earlier push paired with a later head
+# would name a commit that diff was never cut from.
+rc_forge_fetch_merge_base() {
+	local head_sha="$4"
+	[[ "$head_sha" =~ ^[0-9a-f]{40}$ && "$RC_FORGE_GL_DIFF_HEAD" == "$head_sha" ]] || return 0
+	[[ "$RC_FORGE_GL_DIFF_BASE" =~ ^[0-9a-f]{40}$ ]] || return 0
+	printf '%s' "$RC_FORGE_GL_DIFF_BASE"
 }
 
 # `--raw` is glab's "diff format that can be piped to commands": the file is

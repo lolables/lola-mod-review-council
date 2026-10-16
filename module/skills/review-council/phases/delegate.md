@@ -89,28 +89,31 @@ If tool lacks model selection, all agents run on default model. Empirical perfor
 
 ## Recording Dispatched Models
 
-`rc-select-council.sh` already wrote `${session_dir}/models.json` — a JSON
-array of `{"role": "{agent-name}", "id": "{model}"}` objects, one per
-dispatched reviewer, each `id` seeded with that persona's tier from the
-table above. The report's provenance header (see `phases/report.md` —
-"Provenance Disclosure") reads that file, so the tier is disclosed whether
-or not you do anything here.
+`rc-select-council.sh` already wrote `${session_dir}/models.json`: a JSON
+array with one entry per dispatched reviewer, each seeded as
+`{"role": "{agent-name}", "requested": "host default", "reported": []}`. The
+verdict header of the report and the PR comment (see `phases/report.md`,
+"Provenance Disclosure") shows both fields for every role, each labelled, so
+the header is truthful whether or not you change anything here.
 
-A seeded entry records the tier the reviewer was **requested** at, not a
-model the host confirmed. Your job is the upgrade:
-
-- Host exposes a concrete model ID for a reviewer you dispatched: replace
-  that role's `id` with it (e.g. `"claude-sonnet-4-6"` in place of
-  `"Capable tier"`). Edit through a temp file and `mv`, as the scripts do.
-- Host exposes nothing: leave the entry alone. The tier stands.
+- **`requested`** is the model you asked the host for. `host default` is true
+  for every dispatch that names no model, which is why it is the seed. When
+  you pass a concrete model ID at dispatch, replace that role's `requested`
+  with exactly the ID you passed. Edit through a temp file and `mv`, as the
+  scripts do. The Model Selection Guidance table above says which model to
+  ask for; it is not a record of what was asked, so never copy a tier name
+  into this field.
+- **`reported`** is what each reviewer said about itself. You do not write
+  it: `rc-extract-verdict.sh` adds the optional `model` field of each valid
+  verdict to that role's list (see "Model self-report" below). The header
+  calls it reported, never confirmed, because it is the reviewer's own claim.
 - Do NOT invent model IDs, and do NOT append a second entry for a role
   already present — deep mode dispatches the same agent per subsystem, and
-  one role means one entry (renderers dedupe defensively, but keep the file
-  clean).
-- Do NOT rewrite the file wholesale. Roles you drop are roles the report
+  one role means one entry.
+- Do NOT rewrite the file wholesale. Roles you drop are roles the header
   stops disclosing.
 
-Coordinator and validation-gate models are appended separately (see
+Coordinator and validation-gate models are recorded separately (see
 `phases/report.md` — "Provenance Disclosure"); this step covers reviewer
 agents.
 
@@ -336,6 +339,10 @@ For each agent, instruct to return verdict (**APPROVE** or **REQUEST CHANGES**) 
 >
 > If the code is clean, idiomatic, well-tested, and well-documented, APPROVE with zero findings is the correct outcome. Do not manufacture findings to justify your review effort. Standard language behavior (nil pointer panics in Go, AttributeError in Python, TypeError in JavaScript) is not a defect.
 
+**Model self-report**: append to every code review delegation prompt:
+
+> If you know the exact model ID you are running as, put it in the optional top-level `model` field of your verdict. Set it only if you know it; otherwise leave it out. Never guess, and never write a tier or family name in its place.
+
 ### Batching
 
 `rc-plan-batches.sh` decided the split in SKILL.md Step 2.6 and wrote it to
@@ -473,6 +480,8 @@ Instruct agents to review listed spec artifacts (not code), plus project context
 **Severity calibration**: append to every spec review delegation prompt:
 
 > Before submitting your verdict, re-read the severity pack definitions. Verify each finding's severity meets the stated boundary for that level.
+
+**Model self-report**: append the "Model self-report" paragraph from Code Review Delegation above to every spec review delegation prompt, unchanged.
 
 **When linked issues available** (`${session_dir}/linked-issues.txt` exists): append "Linked Issues" section to each delegation prompt with full content of `linked-issues.txt`, followed by:
 

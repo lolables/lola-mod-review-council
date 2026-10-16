@@ -276,22 +276,27 @@ flowchart TD
 
 Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>-<random>/` containing:
 
-- `session.txt` — human-readable run metadata
+- `session.txt` — human-readable run metadata, and the source of the verdict header's Reviewed and Rules lines
+  (`Base SHA`, `Base`, `Head SHA`, `Effort`, `Constitution path`, `Packs`), because no model writes it.
+  `Constitution path` is written only for an accepted constitution and holds the path as configured; the
+  `Constitution` line (session copy plus source, or the refusal) is never parsed by the renderers
 - `tracking.md` — structured phase-by-phase state
 - `changeset.txt` — reviewed file list
 - `diff.patch` — full patch (code review)
 - `batch-plan.json` and `batches.txt` — the delegation rounds and the budgets they were measured against, written on
   every run so a changeset that needed no split reads differently from a step that never ran
-- `models.json` — LLM provenance for the report header. Seeded by `rc-select-council.sh` with one entry per dispatched
-  reviewer carrying the tier it was requested at, so the header is never empty; the orchestrator upgrades an entry to a
-  concrete model ID where the host exposes one, and appends the coordinator and validator roles it alone knows
+- `models.json` — model provenance for the verdict header. One `{role, requested, reported}` entry per dispatched
+  reviewer: `rc-select-council.sh` seeds `requested` as `host default` and `reported` as `[]`, the orchestrator replaces
+  `requested` only with a model ID it passed at dispatch, `rc-extract-verdict.sh` adds each valid verdict's optional
+  `model` to `reported`, and the orchestrator adds the coordinator and validator roles it alone knows
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
   canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
   and, when the change touches a symlink, the script verdict `rc-check-symlinks.json`. `findings.json.stale` is a
   previous run's `findings.json`, which `rc-verify-evidence.sh` moves aside before checking anything; it is kept for
   debugging only, and neither the renderers nor `rc-decide-verdict.sh` read it
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
-  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), and, on a re-review,
+  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), the
+  verdict-format check the extractor ran (`schema-validation.txt`: `full` or `minimal`, the worst of every extraction), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail), `findings.pre-disposition.json` (the snapshot
   Disposition's edits are checked against) and `disposition-check.json` (the check's result and the SHA-256 of the
   `findings.json` it accepted). `rc-render-report.sh` refuses to render without `verification.txt`

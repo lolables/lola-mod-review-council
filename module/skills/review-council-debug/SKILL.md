@@ -401,7 +401,7 @@ Validate markdown output:
   Findings by Severity, which renders only because Step 3 left one
   verified finding in `verdicts/findings.json`)?
 - Report gracefully handles missing data? The mock supplies no
-  `verdict.txt` and no models file, so Council Verdict and Models used
+  `verdict.txt` and no models file, so Council Verdict and the Models line
   should render as explicit "not recorded" prose, not as blanks or raw
   variable names.
 - Field values properly quoted/escaped?

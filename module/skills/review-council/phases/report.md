@@ -103,30 +103,37 @@ LLM-generated. **Mandatory, all effort modes** — never remove,
 suppress, or soften. Review artifact a maintainer acts on must declare
 it was produced by an LLM, not a human reviewer.
 
-`${session_dir}/models.json` — a JSON array of `{"role":"...","id":"..."}`
-objects — supplies the provenance header. `rc-select-council.sh` already
-seeded it with one entry per dispatched reviewer, each carrying the tier
-that reviewer was requested at, so the header is never empty. You do not
-create this file.
+`${session_dir}/models.json` supplies the Models part of the provenance block
+both renderers print under the banner. It is a JSON array of
+`{"role": "...", "requested": "...", "reported": [...]}` objects:
+`rc-select-council.sh` seeded one per dispatched reviewer, and
+`rc-extract-verdict.sh` filled each reviewer's `reported` from its verdict. You
+do not create this file. The header shows both fields for every role and labels
+them, so a reader can tell what was asked for from what an agent claimed.
 
-Two roles the selector cannot know are yours to add, to the extent the
-host exposes model identity:
+Two roles the selector cannot know are yours to add:
 
-- Coordinator (this orchestrator) model.
-- Validation-gate agent model, if validation gate ran.
+- `coordinator` (this orchestrator): `requested` is `host default`, since
+  nothing dispatched you with a named model; `reported` is your own model ID
+  if you know it, otherwise `[]`. Replace `<your-model-id>` in the command below with that
+  ID, or with nothing (`[]`) when you do not know it.
+- `validator`, if the validation gate ran: `requested` is the model ID you
+  passed when you dispatched it, otherwise `host default`; `reported` is the
+  model ID the validator reported, otherwise `[]`.
 
-Append them rather than rewriting the file:
+Replace any earlier entries for those two roles rather than appending beside
+them, so a re-render stays one entry per role:
 
 ```bash
-jq '. + [{"role": "coordinator", "id": "claude-opus-4-8"},
-         {"role": "validator", "id": "claude-opus-4-8"}]' \
+jq '[.[] | select(.role != "coordinator" and .role != "validator")]
+    + [{"role": "coordinator", "requested": "host default", "reported": ["<your-model-id>"]},
+       {"role": "validator", "requested": "host default", "reported": []}]' \
   "${session_dir}/models.json" >"${session_dir}/models.json.tmp"
 mv "${session_dir}/models.json.tmp" "${session_dir}/models.json"
 ```
 
-Host exposes no ID for either role: omit that role. Do NOT invent model
-IDs — an absent entry is a smaller loss than a wrong one. Renderers
-dedupe entries defensively, so repeated entries are safe.
+Do NOT invent model IDs: an empty `reported` renders as "not reported", a
+smaller loss than a wrong ID. Never put a tier name in either field.
 
 ---
 
@@ -430,8 +437,11 @@ merge" and HIGH "Blocks review", while MEDIUM "does not block merge" and LOW is
 
 - **REQUEST CHANGES** — one or more verified CRITICAL or HIGH findings remain.
 - **APPROVE WITH ADVISORIES** — verified findings remain, but none is CRITICAL
-  or HIGH. They are advisory and do not block merge.
-- **APPROVE** — no verified findings remain.
+  or HIGH; or no verified finding remains, but a dispatched reviewer returned
+  no verdict (`missing_verdicts` in `findings.json` is non-empty). Advisories
+  do not block merge, and a silent reviewer is not a clean pass.
+- **APPROVE** — no verified findings remain, and every dispatched reviewer
+  returned a verdict.
 
 Read that off the findings, not off the reviewers' own verdicts. A reviewer may
 return REQUEST CHANGES while holding nothing but MEDIUMs — the validator only
@@ -440,7 +450,7 @@ council verdict is how a clean changeset with two optional test-coverage notes
 came back blocked. Each reviewer's own verdict still appears verbatim in the
 per-reviewer table, so nothing is hidden by aggregating this way.
 
-Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) do not affect verdict.
+Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) and skipped reviewers (deliberately not dispatched) do not affect verdict; only a reviewer that was dispatched and returned nothing does.
 
 **Recording it.** Run `${SCRIPTS_DIR}/rc-decide-verdict.sh ${session_dir}`
 **before** `rc-render-report.sh` (SKILL.md Step 6 states this as the first

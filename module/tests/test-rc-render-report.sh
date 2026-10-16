@@ -175,13 +175,15 @@ cat >"$session/tracking.md" <<'TRACKING'
 TRACKING
 cat >"$session/models.json" <<'MODELS'
 [
-  {"role": "coordinator", "id": "claude-opus-4-8"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"}
+  {"role": "coordinator", "requested": "host default", "reported": ["claude-opus-4-8"]},
+  {"role": "divisor-adversary-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]}
 ]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-if echo "$result" | grep -q "claude-opus-4-8" && echo "$result" | grep -q "divisor-adversary-code: claude-sonnet-4-6"; then
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+if grep -qxF -- '- coordinator: requested host default · reported `claude-opus-4-8`' <<<"$result" &&
+	grep -qxF -- '- adversary: requested host default · reported `claude-sonnet-4-6`' <<<"$result"; then
 	echo "  PASS: recorded models appear in report"
 	PASS=$((PASS + 1))
 else
@@ -223,14 +225,15 @@ cat >"$session/tracking.md" <<'TRACKING'
 TRACKING
 cat >"$session/models.json" <<'MODELS'
 [
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
-  {"role": "divisor-adversary-code", "id": "claude-sonnet-4-6"},
-  {"role": "divisor-guard-code", "id": "claude-sonnet-4-6"}
+  {"role": "divisor-adversary-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]},
+  {"role": "divisor-adversary-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]},
+  {"role": "divisor-guard-code", "requested": "host default", "reported": ["claude-sonnet-4-6"]}
 ]
 MODELS
 
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
-dup_count=$(echo "$result" | grep -c "^- divisor-adversary-code: claude-sonnet-4-6$")
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+dup_count=$(grep -cxF -- '- adversary, guard: requested host default · reported `claude-sonnet-4-6`' <<<"$result" || true)
 if [[ "$dup_count" -eq 1 ]]; then
 	echo "  PASS: duplicate model line collapsed to one"
 	PASS=$((PASS + 1))
@@ -252,12 +255,11 @@ fi
 rm -rf "$session"
 
 # Test 6: malformed models.json must degrade gracefully, not abort the report.
-# Every other jq call in this script has a `2>/dev/null || fallback`; the
-# models.json read is a 3-stage pipe (jq | awk | sed) where, under pipefail, a
-# jq parse failure propagates as the pipeline's exit code even though awk and
-# sed both exit 0 - without a fallback that aborts the whole render with zero
-# output. The docs now ask the LLM to hand-maintain this file, so malformed
-# input is a realistic failure mode, not a hypothetical.
+# The report runs under `set -e` with an ERR trap, and the models.json read
+# used to be a pipeline whose jq parse failure aborted the whole render with
+# zero output. rc_render_provenance (lib/render-provenance.sh) reads it with a
+# fallback instead. The orchestrator hand-edits this file, so malformed input
+# is a realistic failure mode, not a hypothetical.
 echo "Test 6: malformed models.json degrades instead of aborting the report"
 session=$(mktemp -d)
 mkdir -p "$session/verdicts"
@@ -1306,7 +1308,7 @@ echo "Test 21: a verdict the findings do not decide is not rendered (RC-077)"
 session=$(mk_verdict_session 'APPROVE' HIGH)
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 if grep -qF -- "**Not rendered.**" <<<"$result" &&
-	grep -qF -- "the verified findings decide 'REQUEST CHANGES'" <<<"$result"; then
+	grep -qF -- "the verified findings and missing verdicts decide 'REQUEST CHANGES'" <<<"$result"; then
 	echo "  PASS: a hand-written APPROVE over a HIGH is refused (RC-077)"
 	PASS=$((PASS + 1))
 else
@@ -1504,6 +1506,103 @@ if grep -qF -- '**: `AGENTS.md`, `.review-council/packs/a, b.md` — not obeyed'
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: a path containing ', ' was split into two"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: the report carries the Reviewed and Rules lines, without links (#79)"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+write_verification_log "$session"
+cat >"$session/session.txt" <<'SES'
+Review Council Session
+Base:         main
+Effort:       deep
+Head SHA:     9f8e7d6c5b4a39281706f5e4d3c2b1a098765432
+Base SHA:     1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+Packs:        none
+Constitution: none
+SES
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+for line in '**Reviewed:** `1a2b3c4d5e6f` (`main`) → `9f8e7d6c5b4a` · effort `deep`<br>' \
+	'**Rules:** constitution none · packs none<br>'; do
+	if grep -qxF -- "$line" <<<"$result"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+if grep -qF '/commit/' <<<"$result"; then
+	echo "  FAIL: the report linked a commit; it holds no forge knowledge"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no links in the report"
+	PASS=$((PASS + 1))
+fi
+rm -f "$session/session.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if ! grep -qF '**Reviewed:**' <<<"$result" && grep -qxF -- '**Rules:** constitution none · packs none<br>' <<<"$result"; then
+	echo "  PASS: without session.txt there is no Reviewed line and Rules says none"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a session without session.txt rendered run facts it cannot know"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: the report discloses the verdict-format check when one was recorded (#70)"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+write_verification_log "$session"
+mkdir -p "$session/verdicts/_meta"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF 'Verdict format check' <<<"$result"; then
+	echo "  FAIL: a check line rendered with nothing recorded"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no check line without schema-validation.txt"
+	PASS=$((PASS + 1))
+fi
+printf 'minimal\n' >"$session/verdicts/_meta/schema-validation.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qxF -- '**Verdict format check:** minimal (jq fallback; jsonschema validator unavailable)<br>' <<<"$result"; then
+	echo "  PASS: minimal is disclosed in the report"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report does not disclose the jq fallback"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: the report discloses a missing verdict above the verdict (#57)"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+write_verification_log "$session"
+printf '%s\n' '{"verified":[],"correctable":[],"stripped":[],"total_findings":0,"duplicates_consolidated":0,"verdicts":{"divisor-guard-code":"APPROVE"},"missing_verdicts":["divisor-sre-code"]}' \
+	>"$session/verdicts/findings.json"
+echo "APPROVE WITH ADVISORIES" >"$session/verdict.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+gap_line=$(grep -n -F 'Coverage gap' <<<"$result" | head -n1 | cut -d: -f1 || true)
+verdict_line=$(grep -n -x '## Council Verdict' <<<"$result" | head -n1 | cut -d: -f1 || true)
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+if grep -qxF -- '> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`. Verdict capped at APPROVE WITH ADVISORIES.' <<<"$result" &&
+	[[ -n "$gap_line" && -n "$verdict_line" && "$gap_line" -lt "$verdict_line" ]]; then
+	echo "  PASS: the gap is disclosed ahead of the verdict"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report hides or buries the missing verdict"
+	FAIL=$((FAIL + 1))
+fi
+echo "APPROVE" >"$session/verdict.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF '**Not rendered.**' <<<"$result"; then
+	echo "  PASS: an uncapped APPROVE is not rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report rendered APPROVE over a missing verdict"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session"

@@ -39,6 +39,10 @@ source "$(dirname "$0")/rc-lib.sh"
 # by defining the hook rather than by rewriting the block.
 # shellcheck source=module/skills/review-council/scripts/lib/render-findings.sh
 source "$(dirname "$0")/lib/render-findings.sh"
+# The provenance block under the banner, and the code-span escaping below, are
+# shared with the PR comment.
+# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+source "$(dirname "$0")/lib/render-provenance.sh"
 rc_trap_errors # report script:line on any unhandled failure (never silent)
 
 # rc-render-report.sh: renders structured markdown report template
@@ -178,22 +182,14 @@ changeset="${changeset:-unknown}"
 config_changed_note=""
 if [[ -n "$config_changed" && "$config_changed" != "none" ]]; then
 	# Each path is a filename the change's author chose, so it is rendered as
-	# an inline code span whose delimiter is longer than any backtick run in
-	# the path (the sizing evidence_block applies to fences), padded when the
-	# path begins or ends with a backtick. Raw, a path could close the span,
-	# inject HTML or an image, or pose as a link. tracking.md joins paths with
-	# a TAB, which no name can contain (rc_single_line flattened them), so a path
-	# holding ", " stays one span; the spans are joined here with ", ".
+	# a code span nothing in it can close (rc_md_code_span). tracking.md joins
+	# paths with a TAB, which no name can contain (rc_single_line flattened
+	# them), so a path holding ", " stays one span; the spans are joined here
+	# with ", ".
 	config_changed_spans=""
 	while IFS= read -r config_changed_path; do
-		# shellcheck disable=SC2016 # literal markdown code-span delimiters.
-		config_changed_delim='`'
-		while [[ "$config_changed_path" == *"$config_changed_delim"* ]]; do
-			config_changed_delim+='`'
-		done
-		config_changed_pad=""
-		[[ "$config_changed_path" == '`'* || "$config_changed_path" == *'`' ]] && config_changed_pad=" "
-		config_changed_spans+="${config_changed_spans:+, }${config_changed_delim}${config_changed_pad}${config_changed_path}${config_changed_pad}${config_changed_delim}"
+		config_changed_span=$(rc_md_code_span "$config_changed_path")
+		config_changed_spans+="${config_changed_spans:+, }${config_changed_span}"
 	done < <(printf '%s\n' "${config_changed//$'\t'/$'\n'}")
 	config_changed_note="- **Review configuration changed by this changeset**: ${config_changed_spans} — not obeyed; this review ran under the configuration at ${config_source:-an unrecorded source}."$'\n'
 fi
@@ -212,24 +208,12 @@ if [[ -f "$evidence_file" ]]; then
 	dedup_count=$(jq -r '.duplicates_consolidated // 0' "$evidence_file" 2>/dev/null || echo 0)
 fi
 
-# LLM provenance — models used, to the extent the host recorded them.
-# Orchestrator writes [{"role":"...","id":"..."}, ...] to models.json before
-# rendering (see phases/report.md). Absent file means the host did not
-# expose model identity — state that rather than inventing names.
-models_file="$session_dir/models.json"
-models_block=""
-if [[ -f "$models_file" ]]; then
-	# Dedup, preserving order: deep mode dispatches the same agent per
-	# subsystem, so models.json may carry repeated role/id pairs. Under
-	# pipefail a jq parse failure on malformed input would otherwise abort
-	# the whole report (jq's exit code is the "last non-zero" in the pipe
-	# even though awk/sed still exit 0) — `|| true` degrades to the
-	# "not recorded" fallback below instead of aborting the render.
-	models_block=$(jq -r '.[]? | "\(.role): \(.id)"' "$models_file" 2>/dev/null | awk 'NF && !seen[$0]++' | sed 's/^/- /' || true)
-fi
-if [[ -z "$models_block" ]]; then
-	models_block="_Not recorded by the host — reviewer, validator, and coordinator model IDs were not exposed to the report renderer._"
-fi
+# How the review ran, as the scripts recorded it. Shared with the PR comment
+# (lib/render-provenance.sh), so the two cannot describe one run differently.
+# The head is resolved by the function the comment's marker uses, and no link
+# hook is passed: the report holds no forge knowledge.
+head_sha=$(rc_session_head_sha "$session_dir")
+provenance=$(rc_render_provenance "$session_dir" "$head_sha")
 
 # Council verdict. rc-decide-verdict.sh decides it (phases/report.md, "Final
 # Verdict Determination") and records it as the first line of verdict.txt; this
@@ -279,9 +263,7 @@ cat <<EOF
 > machine-generated, may contain errors, and are advisory input to human
 > judgment, not a substitute for it.
 
-**Models used** (to the best of the host's disclosure):
-
-$models_block
+$provenance
 
 ## Council Verdict
 

@@ -103,9 +103,9 @@ Three rules govern the block, and they apply before you copy the shape below:
   `category` or `references` key is the most common way to lose a review. There
   is no key for extra context: put it in `description`.
 - **Required vs optional.** `agent`, `files_read`, `verdict` and `findings` are
-  all required. Inside a finding, `severity`, `file`, `evidence`, `description`
-  and `recommendation` are required; only `line`, `title` and `constraint` are
-  optional.
+  all required; `model` is the one optional top-level key. Inside a finding,
+  `severity`, `file`, `evidence`, `description` and `recommendation` are
+  required; only `line`, `title` and `constraint` are optional.
 - **`files_read` MUST list every file you opened** — it replaces the prose
   attestation, and a verdict whose `files_read` omits a file you quote from is
   not a verdict anyone can check.
@@ -143,6 +143,9 @@ should stand on its own.
   derives from multiple reviewer verdicts (see `report.md`); no individual
   reviewer emits it.
 - `findings` MAY be empty for a clean APPROVE. Do not manufacture findings.
+- `model` is your own model ID, and only if you know it exactly. Leave it out
+  otherwise: an absent `model` renders as "not reported", a guessed one as a
+  claim nobody can check.
 - Each finding's `file` is a repo-relative path; `line` is the confirmed line
   (integer) or `null` when no single line applies. Put ranges and
   cross-references in `description`, never in `file`.

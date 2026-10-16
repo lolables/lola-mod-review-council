@@ -132,16 +132,20 @@ never written, which is a collection gap. Write that response verbatim to its
 path, then re-run the extractor and this script — a write, not a re-dispatch.
 Only an agent that returned nothing is disclosed as below.
 
-**Disclose every agent that returned nothing.** Record one line per
-agent in `${session_dir}/verdicts/_meta/verification.txt` naming the agent and
-stating that it returned no verdict, and carry the same statement into the
-report narrative. A reviewer that was dispatched and returned nothing is a hole
-in the council's coverage, and it is indistinguishable in the finished report
-from a reviewer that simply found nothing — the per-agent verdict table is
-built from the verdicts that arrived, so a silent agent has no row rather than
-a visibly empty one. Never treat this as a reason to discard the verdicts that
-did arrive, and never re-dispatch on its account: the dispatch budget belongs
-to the format gate and the correction round.
+**An agent that returned nothing is disclosed by the scripts.** A reviewer
+that was dispatched and returned nothing is a hole in the council's coverage,
+so both renderers read `missing_verdicts` from `findings.json`: the provenance
+block under the banner carries a "Coverage gap" line naming every such agent,
+the PR comment's reviewer table gives each one a `❌ No verdict` row, and the
+council verdict cannot be APPROVE while the list is non-empty —
+`rc-decide-verdict.sh` caps it at APPROVE WITH ADVISORIES (`phases/report.md`,
+"Final Verdict Determination"). Do not write that disclosure into the report
+narrative by hand; it is already rendered from the list the script computed.
+Record one line per agent in `${session_dir}/verdicts/_meta/verification.txt`
+naming the agent and stating that it returned no verdict, as the record of what
+verification found. Never treat a missing verdict as a reason to discard the
+verdicts that did arrive, and never re-dispatch on its account: the dispatch
+budget belongs to the format gate and the correction round.
 
 **When `rc-verify-evidence.sh` returns `status: "nothing_to_do"`**, it never
 reached the verification loop: the session directory is missing, `verdicts/`

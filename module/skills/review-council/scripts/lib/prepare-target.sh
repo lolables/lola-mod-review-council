@@ -136,10 +136,28 @@ fi
 # the auto-detect branch) keeps explicit --mode runs from yielding an empty
 # changeset on PR/url scope.
 pr_diff_cache=""
+forge_base_sha=""
 if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
 	pr_diff_cache=$(mktemp "${session_dir}/pr-diff-cache.XXXXXX")
 	if declare -F rc_forge_fetch_diff >/dev/null; then
 		rc_forge_fetch_diff "$pr_number" "$forge_owner" "$forge_repo" "$pr_diff_cache"
+	fi
+	# The commit the forge took that diff against, for the verdict header's
+	# Reviewed line (prepare-emit.sh records it as Base SHA). Asked of the
+	# forge, not of git, because the forge computed the diff: this checkout may
+	# be a clone without the base at all, or hold a stale remote-tracking ref.
+	# Optional like every enrichment: an adapter without it, or a forge that
+	# cannot say, leaves it empty and the header names only the head. The
+	# adapter answers with a full commit id or nothing; anything else is
+	# dropped here as well, since the value is written into session.txt.
+	if declare -F rc_forge_fetch_merge_base >/dev/null; then
+		forge_base_sha=$(rc_forge_fetch_merge_base "$pr_number" "$forge_owner" "$forge_repo" "$pr_head_sha")
+		[[ "$forge_base_sha" =~ ^[0-9a-f]{40}$ ]] || forge_base_sha=""
+		# Silent when the diff fetch itself came back empty: that forge failure
+		# is the one to report, and a second warning would misattribute it.
+		if [[ -z "$forge_base_sha" && -s "$pr_diff_cache" ]]; then
+			echo "rc-prepare: the forge did not report the merge-base of #${pr_number}; the verdict header names only the head commit" >&2
+		fi
 	fi
 fi
 

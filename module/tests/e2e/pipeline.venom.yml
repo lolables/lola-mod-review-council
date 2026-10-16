@@ -72,6 +72,10 @@ testcases:
         assertions:
           - result.content ShouldContainSubstring "## Council Verdict"
           - result.content ShouldContainSubstring "REQUEST CHANGES"
+          # The outcome is identical, and the report says which check produced
+          # it: a reader must be able to tell a fallback-validated review from
+          # a fully validated one (#70).
+          - result.content ShouldContainSubstring "**Verdict format check:** minimal"
 
   - name: Evidence that no longer matches the source stops verifying
     # Negative case, and the one that proves the suite measures anything at

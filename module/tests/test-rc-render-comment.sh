@@ -13,7 +13,8 @@ make_review_session "$sess"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "status is rendered"
 body=$(cat "$sess/comment-body.md")
-for needle in "Review Council: REQUEST CHANGES" "TL;DR" "Reviewed at commit" "(high effort)" "auth/token.go:1" "🛡️" "<!-- review-council:marker sha=" "Produced by [Review Council]" "💡 **Recommendation:**" "💬 Full reviewer analysis"; do
+# shellcheck disable=SC2016 # literal markdown code spans among the needles.
+for needle in "Review Council: REQUEST CHANGES" "TL;DR" '**Reviewed:** at `' '· effort `high`' "auth/token.go:1" "🛡️" "<!-- review-council:marker sha=" "Produced by [Review Council]" "💡 **Recommendation:**" "💬 Full reviewer analysis"; do
 	if grep -qF "$needle" <<<"$body"; then
 		echo "  PASS: contains '$needle'"
 		PASS=$((PASS + 1))
@@ -72,12 +73,13 @@ echo "Test 2: sourced render with hooks (deep-links + exports)"
 sess=$(mktemp -d)
 make_review_session "$sess"
 cat >"$sess/models.json" <<'MJ'
-[{"role":"divisor-adversary-code","id":"claude-opus-4-8"},{"role":"divisor-guard-code","id":"claude-opus-4-8"}]
+[{"role":"divisor-adversary-code","requested":"host default","reported":["claude-opus-4-8"]},{"role":"divisor-guard-code","requested":"host default","reported":["claude-opus-4-8"]}]
 MJ
 (
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
 	rc_url_file() { printf '%s/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+	# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/body.md"
 	{
@@ -101,10 +103,11 @@ else
 	echo "  FAIL: commit stamp link missing"
 	FAIL=$((FAIL + 1))
 fi
-# two models.json entries share the same id -> deduped to a single bullet
-model_mentions=$(grep -c 'claude-opus-4-8' <<<"$b2")
-if grep -qF "> - claude-opus-4-8" <<<"$b2" && [[ "$model_mentions" -eq 1 ]]; then
-	echo "  PASS: provenance bullet deduped"
+# two roles with the same (requested, reported) pair share a single bullet
+model_mentions=$(grep -c 'claude-opus-4-8' <<<"$b2" || true)
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+if grep -qxF -- '- adversary, guard: requested host default · reported `claude-opus-4-8`' <<<"$b2" && [[ "$model_mentions" -eq 1 ]]; then
+	echo "  PASS: provenance roles grouped by their pair"
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: provenance bullets wrong"
@@ -383,6 +386,7 @@ make_review_session "$sess" github 42 ""
 	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 	source "$SCRIPT"
 	rc_url_file() { printf '%s/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+	# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
 	rc_render_comment_body "$sess" "$sess/body.md"
 	{ echo "$RC_FORGE_WEB"; } >"$sess/exports"
@@ -1557,6 +1561,7 @@ forge_web_for() { # owner repo host_line
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 		source "$SCRIPT"
 		rc_url_file() { printf '%s/-/blob/%s/%s#L%s' "$1" "$2" "$3" "$4"; }
+		# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
 		rc_url_commit() { printf '%s/-/commit/%s' "$1" "$2"; }
 		rc_render_comment_body "$s" "$s/body.md"
 		echo "$RC_FORGE_WEB"
@@ -1859,6 +1864,467 @@ assert_json_field "$result" "status" "error" "an empty review is not rendered as
 echo "APPROVE" >"$sess/verdict.txt"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "error" "a hand-written verdict without findings is refused"
+rm -rf "$sess"
+
+# --- Provenance: models (#59) -------------------------------------------------
+# The header used to print tier labels as "Models used". It now shows, per
+# (requested, reported) pair, what the orchestrator asked for and what each
+# agent said about itself, and never prints an ID it has not allow-listed.
+
+echo "Test: models.json renders requested and reported, labelled (#59)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+cat >"$sess/models.json" <<'MJ'
+[{"role":"divisor-adversary-code","requested":"host default","reported":["claude-sonnet-5-5"]},
+ {"role":"divisor-guard-code","requested":"claude-opus-5-5","reported":[]},
+ {"role":"coordinator","requested":"host default","reported":["claude-opus-5-5"]}]
+MJ
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+for line in '**Models:**' \
+	'- adversary: requested host default · reported `claude-sonnet-5-5`' \
+	'- guard: requested `claude-opus-5-5` · not reported' \
+	'- coordinator: requested host default · reported `claude-opus-5-5`'; do
+	if grep -qxF -- "$line" <<<"$body"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+if grep -qiF 'tier' <<<"$body"; then
+	echo "  FAIL: a tier label reached the header"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no tier label in the header"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: an ID or role that is not a plain identifier renders as unrecognised (#59)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq -n '[{role: "divisor-adversary-code", requested: "evil`](https://x.invalid)",
+	 reported: ["claude\n## injected", "<img src=x>", "ok-model"]},
+	{role: "divisor-`guard`-code", requested: "host default", reported: []}]' >"$sess/models.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+for line in '- adversary: requested unrecognised · reported unrecognised, `ok-model`' \
+	'- unrecognised: requested host default · not reported'; do
+	if grep -qxF -- "$line" <<<"$body"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+for raw in 'x.invalid' '## injected' '<img' '`guard`'; do
+	if grep -qF -- "$raw" <<<"$body"; then
+		echo "  FAIL: '$raw' from models.json reached the body"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: '$raw' kept out of the body"
+		PASS=$((PASS + 1))
+	fi
+done
+rm -rf "$sess"
+
+echo "Test: a role that can ping, autolink or italicise renders as unrecognised, and a non-array reported does too (#59)"
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq -n '[{role: "@org/team", requested: "host default", reported: []},
+	{role: "http://x.invalid/a", requested: "host default", reported: []},
+	{role: "www.x.io", requested: "host default", reported: []},
+	{role: "_a_", requested: "host default", reported: []},
+	{role: "divisor-guard-code", requested: "claude-x", reported: "x"}]' >"$sess/models.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+for line in '- unrecognised: requested host default · not reported' \
+	'- guard: requested `claude-x` · reported unrecognised'; do
+	if grep -qxF -- "$line" <<<"$body"; then
+		echo "  PASS: renders '$line'"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: missing '$line'"
+		FAIL=$((FAIL + 1))
+	fi
+done
+for raw in '@org' 'x.invalid' 'www.x.io' '_a_'; do
+	if grep -qF -- "$raw" <<<"$body"; then
+		echo "  FAIL: role '$raw' reached the body"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: role '$raw' kept out of the body"
+		PASS=$((PASS + 1))
+	fi
+done
+rm -rf "$sess"
+
+echo "Test: a missing, unreadable or empty models.json renders the not-recorded line (#59)"
+for models in absent '{ not json' '{"role":"x"}' '[]'; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	[[ "$models" == absent ]] || printf '%s' "$models" >"$sess/models.json"
+	result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+	assert_json_field "$result" "status" "rendered" "models.json $models: still renders"
+	if grep -qF '**Models:** _Not recorded by the host' "$sess/comment-body.md"; then
+		echo "  PASS: models.json $models: not-recorded line"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: models.json $models: no not-recorded line"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done
+
+# --- Provenance: run facts (#79) ----------------------------------------------
+# The Reviewed line names the compared commits and the effort; the Rules line
+# names the constitution and packs. Every value comes from session.txt, which
+# no model writes, and every value that can come from the change or the forge
+# is printed only inside a code span sized to it.
+REPORT_SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-render-report.sh"
+base40=1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+head40=9f8e7d6c5b4a39281706f5e4d3c2b1a098765432
+
+# A review session whose session.txt records every run fact.
+make_facts_session() { # dir
+	make_review_session "$1"
+	set_session_kv "$1" "Base" "main"
+	set_session_kv "$1" "Base SHA" "$base40"
+	set_session_kv "$1" "Head SHA" "$head40"
+	set_session_kv "$1" "Effort" "standard"
+	set_session_kv "$1" "Constitution" "$1/review-config/constitution.md (explicit: CONSTITUTION.md)"
+	set_session_kv "$1" "Constitution path" "CONSTITUTION.md"
+	set_session_kv "$1" "Packs" "go, terraform"
+}
+
+# Assert the first line of <session>'s rendered comment that holds <text>; an
+# absent line reads as empty. The read is its own assignment, so a failing grep
+# is not masked inside another command (SC2312).
+assert_body_line() { # session text expected label
+	local got
+	got=$(grep -m1 -F -- "$2" "$1/comment-body.md" || true)
+	assert_equals "$got" "$3" "$4"
+}
+
+# Renders <session> both ways and asserts the provenance blocks match: in the
+# comment it runs from **Reviewed:** to the TL;DR, in the report from
+# **Reviewed:** to the verdict heading. The standalone comment has no forge
+# hook, so neither side carries links.
+assert_same_provenance() { # session label
+	local s="$1" report comment_block report_block
+	bash "$SCRIPT" "$s" >/dev/null 2>&1
+	report=$(bash "$REPORT_SCRIPT" "$s" 2>/dev/null)
+	comment_block=$(awk '/^\*\*Reviewed:\*\*/ { on = 1 } /^\*\*TL;DR:\*\*/ { on = 0 } on' "$s/comment-body.md")
+	report_block=$(awk '/^\*\*Reviewed:\*\*/ { on = 1 } /^## Council Verdict$/ { on = 0 } on' <<<"$report")
+	if [[ -n "$comment_block" && "$comment_block" == "$report_block" ]]; then
+		echo "  PASS: $2"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $2"
+		echo "        comment: ${comment_block//$'\n'/ / }"
+		echo "        report:  ${report_block//$'\n'/ / }"
+		FAIL=$((FAIL + 1))
+	fi
+}
+
+echo "Test: the Reviewed and Rules lines carry the recorded run facts (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** `1a2b3c4d5e6f` (`main`) → `9f8e7d6c5b4a` · effort `standard`<br>' "Reviewed line"
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution `CONSTITUTION.md` · packs `go`, `terraform`<br>' "Rules line"
+if grep -qF 'Reviewed at commit' "$sess/comment-body.md"; then
+	echo "  FAIL: the old stamp is still rendered"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: the old stamp is gone"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: with the forge hook both SHAs link to their commits (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+(
+	# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
+	source "$SCRIPT"
+	# shellcheck disable=SC2317,SC2329 # called through the link hook rc_render_provenance is passed.
+	rc_url_commit() { printf '%s/commit/%s' "$1" "$2"; }
+	rc_render_comment_body "$sess" "$sess/comment-body.md"
+)
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** [`1a2b3c4d5e6f`](https://github.example.com/acme/widgets/commit/'"$base40"') (`main`) → [`9f8e7d6c5b4a`](https://github.example.com/acme/widgets/commit/'"$head40"') · effort `standard`<br>' \
+	"both SHAs linked through rc_url_commit"
+rm -rf "$sess"
+
+echo "Test: each run fact degrades on its own (#79)"
+while IFS='|' read -r label key value prefix want; do
+	sess=$(mktemp -d)
+	make_facts_session "$sess"
+	set_session_kv "$sess" "$key" "$value"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	assert_body_line "$sess" "$prefix" "$want" "$label"
+	rm -rf "$sess"
+done <<'FACTS'
+no Base SHA: the line names only the head|Base SHA||**Reviewed:**|**Reviewed:** at `9f8e7d6c5b4a` · effort `standard`<br>
+a Base SHA that is not 40 hex is left out|Base SHA|1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B|**Reviewed:**|**Reviewed:** at `9f8e7d6c5b4a` · effort `standard`<br>
+a short Base SHA is left out|Base SHA|1a2b3c4|**Reviewed:**|**Reviewed:** at `9f8e7d6c5b4a` · effort `standard`<br>
+no base branch name: the SHA alone|Base|none (explicit range)|**Reviewed:**|**Reviewed:** `1a2b3c4d5e6f` → `9f8e7d6c5b4a` · effort `standard`<br>
+no effort recorded|Effort||**Reviewed:**|**Reviewed:** `1a2b3c4d5e6f` (`main`) → `9f8e7d6c5b4a`<br>
+no constitution|Constitution path||**Rules:**|**Rules:** constitution none · packs `go`, `terraform`<br>
+no packs line|Packs||**Rules:**|**Rules:** constitution `CONSTITUTION.md` · packs none<br>
+FACTS
+# prepare-emit.sh writes no Constitution path for a refused constitution, so
+# the refusal on the Constitution line is all the renderer could leak.
+echo "Test: a refusal that quotes an explicit-looking value leaks nothing (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+set_session_kv "$sess" "Constitution" "none (refused: 'x (explicit: y)' is not a regular file at .review-council.md)"
+set_session_kv "$sess" "Constitution path" ""
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution none · packs `go`, `terraform`<br>' "refusal quoting an explicit-looking value shows none"
+for leak in refused explicit 'is not a regular file'; do
+	if grep -qF -- "$leak" "$sess/comment-body.md"; then
+		echo "  FAIL: refusal text '$leak' reached the comment body"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: '$leak' absent from the comment body"
+		PASS=$((PASS + 1))
+	fi
+done
+rm -rf "$sess"
+
+sess=$(mktemp -d)
+make_facts_session "$sess"
+set_session_kv "$sess" "Base SHA" "1A2B3C4D5E6F7A8B9C0D1E2F3A4B5C6D7E8F9A0B"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if grep -qF '1A2B3C4D5E6F' "$sess/comment-body.md"; then
+	echo "  FAIL: an invalid Base SHA was printed"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: an invalid Base SHA is never printed"
+	PASS=$((PASS + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: no head SHA anywhere still shows the base (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+set_session_kv "$sess" "Head SHA" ""
+set_session_kv "$sess" "Review root" "$sess/archive-without-git"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** `1a2b3c4d5e6f` (`main`) → head unknown · effort `standard`<br>' "unknown head"
+rm -rf "$sess"
+
+echo "Test: a base branch or constitution holding backticks renders as one safe span (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+set_session_kv "$sess" "Base" 'evil``branch<img src=x>`'
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+set_session_kv "$sess" "Constitution path" '`gov`.md'
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Reviewed:**' \
+	'**Reviewed:** `1a2b3c4d5e6f` (``` evil``branch<img src=x>` ```) → `9f8e7d6c5b4a` · effort `standard`<br>' \
+	"the branch sits in a delimiter longer than its backtick run"
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution `` `gov`.md `` · packs `go`, `terraform`<br>' \
+	"the constitution path is padded where it starts with a backtick"
+rm -rf "$sess"
+
+# The renderer's session_dir need not be spelled as prepare spelled it; the
+# constitution must still render, not fall back to none.
+echo "Test: a trailing-slash session_dir still names the constitution (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+bash "$SCRIPT" "$sess/" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_body_line "$sess" '**Rules:**' \
+	'**Rules:** constitution `CONSTITUTION.md` · packs `go`, `terraform`<br>' "trailing-slash session_dir"
+rm -rf "$sess"
+
+echo "Test: the comment and the report render the same provenance block (#79)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+cat >"$sess/models.json" <<'MJ'
+[{"role":"divisor-adversary-code","requested":"host default","reported":["claude-sonnet-5-5"]},
+ {"role":"coordinator","requested":"host default","reported":[]}]
+MJ
+assert_same_provenance "$sess" "Reviewed, Rules and Models match across both renderers"
+rm -rf "$sess"
+
+# --- Provenance: verdict-format check (#70) -----------------------------------
+echo "Test: the format-check line renders only when recorded, and only its two words (#70)"
+while IFS='|' read -r recorded want; do
+	sess=$(mktemp -d)
+	make_facts_session "$sess"
+	mkdir -p "$sess/verdicts/_meta"
+	[[ "$recorded" == absent ]] || printf '%s\n' "$recorded" >"$sess/verdicts/_meta/schema-validation.txt"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	assert_body_line "$sess" 'Verdict format check' "$want" "schema-validation.txt: $recorded"
+	if grep -qF '<img' "$sess/comment-body.md"; then
+		echo "  FAIL: schema-validation.txt content reached the body"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done <<'MODES'
+absent|
+full|**Verdict format check:** full (jsonschema validator)<br>
+minimal|**Verdict format check:** minimal (jq fallback; jsonschema validator unavailable)<br>
+garbage<img src=x>|**Verdict format check:** unknown<br>
+MODES
+
+echo "Test: the format-check line sits between Rules and Models (#70)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+mkdir -p "$sess/verdicts/_meta"
+printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+order=$(grep -nE '^\*\*(Rules|Verdict format check|Models):\*\*' "$sess/comment-body.md" | cut -d: -f2 | tr '\n' ' ')
+assert_equals "$order" "**Rules **Verdict format check **Models " "Rules, then the check, then Models"
+rm -rf "$sess"
+
+echo "Test: the format-check line is the same in both renderers (#70)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+mkdir -p "$sess/verdicts/_meta"
+printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
+assert_same_provenance "$sess" "the block with a format check matches across both renderers"
+rm -rf "$sess"
+
+# --- Provenance: coverage gap (#57) -------------------------------------------
+# findings.json .missing_verdicts was computed and never rendered, so a
+# reviewer that returned nothing read as one that found nothing. Both renderers
+# now name it, the comment's table gives it a row, and the verdict is capped.
+
+# Rewrite <session>'s findings.json through <jq filter>.
+edit_findings() { # session filter
+	jq "$2" "$1/verdicts/findings.json" >"$1/f.next"
+	mv "$1/f.next" "$1/verdicts/findings.json"
+}
+
+echo "Test: a missing verdict gets a coverage line and its own table row (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.verified = [] | .verdicts = {"divisor-adversary-code": "APPROVE"} | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "the capped verdict renders"
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`. Verdict capped at APPROVE WITH ADVISORIES.' \
+	"coverage line names the agent and the cap"
+assert_body_line "$sess" 'No verdict |' '| ⚙️ Operator (code) | ❌ No verdict | - |' \
+	"the silent reviewer has its own row"
+rm -rf "$sess"
+
+echo "Test: an APPROVE beside a missing verdict is refused, not posted (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.verified = [] | .verdicts = {"divisor-adversary-code": "APPROVE"} | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "verdict.txt must carry the cap"
+rm -rf "$sess"
+
+echo "Test: with a blocking finding the coverage line claims no cap (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.missing_verdicts = ["divisor-sre-code"]'
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`.' \
+	"REQUEST CHANGES stands; no cap sentence"
+rm -rf "$sess"
+
+echo "Test: a verified MEDIUM finding already decides the verdict, so the cap is not claimed (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.verified = [.verified[0] | .severity = "MEDIUM"] | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`.' \
+	"the findings decided ADVISORIES; no cap sentence"
+rm -rf "$sess"
+
+echo "Test: no missing verdict, no coverage line and no No-verdict row (#57)"
+for filter in 'del(.missing_verdicts)' '.missing_verdicts = []' '.missing_verdicts = "divisor-sre-code"'; do
+	sess=$(mktemp -d)
+	make_facts_session "$sess"
+	edit_findings "$sess" "$filter"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	if grep -qE 'Coverage gap|No verdict' "$sess/comment-body.md"; then
+		echo "  FAIL: $filter: a coverage gap was claimed"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: $filter: no coverage gap claimed"
+		PASS=$((PASS + 1))
+	fi
+	rm -rf "$sess"
+done
+
+echo "Test: a missing agent name that is not a role renders as unrecognised (#57)"
+# Each value would do harm printed bare in the table: a team ping, an autolink,
+# a code span, a pipe that opens a column, a heading after a newline. They are
+# printed outside code spans there, so they must fail the role allow-list.
+sess=$(mktemp -d)
+make_facts_session "$sess"
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+edit_findings "$sess" '.missing_verdicts = ["@org/team", "http://x.invalid/a", "divisor-`x`-code", "divisor-sre-code | evil", "divisor-sre-code\n# h"]'
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from unrecognised, unrecognised, unrecognised, unrecognised, unrecognised.' \
+	"coverage line"
+assert_body_line "$sess" 'No verdict |' '| 🔹 unrecognised | ❌ No verdict | - |' "table row"
+no_verdict_rows=$(grep -cF '| ❌ No verdict | - |' "$sess/comment-body.md" || true)
+assert_equals "$no_verdict_rows" "5" "one row per missing agent"
+leaked=""
+# shellcheck disable=SC2016 # literal backticks in a hostile value.
+for raw in '@org' 'x.invalid' 'divisor-`x`' 'evil' '# h'; do
+	if grep -qF -- "$raw" "$sess/comment-body.md"; then
+		leaked+=" $raw"
+	fi
+done
+if [[ -z "$leaked" ]]; then
+	echo "  PASS: no raw agent name reached the body"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: raw agent name(s) reached the body:$leaked"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: the coverage line is the same in both renderers (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
+edit_findings "$sess" '.verified = [] | .verdicts = {"divisor-adversary-code": "APPROVE"} | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
+assert_same_provenance "$sess" "the full block, coverage line included, matches across both renderers"
 rm -rf "$sess"
 
 echo ""

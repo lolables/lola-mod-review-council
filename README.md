@@ -350,6 +350,33 @@ refuses to, so asking afterwards means running the review again with the post
 request. Re-reviews edit the same comment (matched by a hidden marker) instead
 of posting new ones.
 
+**The verdict header says how the review ran.** Under the verdict and the
+automated-review banner, the comment and `report.md` carry the same provenance
+block, written by scripts rather than by the model:
+
+- **Reviewed**: the base commit the diff was taken against and its branch, the
+  head commit, and the effort tier. For a pull request the base is the
+  merge-base the forge diffed against, as GitHub or GitLab reports it. Without
+  a base (`--scope all`, or a forge that could not report one) the line names
+  only the head.
+- **Rules**: the constitution and the project packs the review ran under, or
+  `none`.
+- **Verdict format check**: `full` when reviewer verdicts were checked by the
+  `jsonschema` validator, `minimal` when the jq fallback ran because it was
+  missing or incompatible. The session keeps the worst mode any extraction used.
+- **Models**: for each reviewer, the coordinator and the validator, the model
+  that was *requested* (`host default` unless the orchestrator named one at
+  dispatch) and the model the agent *reported* about itself. A reported ID is
+  the agent's own claim, not a confirmation from the host; "not reported"
+  means it made none.
+- **Coverage gap**: every dispatched reviewer that returned no verdict, by
+  name. A missing verdict caps an APPROVE at APPROVE WITH ADVISORIES, and the
+  comment's reviewer table gives that reviewer a `❌ No verdict` row.
+
+An ID or name that is not a plain identifier is shown as `unrecognised` rather
+than printed; a branch name, constitution path or pack name is shown inside a
+code span nothing in it can close.
+
 GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
 gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is
 absent or the forge is neither, the comment body is rendered to a file and you

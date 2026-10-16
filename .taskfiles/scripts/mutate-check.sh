@@ -1534,6 +1534,109 @@ check_mutation "RC-109 cache key folds hyphens, so a-b/c and a/b-c share an entr
 	's#^dest="\${cache_root}/\${host_slug}+\${owner//\\//+}+\${repo}"$#dest="${cache_root}/${host_slug}+${owner//[\\/-]/+}+${repo//-/+}"#' \
 	test-rc-clone-target.sh
 
+# The seed wrote each persona's tier label, which every header then printed as
+# the model used on runs that never requested one (#59). Seeding a tier as the
+# request again must fail the seed's own assertions.
+check_mutation "RC-110 models.json seeded with a tier label instead of host default" \
+	rc-select-council.sh \
+	's#{requested: "host default", reported: \[\]}#{requested: "Capable tier", reported: []}#' \
+	test-rc-select-council.sh
+
+# Model IDs and role names reach the header only through the allow-list; any
+# string passing makes a hostile ID (markdown, a newline, a link) render.
+check_mutation "RC-111 provenance prints IDs without the allow-list" \
+	lib/render-provenance.sh \
+	's#def allowed: type == "string" and test([^)]*);#def allowed: type == "string";#' \
+	test-rc-render-comment.sh
+
+# Deep mode and retries report the same model more than once; without the
+# membership test each report is appended again.
+check_mutation "RC-112 reported models are appended without deduplication" \
+	rc-extract-verdict.sh \
+	's#| if any(\.\[\]; \. == \$r\.model) then \. else#| if false then . else#' \
+	test-rc-extract-verdict.sh
+
+# Roles are printed outside a code span, so they get a tighter class than IDs;
+# widening it back lets @org/team, a URL or _a_ reach the header.
+check_mutation "RC-124 provenance checks roles against the general ID class" \
+	lib/render-provenance.sh \
+	's#def allowed_role: type == "string" and test([^)]*);#def allowed_role: allowed;#' \
+	test-rc-render-comment.sh
+
+# The Rules line reads only "Constitution path:", which prepare writes for an
+# accepted constitution alone. Falling back to the "Constitution:" line prints
+# the session path, and for a refusal publishes the refusal text (#79).
+check_mutation "RC-125 provenance reads the constitution from the Constitution line" \
+	lib/render-provenance.sh \
+	's#rc_parse_kv "\$session_txt" "Constitution path")#rc_parse_kv "$session_txt" "Constitution")#' \
+	test-rc-render-comment.sh
+
+# A Base SHA that is not 40 hex characters is either absent or not a commit, so
+# the header leaves it out (#79). Without the check, junk from session.txt is
+# printed as the reviewed base.
+check_mutation "RC-114 Base SHA printed without validation" \
+	lib/render-provenance.sh \
+	's#^\([[:space:]]*\)\[\[ "\$base_sha" =~ .*#\1:#' \
+	test-rc-render-comment.sh
+
+# The branch name comes from the forge or the change; printed raw, a backtick
+# in it closes the span and the rest renders as markup (#79).
+check_mutation "RC-115 base branch printed raw instead of a sized code span" \
+	lib/render-provenance.sh \
+	's#base_span=\$(rc_md_code_span "\$base")#base_span="$base"#' \
+	test-rc-render-comment.sh
+
+# A pull request's diff is the forge's, so its base is the forge's merge-base;
+# the one prepare-config.sh resolved belongs to the invoking checkout, which
+# for a clone is not the PR's at all (#79).
+check_mutation "RC-116 Base SHA of a forge diff taken from the local checkout" \
+	lib/prepare-emit.sh \
+	's#^\([[:space:]]*\)base_sha="\$forge_base_sha"$#\1base_sha="$config_rev"#' \
+	test-rc-prepare-config-source.sh
+
+# GitHub's compare answer goes into session.txt; anything but a full commit id
+# must be dropped, not passed on (#79). This pins the adapter's own contract:
+# prepare-target.sh re-validates the value, so only the adapter suite kills it.
+check_mutation "RC-122 GitHub merge-base returned without validation" \
+	lib/forge/github.sh \
+	's#^\([[:space:]]*\)\[\[ "\$merge_base" =~ .*#\1:#' \
+	test-rc-forge-adapters.sh
+
+# GitLab's diff_refs are taken at one head; paired with a newer head they name
+# a base that diff was never cut from (#79).
+check_mutation "RC-123 GitLab diff base used for a different head" \
+	lib/forge/gitlab.sh \
+	's# && "\$RC_FORGE_GL_DIFF_HEAD" == "\$head_sha" \]\]# ]]#' \
+	test-rc-forge-adapters.sh
+
+# Batches and retries run the extractor more than once; a later run that found
+# the validator must not overwrite a recorded `minimal`, or the header hides
+# the blocks only the jq fallback checked (#70).
+check_mutation "RC-117 schema-validation.txt overwritten instead of worst-of" \
+	rc-extract-verdict.sh \
+	's#^\([[:space:]]*\)if \[\[ "\$recorded_validation" != "minimal" \]\]; then$#\1if true; then#' \
+	test-rc-extract-verdict.sh
+
+# The fallback must be disclosed as what it is (#70).
+check_mutation "RC-118 the jq fallback reported as full validation" \
+	rc-extract-verdict.sh \
+	's#^\([[:space:]]*\)schema_validation="minimal"$#\1schema_validation="full"#' \
+	test-rc-extract-verdict.sh
+
+# A dispatched reviewer that returned nothing must cap APPROVE; without the
+# cap a hole in the council reads as a clean pass (#57).
+check_mutation "RC-119 missing verdicts no longer cap APPROVE" \
+	rc-lib.sh \
+	's# or \$missing > 0 then# then#' \
+	test-rc-decide-verdict.sh
+
+# The comment's table is built from the verdicts that arrived; a silent
+# reviewer needs its own row or the table reads as a full council (#57).
+check_mutation "RC-120 the reviewer table drops No-verdict rows" \
+	rc-render-comment.sh \
+	's#^\([[:space:]]*\)agent_rows+=.* No verdict | - |.*#\1:#' \
+	test-rc-render-comment.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

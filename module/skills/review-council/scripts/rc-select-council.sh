@@ -407,42 +407,34 @@ mv "$manifest_tmp" "$manifest"
 # decision expressed only as prose, competing for the orchestrator's attention
 # with the review itself, is a decision that does not happen.
 #
-# The tier a persona is dispatched at is a fixed property of the persona (the
-# table in phases/delegate.md), and the council is already known here, so the
-# seed is fully derivable and belongs in a script. What is NOT derivable is the
-# concrete model the host chose; that stays the orchestrator's job, narrowed
-# from "write this file" to "upgrade an entry when the host names a model".
+# Each entry is {role, requested, reported}. `requested` is what the
+# orchestrator asked the host for, seeded as `host default` because that is
+# what a dispatch that names no model asks for; the orchestrator replaces it
+# only with an ID it actually passed (phases/delegate.md). `reported` is what
+# the reviewer said about itself, filled by rc-extract-verdict.sh from the
+# verdict's optional `model` field. The seed used to be a tier label from the
+# delegate.md table ("Capable tier"), which every header then printed as the
+# model used, on runs that never requested one (#59).
 #
-# A seeded entry therefore records the tier REQUESTED, not a model the host
-# confirmed — which is exactly the fallback delegate.md already specified, now
-# actually produced rather than merely described.
-#
-# An existing id always wins for a role that is still on the council: a re-run
-# (SKILL.md Step 2 resumes mid-run) must not reset an upgraded concrete ID back
-# to its tier. Roles that left the council lose their entry, so provenance names
-# what ran rather than what was once considered.
+# A re-run (SKILL.md Step 2 resumes mid-run) keeps the entry of a role still on
+# the council when it is in this shape, so a recorded request or self-report
+# survives. An entry in the old {role, id} shape, or any other shape, and a
+# file that does not parse are reseeded: the old tier labels were never true,
+# so there is nothing to carry over. Roles that left the council lose their
+# entry, so provenance names what ran rather than what was once considered.
 models_file="$session_dir/models.json"
 models_prev='[]'
 if [[ -f "$models_file" ]]; then
-	# A hand-damaged file is discarded rather than propagated: the seed below can
-	# rebuild every tier from the roster, so the recoverable loss is only the
-	# upgraded IDs, and that beats aborting the run over a provenance artifact.
 	models_prev=$(jq -c '.' "$models_file" 2>/dev/null || echo '[]')
 fi
 models_tmp="${models_file}.tmp"
 jq -n --argjson council "$council_json" --argjson prev "$models_prev" '
-	# Persona segment of divisor-<persona>-<suffix>. Tiers come from the
-	# "Model Selection Guidance" table in phases/delegate.md; a persona the
-	# table does not name gets a neutral label rather than a guessed tier,
-	# because inventing provenance is worse than disclosing less of it.
-	def tier(role):
-		(role | split("-") | .[1] // "") as $persona
-		| if $persona == "adversary" or $persona == "guard" then "Capable tier"
-		  elif $persona == "testing" or $persona == "sre" or $persona == "curator"
-		  then "Standard tier"
-		  else "Tier not specified" end;
-	($prev | map({key: .role, value: .id}) | from_entries) as $known
-	| [$council[] | {role: ., id: ($known[.] // tier(.))}]
+	def current: type == "object" and (.role | type) == "string"
+		and (.requested | type) == "string"
+		and (.reported | type) == "array" and all(.reported[]; type == "string");
+	(if ($prev | type) == "array" then [$prev[] | select(current)] else [] end
+		| map({key: .role, value: {requested, reported}}) | from_entries) as $known
+	| [$council[] | {role: .} + ($known[.] // {requested: "host default", reported: []})]
 ' >"$models_tmp"
 mv "$models_tmp" "$models_file"
 

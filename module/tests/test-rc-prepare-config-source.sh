@@ -12,6 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
+RC_SCRIPTS="$SCRIPT_DIR/../skills/review-council/scripts"
 AGENTS="$SCRIPT_DIR/../agents"
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"
@@ -24,6 +25,41 @@ prepare_in() { # dir args...
 
 session_of() { # result-json
 	jq -r '.session_dir // empty' <<<"$1"
+}
+
+# Assert a session.txt value, read as the renderers read it (rc_parse_kv: first
+# match, value trimmed). Same single-sed shape as assert_track, for the same
+# reason.
+assert_session() { # session_dir key expected label
+	local actual
+	actual=$(sed -nE "/^${2}:/{s/^${2}:[[:space:]]*//;s/[[:space:]]+\$//;p;q;}" \
+		"$1/session.txt" 2>/dev/null)
+	assert_equals "$actual" "$3" "$4"
+}
+
+# Write a fake `gh` for the pull-request cases into <bindir>. It answers from
+# files beside it, so a case can set them after writing it: head-sha and
+# base-sha are the PR's headRefOid and baseRefOid, and merge-base is what the
+# compare endpoint reports as merge_base_commit (absent, that call fails).
+write_fake_gh() { # bindir
+	cat >"$1/gh" <<'GH'
+#!/usr/bin/env bash
+here="${0%/*}"
+case "$1 $2" in
+"pr view")
+	printf '{"number":7,"title":"t","body":"","baseRefName":"main","baseRefOid":"%s","headRefName":"feature","headRefOid":"%s","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}\n' \
+		"$(cat "$here/base-sha" 2>/dev/null)" "$(cat "$here/head-sha")"
+	;;
+"pr diff") printf 'diff --git a/run.sh b/run.sh\n--- /dev/null\n+++ b/run.sh\n@@ -0,0 +1 @@\n+eval "$1"\n' ;;
+"api repos/acme/widgets/compare/"*)
+	[[ -f "$here/merge-base" ]] || exit 1
+	printf '{"merge_base_commit":{"sha":"%s"}}\n' "$(cat "$here/merge-base")"
+	;;
+"api "*) echo "[]" ;;
+*) exit 0 ;;
+esac
+GH
+	chmod +x "$1/gh"
 }
 
 # A repo whose main commits a benign config block, then a `feature` branch
@@ -70,6 +106,8 @@ assert_track "$sess" "Pin personas" "none" "the branch's pin is not obeyed"
 assert_track "$sess" "Constitution" "none" "the branch's constitution is not obeyed"
 assert_track "$sess" "Config source" "${base_sha:0:12} (merge-base of main and HEAD)" \
 	"tracking.md names the revision the configuration came from"
+assert_session "$sess" "Base SHA" "$base_sha" "session.txt records the merge-base the diff is taken against"
+assert_session "$sess" "Packs" "base-rules" "session.txt names the loaded pack, not the branch's"
 rm -rf "$work"
 
 echo "Test 2: uncommitted edits to the config block are not obeyed either"
@@ -87,6 +125,7 @@ make_hostile_branch_repo "$work"
 result=$(prepare_in "$work" --scope all --mode code)
 sess=$(session_of "$result")
 assert_track "$sess" "Subsystem triage" "off" "--scope all keeps the base's triage value"
+assert_session "$sess" "Base SHA" "" "--scope all diffs nothing, so it records no base"
 rm -rf "$work"
 
 echo "Test 4: a range reads the configuration at its start"
@@ -98,6 +137,7 @@ sess=$(session_of "$result")
 assert_track "$sess" "Subsystem triage" "off" "A..B reads A"
 assert_track "$sess" "Config source" "${base_sha:0:12} (start of range main..feature)" \
 	"A..B is recorded as the range start"
+assert_session "$sess" "Base SHA" "$base_sha" "A..B records A as the base"
 # `feature...main` diffs the merge-base against main, so main needs a commit of
 # its own or the changeset is empty and the run ends before tracking.md.
 git -C "$work" checkout -q main
@@ -109,6 +149,7 @@ result=$(prepare_in "$work" --scope range --scope-value "feature...main" --mode 
 sess=$(session_of "$result")
 assert_track "$sess" "Config source" "${base_sha:0:12} (merge-base of feature and main)" \
 	"A...B reads the merge-base"
+assert_session "$sess" "Base SHA" "$base_sha" "A...B records the merge-base as the base"
 result=$(prepare_in "$work" --scope range --scope-value "HEAD~1" --mode code)
 sess=$(session_of "$result")
 assert_track "$sess" "Subsystem triage" "off" "a single ref reads that ref"
@@ -125,20 +166,11 @@ bindir=$(mktemp -d)
 	git remote add origin https://github.com/acme/widgets.git
 )
 make_hostile_branch_repo "$work"
-cat >"$bindir/gh" <<'GH'
-#!/usr/bin/env bash
-case "$1 $2" in
-"pr view")
-	printf '{"number":7,"title":"t","body":"","baseRefName":"main","headRefName":"feature","headRefOid":"%s","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}\n' \
-		"$(cat "${0%/*}/head-sha")"
-	;;
-"pr diff") printf 'diff --git a/run.sh b/run.sh\n--- /dev/null\n+++ b/run.sh\n@@ -0,0 +1 @@\n+eval "$1"\n' ;;
-"api "*) echo "[]" ;;
-*) exit 0 ;;
-esac
-GH
-chmod +x "$bindir/gh"
+write_fake_gh "$bindir"
 base_sha=$(git -C "$work" rev-parse main)
+# The forge's view: main's tip is the base, and so the merge-base with feature.
+printf '%s' "$base_sha" >"$bindir/base-sha"
+printf '%s' "$base_sha" >"$bindir/merge-base"
 # The remote-tracking ref is what the in-place branch prefers. Local main then
 # moves ahead with a hostile block, so reading refs/heads/main instead would
 # record a different source string (and pick up the hostile value).
@@ -155,6 +187,7 @@ assert_track "$sess" "Review root" "." "the PR is reviewed in place"
 assert_track "$sess" "Subsystem triage" "off" "the in-place PR keeps the base's triage value"
 assert_track "$sess" "Config source" "${base_sha:0:12} (merge-base of origin/main and HEAD)" \
 	"the in-place PR reads the remote-tracking base, not the local branch"
+assert_session "$sess" "Base SHA" "$base_sha" "the in-place PR records the merge-base the forge diffed against"
 rm -rf "$work" "$bindir"
 
 echo "Test 6: a base that cannot be resolved means no project configuration"
@@ -275,10 +308,26 @@ result=$(prepare_in "$work" --scope changed --mode code)
 sess=$(session_of "$result")
 assert_track "$sess" "Constitution" "$sess/review-config/constitution.md (explicit: ./docs/GOVERNANCE.md)" \
 	"Constitution points at the session snapshot"
+assert_session "$sess" "Constitution path" "./docs/GOVERNANCE.md" \
+	"session.txt records the configured path for the verdict header"
+# The header reads what prepare wrote, under a session_dir spelled with a
+# trailing slash as a caller may pass it.
+rules=$(
+	# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+	source "$RC_SCRIPTS/rc-lib.sh"
+	# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+	source "$RC_SCRIPTS/lib/render-provenance.sh"
+	rc_render_provenance "$sess/" ""
+)
+rules=$(grep -F '**Rules:**' <<<"$rules" || true)
+# shellcheck disable=SC2016 # literal markdown code spans in the expected output.
+assert_equals "$rules" '**Rules:** constitution `./docs/GOVERNANCE.md` · packs none<br>' \
+	"the verdict header names the constitution prepare accepted"
 snapshot=$(cat "$sess/review-config/constitution.md" 2>/dev/null) || snapshot=""
 assert_equals "$snapshot" "Base rule." \
 	"the snapshot holds the base content, not the working tree's"
 assert_track "$sess" "Project packs" "none" "no packs is recorded as none"
+assert_session "$sess" "Packs" "none" "session.txt says none too"
 if [[ ! -e "$sess/review-config/packs" ]]; then
 	assert_equals "absent" "absent" "and no empty packs directory is left"
 else
@@ -337,6 +386,7 @@ for entry in "${refused_constitutions[@]}"; do
 		echo "  FAIL: a refused constitution left a snapshot"
 		FAIL=$((FAIL + 1))
 	fi
+	assert_session "$sess" "Constitution path" "" "session.txt records no Constitution path"
 	rm -rf "$work" "$work.err"
 done
 
@@ -347,6 +397,7 @@ result=$(prepare_in "$work" --scope changed --mode code)
 sess=$(session_of "$result")
 track=$(sed -nE 's/^- Constitution: //p' "$sess/tracking.md")
 assert_equals "${track%%:*}" "none (refused" "a symlink is not followed"
+assert_session "$sess" "Constitution path" "" "session.txt records no Constitution path"
 if [[ ! -e "$sess/review-config/constitution.md" ]]; then
 	assert_equals "absent" "absent" "no snapshot is left behind"
 else
@@ -396,6 +447,7 @@ work=$(mktemp -d)
 result=$(cd "$work" && AGENTS_DIR="$AGENTS" bash "$SCRIPT" --scope changed --mode code 2>"$work.err")
 sess=$(session_of "$result")
 assert_track "$sess" "Project packs" "$sess/review-config/packs (1)" "only ok.md is taken"
+assert_session "$sess" "Packs" "ok" "session.txt names only the safe pack"
 for skipped in "bad name.md' skipped: name is not" ".hidden.md' skipped: name is not" "link.md' skipped: not a regular file"; do
 	if grep -qF "$skipped" "$work.err"; then
 		echo "  PASS: stderr reports: $skipped"
@@ -716,6 +768,64 @@ base_n=$(grep -cF '.review-council/packs/base.md' <<<"$listed") || base_n=0
 assert_equals "$gone_n" "1" "the deleted pack is listed"
 assert_equals "$base_n" "0" "the untouched pack is not"
 rm -rf "$work"
+
+echo "Test 33: a pull request reviewed from a clone records the forge's merge-base"
+# The forge diffed this pull request, and the checkout the run stands in is not
+# its head (the forge reports a head this checkout does not have), so the
+# in-place path is not taken. The merge-base prepare-config.sh resolved here
+# belongs to the invoking checkout; the diff is the forge's, so the base must be
+# the forge's too. The fake forge names a merge-base that differs from the local
+# one, which is what tells the two sources apart.
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git remote add origin https://github.com/acme/widgets.git
+)
+make_hostile_branch_repo "$work"
+write_fake_gh "$bindir"
+base_sha=$(git -C "$work" rev-parse main)
+printf '%s' 1111111111111111111111111111111111111111 >"$bindir/head-sha"
+printf '%s' "$base_sha" >"$bindir/base-sha"
+printf '%s' 2222222222222222222222222222222222222222 >"$bindir/merge-base"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$AGENTS" \
+	bash "$SCRIPT" --scope pr --scope-value 7 --mode code 2>/dev/null)
+sess=$(session_of "$result")
+assert_track "$sess" "Config source" "${base_sha:0:12} (merge-base of main and HEAD)" \
+	"the configuration still came from the local merge-base"
+assert_session "$sess" "Base SHA" "2222222222222222222222222222222222222222" \
+	"Base SHA is the forge's merge-base, not the local one"
+assert_session "$sess" "Head SHA" "1111111111111111111111111111111111111111" "the forge's head is recorded"
+rm -rf "$work" "$bindir"
+
+echo "Test 34: a forge that cannot report the merge-base leaves Base SHA empty, with a warning"
+# The compare call fails. That costs the header its base, never the run: the
+# session is still written, and the only trace is one stderr line.
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git remote add origin https://github.com/acme/widgets.git
+)
+make_hostile_branch_repo "$work"
+write_fake_gh "$bindir"
+printf '%s' 1111111111111111111111111111111111111111 >"$bindir/head-sha"
+git -C "$work" rev-parse main >"$bindir/base-sha"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$AGENTS" \
+	bash "$SCRIPT" --scope pr --scope-value 7 --mode code 2>"$work.err")
+sess=$(session_of "$result")
+assert_session "$sess" "Head SHA" "1111111111111111111111111111111111111111" "the run completed and recorded its head"
+assert_session "$sess" "Base SHA" "" "no merge-base, no Base SHA"
+if grep -qF 'the forge did not report the merge-base of #7' "$work.err"; then
+	echo "  PASS: the missing base is reported on stderr"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: no stderr warning for the missing merge-base"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$work" "$work.err" "$bindir"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

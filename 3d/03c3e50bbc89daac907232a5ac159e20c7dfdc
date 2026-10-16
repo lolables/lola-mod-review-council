@@ -1,0 +1,22 @@
+module/tests/test-rc-render-comment.sh
+  s_990f2ef699e987::t_0bb001253b89f3 597,632-634,636,639-647
+  s_990f2ef699e987::t_3019748fe87ae0 635,637-638
+module/skills/review-council/scripts/lib/render-findings.sh
+  s_990f2ef699e987::t_2ce0af941d3bec 35-36,179-182,220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3d03c3e50bbc89daac907232a5ac159e20c7dfdc",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

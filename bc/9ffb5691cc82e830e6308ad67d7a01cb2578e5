@@ -1,0 +1,33 @@
+module/tests/test-rc-pipeline.sh
+  s_990f2ef699e987::t_41a572abec2623 30-34
+module/skills/review-council-debug/SKILL.md
+  s_990f2ef699e987::t_66c96ace1f8cb6 207-208
+module/tests/fixtures/session-golden/session/verdicts/divisor-adversary-code.raw.md
+  s_990f2ef699e987::t_c9623160d52ad8 15-16,24-25,33-34
+module/tests/helpers.sh
+  s_990f2ef699e987::t_6c4fe959f2e5db 437
+module/tests/test-rc-batch-verdicts.sh
+  s_990f2ef699e987::t_ea6f2f65d75771 28,122
+module/tests/test-rc-deep-mode.sh
+  s_990f2ef699e987::t_75919de796c18b 20,92
+module/tests/test-rc-extract-verdict.sh
+  s_990f2ef699e987::t_d9fa028fcd9cfa 173,175,190,274,276,278,280,295,335,359,427,486,502,514,565,809,877
+module/tests/test-rc-idempotency.sh
+  s_990f2ef699e987::t_8356c3462945c8 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc9ffb5691cc82e830e6308ad67d7a01cb2578e5",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

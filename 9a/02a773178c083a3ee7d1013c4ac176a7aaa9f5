@@ -1,0 +1,40 @@
+docs/dev/pipeline.md
+  s_36e5204fa666f9::t_1b00e849656a79 298-299
+module/tests/test-rc-render-comment.sh
+  s_36e5204fa666f9::t_d1153fa1f2aed2 2175-2214
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_36e5204fa666f9::t_3e6bbef977bef5 13-14,247-249,274,387-412,432-434,452
+.taskfiles/scripts/mutate-check.sh
+  s_36e5204fa666f9::t_1b00e849656a79 1612-1625
+README.md
+  s_36e5204fa666f9::t_1b00e849656a79 364-365
+  s_36e5204fa666f9::t_b058061e79075c 366
+module/tests/test-rc-extract-verdict.sh
+  s_36e5204fa666f9::t_3e6bbef977bef5 966-973,977,980-1062
+  s_36e5204fa666f9::t_4471766eb7be7c 978
+  s_36e5204fa666f9::t_072cd6ba474acf 974-976,979
+module/tests/test-rc-render-report.sh
+  s_36e5204fa666f9::t_d1153fa1f2aed2 1556-1579
+module/skills/review-council/scripts/lib/render-provenance.sh
+  s_36e5204fa666f9::t_c8a03670a22e2b 175-188,203-206
+module/skills/review-council/references/pipeline-states.md
+  s_36e5204fa666f9::t_1b00e849656a79 16
+module/tests/e2e/pipeline.venom.yml
+  s_36e5204fa666f9::t_1b00e849656a79 75-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a02a773178c083a3ee7d1013c4ac176a7aaa9f5",
+  "prompts": {},
+  "sessions": {
+    "s_36e5204fa666f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "942ddf6c-fc5e-468b-ba23-802b53c43472",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

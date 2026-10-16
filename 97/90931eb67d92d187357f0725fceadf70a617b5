@@ -1,0 +1,26 @@
+module/tests/test-rc-doc-guards.sh
+  s_990f2ef699e987::t_9425e290c3e5f6 2465-2476,2478,2484,2487-2489,2497-2504
+  s_990f2ef699e987::t_d35072ca3316b6 2517-2552
+module/skills/review-council/phases/verify.md
+  s_990f2ef699e987::t_83a0d35190ea8a 421-429
+module/agents/divisor-guard-spec.md
+  s_990f2ef699e987::t_314d31d813a584 167-173
+module/agents/divisor-guard-code.md
+  s_990f2ef699e987::t_314d31d813a584 168-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9790931eb67d92d187357f0725fceadf70a617b5",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

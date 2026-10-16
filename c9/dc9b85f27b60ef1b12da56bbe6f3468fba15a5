@@ -1,0 +1,46 @@
+module/skills/review-council/scripts/jq/md-neutralise.jq
+  s_990f2ef699e987::t_9d1fc6ae07d2fa 233-239
+module/tests/test-rc-post-comment-gitlab.sh
+  s_990f2ef699e987::t_b1770cf7ea39d8 1376-1398
+  s_990f2ef699e987::t_d259bc87fb42e3 1260-1261
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_990f2ef699e987::t_56a0fedbad141c 170
+  s_990f2ef699e987::t_fcab49fbc93b80 171,173-175
+  s_990f2ef699e987::t_ae0c4bef0b99b9 22,172,177,179-183,335-340
+module/tests/test-rc-render-report.sh
+  s_990f2ef699e987::t_7af4243a1233a4 1077
+module/skills/review-council/scripts/lib/render-findings.sh
+  s_990f2ef699e987::t_b2cfa7b883f5fa 102,104-110,113,115,179-183,218-219,221-222,225,227-234,249
+module/tests/test-rc-jq-programs.sh
+  s_990f2ef699e987::t_cc6fe46d14372e 439-449
+module/tests/test-rc-post-comment-github.sh
+  s_990f2ef699e987::t_d995bc2827f795 1358-1380
+module/skills/review-council/references/forge-adapters.md
+  s_990f2ef699e987::t_ae0c4bef0b99b9 275-279
+module/tests/test-rc-idempotency.sh
+  s_990f2ef699e987::t_7af4243a1233a4 114
+module/tests/test-rc-doc-guards.sh
+  s_990f2ef699e987::t_e369810f199673 2439
+module/tests/test-rc-render-comment.sh
+  s_990f2ef699e987::t_45b86855dcedf0 722,726-727
+  s_990f2ef699e987::t_7af4243a1233a4 17,238-240
+  s_990f2ef699e987::t_f6352cecd99381 653-721,723,729-732
+  s_990f2ef699e987::t_471d6747ffc3d5 426
+  s_990f2ef699e987::t_13162fb881cf15 724-725,728
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9dc9b85f27b60ef1b12da56bbe6f3468fba15a5",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

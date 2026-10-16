@@ -295,7 +295,8 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   previous run's `findings.json`, which `rc-verify-evidence.sh` moves aside before checking anything; it is kept for
   debugging only, and neither the renderers nor `rc-decide-verdict.sh` read it
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
-  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), and, on a re-review,
+  the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), the
+  verdict-format check the extractor ran (`schema-validation.txt`: `full` or `minimal`, the worst of every extraction), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail), `findings.pre-disposition.json` (the snapshot
   Disposition's edits are checked against) and `disposition-check.json` (the check's result and the SHA-256 of the
   `findings.json` it accepted). `rc-render-report.sh` refuses to render without `verification.txt`

@@ -1609,6 +1609,20 @@ check_mutation "RC-123 GitLab diff base used for a different head" \
 	's# && "\$RC_FORGE_GL_DIFF_HEAD" == "\$head_sha" \]\]# ]]#' \
 	test-rc-forge-adapters.sh
 
+# Batches and retries run the extractor more than once; a later run that found
+# the validator must not overwrite a recorded `minimal`, or the header hides
+# the blocks only the jq fallback checked (#70).
+check_mutation "RC-117 schema-validation.txt overwritten instead of worst-of" \
+	rc-extract-verdict.sh \
+	's#^\([[:space:]]*\)if \[\[ "\$recorded_validation" != "minimal" \]\]; then$#\1if true; then#' \
+	test-rc-extract-verdict.sh
+
+# The fallback must be disclosed as what it is (#70).
+check_mutation "RC-118 the jq fallback reported as full validation" \
+	rc-extract-verdict.sh \
+	's#^\([[:space:]]*\)schema_validation="minimal"$#\1schema_validation="full"#' \
+	test-rc-extract-verdict.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

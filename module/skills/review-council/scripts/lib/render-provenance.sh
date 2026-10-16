@@ -172,6 +172,20 @@ _rc_prov_rules() { # session_dir
 	printf '%s' "**Rules:** constitution ${shown} · packs ${packs_shown:-none}"
 }
 
+# The verdict-format check rc-extract-verdict.sh ran, worst of every run in the
+# session. Printed only when the extractor recorded one; anything but its two
+# words is shown as unknown rather than echoed.
+_rc_prov_format_check() { # session_dir
+	local f="$1/verdicts/_meta/schema-validation.txt" mode
+	[[ -f "$f" ]] || return 0
+	mode=$(head -n1 "$f" 2>/dev/null) || mode=""
+	case "$mode" in
+	full) printf '%s' "**Verdict format check:** full (jsonschema validator)" ;;
+	minimal) printf '%s' "**Verdict format check:** minimal (jq fallback; jsonschema validator unavailable)" ;;
+	*) printf '%s' "**Verdict format check:** unknown" ;;
+	esac
+}
+
 # The provenance block, as lines with no trailing blank line. Every line above
 # the Models line ends in <br>, so the block reads as one line per fact under
 # any markdown renderer: <br> rather than a trailing backslash because the
@@ -186,6 +200,10 @@ rc_render_provenance() { # session_dir head_sha [commit_link_hook] [forge_web]
 	fi
 	line=$(_rc_prov_rules "$session_dir")
 	printf '%s<br>\n' "$line"
+	line=$(_rc_prov_format_check "$session_dir")
+	if [[ -n "$line" ]]; then
+		printf '%s<br>\n' "$line"
+	fi
 	models=$(jq -r "${RC_PROV_JQ_DEFS}${_RC_PROV_MODELS_JQ}" "$session_dir/models.json" 2>/dev/null) || models=""
 	if [[ -n "$models" ]]; then
 		printf '%s\n%s\n' "**Models:**" "$models"

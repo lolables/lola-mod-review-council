@@ -1553,5 +1553,29 @@ else
 fi
 rm -rf "$session"
 
+echo "Test: the report discloses the verdict-format check when one was recorded (#70)"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+write_verification_log "$session"
+mkdir -p "$session/verdicts/_meta"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF 'Verdict format check' <<<"$result"; then
+	echo "  FAIL: a check line rendered with nothing recorded"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: no check line without schema-validation.txt"
+	PASS=$((PASS + 1))
+fi
+printf 'minimal\n' >"$session/verdicts/_meta/schema-validation.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qxF -- '**Verdict format check:** minimal (jq fallback; jsonschema validator unavailable)<br>' <<<"$result"; then
+	echo "  PASS: minimal is disclosed in the report"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report does not disclose the jq fallback"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

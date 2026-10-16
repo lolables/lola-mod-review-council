@@ -963,6 +963,103 @@ fi
 rm -rf "$s"
 rm -rf "$model_mask"
 
+# --- Validation mode (#70) ----------------------------------------------------
+# When the jsonschema validator is missing the extractor falls back to a jq
+# check, which used to leave no trace but one stderr line. The mode is now in
+# the result of every run that validated a block, and kept worst-of in
+# verdicts/_meta/schema-validation.txt for the verdict header.
+sv_mask=$(mktemp -d)
+sv_nojs=$(path_without_command jsonschema "$sv_mask")
+# A stand-in validator that passes the extractor's self-test, so the `full`
+# path is exercised on every host, with or without sourcemeta installed. It
+# holds the extractor to sourcemeta's calling contract (`validate <schema>
+# <instance>`, exit 2 on misuse), so a wrong invocation fails here too.
+sv_fake=$(mktemp -d)
+# shellcheck disable=SC2016 # $1..$3 belong to the generated stub, not this shell.
+printf '#!/bin/sh\n[ "$1" = validate ] && [ -f "$2" ] && [ -f "$3" ] || exit 2\n' >"$sv_fake/jsonschema"
+chmod +x "$sv_fake/jsonschema"
+sv_block='{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[]}'
+
+# Assert the mode recorded for <session>, "absent" when there is none.
+assert_recorded_mode() { # session expected label
+	local got="absent"
+	if [[ -f "$1/verdicts/_meta/schema-validation.txt" ]]; then
+		got=$(cat "$1/verdicts/_meta/schema-validation.txt")
+	fi
+	assert_equals "$got" "$2" "$3"
+}
+
+echo "Test: the jq fallback reports minimal, in the result and in _meta (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+result=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "ok" "status ok"
+assert_json_field "$result" "schema_validation" "minimal" "the result says minimal"
+assert_recorded_mode "$s" "minimal" "_meta records minimal"
+rm -rf "$s"
+
+echo "Test: a validator that passes its self-test reports full (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+result=$(PATH="$sv_fake:$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "schema_validation" "full" "the result says full"
+assert_recorded_mode "$s" "full" "_meta records full"
+rm -rf "$s"
+
+echo "Test: the real validator reports full (#70)"
+if [[ "$real_validator" -eq 1 ]]; then
+	s=$(new_session)
+	write_raw "$s" divisor-guard-code "$sv_block"
+	result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_json_field "$result" "schema_validation" "full" "sourcemeta/jsonschema means full"
+	rm -rf "$s"
+else
+	echo "  SKIP: no working sourcemeta/jsonschema binary"
+fi
+
+echo "Test: an extract_error that validated a block says which check ran (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROV","findings":[]}'
+result=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "status extract_error"
+assert_json_field "$result" "schema_validation" "minimal" "the error result says minimal"
+rm -rf "$s"
+
+echo "Test: a run that validated nothing claims no check (#70)"
+s=$(new_session)
+echo "I reviewed it. Verdict: APPROVE" >"$s/verdicts/divisor-guard-code.raw.md"
+result=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "status" "extract_error" "NO_JSON_BLOCK is an extract_error"
+assert_jq_str "$result" 'has("schema_validation")' "false" "no schema_validation without a validated block"
+assert_recorded_mode "$s" "absent" "nothing written to _meta"
+rm -rf "$s"
+
+echo "Test: the session record keeps the worst mode across runs (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+PATH="$sv_fake:$sv_nojs" bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_recorded_mode "$s" "full" "first run: full"
+PATH="$sv_nojs" bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_recorded_mode "$s" "minimal" "a later minimal run lowers it"
+result=$(PATH="$sv_fake:$sv_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+assert_json_field "$result" "schema_validation" "full" "the run itself still reports what it ran"
+assert_recorded_mode "$s" "minimal" "a later full run does not raise it back"
+rm -rf "$s"
+
+echo "Test: the stderr warning stays (#70)"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+warn=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>&1 >/dev/null)
+if grep -qF "rc-warning: 'jsonschema' validator not found" <<<"$warn"; then
+	echo "  PASS: the fallback still warns on stderr"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the stderr warning is gone"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+rm -rf "$sv_mask" "$sv_fake"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

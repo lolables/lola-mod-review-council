@@ -10,7 +10,8 @@ rc_trap_errors
 # cannot express: a verdict of APPROVE may not be filed over a CRITICAL or HIGH
 # finding. Writes verdicts/<agent>.json on success, and adds a verdict's
 # optional `model` to that role's `reported` list in models.json. Emits a JSON
-# summary.
+# summary naming the validation mode it ran (`schema_validation`), which is also
+# kept, worst-of, in verdicts/_meta/schema-validation.txt.
 # Invalid/missing/incoherent blocks are reported for one re-dispatch.
 
 session_dir="${1:-}"
@@ -243,6 +244,9 @@ valid_count=0
 # {role, model} for every valid verdict that names its own model, applied to
 # models.json once the loop is done.
 model_reports="[]"
+# Set once any block reaches validate(), whichever way it then went: the
+# validation mode is a fact about this run only when something was validated.
+validated_any=0
 raw_files=()
 while IFS= read -r -d '' f; do raw_files+=("$f"); done \
 	< <(find "$vdir" -path "$vdir/_meta" -prune -o -name '*.raw.md' -type f -print0 2>/dev/null || true)
@@ -267,6 +271,7 @@ for raw in "${raw_files[@]}"; do
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
 		continue
 	fi
+	validated_any=1
 	# shellcheck disable=SC2310 # validate() is documented as requiring an
 	# `if ! validate ...` caller so set -e stays suspended inside it.
 	if ! validate "$block"; then
@@ -379,6 +384,32 @@ if [[ "$model_reports" != "[]" && -f "$models_file" ]]; then
 	fi
 fi
 
+# Which verdict-format check this run applied, for the verdict header. The
+# session file keeps the worst of every run: batches and retries call this
+# script more than once, and a header that said `full` because the last call
+# happened to find the validator would hide the blocks the jq fallback passed.
+# Written beside its final path and renamed into place, as the other _meta
+# writers do, so a reader never sees a partial word.
+schema_validation=""
+if [[ "$validated_any" -eq 1 ]]; then
+	# shellcheck disable=SC2310 # _has_validator is a predicate; see validate() above.
+	if _has_validator; then
+		schema_validation="full"
+	else
+		schema_validation="minimal"
+	fi
+	mkdir -p "$vdir/_meta"
+	recorded_validation=""
+	if [[ -f "$vdir/_meta/schema-validation.txt" ]]; then
+		recorded_validation=$(head -n1 "$vdir/_meta/schema-validation.txt" 2>/dev/null) || recorded_validation=""
+	fi
+	if [[ "$recorded_validation" != "minimal" ]]; then
+		validation_tmp=$(mktemp "$vdir/_meta/.schema-validation.XXXXXX")
+		printf '%s\n' "$schema_validation" >"$validation_tmp"
+		mv -f "$validation_tmp" "$vdir/_meta/schema-validation.txt"
+	fi
+fi
+
 invalid_count=$(echo "$invalid_json" | jq 'length')
 if [[ "$invalid_count" -gt 0 ]]; then
 	read -r -d '' remediation <<'REM' || true
@@ -398,7 +429,9 @@ Correct only the defect named above: re-emit the SAME findings, with the same
 severities and the same evidence. This is a formatting repair, not a new review.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \
-		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem}'
+		--arg sv "$schema_validation" \
+		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem}
+		 + (if $sv == "" then {} else {schema_validation:$sv} end)'
 	exit 0
 fi
 
@@ -416,6 +449,6 @@ fi
 	json_output "nothing_to_do" "No verdict blocks found: no .raw.md file exists under verdicts/. Reviewers return their verdicts; the orchestrator writes each one verbatim to its .raw.md path. If those responses are still held, write them and re-run extraction instead of re-dispatching." "$extra"
 	exit 0
 }
-payload=$(jq -n --argjson v "$valid_count" '{valid:$v}')
+payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" '{valid:$v, schema_validation:$sv}')
 json_output "ok" "Extracted $valid_count verdict block(s)." "$payload"
 exit 0

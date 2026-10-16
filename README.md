@@ -361,6 +361,9 @@ block, written by scripts rather than by the model:
   only the head.
 - **Rules**: the constitution and the project packs the review ran under, or
   `none`.
+- **Verdict format check**: `full` when reviewer verdicts were checked by the
+  `jsonschema` validator, `minimal` when the jq fallback ran because it was
+  missing or incompatible. The session keeps the worst mode any extraction used.
 - **Models**: for each reviewer, the coordinator and the validator, the model
   that was *requested* (`host default` unless the orchestrator named one at
   dispatch) and the model the agent *reported* about itself. A reported ID is

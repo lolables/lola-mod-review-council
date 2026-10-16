@@ -2172,6 +2172,46 @@ MJ
 assert_same_provenance "$sess" "Reviewed, Rules and Models match across both renderers"
 rm -rf "$sess"
 
+# --- Provenance: verdict-format check (#70) -----------------------------------
+echo "Test: the format-check line renders only when recorded, and only its two words (#70)"
+while IFS='|' read -r recorded want; do
+	sess=$(mktemp -d)
+	make_facts_session "$sess"
+	mkdir -p "$sess/verdicts/_meta"
+	[[ "$recorded" == absent ]] || printf '%s\n' "$recorded" >"$sess/verdicts/_meta/schema-validation.txt"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	assert_body_line "$sess" 'Verdict format check' "$want" "schema-validation.txt: $recorded"
+	if grep -qF '<img' "$sess/comment-body.md"; then
+		echo "  FAIL: schema-validation.txt content reached the body"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$sess"
+done <<'MODES'
+absent|
+full|**Verdict format check:** full (jsonschema validator)<br>
+minimal|**Verdict format check:** minimal (jq fallback; jsonschema validator unavailable)<br>
+garbage<img src=x>|**Verdict format check:** unknown<br>
+MODES
+
+echo "Test: the format-check line sits between Rules and Models (#70)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+mkdir -p "$sess/verdicts/_meta"
+printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+order=$(grep -nE '^\*\*(Rules|Verdict format check|Models):\*\*' "$sess/comment-body.md" | cut -d: -f2 | tr '\n' ' ')
+assert_equals "$order" "**Rules **Verdict format check **Models " "Rules, then the check, then Models"
+rm -rf "$sess"
+
+echo "Test: the format-check line is the same in both renderers (#70)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+mkdir -p "$sess/verdicts/_meta"
+printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
+assert_same_provenance "$sess" "the block with a format check matches across both renderers"
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

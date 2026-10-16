@@ -1,0 +1,25 @@
+docs/dev/pipeline.md
+  s_990f2ef699e987::t_f936269c8a721c 25,70,166-171,321-345,374-375
+README.md
+  s_990f2ef699e987::t_f936269c8a721c 61-67,73,123-129,235,238,388,844-847
+  s_990f2ef699e987::t_ae59740d704fa4 848
+AGENTS.md
+  s_990f2ef699e987::t_f936269c8a721c 27-29,54-56
+  s_990f2ef699e987::t_c367dfd9d10830 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5c44a884f5b34992c635b8c0eadc1a15ef32ad6",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

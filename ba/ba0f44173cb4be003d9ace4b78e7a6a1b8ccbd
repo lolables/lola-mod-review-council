@@ -1,0 +1,18 @@
+module/skills/review-council/phases/report.md
+  h_4db53f42b9be42 118-119,129
+module/skills/review-council/scripts/lib/render-provenance.sh
+  h_4db53f42b9be42 10-12,18-25,201-204,206,213-214,222-224
+module/tests/test-rc-render-comment.sh
+  h_4db53f42b9be42 82,389,1564,2062,2261-2272
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "baba0f44173cb4be003d9ace4b78e7a6a1b8ccbd",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

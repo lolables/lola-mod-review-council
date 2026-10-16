@@ -436,8 +436,11 @@ merge" and HIGH "Blocks review", while MEDIUM "does not block merge" and LOW is
 
 - **REQUEST CHANGES** — one or more verified CRITICAL or HIGH findings remain.
 - **APPROVE WITH ADVISORIES** — verified findings remain, but none is CRITICAL
-  or HIGH. They are advisory and do not block merge.
-- **APPROVE** — no verified findings remain.
+  or HIGH; or no verified finding remains, but a dispatched reviewer returned
+  no verdict (`missing_verdicts` in `findings.json` is non-empty). Advisories
+  do not block merge, and a silent reviewer is not a clean pass.
+- **APPROVE** — no verified findings remain, and every dispatched reviewer
+  returned a verdict.
 
 Read that off the findings, not off the reviewers' own verdicts. A reviewer may
 return REQUEST CHANGES while holding nothing but MEDIUMs — the validator only
@@ -446,7 +449,7 @@ council verdict is how a clean changeset with two optional test-coverage notes
 came back blocked. Each reviewer's own verdict still appears verbatim in the
 per-reviewer table, so nothing is hidden by aggregating this way.
 
-Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) do not affect verdict.
+Discovery summary included regardless of verdict. Absent reviewers (known roles not found during discovery) and skipped reviewers (deliberately not dispatched) do not affect verdict; only a reviewer that was dispatched and returned nothing does.
 
 **Recording it.** Run `${SCRIPTS_DIR}/rc-decide-verdict.sh ${session_dir}`
 **before** `rc-render-report.sh` (SKILL.md Step 6 states this as the first

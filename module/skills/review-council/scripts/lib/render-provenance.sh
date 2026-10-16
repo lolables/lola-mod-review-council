@@ -33,6 +33,7 @@
 RC_PROV_JQ_DEFS='def allowed: type == "string" and test("\\A[A-Za-z0-9._:@/-]{1,80}\\z");
 def allowed_role: type == "string" and test("\\A[a-z0-9-]{1,80}\\z");
 def shown_id: if allowed then "`" + . + "`" else "unrecognised" end;
+def shown_name: if allowed_role then . else "unrecognised" end;
 def uniq: reduce .[] as $x ([]; if any(.[]; . == $x) then . else . + [$x] end);
 '
 
@@ -186,6 +187,27 @@ _rc_prov_format_check() { # session_dir
 	esac
 }
 
+# A blank line and a quoted warning naming every dispatched reviewer that
+# returned no verdict, or nothing. Names are agent roles and pass the role
+# allow-list before they are put in a code span, the same check the reviewer
+# table applies to the rows it prints bare. The cap sentence is added only when
+# the verdict is not REQUEST CHANGES: a missing verdict lowers APPROVE to
+# APPROVE WITH ADVISORIES (RC_COUNCIL_VERDICT_JQ) and leaves a blocking verdict
+# alone.
+_rc_prov_coverage() { # session_dir
+	local f="$1/verdicts/findings.json" names verdict line
+	[[ -f "$f" ]] || return 0
+	names=$(jq -r "${RC_PROV_JQ_DEFS}"'[(.missing_verdicts // []) | if type == "array" then .[] | (if allowed_role then "`" + . + "`" else "unrecognised" end) else empty end] | join(", ")' "$f" 2>/dev/null) || names=""
+	[[ -n "$names" ]] || return 0
+	line="> ⚠️ **Coverage gap:** no verdict from ${names}."
+	# shellcheck disable=SC2154 # set by rc-lib.sh, which every caller sources first.
+	verdict=$(jq -r "$RC_COUNCIL_VERDICT_JQ" "$f" 2>/dev/null) || verdict=""
+	if [[ "$verdict" != "REQUEST CHANGES" ]]; then
+		line+=" Verdict capped at APPROVE WITH ADVISORIES."
+	fi
+	printf '\n%s' "$line"
+}
+
 # The provenance block, as lines with no trailing blank line. Every line above
 # the Models line ends in <br>, so the block reads as one line per fact under
 # any markdown renderer: <br> rather than a trailing backslash because the
@@ -209,5 +231,9 @@ rc_render_provenance() { # session_dir head_sha [commit_link_hook] [forge_web]
 		printf '%s\n%s\n' "**Models:**" "$models"
 	else
 		printf '%s\n' "**Models:** _Not recorded by the host; reviewer, validator and coordinator model IDs were not exposed._"
+	fi
+	line=$(_rc_prov_coverage "$session_dir")
+	if [[ -n "$line" ]]; then
+		printf '%s\n' "$line"
 	fi
 }

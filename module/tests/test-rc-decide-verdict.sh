@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # rc-decide-verdict.sh records the council verdict that the verified findings
 # decide (phases/report.md "Final Verdict Determination"): any verified
-# CRITICAL or HIGH -> REQUEST CHANGES; verified findings, none blocking ->
-# APPROVE WITH ADVISORIES; none -> APPROVE. No findings.json: no verdict.
+# CRITICAL or HIGH -> REQUEST CHANGES; verified findings, none blocking, or a
+# dispatched reviewer that returned nothing -> APPROVE WITH ADVISORIES;
+# otherwise APPROVE. No findings.json: no verdict.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-decide-verdict.sh"
@@ -85,6 +86,31 @@ rm -rf "$s"
 echo "Test 6: missing session"
 result=$(bash "$SCRIPT" /nonexistent)
 assert_json_field "$result" "status" "nothing_to_do" "status is nothing_to_do"
+
+echo "Test 7: a reviewer that returned nothing caps APPROVE at advisories (#57)"
+# A silent reviewer is a hole in the council, not a clean pass. It caps an
+# APPROVE and never blocks on its own, so REQUEST CHANGES is unaffected.
+decide_missing() { # missing_json severities... -> recorded verdict
+	local missing="$1" s v
+	shift
+	s=$(with_verified "$@")
+	jq --argjson m "$missing" '.missing_verdicts = $m' "$s/verdicts/findings.json" >"$s/f.next"
+	mv "$s/f.next" "$s/verdicts/findings.json"
+	bash "$SCRIPT" "$s" >/dev/null
+	v=$(cat "$s/verdict.txt")
+	rm -rf "$s"
+	printf '%s' "$v"
+}
+verdict=$(decide_missing '["divisor-sre-code"]')
+assert_equals "$verdict" "APPROVE WITH ADVISORIES" "missing and no finding: capped, not APPROVE"
+verdict=$(decide_missing '["divisor-sre-code"]' MEDIUM)
+assert_equals "$verdict" "APPROVE WITH ADVISORIES" "missing and MEDIUM: still advisories"
+verdict=$(decide_missing '["divisor-sre-code"]' HIGH)
+assert_equals "$verdict" "REQUEST CHANGES" "missing never softens a block"
+verdict=$(decide_missing '[]')
+assert_equals "$verdict" "APPROVE" "an empty list caps nothing"
+verdict=$(decide_missing '"divisor-sre-code"')
+assert_equals "$verdict" "APPROVE" "a value that is not a list claims nothing"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

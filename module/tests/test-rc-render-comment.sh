@@ -2212,6 +2212,109 @@ printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
 assert_same_provenance "$sess" "the block with a format check matches across both renderers"
 rm -rf "$sess"
 
+# --- Provenance: coverage gap (#57) -------------------------------------------
+# findings.json .missing_verdicts was computed and never rendered, so a
+# reviewer that returned nothing read as one that found nothing. Both renderers
+# now name it, the comment's table gives it a row, and the verdict is capped.
+
+# Rewrite <session>'s findings.json through <jq filter>.
+edit_findings() { # session filter
+	jq "$2" "$1/verdicts/findings.json" >"$1/f.next"
+	mv "$1/f.next" "$1/verdicts/findings.json"
+}
+
+echo "Test: a missing verdict gets a coverage line and its own table row (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.verified = [] | .verdicts = {"divisor-adversary-code": "APPROVE"} | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "rendered" "the capped verdict renders"
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`. Verdict capped at APPROVE WITH ADVISORIES.' \
+	"coverage line names the agent and the cap"
+assert_body_line "$sess" 'No verdict |' '| ⚙️ Operator (code) | ❌ No verdict | - |' \
+	"the silent reviewer has its own row"
+rm -rf "$sess"
+
+echo "Test: an APPROVE beside a missing verdict is refused, not posted (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.verified = [] | .verdicts = {"divisor-adversary-code": "APPROVE"} | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE" >"$sess/verdict.txt"
+result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
+assert_json_field "$result" "status" "error" "verdict.txt must carry the cap"
+rm -rf "$sess"
+
+echo "Test: with a blocking finding the coverage line claims no cap (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+edit_findings "$sess" '.missing_verdicts = ["divisor-sre-code"]'
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`.' \
+	"REQUEST CHANGES stands; no cap sentence"
+rm -rf "$sess"
+
+echo "Test: no missing verdict, no coverage line and no No-verdict row (#57)"
+for filter in 'del(.missing_verdicts)' '.missing_verdicts = []' '.missing_verdicts = "divisor-sre-code"'; do
+	sess=$(mktemp -d)
+	make_facts_session "$sess"
+	edit_findings "$sess" "$filter"
+	bash "$SCRIPT" "$sess" >/dev/null 2>&1
+	if grep -qE 'Coverage gap|No verdict' "$sess/comment-body.md"; then
+		echo "  FAIL: $filter: a coverage gap was claimed"
+		FAIL=$((FAIL + 1))
+	else
+		echo "  PASS: $filter: no coverage gap claimed"
+		PASS=$((PASS + 1))
+	fi
+	rm -rf "$sess"
+done
+
+echo "Test: a missing agent name that is not a role renders as unrecognised (#57)"
+# Each value would do harm printed bare in the table: a team ping, an autolink,
+# a code span, a pipe that opens a column, a heading after a newline. They are
+# printed outside code spans there, so they must fail the role allow-list.
+sess=$(mktemp -d)
+make_facts_session "$sess"
+# shellcheck disable=SC2016 # literal markdown in the hostile values.
+edit_findings "$sess" '.missing_verdicts = ["@org/team", "http://x.invalid/a", "divisor-`x`-code", "divisor-sre-code | evil", "divisor-sre-code\n# h"]'
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+assert_body_line "$sess" 'Coverage gap' \
+	'> ⚠️ **Coverage gap:** no verdict from unrecognised, unrecognised, unrecognised, unrecognised, unrecognised.' \
+	"coverage line"
+assert_body_line "$sess" 'No verdict |' '| 🔹 unrecognised | ❌ No verdict | - |' "table row"
+no_verdict_rows=$(grep -cF '| ❌ No verdict | - |' "$sess/comment-body.md" || true)
+assert_equals "$no_verdict_rows" "5" "one row per missing agent"
+leaked=""
+# shellcheck disable=SC2016 # literal backticks in a hostile value.
+for raw in '@org' 'x.invalid' 'divisor-`x`' 'evil' '# h'; do
+	if grep -qF -- "$raw" "$sess/comment-body.md"; then
+		leaked+=" $raw"
+	fi
+done
+if [[ -z "$leaked" ]]; then
+	echo "  PASS: no raw agent name reached the body"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: raw agent name(s) reached the body:$leaked"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+echo "Test: the coverage line is the same in both renderers (#57)"
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+printf 'minimal\n' >"$sess/verdicts/_meta/schema-validation.txt"
+edit_findings "$sess" '.verified = [] | .verdicts = {"divisor-adversary-code": "APPROVE"} | .missing_verdicts = ["divisor-sre-code"]'
+echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
+assert_same_provenance "$sess" "the full block, coverage line included, matches across both renderers"
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

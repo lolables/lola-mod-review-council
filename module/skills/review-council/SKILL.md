@@ -761,8 +761,8 @@ map) and prints a summary to stdout.
 
 `missing_verdicts` lists every agent `session-manifest.json` records as
 dispatched that produced no verdict JSON — the coverage gap the
-EXECUTION-CONTRACT relies on. Disclose it per `${PHASES_DIR}/verify.md`
-whenever it is non-empty.
+EXECUTION-CONTRACT relies on. The renderers disclose it and it caps the
+verdict; record it per `${PHASES_DIR}/verify.md` whenever it is non-empty.
 
 **Branch on `status` before reading any file:**
 
@@ -984,7 +984,8 @@ reached, and the session is interactive — present the verified findings and as
 
 **First, run `${SCRIPTS_DIR}/rc-decide-verdict.sh ${session_dir}`.** It decides
 the council verdict (`APPROVE`, `REQUEST CHANGES`, or `APPROVE WITH
-ADVISORIES`) from the verified findings, per the rule in `${PHASES_DIR}/report.md`
+ADVISORIES`) from the verified findings and any dispatched reviewer that
+returned no verdict, per the rule in `${PHASES_DIR}/report.md`
 "Final Verdict Determination", and writes it to `${session_dir}/verdict.txt`. Do
 not decide or edit the verdict yourself: both renderers refuse a `verdict.txt`
 the findings do not decide. The finding set is final for this iteration by the

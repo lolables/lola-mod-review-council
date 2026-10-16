@@ -369,6 +369,9 @@ block, written by scripts rather than by the model:
   dispatch) and the model the agent *reported* about itself. A reported ID is
   the agent's own claim, not a confirmation from the host; "not reported"
   means it made none.
+- **Coverage gap**: every dispatched reviewer that returned no verdict, by
+  name. A missing verdict caps an APPROVE at APPROVE WITH ADVISORIES, and the
+  comment's reviewer table gives that reviewer a `❌ No verdict` row.
 
 An ID or name that is not a plain identifier is shown as `unrecognised` rather
 than printed; a branch name, constitution path or pack name is shown inside a

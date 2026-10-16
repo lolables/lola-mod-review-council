@@ -395,6 +395,21 @@ rc_render_comment_body() { # session_dir body_file
 		done <<<"$verdict_agents"
 	fi
 
+	# Reviewers that were dispatched and returned nothing, as their own rows.
+	# Built from verdicts, the table above has no row for them, so a council
+	# with a silent reviewer reads as one that ran in full and found nothing --
+	# the confusion the provenance block's coverage line exists to prevent, and
+	# the table must not undo. Names pass the role allow-list (shown_name)
+	# because they are printed bare; persona_label maps a known one to its label.
+	if [[ -f "$RC_EVIDENCE" ]]; then
+		local missing_agents
+		missing_agents=$(jq -r "${RC_PROV_JQ_DEFS}"'(.missing_verdicts // []) | if type == "array" then .[] | shown_name else empty end' "$RC_EVIDENCE" 2>/dev/null || true)
+		while IFS= read -r name; do
+			[[ -n "$name" ]] || continue
+			agent_rows+="| $(persona_label "$name") | ❌ No verdict | - |"$'\n'
+		done <<<"$missing_agents"
+	fi
+
 	# Reviewers the council deliberately did not dispatch, as their own rows.
 	# The table above is built from verdicts, so a skipped persona is simply not
 	# in it — and a three-row table on a five-persona council reads as a full

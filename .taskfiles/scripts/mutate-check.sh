@@ -1623,6 +1623,20 @@ check_mutation "RC-118 the jq fallback reported as full validation" \
 	's#^\([[:space:]]*\)schema_validation="minimal"$#\1schema_validation="full"#' \
 	test-rc-extract-verdict.sh
 
+# A dispatched reviewer that returned nothing must cap APPROVE; without the
+# cap a hole in the council reads as a clean pass (#57).
+check_mutation "RC-119 missing verdicts no longer cap APPROVE" \
+	rc-lib.sh \
+	's# or \$missing > 0 then# then#' \
+	test-rc-decide-verdict.sh
+
+# The comment's table is built from the verdicts that arrived; a silent
+# reviewer needs its own row or the table reads as a full council (#57).
+check_mutation "RC-120 the reviewer table drops No-verdict rows" \
+	rc-render-comment.sh \
+	's#^\([[:space:]]*\)agent_rows+=.* No verdict | - |.*#\1:#' \
+	test-rc-render-comment.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

@@ -1308,7 +1308,7 @@ echo "Test 21: a verdict the findings do not decide is not rendered (RC-077)"
 session=$(mk_verdict_session 'APPROVE' HIGH)
 result=$(bash "$SCRIPT" "$session" 2>/dev/null)
 if grep -qF -- "**Not rendered.**" <<<"$result" &&
-	grep -qF -- "the verified findings decide 'REQUEST CHANGES'" <<<"$result"; then
+	grep -qF -- "the verified findings and missing verdicts decide 'REQUEST CHANGES'" <<<"$result"; then
 	echo "  PASS: a hand-written APPROVE over a HIGH is refused (RC-077)"
 	PASS=$((PASS + 1))
 else
@@ -1573,6 +1573,36 @@ if grep -qxF -- '**Verdict format check:** minimal (jq fallback; jsonschema vali
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the report does not disclose the jq fallback"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$session"
+
+echo "Test: the report discloses a missing verdict above the verdict (#57)"
+session=$(new_session)
+printf '# Review Council Session Tracking\n\n- Mode: code\n' >"$session/tracking.md"
+write_verification_log "$session"
+printf '%s\n' '{"verified":[],"correctable":[],"stripped":[],"total_findings":0,"duplicates_consolidated":0,"verdicts":{"divisor-guard-code":"APPROVE"},"missing_verdicts":["divisor-sre-code"]}' \
+	>"$session/verdicts/findings.json"
+echo "APPROVE WITH ADVISORIES" >"$session/verdict.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+gap_line=$(grep -n -F 'Coverage gap' <<<"$result" | head -n1 | cut -d: -f1 || true)
+verdict_line=$(grep -n -x '## Council Verdict' <<<"$result" | head -n1 | cut -d: -f1 || true)
+# shellcheck disable=SC2016 # literal markdown code span in the expected output.
+if grep -qxF -- '> ⚠️ **Coverage gap:** no verdict from `divisor-sre-code`. Verdict capped at APPROVE WITH ADVISORIES.' <<<"$result" &&
+	[[ -n "$gap_line" && -n "$verdict_line" && "$gap_line" -lt "$verdict_line" ]]; then
+	echo "  PASS: the gap is disclosed ahead of the verdict"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report hides or buries the missing verdict"
+	FAIL=$((FAIL + 1))
+fi
+echo "APPROVE" >"$session/verdict.txt"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+if grep -qF '**Not rendered.**' <<<"$result"; then
+	echo "  PASS: an uncapped APPROVE is not rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the report rendered APPROVE over a missing verdict"
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$session"

@@ -2394,6 +2394,33 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: a missing verdict is disclosed by the scripts and caps the verdict (RC-121)"
+# `missing_verdicts` was computed and never rendered: verify.md asked the
+# orchestrator to carry it into the report narrative by hand, and the verdict
+# ignored it, so a reviewer that returned nothing read as a clean pass (#57).
+# The renderers now print it and RC_COUNCIL_VERDICT_JQ caps APPROVE. This pins
+# the prose that says so, so a hand-written disclosure does not come back as a
+# second, divergent copy, and the verdict rule names the cap it implements.
+rc121_missing=0
+if ! grep -qF 'Coverage gap' <<<"$verify_flat" ||
+	! grep -qF 'Do not write that disclosure into the report narrative by hand' <<<"$verify_flat"; then
+	echo "  missing: verify.md still has the orchestrator disclose missing verdicts by hand"
+	rc121_missing=$((rc121_missing + 1))
+fi
+rc121_rule=$(sed -n '/^## Final Verdict Determination/,/^## /p' "$REPORT_MD" | tr '\n' ' ' | tr -s ' ')
+if ! grep -qF 'no verified finding remains, but a dispatched reviewer returned no verdict' <<<"$rc121_rule" ||
+	! grep -qF 'missing_verdicts' <<<"$rc121_rule"; then
+	echo "  missing: report.md's verdict rule does not cap APPROVE at APPROVE WITH ADVISORIES for a missing verdict"
+	rc121_missing=$((rc121_missing + 1))
+fi
+if [[ "$rc121_missing" -eq 0 ]]; then
+	echo "  PASS: missing verdicts are script-disclosed and cap the verdict in the docs"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc121_missing missing-verdict rule(s) absent from the docs (RC-121)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

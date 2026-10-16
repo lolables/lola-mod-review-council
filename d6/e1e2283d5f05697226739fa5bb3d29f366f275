@@ -1,0 +1,58 @@
+module/skills/review-council/references/verdict-schema.json
+  s_990f2ef699e987::t_6f7328ccb5991b 29-30
+  s_990f2ef699e987::t_f32392ec18e225 31-36
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_990f2ef699e987::t_55a34a2fb51689 51,54-56,148
+  s_990f2ef699e987::t_9648bec0c2a1aa 59-65,115-116,149-151,185,241-245,441,446-448
+  s_990f2ef699e987::t_c741358be23b0d 320-321
+module/tests/test-rc-extract-verdict.sh
+  s_990f2ef699e987::t_6cb7927d0a6bd8 1063-1124,1184-1185
+  s_990f2ef699e987::t_d9fa028fcd9cfa 173,175,190,274,276,278,280,295,335,359,427,486,502,514,565,809,877
+  s_990f2ef699e987::t_e3b98de8cd7f72 1125-1183
+module/tests/test-verdict-schema.sh
+  s_990f2ef699e987::t_dae0f8e3722f2b 223-237
+  s_990f2ef699e987::t_5071f269ff72d9 238-246
+module/skills/review-council/scripts/rc-check-symlinks.sh
+  s_990f2ef699e987::t_95e54b6a686279 347-348
+module/tests/test-rc-check-symlinks.sh
+  s_990f2ef699e987::t_97244acfac80e9 50-53
+module/tests/test-rc-pipeline.sh
+  s_990f2ef699e987::t_41a572abec2623 30-34
+  s_990f2ef699e987::t_3d3a8f83a87f89 148-156
+module/skills/review-council-debug/SKILL.md
+  s_990f2ef699e987::t_66c96ace1f8cb6 207-208
+module/tests/fixtures/session-golden/session/verdicts/divisor-adversary-code.raw.md
+  s_990f2ef699e987::t_c9623160d52ad8 15-16,24-25,33-34
+module/tests/helpers.sh
+  s_990f2ef699e987::t_6c4fe959f2e5db 437
+module/tests/test-rc-batch-verdicts.sh
+  s_990f2ef699e987::t_ea6f2f65d75771 28,122
+module/tests/test-rc-deep-mode.sh
+  s_990f2ef699e987::t_75919de796c18b 20,92
+module/tests/test-rc-idempotency.sh
+  s_990f2ef699e987::t_8356c3462945c8 91
+.taskfiles/scripts/mutate-check.sh
+  s_990f2ef699e987::t_b61c65e9454353 1640-1647
+module/tests/fixtures/session-golden/README.md
+  s_990f2ef699e987::t_e788b1f8c8a6e2 37-39
+module/tests/test-rc-render-comment.sh
+  s_990f2ef699e987::t_3d3a8f83a87f89 310,319-320,330-331,379-433,602-603,620
+module/skills/review-council/scripts/lib/render-findings.sh
+  s_990f2ef699e987::t_5c882ed64ce954 168,175-176,185,203-204,206,239,245,248-253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6e1e2283d5f05697226739fa5bb3d29f366f275",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

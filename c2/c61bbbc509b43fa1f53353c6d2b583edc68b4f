@@ -1,0 +1,43 @@
+module/tests/test-rc-doc-guards.sh
+  s_990f2ef699e987::t_aa843868aabd70 2454-2464,2478,2480-2484,2486-2487,2491-2497,2506-2517,2572-2582
+  s_990f2ef699e987::t_f317bdb2aa2126 2583-2616
+  s_990f2ef699e987::t_9425e290c3e5f6 2465-2467,2472-2477,2479,2485,2488-2490,2498-2505
+  s_990f2ef699e987::t_d35072ca3316b6 2518-2520,2531,2538,2540,2547-2551,2554-2557,2564,2566-2571
+  s_990f2ef699e987::t_7cab7a4f54cf7a 2539
+  s_990f2ef699e987::t_3e214dad893f72 2528-2530,2532-2537,2541-2542
+  s_990f2ef699e987::t_bba01451cd7374 2560
+  s_990f2ef699e987::t_35afb041761bdb 2468-2471,2521-2527,2543-2546,2552-2553,2558-2559,2561-2563,2565
+module/agents/divisor-guard-spec.md
+  s_990f2ef699e987::t_22ccf41dac74f4 151-163,200-206
+  s_990f2ef699e987::t_d40ce09187170f 164-166
+  s_990f2ef699e987::t_314d31d813a584 167-168
+  s_990f2ef699e987::t_3e214dad893f72 169-173
+module/skills/review-council/references/severity.md
+  s_990f2ef699e987::t_d40ce09187170f 21,37-42
+  s_990f2ef699e987::t_1c9b4b7fab2717 44-47,55
+  s_990f2ef699e987::t_3e214dad893f72 48-54
+module/agents/divisor-guard-code.md
+  s_990f2ef699e987::t_22ccf41dac74f4 152-165,204-210
+  s_990f2ef699e987::t_d40ce09187170f 166-168
+  s_990f2ef699e987::t_314d31d813a584 169-170
+  s_990f2ef699e987::t_3e214dad893f72 96-97,171-176
+module/skills/review-council/phases/verify.md
+  s_990f2ef699e987::t_d338a3fde3d3c5 113-116,414-419,582,590
+  s_990f2ef699e987::t_3e214dad893f72 420-432
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c2c61bbbc509b43fa1f53353c6d2b583edc68b4f",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

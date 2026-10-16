@@ -1,0 +1,43 @@
+docs/dev/pipeline.md
+  s_990f2ef699e987::t_d7d336e6a4c47f 163-164,167-168
+  s_990f2ef699e987::t_41853f88ec814b 169-170
+README.md
+  s_990f2ef699e987::t_d7d336e6a4c47f 64-66,70
+  s_990f2ef699e987::t_41853f88ec814b 67-69
+module/skills/review-council/references/validation-schema.json
+  s_990f2ef699e987::t_fabffbc3cabce4 30-31
+module/tests/test-rc-apply-validation.sh
+  s_990f2ef699e987::t_e1dc7e9e0b039f 391,400-402,410,424-425
+  s_990f2ef699e987::t_23728218153d4c 380-390,392-399,403-409,411-423,426-427
+  s_990f2ef699e987::t_a3510cd7303649 428-450
+module/skills/review-council/scripts/jq/apply-validation.jq
+  s_990f2ef699e987::t_84d98d354a1a01 18-20,23,25,33-35,38,46-47,49-50,77
+  s_990f2ef699e987::t_d3ee326b3c1b35 36-37,48
+module/tests/test-verdict-schema.sh
+  s_990f2ef699e987::t_1ae2a67860dd8b 186-187
+  s_990f2ef699e987::t_cbb865cfc5eba8 183-185,188,191-192
+  s_990f2ef699e987::t_9613fe083eccee 189-190
+.taskfiles/scripts/mutate-check.sh
+  s_990f2ef699e987::t_764877507d4f73 1648-1655
+  s_990f2ef699e987::t_dfc9349f854487 1656-1663
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_990f2ef699e987::t_447818b13adf72 322-325
+module/skills/review-council/phases/verify.md
+  s_990f2ef699e987::t_3b3dc8b1fc7060 606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9064f985033a98f68ea61be963c069c9c45be44",
+  "prompts": {},
+  "sessions": {
+    "s_990f2ef699e987": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9ae7c242-b8da-44db-85ce-b7365e9c0d05",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -95,7 +95,7 @@ else — no prose before or after it. The orchestrator extracts this block and
 validates it against `${REFERENCES_DIR}/verdict-schema.json`. A response the
 validator rejects is re-dispatched once; do not add commentary outside the block.
 
-Three rules govern the block, and they apply before you copy the shape below:
+Four rules govern the block, and they apply before you copy the shape below:
 
 - **The key set is closed.** The schema sets `"additionalProperties": false` at
   both the top level and inside each finding, so any other key is rejected and
@@ -105,7 +105,15 @@ Three rules govern the block, and they apply before you copy the shape below:
 - **Required vs optional.** `agent`, `files_read`, `verdict` and `findings` are
   all required; `model` is the one optional top-level key. Inside a finding,
   `severity`, `file`, `evidence`, `description` and `recommendation` are
-  required; only `line`, `title` and `constraint` are optional.
+  required; `line`, `title` and `constraint` are optional, and so is `impact`
+  below HIGH.
+- **Every HIGH and CRITICAL finding carries `impact`.** One or two sentences
+  naming who is affected and the mechanism that hurts them if the change merges
+  as-is: "a client refreshing on the expiry boundary is logged out mid-session".
+  Restating the finding's category ("scope creep", "tech debt", "could cause
+  issues") is not an impact. A HIGH or CRITICAL without one is rejected; one
+  whose `impact` names no affected party and mechanism is calibrated to MEDIUM.
+  Cannot name one — file it at MEDIUM.
 - **`files_read` MUST list every file you opened** — it replaces the prose
   attestation, and a verdict whose `files_read` omits a file you quote from is
   not a verdict anyone can check.
@@ -117,14 +125,15 @@ Three rules govern the block, and they apply before you copy the shape below:
   "verdict": "REQUEST CHANGES",
   "findings": [
     {
-      "severity": "MEDIUM",
+      "severity": "HIGH",
       "file": "path/to/file.go",
       "line": 42,
       "title": "Short headline naming the defect",
       "evidence": "<direct quote from the file you read>",
       "constraint": "Which convention is violated",
       "description": "What the issue is and why it matters",
-      "recommendation": "How to fix it"
+      "recommendation": "How to fix it",
+      "impact": "Who is affected, and how, if this merges as-is"
     }
   ]
 }

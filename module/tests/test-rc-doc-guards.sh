@@ -2421,6 +2421,199 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: reviewer-protocol.md requires impact on HIGH and CRITICAL before its example (RC-127)"
+# RC-127: verdict-schema.json rejects a HIGH or CRITICAL finding that has no
+# `impact`. A rule the extractor enforces and the protocol only shows by example
+# is a rule reviewers learn by failing (RC-034), so it is stated before the block
+# a reviewer copies, together with what does not count as one, and the example
+# finding carries one.
+rc127_missing=0
+rc127_rule_line=$(grep -n 'Every HIGH and CRITICAL finding carries' "$PROTOCOL_MD" | head -1 | cut -d: -f1 || true)
+rc127_example_line=$(grep -n '^```json' "$PROTOCOL_MD" | head -1 | cut -d: -f1)
+if [[ -z "$rc127_rule_line" || -z "$rc127_example_line" || "$rc127_rule_line" -ge "$rc127_example_line" ]]; then
+	echo "  missing: the impact rule (line ${rc127_rule_line:-?}) does not precede the example (line ${rc127_example_line:-?})"
+	rc127_missing=$((rc127_missing + 1))
+fi
+if ! grep -qF 'is not an impact' <<<"$protocol_flat"; then
+	echo "  missing: the protocol does not say a restated category is not an impact"
+	rc127_missing=$((rc127_missing + 1))
+fi
+rc127_example=$(awk '/^```json/ { on = 1; next } on && /^```/ { exit } on { print }' "$PROTOCOL_MD")
+if ! jq -e '[.findings[] | select(.severity == "HIGH" or .severity == "CRITICAL") | .impact | type == "string" and length > 0] | length > 0 and all' >/dev/null 2>&1 <<<"$rc127_example"; then
+	echo "  missing: the worked example has no HIGH or CRITICAL finding carrying an impact"
+	rc127_missing=$((rc127_missing + 1))
+fi
+if [[ "$rc127_missing" -eq 0 ]]; then
+	echo "  PASS: the impact rule precedes the example, which follows it"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc127_missing impact rule(s) missing from reviewer-protocol.md (RC-127)"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: scope creep is HIGH only with trust surface, a public contract or no disclosure (RC-128)"
+# RC-128: severity.md listed bare "Scope creep" as the Guard's HIGH example and
+# both Guard agent tables pinned it at HIGH, so a calibrator applying the HIGH
+# boundary found the table entry and kept HIGH for extra code that harms nobody.
+# Scope creep is MEDIUM unless it adds trust surface, commits a public contract,
+# or is undisclosed. The shared table and both agent tables must use the same
+# two conditions at the same two levels, no other row may rate scope creep HIGH,
+# and the small-additions rationalization must stop arguing for HIGH.
+GUARD_SPEC_MD="$AGENTS/divisor-guard-spec.md"
+rc128_high='Scope creep that adds trust surface, commits a public contract, or is undisclosed'
+rc128_medium='Scope creep with maintenance cost only (gold plating)'
+# The whole HIGH cell is pinned, not its prefix: "…, or plain scope creep"
+# appended after the criteria would otherwise put bare scope creep back at HIGH.
+rc128_high_cell="$rc128_high; acceptance criterion with no task; undocumented constitution trade-off"
+# Unrequested work goes by many names. A "gold plating", "feature creep" or
+# "beyond what was requested" row at HIGH is the same over-rating as a "scope
+# creep" row and must be caught.
+rc128_creep_re='scope (creep|addition)|feature creep|gold.?plat|unrequested|over.?engineer|beyond what was (specified|requested|asked)'
+# Each file's small-additions rationalization, pinned whole: the pre-RC-128
+# text argued "each sets precedent", i.e. for HIGH, and appending it beside the
+# MEDIUM sentence would otherwise pass.
+rc128_rationalization_code='Small additions accumulate, so report each one: unreported gold plating sets precedent for next. Size does not set severity — MEDIUM unless it adds trust surface, commits public contract, or is undisclosed.'
+rc128_rationalization_spec='Small additions accumulate, so report each one: gold plating in specs becomes scope creep in implementation. Size does not set severity — MEDIUM unless it adds trust surface, commits public contract, or is undisclosed.'
+rc128_trim='{ gsub(/  +/, " ", c); sub(/^ +/, "", c); sub(/ +$/, "", c) }'
+rc128_shared() { # <severity.md> <level>: prints the Guard cell of that level's example row
+	awk -F'|' -v l="$2" 'NF == 7 { s = $2; gsub(/ /, "", s) } NF == 7 && s == l { c = $5; '"$rc128_trim"'; print c }' "$1"
+}
+rc128_agent() { # <agent.md> <condition phrase>: prints the severity of the row holding it
+	awk -F'|' -v p="$2" 'NF == 4 && index($2, p) { s = $3; gsub(/ /, "", s); print s }' "$1"
+}
+rc128_check() { # <severity.md> <agent.md>...: prints one line per problem
+	local shared="$1" f cell level want
+	shift
+	cell=$(rc128_shared "$shared" HIGH)
+	[[ "$cell" == "$rc128_high_cell" ]] || echo "  severity.md HIGH Guard cell: '$cell'"
+	cell=$(rc128_shared "$shared" CRITICAL)
+	! grep -qiE "$rc128_creep_re" <<<"$cell" || echo "  severity.md CRITICAL Guard cell rates unrequested scope: '$cell'"
+	cell=$(rc128_shared "$shared" MEDIUM)
+	[[ "$cell" == "$rc128_medium"* ]] || echo "  severity.md MEDIUM Guard cell: '$cell'"
+	for f in "$@"; do
+		level=$(rc128_agent "$f" "$rc128_high")
+		[[ "$level" == "HIGH" ]] || echo "  ${f##*/}: no HIGH row for the scope creep criteria"
+		level=$(rc128_agent "$f" "$rc128_medium")
+		[[ "$level" == "MEDIUM" ]] || echo "  ${f##*/}: no MEDIUM row for gold plating"
+		awk -F'|' -v p="$rc128_high" -v re="$rc128_creep_re" -v n="${f##*/}" 'NF == 4 { s = $3; gsub(/ /, "", s) }
+			NF == 4 && (s == "HIGH" || s == "CRITICAL") && tolower($2) ~ re {
+				c = $2; '"$rc128_trim"'; if (c != p) print "  " n ": unrequested scope rated " s " without the criteria: " c }' "$f"
+		want=$rc128_rationalization_code
+		[[ "$f" == "$GUARD_SPEC_MD" ]] && want=$rc128_rationalization_spec
+		cell=$(awk -F'|' 'NF == 4 && index($0, "Small additions accumulate") { c = $3; '"$rc128_trim"'; print c }' "$f")
+		[[ "$cell" == "$want" ]] || echo "  ${f##*/}: the small-additions rationalization changed: '$cell'"
+		! grep -qE 'Each sets precedent for next|nicer jacket' "$f" || echo "  ${f##*/}: the pre-RC-128 small-additions argument for HIGH is back"
+	done
+}
+rc128_drift=$(rc128_check "$SEVERITY_MD" "$GUARD_MD" "$GUARD_SPEC_MD")
+if [[ -z "$rc128_drift" ]]; then
+	echo "  PASS: severity.md and both Guard tables rate scope creep by the same criteria"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: scope creep severity drifted (RC-128):"
+	echo "$rc128_drift"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: every statement of the scope creep criteria defines them the same way (RC-128)"
+# Criterion (b) once named "CLI flags" as a public contract, so an unrequested
+# --verbose rated HIGH: the over-rating RC-128 exists to remove. A flag counts
+# only when others build on its output; "under (b)" keeps the contrast from
+# reading as a ruling that an undisclosed flag is MEDIUM under (c) too.
+# Criterion (c) read every change as undisclosed when no PR description was
+# supplied (local and branch review). severity.md states the criteria too: it
+# is the pack the validator receives verbatim, and the validator never sees
+# Step 2 or the Guard agents. All four copies must carry (a), (b), its contrast
+# and (c) word for word, so no copy can drift wider than the others. The pack
+# and Step 2 serve code and spec reviews, so they carry both forms of (c).
+rc128_a='(a) adds trust or attack surface — network calls, permissions, untrusted-input parsing, new dependencies'
+rc128_b='(b) commits a contract users or downstream code will build on — API fields, config keys, file/wire formats, flags whose output others parse'
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the docs.
+rc128_contrast='(an unrequested `--verbose` is MEDIUM under (b); a new machine-readable `--json` output is HIGH)'
+rc128_c_code=('(c) is undisclosed — change claims X, ships X+Y'
+	'Change description = the PR/MR description, supplied as the PR Description section.'
+	'With no change description supplied, (c) does not apply.')
+rc128_c_spec=("(c) is undisclosed — spec's stated problem and scope do not cover it and nothing in the spec acknowledges it."
+	'With no stated problem or scope in the spec, (c) does not apply.')
+rc128_criteria_missing=0
+for rc128_src in "$SEVERITY_MD" "$GUARD_MD" "$GUARD_SPEC_MD" "$VERIFY_MD"; do
+	rc128_text=$(tr '\n' ' ' <"$rc128_src" | tr -s ' ')
+	case "$rc128_src" in
+	"$SEVERITY_MD" | "$VERIFY_MD") rc128_c=("${rc128_c_code[@]}" "${rc128_c_spec[@]}") ;;
+	"$GUARD_SPEC_MD") rc128_c=("${rc128_c_spec[@]}") ;;
+	*) rc128_c=("${rc128_c_code[@]}") ;;
+	esac
+	for rc128_phrase in "$rc128_a" "$rc128_b" "$rc128_contrast" "${rc128_c[@]}"; do
+		if ! grep -qF "$rc128_phrase" <<<"$rc128_text"; then
+			echo "  missing from ${rc128_src##*/}: $rc128_phrase"
+			rc128_criteria_missing=$((rc128_criteria_missing + 1))
+		fi
+	done
+	# The pre-fix (b) wording, which listed any CLI flag as a public contract.
+	if grep -qE 'costly to remove (— |\()CLI flags' <<<"$rc128_text"; then
+		echo "  ${rc128_src##*/}: still counts any CLI flag as a public contract"
+		rc128_criteria_missing=$((rc128_criteria_missing + 1))
+	fi
+done
+# The Guard's Disclosure check is where (c) gets its evidence; with no PR
+# Description section it must say (c) has nothing to measure against.
+if ! grep -qF 'Where no PR Description section was supplied, there is no change description, so scope-creep criterion (c) does not apply' <<<"$guard_flat"; then
+	echo "  missing from divisor-guard-code.md: the Disclosure check's no-description rule for (c)"
+	rc128_criteria_missing=$((rc128_criteria_missing + 1))
+fi
+if [[ "$rc128_criteria_missing" -eq 0 ]]; then
+	echo "  PASS: severity.md, both Guard agents and Step 2 define (a), (b) and (c) identically"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc128_criteria_missing scope creep criteria statement(s) drifted (RC-128)"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: severity.md's HIGH boundary asks for a named consequence (RC-128)"
+# shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
+if grep -qF 'A HIGH names a concrete consequence' <<<"$severity_flat" &&
+	grep -qF '`impact`' <<<"$severity_flat"; then
+	echo "  PASS: the HIGH boundary ties a HIGH to a consequence recorded in impact"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the HIGH boundary does not require a named consequence"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: calibration and the validator hold a HIGH to its impact (RC-129)"
+# RC-129: the extractor makes every HIGH and CRITICAL carry `impact`, but only
+# judgment can tell a consequence from a restated category. Step 2 downgrades a
+# HIGH whose impact names nobody hurt and no mechanism, and a Guard scope-creep
+# HIGH that meets none of the severity pack's criteria; the validator is shown
+# the impact and told what it must contain.
+rc129_missing=0
+rc129_step2=$(sed -n '/^## Step 2 — Severity Calibration/,/^## Step 3/p' "$VERIFY_MD" | tr '\n' ' ' | tr -s ' ')
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF 'CRITICAL/HIGH whose `impact` names no concrete consequence' <<<"$rc129_step2"; then
+	echo "  missing: Step 2 has no backstop for a HIGH whose impact names no consequence"
+	rc129_missing=$((rc129_missing + 1))
+fi
+if ! grep -qF "Guard scope-creep HIGH meeting none of the severity pack's criteria" <<<"$rc129_step2"; then
+	echo "  missing: Step 2 has no rule for a Guard scope-creep HIGH without the criteria"
+	rc129_missing=$((rc129_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
+if ! grep -qF 'HIGH/CRITICAL requires `impact` to name a concrete consequence.' <<<"$verify_flat"; then
+	echo "  missing: the validator prompt does not require a concrete impact"
+	rc129_missing=$((rc129_missing + 1))
+fi
+if ! grep -qF 'recommendation and, when present, impact' <<<"$verify_flat"; then
+	echo "  missing: the validator is not shown each finding's impact"
+	rc129_missing=$((rc129_missing + 1))
+fi
+if [[ "$rc129_missing" -eq 0 ]]; then
+	echo "  PASS: Step 2 and the validator both judge impact"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc129_missing impact calibration rule(s) missing from verify.md (RC-129)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

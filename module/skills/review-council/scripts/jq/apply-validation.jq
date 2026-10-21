@@ -15,12 +15,14 @@
 # cannot apply unambiguously is rejected by name, and the finding it was for
 # stays pending — a retry, then UNVALIDATED, never a guess.
 #
-# The severity list is a copy of verdict-schema.json's enum;
-# test-verdict-schema.sh compares every copy against the schema.
+# The severity list is a copy of verdict-schema.json's enum, and the impact
+# severities a copy of its finding-level `if` enum (the HIGH/CRITICAL that must
+# carry an impact); test-verdict-schema.sh compares every copy against the schema.
 
 def outcomes: ["CONFIRMED", "CORRECTED", "RETRACTED"];
-def correctable_fields: ["severity", "line", "title", "description", "recommendation"];
+def correctable_fields: ["severity", "line", "title", "description", "recommendation", "impact"];
 def severities: ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+def impact_severities: ["CRITICAL", "HIGH"];
 def nonblank: type == "string" and test("\\S");
 
 # A correction may only touch the fields a validator is in a position to judge.
@@ -28,7 +30,12 @@ def nonblank: type == "string" and test("\\S");
 # relocate a finding; it is capped so a reply cannot publish an absurd location.
 # file and evidence are not allowed: they were verified mechanically, and
 # letting the validator rewrite them would publish evidence nothing ever checked.
-def bad_correction:
+# The extractor makes every HIGH/CRITICAL carry an impact at intake; a correction
+# is the one later path that can raise a severity, so a finding it leaves at
+# HIGH/CRITICAL must end up with an impact — supplied here or already held.
+# impact is correctable only alongside a raise into those severities: a wrong
+# impact is downgraded, not rewritten.
+def bad_correction($f):
 	.corrections as $c
 	| ($c | type) != "object"
 	  or ($c | length) == 0
@@ -36,8 +43,11 @@ def bad_correction:
 	  or (($c | has("severity")) and (any(severities[]; . == $c.severity) | not))
 	  or (($c | has("line")) and $c.line != null
 	      and (($c.line | type) != "number" or $c.line < 1 or $c.line > 10000000 or ($c.line | floor) != $c.line))
-	  or any($c | to_entries[] | select(.key == "title" or .key == "description" or .key == "recommendation");
-	         .value | nonblank | not);
+	  or any($c | to_entries[] | select(.key == "title" or .key == "description" or .key == "recommendation" or .key == "impact");
+	         .value | nonblank | not)
+	  or (($c | has("impact")) and (any(impact_severities[]; . == $c.severity) | not))
+	  or ((($c.severity // $f.severity) as $s | any(impact_severities[]; . == $s))
+	      and (($c.impact // $f.impact // null) | nonblank | not));
 
 . as $doc
 | ($doc.verified // []) as $verified
@@ -64,7 +74,7 @@ def bad_correction:
           then {id: $id, reject: "DISPUTED"}
           elif $e.result == "RETRACTED" and (($e.evidence // null) | nonblank | not)
           then {id: $id, reject: "NO_EVIDENCE"}
-          elif $e.result == "CORRECTED" and ($e | bad_correction) then {id: $id, reject: "BAD_CORRECTION"}
+          elif $e.result == "CORRECTED" and ($e | bad_correction($f)) then {id: $id, reject: "BAD_CORRECTION"}
           else {id: $id, accept: $e}
           end
       end ] as $judged

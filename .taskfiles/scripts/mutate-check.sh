@@ -1659,6 +1659,22 @@ check_mutation "RC-126 HIGH or CRITICAL accepted without an impact" \
 	's/(((\.severity | oneof(\$impactsevs)) | not) or (\.impact | nonempty_string)) and/true and/' \
 	test-rc-extract-verdict.sh
 
+# A validator correction raised a MEDIUM to HIGH with no impact, and the finding
+# rendered as blocking with no Impact line. The mutant drops the rule that a
+# correction leaving a finding HIGH or CRITICAL must end up with an impact.
+check_mutation "RC-130 a correction raises to HIGH without an impact" \
+	jq/apply-validation.jq \
+	's#and ((\$c\.impact // \$f\.impact // null) | nonblank | not));$#and false);#' \
+	test-rc-apply-validation.sh
+
+# An impact-only correction rewrote a finding's impact, though a wrong impact
+# is downgraded, not rewritten. The mutant drops the rule that a corrected
+# impact needs a severity correction into HIGH or CRITICAL.
+check_mutation "RC-131 a corrected impact without a raise to HIGH" \
+	jq/apply-validation.jq \
+	's#^\([[:space:]]*\)or ((\$c | has("impact")) and .*$#\1or false#' \
+	test-rc-apply-validation.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

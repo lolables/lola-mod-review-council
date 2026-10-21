@@ -148,19 +148,29 @@ When a spec, plan, or design doc cites an external standard (OSPS Baseline, NIST
 
 ## Severity Calibration
 
-| Condition                                                        | Severity |
-|------------------------------------------------------------------|----------|
-| Spec solution contradicts its own stated problem                 | CRITICAL |
-| Constitution principle violated without justification            | CRITICAL |
-| Acceptance criterion with no corresponding task (under-delivery) | HIGH     |
-| Scope creep adding unrequested complexity                        | HIGH     |
-| Specs contradict each other on shared concept definition         | HIGH     |
-| Unauthorized weakening of gatekeeping value                      | HIGH     |
-| Dependency interface mismatch between specs                      | HIGH     |
-| Minor scope addition (gold plating) with low complexity cost     | MEDIUM   |
-| Stale cross-reference or metadata inconsistency                  | MEDIUM   |
-| Spec pattern departure without justification                     | MEDIUM   |
-| Minor wording improvement or optional cross-reference            | LOW      |
+| Condition                                                                         | Severity |
+|-----------------------------------------------------------------------------------|----------|
+| Spec solution contradicts its own stated problem                                  | CRITICAL |
+| Constitution principle violated without justification                             | CRITICAL |
+| Acceptance criterion with no corresponding task (under-delivery)                  | HIGH     |
+| Scope creep that adds trust surface, commits a public contract, or is undisclosed | HIGH     |
+| Specs contradict each other on shared concept definition                          | HIGH     |
+| Unauthorized weakening of gatekeeping value                                       | HIGH     |
+| Dependency interface mismatch between specs                                       | HIGH     |
+| Scope creep with maintenance cost only (gold plating)                             | MEDIUM   |
+| Stale cross-reference or metadata inconsistency                                   | MEDIUM   |
+| Spec pattern departure without justification                                      | MEDIUM   |
+| Minor wording improvement or optional cross-reference                             | LOW      |
+
+**Scope creep is MEDIUM unless one criterion holds.** HIGH only when the extra
+scope (a) adds trust or attack surface — network calls, permissions,
+untrusted-input parsing, new dependencies; (b) commits a contract users or
+downstream code will build on — API fields, config keys, file/wire formats,
+flags whose output others parse (an unrequested `--verbose` is MEDIUM under
+(b); a new machine-readable `--json` output is HIGH); or (c) is undisclosed —
+spec's stated problem and scope do not cover it and nothing in the spec
+acknowledges it. With no stated problem or scope in the spec, (c) does not apply.
+Name the criterion and who it hurts in `impact`.
 
 ## Out of Scope
 
@@ -187,13 +197,13 @@ All of these mean: go back to Phase 1 and re-read artifacts.
 
 ## Rationalization Table
 
-| Excuse                                                       | Reality                                                                                                                                                                                                          |
-|--------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "The spec is vague, so any implementation satisfies it"      | Vague specs still have implicit constraints from project patterns, constitution, stated problem. LLM implementing vague spec will produce plausible but drifted code.                                            |
-| "This scope addition is small, it won't matter"              | Small additions accumulate. Each sets precedent for next. Gold plating in specs becomes scope creep in implementation.                                                                                           |
-| "The contradiction between specs is minor"                   | LLMs follow specs literally. Minor contradiction in spec text produces real divergence in implementation. If Spec A says field is optional and Spec B says required, LLM will implement whichever it reads last. |
-| "The constitution principle is aspirational"                 | Constitutional principles are constraints, not suggestions. If principle needs relaxing, requires documented authorization, not silent erosion.                                                                  |
-| "The existing spec pattern is just a convention, not a rule" | Established patterns in codebase represent accumulated design decisions. Departing without justification creates inconsistency that compounds across specs.                                                      |
+| Excuse                                                       | Reality                                                                                                                                                                                                                    |
+|--------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "The spec is vague, so any implementation satisfies it"      | Vague specs still have implicit constraints from project patterns, constitution, stated problem. LLM implementing vague spec will produce plausible but drifted code.                                                      |
+| "This scope addition is small, it won't matter"              | Small additions accumulate, so report each one: gold plating in specs becomes scope creep in implementation. Size does not set severity — MEDIUM unless it adds trust surface, commits public contract, or is undisclosed. |
+| "The contradiction between specs is minor"                   | LLMs follow specs literally. Minor contradiction in spec text produces real divergence in implementation. If Spec A says field is optional and Spec B says required, LLM will implement whichever it reads last.           |
+| "The constitution principle is aspirational"                 | Constitutional principles are constraints, not suggestions. If principle needs relaxing, requires documented authorization, not silent erosion.                                                                            |
+| "The existing spec pattern is just a convention, not a rule" | Established patterns in codebase represent accumulated design decisions. Departing without justification creates inconsistency that compounds across specs.                                                                |
 
 ## Output
 

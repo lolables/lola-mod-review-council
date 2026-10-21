@@ -110,6 +110,10 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   sentence of `description`. Unbounded in length, and no step in this phase may
   trim it: the headline renders into a markdown bullet that wraps, so a cut here
   would discard the reviewer's words to solve a problem no renderer has.
+- `impact`: who is affected, and how, if the change merges as-is.
+  Reviewer-supplied and carried through unchanged; the extractor requires it
+  on every HIGH and CRITICAL finding and accepts it below that. Step 2 and the
+  validator judge it; the renderers print it under the recommendation.
 - `total_findings`: count before mechanical verification (verified +
   correctable + stripped).
 - `duplicates_consolidated`: count of duplicate findings merged away —
@@ -407,6 +411,25 @@ b. Apply calibration rules:
   downgrade to **MEDIUM**. The code builds and the tests pass; the fix is a
   one-line edit before release, which is "worth fixing but does not block merge"
   as the severity pack defines MEDIUM.
+- **CRITICAL/HIGH whose `impact` names no concrete consequence**: it restates
+  the finding's category ("scope creep", "tech debt", "maintainability", "could
+  cause issues"), or names no affected party, or names no mechanism by which
+  they are hurt: downgrade to **MEDIUM**. The severity pack's HIGH boundary
+  asks for a named consequence; a finding that cannot say who is hurt and how
+  has not met it.
+- **Guard scope-creep HIGH meeting none of the severity pack's criteria**:
+  downgrade to **MEDIUM** when none of these holds for the extra scope: (a) adds
+  trust or attack surface — network calls, permissions, untrusted-input
+  parsing, new dependencies; (b) commits a contract users or downstream code
+  will build on — API fields, config keys, file/wire formats, flags whose output
+  others parse (an unrequested `--verbose` is MEDIUM under (b); a new
+  machine-readable `--json` output is HIGH); (c) is undisclosed — change claims
+  X, ships X+Y. Change description = the PR/MR description, supplied as the PR
+  Description section. With no change description supplied, (c) does not apply.
+  Spec review: (c) is undisclosed — spec's stated problem and scope do not cover
+  it and nothing in the spec acknowledges it. With no stated problem or scope in
+  the spec, (c) does not apply. Maintenance cost alone is gold plating, which
+  the severity pack rates MEDIUM.
 
 c. Apply each downgrade by editing `findings.json`: set the finding's `severity` to
    the new level and append `{from, to, reason}` to its `provenance.calibrated_from`.
@@ -556,7 +579,7 @@ Validator does NOT receive:
 
 Validator performs checks mechanical verification cannot: identifier grounding, logical soundness, holistic judgment. Does NOT re-check file existence or evidence quotes — already verified mechanically.
 
-Present each surviving verified finding under its `id` (from `findings.json`), with its file, line, severity, evidence, description and recommendation.
+Present each surviving verified finding under its `id` (from `findings.json`), with its file, line, severity, evidence, description, recommendation and, when present, impact.
 
 > You are an independent validator. You have not participated in the review that produced these findings. Each finding has already passed mechanical checks (file exists, evidence quote found in file). Your job is to verify what mechanical checks cannot.
 >
@@ -564,7 +587,7 @@ Present each surviving verified finding under its `id` (from `findings.json`), w
 >
 > 1. **Identifier verification**: Are all identifiers mentioned in the description and recommendation (variable names, function names, file names, target names) real? `grep` for each one. If an identifier does not exist in the codebase, the finding may be based on a hallucinated name.
 > 2. **Logical soundness**: Does the evidence actually support the conclusion in the description? Read the surrounding context in the file — does the finding still hold when you see the full picture, not just the quoted excerpt?
-> 3. **Severity appropriateness**: Does the assigned severity match the definitions below? Apply the boundary test: CRITICAL = immediate concrete harm, HIGH = likely near-term problems.
+> 3. **Severity appropriateness**: Does the assigned severity match the definitions below? Apply the boundary test: CRITICAL = immediate concrete harm, HIGH = likely near-term problems. HIGH/CRITICAL requires `impact` to name a concrete consequence.
 >
 > {Insert severity pack definitions here}
 >
@@ -580,7 +603,7 @@ Present each surviving verified finding under its `id` (from `findings.json`), w
 > For each finding, decide one of:
 >
 > - **CONFIRMED** — accurate as stated. `reason` says briefly what you verified.
-> - **CORRECTED** — real, but details are wrong. `corrections` holds only the fields you change, from `severity`, `line`, `title`, `description`, `recommendation`; `reason` quotes the evidence for the change.
+> - **CORRECTED** — real, but details are wrong. `corrections` holds only the fields you change, from `severity`, `line`, `title`, `description`, `recommendation`, `impact`; `reason` quotes the evidence for the change. `impact` is correctable only with a `severity` correction to HIGH/CRITICAL, and raising a finding with no `impact` to HIGH/CRITICAL requires one: who is hurt, and how, if it merges as-is.
 > - **RETRACTED** — not supported by the source. `reason` says why it is unsupported; `evidence` quotes what you read or the grep output that contradicts it.
 >
 > `reason` is required for every outcome.

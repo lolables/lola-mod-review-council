@@ -58,12 +58,19 @@ ten files install but only five personas run per review. (`divisor` is the histo
 it has no meaning beyond namespacing them.) Temperature is guidance the council passes to the host, not agent
 frontmatter: hosts that expose no temperature control simply ignore it.
 
+An eleventh agent file, `review-council-arbiter.md`, is not a reviewer. Once the reviewers' findings are verified and
+merged, the arbiter makes one pass over the survivors: it calibrates each finding's severity against the severity pack,
+then checks what the evidence check cannot — that the identifiers exist, that the evidence supports the conclusion, and
+that the severity fits. Every severity change it makes is recorded with its reason. Its name sits outside the
+`divisor-*` prefix so reviewer discovery never dispatches it as a persona. If your AI tool cannot dispatch an agent by
+name, the council inlines the arbiter's file into a generic subagent instead.
+
 Each reviewer agent reviews independently and returns a verdict. The council verifies every finding against actual file
 content — stripping fabricated evidence — then produces a unified result: **APPROVE** or **REQUEST CHANGES**.
 
 A HIGH or CRITICAL finding blocks the merge, so it has to say what goes wrong. Each one carries an **Impact** line
 naming who is affected and how if the change merges as-is, printed under its recommendation in the report and the PR
-comment; a reviewer that leaves it out is asked once to add it. At `standard` and `deep` effort, verification lowers to
+comment; a reviewer that leaves it out is asked once to add it. At `standard` and `deep` effort, the arbiter lowers to
 MEDIUM a HIGH whose impact only restates its category ("scope creep", "tech debt"). Scope creep stays HIGH only when it
 adds trust surface, commits a contract users or downstream code will build on, or goes unmentioned in the PR/MR
 description; with no description supplied, that last test does not apply.
@@ -112,6 +119,13 @@ does not meaningfully outperform it on any dimension while costing 2-4x more.
 
 Haiku passes four of six cases but falls below the pass threshold on Go clean code (0.40) and TS convention pack (0.45).
 It is suitable for quick scans where cost matters more than precision.
+
+**Run the arbiter on the largest model class you have**, at least as capable as the reviewers. It is one dispatch per
+review against five or more reviewer dispatches, so it is the cheapest place to spend on a bigger model, and it is where
+severity is decided. The clean-code row below is the reason: the one case that measures restraint is where the smallest
+model fell short (0.40). The composite does not record which component cost those points, so read this as a direction,
+not a measurement. The module names no model and sets none: pin the arbiter's model through your AI tool's own agent
+configuration. Where the tool offers no such setting, the arbiter runs on the same default model as everything else.
 
 Per-case scores, **one column per CLI/model cell** — `CC` is Claude Code, `OC` is OpenCode. The per-case table in
 `references/model-guidance.md` reports the same run **averaged across both CLIs**, so its figures are the row-wise
@@ -218,10 +232,10 @@ you use another tool, substitute its config directory (`.cursor/`, `.gemini/`, e
    mkdir -p .claude/agents .claude/skills
    ```
 
-3. Copy the ten agent files:
+3. Copy the eleven agent files — ten reviewers and the arbiter:
 
    ```bash
-   cp /tmp/review-council/module/agents/divisor-*.md .claude/agents/
+   cp /tmp/review-council/module/agents/*.md .claude/agents/
    ```
 
 4. Copy the skill directory:
@@ -371,7 +385,7 @@ block, written by scripts rather than by the model:
 - **Verdict format check**: `full` when reviewer verdicts were checked by the
   `jsonschema` validator, `minimal` when the jq fallback ran because it was
   missing or incompatible. The session keeps the worst mode any extraction used.
-- **Models**: for each reviewer, the coordinator and the validator, the model
+- **Models**: for each reviewer, the coordinator and the validator (the arbiter), the model
   that was *requested* (`host default` unless the orchestrator named one at
   dispatch) and the model the agent *reported* about itself. A reported ID is
   the agent's own claim, not a confirmation from the host; "not reported"
@@ -826,6 +840,11 @@ directory" error means you are not at the repo root.
 `.claude/agents/` for Claude Code). Run `ls .claude/agents/divisor-*` to confirm — you should see ten files, a
 `-code.md` and a `-spec.md` for each of the five personas. If using a different AI tool, check its equivalent agents
 directory.
+
+**Every finding reported unvalidated**: `review-council-arbiter.md` is missing from the agents directory, usually
+because an older install copied only `divisor-*.md`. Copy it beside the reviewers and run
+`ls .claude/agents/review-council-arbiter.md` to confirm. Without it the validation gate does not run, and every finding
+keeps the severity its reviewer filed.
 
 **`reviewer-protocol.md` missing**: All reviewer agents depend on this pack. It ships in the skill's `references/`
 directory. Run `ls .claude/skills/review-council/references/` to confirm the whole directory was copied — every pack,

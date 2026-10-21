@@ -22,7 +22,7 @@ conditional:
 | **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
-| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, calibration, dedup, validation gate |
+| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate |
 | **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
 | **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
@@ -67,7 +67,7 @@ flowchart TD
   plan["Batch plan: split the changeset into delegation rounds on context bytes"]
   del["Delegate: construct prompts, dispatch agents in parallel"]
   ext["Extract: schema-validate each reviewer's JSON verdict"]
-  ver["Verify: format gate, correction, calibration, strip, merge-base advisories, consolidation, validation gate"]
+  ver["Verify: format gate, correction, strip, merge-base advisories, consolidation, arbiter (calibration + validation gate)"]
   dispgate{"Re-review conversation to triage? (not quick effort)"}
   disp["Disposition: triage untrusted PR conversation (GitHub and GitLab)"]
   report["Report: determine verdict, render artifacts, record learnings"]
@@ -163,11 +163,12 @@ flowchart TD
    The schema requires `impact` (who is hurt, and how) on every HIGH and CRITICAL finding; the jq fallback mirrors
    that conditional from `RC_IMPACT_SEVERITIES`.
 10. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
-   apply severity calibration, strip fabricated findings, deduplicate, then run the validation gate. Writes the
-   canonical `verdicts/findings.json`. Calibration lowers to MEDIUM a HIGH or
-   CRITICAL whose `impact` names no affected party and mechanism, and a Guard scope-creep HIGH that adds no trust
-   surface, commits no contract others build on, and is mentioned in the PR/MR description (or was reviewed without
-   one). Criteria live in `references/severity.md`.
+   strip fabricated findings, deduplicate, then dispatch the arbiter once over the survivors. Writes the canonical
+   `verdicts/findings.json`. The arbiter (`agents/review-council-arbiter.md`) calibrates severity and runs the
+   validation gate in one reply; `rc-apply-validation.sh` applies it by finding id. Calibration lowers to MEDIUM a
+   HIGH or CRITICAL whose `impact` names no affected party and mechanism, and a Guard scope-creep HIGH that adds no
+   trust surface, commits no contract others build on, and is mentioned in the PR/MR description (or was reviewed
+   without one). Criteria live in `references/severity.md`.
 11. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
@@ -317,6 +318,31 @@ When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linke
 `ci-status.txt`, `head-links.json` (every symlink in the head tree, when it could be listed whole; a local review lists its index) and `symlinks.txt` (written for any review whose diff changes a link). On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
 is added too — untrusted replies posted since that marker, on GitHub and GitLab.
 
+## The arbiter
+
+Severity is decided by one actor after intake. `agents/review-council-arbiter.md` is dispatched once per review, at
+`phases/verify.md` Step 4, over the findings that survived evidence checking, correction, stripping and consolidation.
+It calibrates each finding against `references/severity.md` and validates what the evidence check cannot, in one JSON
+reply that `rc-apply-validation.sh` applies by finding id. Calibration used to be orchestrator judgement in a separate
+step, and the validator could also change severity, so two actors set severity and neither could run on a different
+model from the rest of the pipeline.
+
+- **One audit record.** Every accepted correction that changes `severity` appends `{from, to, reason}` to
+  `provenance.calibrated_from` (`jq/apply-validation.jq`). The orchestrator writes `verification.txt`'s
+  `=== SEVERITY CALIBRATION ===` section from it. No script reads that section, and neither renderer prints
+  `calibrated_from`: the report shows the finding at its new level.
+- **Order.** Consolidation keeps the strongest severity in a cluster first, so the arbiter calibrates the merged
+  finding once rather than each duplicate.
+- **Name.** The file sits outside the `divisor-*` prefix on purpose: `divisor-*-{code,spec}.md` is the persona
+  discovery glob in `scripts/lib/prepare-target.sh`, and an unsuffixed `divisor-*` file reads as a legacy install.
+- **Dispatch.** By agent type `review-council-arbiter`. On a host without named dispatch, the orchestrator inlines the
+  file into a generic fresh-context subagent, as it does for reviewers. If the file is missing too, the gate does not
+  run and every finding is marked `UNVALIDATED`.
+- **Model.** The frontmatter is `description:` alone, like every agent here (RC-134): a `model:` key is
+  host-specific. The README recommends a size, not a model, and leaves pinning it to the user's host configuration.
+- **Provenance.** The arbiter keeps the `validator` role in `models.json`, `validation.json` and
+  `provenance.validator`, so earlier sessions and the renderers read it unchanged.
+
 ## Script-authored findings
 
 `rc-check-symlinks.sh` runs during Prepare and writes a verdict in the
@@ -345,7 +371,8 @@ revise it, and the guarantee lives in the data rather than in each caller:
   a cluster member, primary or casualty, whatever shape the model-written
   manifest takes.
 - **Final at validation.** `jq/apply-validation.jq` rejects any outcome for it
-  as `ALREADY_FINAL`; calibration and Disposition exclude it by instruction.
+  as `ALREADY_FINAL`, so the arbiter can neither calibrate nor retract it, and
+  verify.md never sends it; Disposition excludes it by instruction.
 - **Never extracted.** `rc-extract-verdict.sh` refuses an
   `rc-check-symlinks.raw.md` anywhere under `verdicts/` as `RESERVED_AGENT` and
   never writes its json, so a model-written file can neither overwrite the

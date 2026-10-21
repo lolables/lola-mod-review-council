@@ -132,6 +132,11 @@ else
 	echo "  FAIL: no agents discovered"
 	FAIL=$((FAIL + 1))
 fi
+# RC-134: the arbiter ships in the same agents directory but is no reviewer.
+# Discovery's divisor-*-{code,spec}.md glob must keep it out of the council.
+assert_jq_str "$result" '.agents | sort | join(",")' \
+	"divisor-adversary-code,divisor-curator-code,divisor-guard-code,divisor-sre-code,divisor-testing-code" \
+	"discovery finds the five code reviewers and not the arbiter"
 discard_fixture "$tmpdir"
 
 # Test 6: Impossible session directory (mkdir failure)

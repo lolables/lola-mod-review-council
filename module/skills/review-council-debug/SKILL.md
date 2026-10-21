@@ -204,7 +204,8 @@ verdict_json=$(jq -n --arg file "$target_rel" '{
     evidence: "db.query(f\"SELECT * FROM users WHERE id = {user_id}\")",
     constraint: "no-raw-sql-interpolation",
     description: "user_id is interpolated directly into the SQL string, allowing injection.",
-    recommendation: "Use a parameterized query instead of an f-string."
+    recommendation: "Use a parameterized query instead of an f-string.",
+    impact: "Any caller who controls user_id can read or modify every row in the users table."
   }]
 }')
 {

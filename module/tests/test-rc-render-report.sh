@@ -1159,6 +1159,36 @@ else
 fi
 rm -rf "$s"
 
+echo "Test: a folded reviewer's impact renders with its credit, and only when present"
+s=$(new_session)
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"CRITICAL","file":"svc/load.py","line":42,
+  "evidence":"except:","description":"Bare except swallows every error. The failure reaches nobody.",
+  "recommendation":"Catch the specific exception.","impact":"Errors vanish silently.",
+  "status":"verified","verdict":"REQUEST CHANGES",
+  "provenance":{"consolidated_from":[
+    {"agent":"divisor-testing-code","severity":"HIGH","angle":"untested failure path","recommendation":"add a test","impact":"Regressions ship unnoticed."},
+    {"agent":"divisor-sre-code","severity":"MEDIUM","angle":"no metric on the path","recommendation":"emit a counter"}]}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":2,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES"}}
+FJ
+printf 'Review Council Session\nOwner:        acme\nRepo:         widgets\nEffort:       standard\nReview root:  .\n' >"$s/session.txt"
+printf '# Review Council Session Tracking\n\n## Phase: Preparation\n\n- Forge: github\n- PR: 42\n- Mode: code\n' >"$s/tracking.md"
+echo "REQUEST CHANGES" >"$s/verdict.txt"
+write_verification_log "$s"
+rep=$(bash "$SCRIPT" "$s" 2>/dev/null)
+bare=$(grep -F 'no metric on the path' <<<"$rep" || true)
+if grep -qF 'untested failure path — add a test — Impact: Regressions ship unnoticed.' <<<"$rep" &&
+	[[ "$bare" == *'emit a counter' && "$bare" != *'Impact:'* ]]; then
+	echo "  PASS: the credit prints its impact after the recommendation; none when absent"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a credit's impact is missing, misplaced or invented"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
 # --- A narrowed council is disclosed, never implied (issue #20) --------------
 #
 # The Discovery Summary is where a reader learns how much of the council ran.

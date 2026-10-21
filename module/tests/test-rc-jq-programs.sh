@@ -222,6 +222,29 @@ out=$(run_jq consolidate-clusters.jq "$findings" --argjson clusters '[{"members"
 assert_jq_str "$out" '[.verified[] | select(.provenance.validator.result == "SCRIPT") | .description] | join(",")' "ds" "the script finding survives a look-alike's merge"
 assert_jq_str "$out" '.verified | length' "2" "the look-alike and the reviewer merged into one"
 
+echo "Test 15: a folded finding's impact travels with its credit"
+# The credit carried angle and recommendation but not impact, so a folded
+# HIGH's stated consequence vanished from the report. An absent impact adds no
+# key: the credit must not claim a consequence nobody stated.
+imp='[
+ {"file":"a.go","line":1,"evidence":"e","severity":"HIGH","agent":"x","description":"leak","recommendation":"r1","impact":"tokens reach logs"},
+ {"file":"a.go","line":1,"evidence":"e","severity":"CRITICAL","agent":"y","description":"worse","recommendation":"r2","impact":"RCE"},
+ {"file":"a.go","line":2,"evidence":"e","severity":"MEDIUM","agent":"z","description":"note","recommendation":"r3"}
+]'
+out=$(run_jq dedup-findings.jq "$imp")
+assert_jq_str "$out" '.[0].provenance.consolidated_from | map(select(.agent == "x")) | .[0].impact' "tokens reach logs" "dedup credit carries impact"
+assert_jq_str "$out" '.[0].provenance.consolidated_from | map(select(.agent == "z")) | .[0] | has("impact")' "false" "dedup credit omits an absent impact"
+assert_jq_str "$out" '.[0].impact' "RCE" "the survivor keeps its own impact"
+
+echo "Test 16: a folded finding's impact travels with its credit (cluster fold)"
+findings='{"verified":[
+ {"file":"f","line":1,"agent":"p","severity":"CRITICAL","evidence":"eee","description":"dp","recommendation":"rp","impact":"RCE","verdict":"REQUEST CHANGES"},
+ {"file":"f","line":1,"agent":"q","severity":"HIGH","evidence":"e","description":"dq","recommendation":"rq","impact":"tokens reach logs","verdict":"REQUEST CHANGES"},
+ {"file":"f","line":1,"agent":"r","severity":"MEDIUM","evidence":"e","description":"dr","recommendation":"rr","verdict":"APPROVE"}
+],"correctable":[],"stripped":[],"total_findings":3,"duplicates_consolidated":0,"verdicts":{}}'
+out=$(run_jq consolidate-clusters.jq "$findings" --argjson clusters '[{"members":[{"file":"f","line":1,"agent":"p"},{"file":"f","line":1,"agent":"q"},{"file":"f","line":1,"agent":"r"}]}]')
+assert_jq_str "$out" '.verified[0].provenance.consolidated_from | map(select(.agent == "q")) | .[0].impact' "tokens reach logs" "cluster credit carries impact"
+assert_jq_str "$out" '.verified[0].provenance.consolidated_from | map(select(.agent == "r")) | .[0] | has("impact")' "false" "cluster credit omits an absent impact"
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

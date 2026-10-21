@@ -165,14 +165,15 @@ evidence_block() { # evidence-text
 # the per-field form this replaces could not have carried one either, and the
 # framing gives up nothing that was ever available.
 #
-# test-rc-render-comment.sh "Test 6b" puts tabs and newlines in four fields at
+# test-rc-render-comment.sh "Test 6b" puts tabs and newlines in five fields at
 # once and fails on every assertion if the framing slips.
 #
 # The variant selects how much of the finding is rendered. It exists for the
 # comment renderer's paring ladder, which sheds detail in a fixed order when a
 # body would otherwise exceed the forge's comment limit:
 #
-#   full         headline, evidence, recommendation, constraint, analysis
+#   full         headline, evidence, recommendation, impact, constraint,
+#                analysis
 #   no-analysis  the same, minus the collapsed "Full reviewer analysis" block
 #   headline     headline and permalink only
 #
@@ -181,7 +182,7 @@ evidence_block() { # evidence-text
 # prose in every variant that keeps the finding at all. The report renderer
 # passes no variant and is unaffected.
 rc_finding_block() { # finding-json [variant=full]
-	local base="$1" variant="${2:-full}" f l t ev agent desc rec constraint emoji loc_link out=""
+	local base="$1" variant="${2:-full}" f l t ev agent desc rec impact constraint emoji loc_link out=""
 	local -a _fields=()
 	# Process substitution, not `$(...)`: command substitution strips NUL and
 	# would collapse the framing. That also hides jq's exit status, so a short
@@ -199,9 +200,10 @@ rc_finding_block() { # finding-json [variant=full]
 		  .evidence,
 		  .description,
 		  .recommendation,
-		  (.constraint // "")
+		  (.constraint // ""),
+		  (.impact // "")
 		] | (map(tostring) | join("\u0000")) + "\u0000"' <<<"$base")
-	if [[ "${#_fields[@]}" -lt 8 ]]; then
+	if [[ "${#_fields[@]}" -lt 9 ]]; then
 		echo "rc-error: could not read finding fields; malformed finding JSON" >&2
 		return 1
 	fi
@@ -234,13 +236,21 @@ rc_finding_block() { # finding-json [variant=full]
 	desc="${_fields[5]}"
 	rec="${_fields[6]}"
 	constraint="${_fields[7]}"
+	impact="${_fields[8]}"
 	# Prose the reviewer wrote takes the house-style dash pass; `evidence`
 	# deliberately does not (see normalize_dashes).
 	desc=$(normalize_dashes "$desc")
 	rec=$(normalize_dashes "$rec")
 	constraint=$(normalize_dashes "$constraint")
+	impact=$(normalize_dashes "$impact")
 	out+="$(evidence_block "$ev")"$'\n\n'
 	out+=$(printf '💡 **Recommendation:** %s\n' "$rec" | indent2)
+	# Who is hurt, and how, if the change merges as-is. Required on HIGH and
+	# CRITICAL by verdict-schema.json, optional below that, so it is printed
+	# only when the reviewer gave one.
+	if [[ -n "$impact" ]]; then
+		out+=$'\n'"$(printf '**Impact:** %s\n' "$impact" | indent2)"
+	fi
 	if [[ -n "$constraint" ]]; then
 		out+=$'\n'"$(printf '**Constraint:** %s\n' "$constraint" | indent2)"
 	fi

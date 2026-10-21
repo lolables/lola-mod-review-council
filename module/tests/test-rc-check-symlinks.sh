@@ -47,6 +47,10 @@ assert_jq "$v" '.findings[0].severity' "HIGH" "severity HIGH"
 assert_jq "$v" '.findings[0].file' "leak" "file is the link path"
 assert_jq "$v" '.findings[0].line' "1" "line is 1"
 assert_jq "$v" '.findings[0].evidence' "/tmp/rc-canary.txt" "evidence is the target text"
+# A HIGH must say who is hurt and how; the extractor refuses one that does not,
+# and this verdict is held to the same schema (Test 2).
+assert_jq "$v" '.findings[0].impact | type == "string" and length > 0' "true" \
+	"impact says who is exposed and how"
 if grep -qF '"leak" -> "/tmp/rc-canary.txt" (escapes)' "$sess/symlinks.txt" &&
 	head -1 "$sess/symlinks.txt" | grep -q '^# UNTRUSTED'; then
 	echo "  PASS: symlinks.txt lists it under an UNTRUSTED header"

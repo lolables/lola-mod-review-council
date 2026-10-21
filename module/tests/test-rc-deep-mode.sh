@@ -17,7 +17,7 @@ mkdir -p "$s/verdicts/auth" "$s/verdicts/api"
 cat >"$s/verdicts/auth/divisor-adversary-code.raw.md" <<'RAW'
 ```json
 {"agent":"divisor-adversary-code","files_read":["auth/token.go"],"verdict":"REQUEST CHANGES",
- "findings":[{"severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"boundary bug","recommendation":"use <="}]}
+ "findings":[{"severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"boundary bug","recommendation":"use <=","impact":"Clients are logged out at the expiry boundary."}]}
 ```
 RAW
 cat >"$s/verdicts/api/divisor-adversary-code.raw.md" <<'RAW'
@@ -89,7 +89,7 @@ mkdir -p "$s/verdicts/auth" "$s/verdicts/api"
 cat >"$s/verdicts/auth/divisor-adversary-code.raw.md" <<'RAW'
 ```json
 {"agent":"divisor-adversary-code","files_read":[],"verdict":"REQUEST CHANGES",
- "findings":[{"severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]}
+ "findings":[{"severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r","impact":"i"}]}
 ```
 RAW
 cat >"$s/verdicts/api/divisor-adversary-code.raw.md" <<'RAW'

@@ -27,6 +27,11 @@ assert_json_field "$result" "valid" "4" "four verdict blocks extracted"
 # it is the field most likely to be dropped by an over-strict validator.
 assert_jq "$session/verdicts/divisor-sre-code.json" '.findings[0].constraint' \
 	"CR-014" "optional constraint field preserved"
+# Every HIGH and CRITICAL in the fixture states its `impact`, and extraction must
+# carry all three through: the renderers print it under the recommendation.
+assert_jq "$session/verdicts/divisor-adversary-code.json" \
+	'[.findings[] | select(.severity == "HIGH" or .severity == "CRITICAL") | .impact | length > 0] | length == 3 and all' \
+	"true" "every HIGH and CRITICAL keeps its impact through extraction"
 
 echo "Stage 2: verify evidence against the review root"
 result=$(REVIEW_ROOT="$root" bash "$S/rc-verify-evidence.sh" "$session")
@@ -138,6 +143,15 @@ if ! echo "$report" | grep -q "creds.env"; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: out-of-root finding leaked into the rendered report"
+	FAIL=$((FAIL + 1))
+fi
+# The verified HIGH's impact survives verification and consolidation and is
+# printed under its recommendation.
+if echo "$report" | grep -qF "**Impact:** An MCP client sending a malformed delete request"; then
+	echo "  PASS: the verified HIGH's impact is rendered"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the verified HIGH's impact is missing from the report"
 	FAIL=$((FAIL + 1))
 fi
 # Per-agent table must reflect verbatim verdicts from the reviewers, under the

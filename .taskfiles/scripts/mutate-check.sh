@@ -1068,6 +1068,20 @@ check_mutation "RC-068 carried credits never name the survivor's author" \
 	's#^\([[:space:]]*\)| map(select(\.agent != \$x\.agent))))$#\1))#' \
 	test-rc-jq-programs.sh
 
+# --- RC-132: a folded finding's credit dropped its impact ----------------------
+#
+# The credit kept angle and recommendation only, so a folded HIGH's stated
+# consequence vanished from the report.
+check_mutation "RC-132 dedup credit keeps the folded finding's impact" \
+	jq/dedup-findings.jq \
+	's#^\([[:space:]]*\)+ (if \.impact != null then {impact} else {} end);$#\1+ {};#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-132 cluster credit keeps the folded finding's impact" \
+	jq/consolidate-clusters.jq \
+	's#^\([[:space:]]*\)+ (if \.impact != null then {impact} else {} end);$#\1+ {};#' \
+	test-rc-jq-programs.sh
+
 # --- RC-069: the correction round moved findings by hand, unchecked ------------
 #
 # Orchestrators promoted corrected findings by editing findings.json, so a
@@ -1636,6 +1650,14 @@ check_mutation "RC-120 the reviewer table drops No-verdict rows" \
 	rc-render-comment.sh \
 	's#^\([[:space:]]*\)agent_rows+=.* No verdict | - |.*#\1:#' \
 	test-rc-render-comment.sh
+
+# A HIGH or CRITICAL finding with no `impact` was accepted, so "this is scope
+# creep" passed as its own justification. The mutant drops the jq fallback's
+# conditional; the suite's jq-path cases are what must notice.
+check_mutation "RC-126 HIGH or CRITICAL accepted without an impact" \
+	rc-extract-verdict.sh \
+	's/(((\.severity | oneof(\$impactsevs)) | not) or (\.impact | nonempty_string)) and/true and/' \
+	test-rc-extract-verdict.sh
 
 total=$((caught + missed + broken + applied))
 echo ""

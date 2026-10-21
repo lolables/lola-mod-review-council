@@ -170,9 +170,9 @@ echo "Test 7: jq fallback enforces additionalProperties:false (RC-6)"
 fallback_reject "unknown top-level key rejected" \
 	'{"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[],"confidence":0.9}'
 fallback_reject "unknown finding key rejected" \
-	'{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","evidence":"x","description":"d","recommendation":"r","cwe":"CWE-89"}]}'
+	'{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","evidence":"x","description":"d","recommendation":"r","impact":"i","cwe":"CWE-89"}]}'
 fallback_accept "optional constraint field still accepted" \
-	'{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":3,"evidence":"x","description":"d","recommendation":"r","constraint":"CR-001"}]}'
+	'{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":3,"evidence":"x","description":"d","recommendation":"r","impact":"i","constraint":"CR-001"}]}'
 
 echo "Test 8: jq fallback enum checks are exact, not substring (RC-7)"
 # `[.verdict] | inside([...])` compares with `contains`, which on strings is
@@ -187,7 +187,7 @@ fallback_reject "truncated severity CRIT rejected" \
 fallback_reject "empty-string verdict rejected" \
 	'{"agent":"divisor-guard-code","files_read":[],"verdict":"","findings":[]}'
 fallback_accept "exact enum values still accepted" \
-	'{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"CRITICAL","file":"a.go","line":null,"evidence":"x","description":"d","recommendation":"r"}]}'
+	'{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"CRITICAL","file":"a.go","line":null,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}'
 
 echo "Test 9: fallback key lists match verdict-schema.json (drift guard)"
 # The fallback hardcodes the two allowed key sets. If the schema gains or loses
@@ -271,13 +271,13 @@ else
 	echo "  SKIP: validator path not exercised — no working sourcemeta/jsonschema binary; jq fallback only"
 fi
 gate_case "APPROVE over CRITICAL rejected" reject \
-	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}'
 gate_case "APPROVE over HIGH rejected" reject \
-	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}'
 gate_case "APPROVE over a mixed list containing HIGH rejected" reject \
-	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"LOW","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"},{"severity":"HIGH","file":"a.go","line":2,"evidence":"y","description":"d","recommendation":"r"}]}'
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"LOW","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"},{"severity":"HIGH","file":"a.go","line":2,"evidence":"y","description":"d","recommendation":"r","impact":"i"}]}'
 gate_case "REQUEST CHANGES over CRITICAL accepted" accept \
-	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}'
 gate_case "APPROVE over MEDIUM and LOW accepted" accept \
 	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"MEDIUM","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"},{"severity":"LOW","file":"a.go","line":2,"evidence":"y","description":"d","recommendation":"r"}]}'
 # A clean reviewer must not be broken by the coupling rule.
@@ -292,7 +292,7 @@ s=$(mk)
 cat >"$s/verdicts/divisor-guard-code.raw.md" <<'RAW'
 ```json
 {"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE",
- "findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}
+ "findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}
 ```
 RAW
 result=$(bash "$SCRIPT" "$s" 2>/dev/null)
@@ -332,7 +332,7 @@ fi
 # jq stands in for the schema here: every constraint verdict-schema.json places
 # on this block is structural, and the block satisfies all of them.
 if printf '%s' \
-	'{"agent":"a","files_read":[],"verdict":"APPROVE","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}' |
+	'{"agent":"a","files_read":[],"verdict":"APPROVE","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}' |
 	jq -e '.verdict == "APPROVE" and (.findings[0].severity == "CRITICAL")' >/dev/null; then
 	echo "  PASS: the rejected block uses only schema-legal field values"
 	PASS=$((PASS + 1))
@@ -356,7 +356,7 @@ GATE_LOG_NAME="gate-firings.jsonl"
 incoherent_block() {
 	printf '{"agent":"%s","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[%s,%s]}' \
 		"$1" \
-		'{"severity":"CRITICAL","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Expired tokens are accepted at the boundary.","recommendation":"Compare with <=."}' \
+		'{"severity":"CRITICAL","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Expired tokens are accepted at the boundary.","recommendation":"Compare with <=.","impact":"i"}' \
 		'{"severity":"LOW","file":"auth/token.go","line":9,"evidence":"var tok string","description":"Name is abbreviated.","recommendation":"Rename to token."}'
 }
 
@@ -424,7 +424,7 @@ body=$(incoherent_block divisor-guard-code)
 write_raw "$s" divisor-guard-code "$body"
 bash "$SCRIPT" "$s" >/dev/null 2>&1
 write_raw "$s" divisor-guard-code \
-	'{"agent":"divisor-guard-code","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[{"severity":"HIGH","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Second attempt, still incoherent.","recommendation":"Compare with <=."}]}'
+	'{"agent":"divisor-guard-code","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[{"severity":"HIGH","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Second attempt, still incoherent.","recommendation":"Compare with <=.","impact":"i"}]}'
 bash "$SCRIPT" "$s" >/dev/null 2>&1
 if [[ -f "$s/$GATE_LOG_NAME" ]]; then
 	records=$(jq -s 'length' "$s/$GATE_LOG_NAME")
@@ -483,7 +483,7 @@ rm -rf "$mask_dir"
 echo "Test: a verdict carrying a title is accepted and the title reaches the JSON"
 s=$(new_session)
 write_raw "$s" divisor-adversary-code \
-	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"Expiry check rejects boundary tokens","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"Tokens expiring now are rejected.","recommendation":"Use <=."}]}'
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"Expiry check rejects boundary tokens","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"Tokens expiring now are rejected.","recommendation":"Use <=.","impact":"i"}]}'
 result=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_json_field "$result" "status" "ok" "a titled verdict validates"
 assert_jq "$s/verdicts/divisor-adversary-code.json" '.findings[0].title' \
@@ -499,7 +499,7 @@ echo "Test: a long title is accepted whole rather than rejected or cut"
 s=$(new_session)
 long=$(printf 'x%.0s' {1..500})
 write_raw "$s" divisor-adversary-code \
-	"{\"agent\":\"divisor-adversary-code\",\"files_read\":[\"a.go\"],\"verdict\":\"REQUEST CHANGES\",\"findings\":[{\"title\":\"$long\",\"severity\":\"HIGH\",\"file\":\"a.go\",\"line\":1,\"evidence\":\"if exp < now\",\"description\":\"d\",\"recommendation\":\"r\"}]}"
+	"{\"agent\":\"divisor-adversary-code\",\"files_read\":[\"a.go\"],\"verdict\":\"REQUEST CHANGES\",\"findings\":[{\"title\":\"$long\",\"severity\":\"HIGH\",\"file\":\"a.go\",\"line\":1,\"evidence\":\"if exp < now\",\"description\":\"d\",\"recommendation\":\"r\",\"impact\":\"i\"}]}"
 result=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_json_field "$result" "status" "ok" "a long title is accepted"
 assert_jq "$s/verdicts/divisor-adversary-code.json" '.findings[0].title | length' \
@@ -511,7 +511,7 @@ echo "Test: an empty title is still refused"
 # as an empty bold span, which is a defect the fallback would have avoided.
 s=$(new_session)
 write_raw "$s" divisor-adversary-code \
-	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r"}]}'
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"title":"","severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r","impact":"i"}]}'
 result=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_json_field "$result" "status" "extract_error" "an empty title is refused"
 rm -rf "$s"
@@ -562,7 +562,7 @@ echo "Test: the fallback detail names an unknown key inside a finding"
 # as fatal as a top-level one and just as invisible in a generic message.
 s=$(new_session)
 write_raw "$s" divisor-adversary-code \
-	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r","confidence":"high"}]}'
+	'{"agent":"divisor-adversary-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"if exp < now","description":"d","recommendation":"r","impact":"i","confidence":"high"}]}'
 result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
 detail=$(jq -r '.invalid[0].detail' <<<"$result")
 if grep -qF 'confidence' <<<"$detail"; then
@@ -806,7 +806,7 @@ echo "Test: the symlink check's name is reserved at any depth (RC-076)"
 # and in a subsystem directory carried in findings nobody computed.
 s=$(mk)
 mkdir -p "$s/verdicts/auth"
-script_verdict='{"agent":"rc-check-symlinks","files_read":["diff.patch"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"leak","line":1,"evidence":"/etc/passwd","description":"d","recommendation":"r"}]}'
+script_verdict='{"agent":"rc-check-symlinks","files_read":["diff.patch"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"leak","line":1,"evidence":"/etc/passwd","description":"d","recommendation":"r","impact":"i"}]}'
 printf '%s\n' "$script_verdict" >"$s/verdicts/rc-check-symlinks.json"
 write_raw "$s" rc-check-symlinks '{"agent":"rc-check-symlinks","files_read":[],"verdict":"APPROVE","findings":[]}'
 write_raw "$s" auth/rc-check-symlinks '{"agent":"rc-check-symlinks","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"LOW","file":"x","line":1,"evidence":"made up","description":"d","recommendation":"r"}]}'
@@ -874,7 +874,7 @@ rm -rf "$s"
 echo "Test: an invalid verdict contributes no model (#59)"
 s=$(models_session)
 # Valid JSON naming a model, refused by the verdict/severity gate.
-write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","model":"claude-sonnet-5-5","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+write_raw "$s" divisor-guard-code '{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","model":"claude-sonnet-5-5","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"i"}]}'
 # And one refused by the schema: an empty model.
 write_raw "$s" divisor-sre-code '{"agent":"divisor-sre-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"model":""}'
 result=$(bash "$SCRIPT" "$s" 2>/dev/null)
@@ -1059,6 +1059,129 @@ else
 fi
 rm -rf "$s"
 rm -rf "$sv_mask" "$sv_fake"
+
+# --- impact -------------------------------------------------------------------
+# `impact` names who is hurt, and how, if the change merges as-is. Each case runs
+# under the jq fallback, and under sourcemeta/jsonschema as well when a working
+# one is installed: the two validation paths must agree about it.
+impact_mask=$(mktemp -d)
+impact_nojs=$(path_without_command jsonschema "$impact_mask")
+
+# impact_case <label> <reject|accept> <json-body>
+impact_case() {
+	local label="$1" expect="$2" body="$3" s result status reason p
+	local paths=("$impact_nojs")
+	[[ "$real_validator" -eq 1 ]] && paths=("$PATH" "$impact_nojs")
+	for p in "${paths[@]}"; do
+		s=$(mk)
+		write_raw "$s" divisor-guard-code "$body"
+		result=$(PATH="$p" bash "$SCRIPT" "$s" 2>/dev/null)
+		status=$(printf '%s' "$result" | jq -r '.status')
+		reason=$(printf '%s' "$result" | jq -r '.invalid[0].reason // "none"')
+		rm -rf "$s"
+		if [[ "$expect" == "reject" && "$status" == "extract_error" && "$reason" == "SCHEMA_INVALID" ]]; then
+			continue
+		fi
+		if [[ "$expect" == "accept" && "$status" == "ok" ]]; then
+			continue
+		fi
+		echo "  FAIL: $label (status '$status', reason '$reason')"
+		FAIL=$((FAIL + 1))
+		return
+	done
+	echo "  PASS: $label"
+	PASS=$((PASS + 1))
+}
+
+echo "Test: an impact is accepted on a MEDIUM finding and reaches the JSON"
+medium_with_impact='{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"MEDIUM","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"Maintainers carry a flag nobody asked for."}]}'
+impact_case "MEDIUM with impact accepted" accept "$medium_with_impact"
+s=$(mk)
+write_raw "$s" divisor-guard-code "$medium_with_impact"
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_jq "$s/verdicts/divisor-guard-code.json" '.findings[0].impact' \
+	"Maintainers carry a flag nobody asked for." "impact survives extraction verbatim"
+rm -rf "$s"
+
+echo "Test: a present impact must be a non-empty string"
+impact_case "empty impact rejected" reject \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"MEDIUM","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":""}]}'
+impact_case "non-string impact rejected" reject \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"LOW","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":3}]}'
+s=$(mk)
+write_raw "$s" divisor-guard-code \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"MEDIUM","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":""}]}'
+result=$(PATH="$impact_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'findings[0].impact' <<<"$detail"; then
+	echo "  PASS: the fallback detail names the empty impact"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the fallback detail does not name findings[0].impact: $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: a HIGH or CRITICAL finding must state its impact (RC-126)"
+# RC-126: nothing made a blocking finding say what goes wrong, so "this is scope
+# creep" passed as its own justification. verdict-schema.json requires `impact`
+# on HIGH and CRITICAL, and the jq fallback mirrors that conditional.
+impact_case "HIGH without impact rejected" reject \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+impact_case "CRITICAL with an empty impact rejected" reject \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"CRITICAL","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":""}]}'
+impact_case "MEDIUM without impact accepted" accept \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[{"severity":"MEDIUM","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]}'
+high_with_impact='{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r","impact":"Clients are logged out at the expiry boundary."}]}'
+impact_case "HIGH with impact accepted" accept "$high_with_impact"
+s=$(mk)
+write_raw "$s" divisor-guard-code "$high_with_impact"
+bash "$SCRIPT" "$s" >/dev/null 2>&1
+assert_jq "$s/verdicts/divisor-guard-code.json" '.findings[0].impact' \
+	"Clients are logged out at the expiry boundary." "a HIGH's impact survives extraction verbatim"
+rm -rf "$s"
+
+echo "Test: the fallback detail names the finding that lacks an impact (RC-126)"
+# The detail is the only text telling the agent what to fix on its one
+# re-dispatch, so it must point at the finding, not just the field.
+s=$(mk)
+write_raw "$s" divisor-guard-code \
+	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"REQUEST CHANGES","findings":[{"severity":"LOW","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"},{"severity":"HIGH","file":"a.go","line":2,"evidence":"y","description":"d","recommendation":"r"}]}'
+result=$(PATH="$impact_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$result")
+if grep -qF 'findings[1] is HIGH and needs' <<<"$detail" && ! grep -qF 'findings[0]' <<<"$detail"; then
+	echo "  PASS: the detail names the HIGH finding and only that one"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the detail does not single out findings[1]: $detail"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+echo "Test: the fallback's impact severities match verdict-schema.json (RC-126)"
+# Same drift guard as Test 9: the fallback cannot read the schema, so the
+# severities its conditional names are a declared copy of the schema's `if`.
+schema_sevs=$(jq -rc '(.properties.findings.items.if.properties.severity.enum // []) | sort' "$SCHEMA_FILE")
+script_sevs=$(sed -n "s/^readonly RC_IMPACT_SEVERITIES='\(.*\)'\$/\1/p" "$SCRIPT" | jq -rc 'sort')
+assert_equals "$script_sevs" "$schema_sevs" "RC_IMPACT_SEVERITIES matches the schema's if enum"
+assert_jq "$SCHEMA_FILE" '.properties.findings.items.then.required | tostring' '["impact"]' \
+	"the schema's then requires impact"
+
+echo "Test: the remediation says impact is required on HIGH and CRITICAL (RC-126)"
+s=$(mk)
+write_raw "$s" divisor-guard-code 'not json at all'
+result=$(bash "$SCRIPT" "$s" 2>/dev/null)
+rem=$(jq -r '.remediation' <<<"$result")
+if grep -qF '"impact"' <<<"$rem" && grep -qF 'required on every HIGH or CRITICAL finding' <<<"$rem"; then
+	echo "  PASS: the remediation names impact and when it is required"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the remediation does not tell a rejected agent about impact"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s"
+
+rm -rf "$impact_mask"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

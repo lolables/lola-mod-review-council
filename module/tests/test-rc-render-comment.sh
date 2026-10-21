@@ -307,7 +307,7 @@ echo "Test 6b: tabs and newlines in several fields at once stay in their own fie
 # damage shows up as prose appearing under the wrong label rather than as an
 # error. Tabs and newlines are exactly what the fields carry — evidence is
 # source code — so they are the separators that must not be used, and this puts
-# them in four fields at once. NUL is safe because bash cannot hold one in a
+# them in five fields at once. NUL is safe because bash cannot hold one in a
 # variable at all: `$(...)` discards it, so the per-field form could not carry
 # one either.
 sess=$(mktemp -d)
@@ -316,7 +316,8 @@ jq '.verified[0].evidence = "if a\t< b {\n\tpanic()\n}" |
     .verified[0].description = "Tab\there.\nNewline there." |
     .verified[0].recommendation = "Use\t<= instead.\nSecond line." |
     .verified[0].title = "Tabbed\ttitle" |
-    .verified[0].constraint = "STYLE-9:\tno raw tabs"' \
+    .verified[0].constraint = "STYLE-9:\tno raw tabs" |
+    .verified[0].impact = "Clients\tare logged out.\nSecond line."' \
 	"$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
 body=$(cat "$sess/comment-body.md")
@@ -326,7 +327,8 @@ for probe in \
 	"Tabbed	title" \
 	"Newline there." \
 	"Use	<= instead." \
-	"STYLE-9:	no raw tabs"; do
+	"STYLE-9:	no raw tabs" \
+	"Clients	are logged out."; do
 	if grep -qF "$probe" <<<"$body"; then
 		echo "  PASS: field kept its own content ('${probe%%$'\t'*}…')"
 		PASS=$((PASS + 1))
@@ -373,6 +375,61 @@ else
 	FAIL=$((FAIL + 1))
 fi
 rm -rf "$sess"
+
+# Test 7b: impact - who is hurt, and how - renders directly under the
+# recommendation when present, and leaves no line behind when absent.
+echo "Test 7b: impact rendered under the recommendation, only when present"
+sess=$(mktemp -d)
+make_review_session "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+impact_line='  **Impact:** A client refreshing on the expiry boundary is logged out mid-session and loses unsaved work.'
+if grep -qxF "$impact_line" "$sess/comment-body.md"; then
+	echo "  PASS: impact rendered verbatim"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: impact missing or altered"
+	FAIL=$((FAIL + 1))
+fi
+rec_ln=$(grep -n '💡 \*\*Recommendation:\*\*' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+imp_ln=$(grep -n '\*\*Impact:\*\*' "$sess/comment-body.md" | head -1 | cut -d: -f1 || true)
+if [[ -n "$rec_ln" && -n "$imp_ln" && "$imp_ln" -eq $((rec_ln + 1)) ]]; then
+	echo "  PASS: impact sits on the line after the recommendation ($rec_ln, $imp_ln)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: impact not directly under the recommendation (rec=$rec_ln impact=$imp_ln)"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq 'del(.verified[0].impact)' "$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+if ! grep -qF '**Impact:**' "$sess/comment-body.md"; then
+	echo "  PASS: no impact line when the field is absent"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: an impact line leaked for a finding without one"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$sess"
+
+# The paring ladder keeps impact while it keeps the recommendation: the
+# no-analysis variant prints it, the headline variant is a pointer and does not.
+variant_finding='{"agent":"divisor-adversary-code","severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"Boundary bug. Second sentence.","recommendation":"Use <=.","impact":"Clients are logged out at the boundary."}'
+for block_variant in full no-analysis headline; do
+	block=$(
+		# shellcheck source=module/skills/review-council/scripts/lib/render-findings.sh
+		source "$SCRIPT_DIR/../skills/review-council/scripts/lib/render-findings.sh"
+		rc_finding_block "$variant_finding" "$block_variant"
+	)
+	case "$block_variant" in
+	headline) want=0 ;;
+	*) want=1 ;;
+	esac
+	got=$(grep -cF '**Impact:** Clients are logged out at the boundary.' <<<"$block" || true)
+	assert_equals "$got" "$want" "the $block_variant variant prints impact $want time(s)"
+done
 
 # Test 8: forge-neutrality guard - a missing/unparseable origin host must leave
 # RC_FORGE_WEB empty, never default to github.com. This renderer is documented
@@ -542,7 +599,8 @@ jq '.verified[0].evidence = "flags := \"--strict\" — legacy" |
     .verified[0].description = "The flag list carries a smart dash — it should be a hyphen." |
     .verified[0].recommendation = "Replace the dash — use ASCII." |
     .verified[0].title = "Smart dash — in a flag list" |
-    .verified[0].constraint = "STYLE-7: ASCII punctuation only – no en dashes"' \
+    .verified[0].constraint = "STYLE-7: ASCII punctuation only – no en dashes" |
+    .verified[0].impact = "Copy-pasted flags fail — silently."' \
 	"$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
 echo "One finding — a smart dash in a flag list." >"$sess/comment-summary.md"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
@@ -559,6 +617,7 @@ for prose in \
 	"Replace the dash - use ASCII." \
 	"Smart dash - in a flag list" \
 	"STYLE-7: ASCII punctuation only - no en dashes" \
+	"Copy-pasted flags fail - silently." \
 	"One finding - a smart dash in a flag list."; do
 	if grep -qF "$prose" <<<"$body"; then
 		echo "  PASS: normalised prose '$prose'"

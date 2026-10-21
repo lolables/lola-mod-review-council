@@ -344,7 +344,8 @@ add_finding() { # path evidence description
 		evidence: $e,
 		title: "Symlink leads out of the repository",
 		description: "\($d) Anything that follows the link (a reviewer, a build step, a tool run in a checkout) reads or writes a file the repository does not own, chosen by the change author. The review tree holds the link as an inert file containing only its target text; this finding was computed from link paths and target text, not by following the link.",
-		recommendation: "Replace the link with the content it should provide, or point it at a path inside the repository. If a link out of the repository is intended, say why in the pull request so a maintainer can accept it knowingly."
+		recommendation: "Replace the link with the content it should provide, or point it at a path inside the repository. If a link out of the repository is intended, say why in the pull request so a maintainer can accept it knowingly.",
+		impact: "A maintainer, CI job or tool that builds, tests or opens a checkout of this change reads or writes a file outside the repository that the change author chose, which can disclose that file or overwrite it."
 	}' >>"$work/findings.jsonl"
 	escaping=$((escaping + 1))
 }

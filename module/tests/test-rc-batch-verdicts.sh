@@ -25,7 +25,7 @@ mkdir -p "$s/verdicts/batch1" "$s/verdicts/batch2"
 cat >"$s/verdicts/batch1/divisor-guard-code.raw.md" <<'RAW'
 ```json
 {"agent":"divisor-guard-code","files_read":["cmd/main.go"],"verdict":"REQUEST CHANGES",
- "findings":[{"severity":"HIGH","file":"cmd/main.go","line":1,"evidence":"os.Exit(0)","description":"exits before flush","recommendation":"flush first"}]}
+ "findings":[{"severity":"HIGH","file":"cmd/main.go","line":1,"evidence":"os.Exit(0)","description":"exits before flush","recommendation":"flush first","impact":"Callers lose buffered output on every exit."}]}
 ```
 RAW
 cat >"$s/verdicts/batch2/divisor-guard-code.raw.md" <<'RAW'
@@ -119,7 +119,7 @@ mkdir -p "$s/verdicts/auth/batch1" "$s/verdicts/auth/batch2"
 cat >"$s/verdicts/auth/batch1/divisor-adversary-code.raw.md" <<'RAW'
 ```json
 {"agent":"divisor-adversary-code","files_read":["auth/token.go"],"verdict":"REQUEST CHANGES",
- "findings":[{"severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"boundary bug","recommendation":"use <="}]}
+ "findings":[{"severity":"HIGH","file":"auth/token.go","line":1,"evidence":"if exp < now","description":"boundary bug","recommendation":"use <=","impact":"Clients are logged out at the expiry boundary."}]}
 ```
 RAW
 cat >"$s/verdicts/auth/batch2/divisor-adversary-code.raw.md" <<'RAW'

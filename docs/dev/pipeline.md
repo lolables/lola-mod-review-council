@@ -160,9 +160,14 @@ flowchart TD
 9. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
    `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
    extraction failure rather than a silently dropped finding.
+   The schema requires `impact` (who is hurt, and how) on every HIGH and CRITICAL finding; the jq fallback mirrors
+   that conditional from `RC_IMPACT_SEVERITIES`.
 10. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
    apply severity calibration, strip fabricated findings, deduplicate, then run the validation gate. Writes the
-   canonical `verdicts/findings.json`.
+   canonical `verdicts/findings.json`. Calibration lowers to MEDIUM a HIGH or
+   CRITICAL whose `impact` names no affected party and mechanism, and a Guard scope-creep HIGH that adds no trust
+   surface, commits no contract others build on, and is mentioned in the PR/MR description (or was reviewed without
+   one). Criteria live in `references/severity.md`.
 11. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose

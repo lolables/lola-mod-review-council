@@ -61,6 +61,13 @@ frontmatter: hosts that expose no temperature control simply ignore it.
 Each reviewer agent reviews independently and returns a verdict. The council verifies every finding against actual file
 content — stripping fabricated evidence — then produces a unified result: **APPROVE** or **REQUEST CHANGES**.
 
+A HIGH or CRITICAL finding blocks the merge, so it has to say what goes wrong. Each one carries an **Impact** line
+naming who is affected and how if the change merges as-is, printed under its recommendation in the report and the PR
+comment; a reviewer that leaves it out is asked once to add it. At `standard` and `deep` effort, verification lowers to
+MEDIUM a HIGH whose impact only restates its category ("scope creep", "tech debt"). Scope creep stays HIGH only when it
+adds trust surface, commits a contract users or downstream code will build on, or goes unmentioned in the PR/MR
+description; with no description supplied, that last test does not apply.
+
 ## Model Performance
 
 Review Council has been evaluated across Claude model tiers and AI coding tools using a suite of six test cases

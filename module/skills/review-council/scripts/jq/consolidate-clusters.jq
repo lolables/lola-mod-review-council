@@ -23,6 +23,10 @@
 # survives.
 
 def rank: {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}[.] // 0;
+# impact is optional (required only on HIGH/CRITICAL), so an absent one adds no
+# key rather than a null the renderer would have to special-case.
+def credit: {agent, severity, angle: .description, recommendation}
+	+ (if .impact != null then {impact} else {} end);
 def ident: {file: .file, line: .line, agent: .agent};
 def script: .provenance.validator.result == "SCRIPT";
 
@@ -51,7 +55,7 @@ def script: .provenance.validator.result == "SCRIPT";
 	    | ( $entries | sort_by([ (.value.severity | rank), (.value.evidence | length), .value.agent ]) | last ) as $pentry
 	    | $pentry.value as $primary
 	    | ( $entries | map(select(.key != $pentry.key)) | map(.value) ) as $secs
-	    | ( $secs | map({agent, severity, angle: .description, recommendation}) ) as $folded
+	    | ( $secs | map(credit) ) as $folded
 	    | ( if ($found | any(.verdict == "REQUEST CHANGES"))
 	        then "REQUEST CHANGES" else $primary.verdict end ) as $verdict
 	    | ( $primary + {verdict: $verdict}

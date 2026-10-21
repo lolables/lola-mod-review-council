@@ -377,6 +377,77 @@ assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id == "F1
 	"SCRIPT" "the final pass does not mark F1 UNVALIDATED"
 rm -rf "$s"
 
+echo "Test 23: a correction that leaves a finding HIGH or CRITICAL needs an impact (RC-130)"
+# Every HIGH/CRITICAL renders with an Impact line, and the extractor enforces
+# that at intake. A validator correction is the one path that can raise a
+# severity after intake, so it must bring the impact with it — or the finding
+# must already carry one. A correction that cannot is BAD_CORRECTION, and the
+# finding stays pending for the retry like any other rejected outcome.
+s=$(mk_session)
+validation "$s" '{"results":[{"id":"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"severity":"HIGH"}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '[.rejected[] | "\(.id):\(.reason)"] | tojson' '["F2:BAD_CORRECTION"]' "MEDIUM->HIGH without impact rejected"
+assert_jq_str "$result" '.pending | index("F2") != null' "true" "F2 stays pending for the retry"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | .severity' "MEDIUM" "F2 severity unchanged"
+for c in '""' '"   "'; do
+	validation "$s" '{"results":[{"id":"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"severity":"CRITICAL","impact":'"$c"'}}]}'
+	result=$(bash "$SCRIPT" "$s")
+	assert_jq_str "$result" '[.rejected[] | .reason] | tojson' '["BAD_CORRECTION"]' "blank corrections.impact $c rejected"
+done
+validation "$s" '{"results":[{"id":"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"severity":"HIGH","impact":"any caller can read b.go secrets"}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '.rejected | length' "0" "MEDIUM->HIGH with impact accepted"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | .severity' "HIGH" "F2 raised to HIGH"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | .impact' "any caller can read b.go secrets" "F2 impact stored"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | .provenance.validator.changed_from | tojson' \
+	'{"impact":null,"severity":"MEDIUM"}' "changed_from records the absent impact"
+rm -rf "$s"
+
+s=$(mk_session)
+validation "$s" '{"results":[{"id":"F1","file":"a.go","result":"CORRECTED","reason":"r","corrections":{"severity":"MEDIUM"}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '.corrected' '1' "HIGH->MEDIUM without impact accepted"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F1") | .severity' "MEDIUM" "F1 lowered to MEDIUM"
+rm -rf "$s"
+
+s=$(mk_session)
+validation "$s" '{"results":[{"id":"F1","file":"a.go","result":"CORRECTED","reason":"r","corrections":{"line":4}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '[.rejected[] | .reason] | tojson' '["BAD_CORRECTION"]' "HIGH with no impact anywhere rejected"
+jq '.verified |= map(.impact = "callers lose \(.file)")' "$s/verdicts/findings.json" >"$s/f.next"
+mv "$s/f.next" "$s/verdicts/findings.json"
+validation "$s" '{"results":[
+ {"id":"F1","file":"a.go","result":"CORRECTED","reason":"r","corrections":{"line":4}},
+ {"id":"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"severity":"CRITICAL"}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '.corrected' '2' "existing impact satisfies the rule"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F1") | "\(.line) \(.impact)"' "4 callers lose a.go" "F1 line fixed, impact kept"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | "\(.severity) \(.impact)"' "CRITICAL callers lose b.go" "F2 raised, impact kept"
+rm -rf "$s"
+
+echo "Test 24: a corrected impact is accepted only with a raise into HIGH or CRITICAL (RC-131)"
+# A wrong impact is downgraded, not rewritten: the validator may supply an
+# impact only for the severity it is raising a finding to. Rewriting one on a
+# finding it leaves alone, or attaching one to a MEDIUM/LOW, is BAD_CORRECTION.
+s=$(mk_session)
+jq '.verified |= map(.impact = "callers lose \(.file)")' "$s/verdicts/findings.json" >"$s/f.next"
+mv "$s/f.next" "$s/verdicts/findings.json"
+for e in '"F1","file":"a.go","result":"CORRECTED","reason":"r","corrections":{"impact":"new"}' \
+	'"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"impact":"new"}' \
+	'"F2","file":"b.go","result":"CORRECTED","reason":"r","corrections":{"severity":"LOW","impact":"new"}'; do
+	validation "$s" '{"results":[{"id":'"$e"'}]}'
+	result=$(bash "$SCRIPT" "$s")
+	assert_jq_str "$result" '[.rejected[] | .reason] | tojson' '["BAD_CORRECTION"]' "rejected: $e"
+done
+assert_jq_str "$(<"$s/verdicts/findings.json")" '[.verified[].impact] | tojson' '["callers lose a.go","callers lose b.go"]' "no impact rewritten"
+jq '.verified[0].severity = "CRITICAL"' "$s/verdicts/findings.json" >"$s/f.next"
+mv "$s/f.next" "$s/verdicts/findings.json"
+validation "$s" '{"results":[{"id":"F1","file":"a.go","result":"CORRECTED","reason":"r","corrections":{"severity":"HIGH","impact":"callers stall"}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_jq_str "$result" '.corrected' '1' "CRITICAL->HIGH with impact accepted"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F1") | "\(.severity) \(.impact)"' "HIGH callers stall" "F1 lowered with its new impact"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

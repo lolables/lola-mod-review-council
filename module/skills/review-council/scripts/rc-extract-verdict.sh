@@ -48,13 +48,21 @@ _warned_no_validator=0
 # — drift fails the suite instead of silently splitting the two validation
 # paths apart. Keep each on one line: the test extracts them with sed.
 readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model"]'
-readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation"]'
+readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation","impact"]'
 # The subsets of the two lists above that "required" in verdict-schema.json
 # names: what the rejection message calls a missing key. `model` is the one
-# optional top-level key; `line`, `title` and `constraint` are the optional
-# finding keys. Same one-line rule as above — the schema-drift test reads them.
+# optional top-level key; `line`, `title`, `constraint` and `impact` are the
+# optional finding keys. Same one-line rule as above — the schema-drift test
+# reads them.
 readonly RC_REQUIRED_TOP_KEYS='["agent","files_read","verdict","findings"]'
 readonly RC_REQUIRED_FINDING_KEYS='["severity","file","evidence","description","recommendation"]'
+# The severities on which a finding must carry `impact` — the enum in the
+# finding item's `if` in verdict-schema.json, whose `then` requires the key.
+# Unlike the verdict/severity coupling further down, this conditional sits in
+# the schema: it constrains one finding, never two levels at once, so the
+# fallback mirrors it in a single clause and the drift test pins this list to
+# the schema's enum. Same one-line rule as above.
+readonly RC_IMPACT_SEVERITIES='["CRITICAL","HIGH"]'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -104,7 +112,8 @@ validate() { # json_string
 	# reads as null, whose type is "null", not "string"/"array".
 	printf '%s' "$json" | jq -e \
 		--argjson topkeys "$RC_TOP_KEYS" \
-		--argjson fkeys "$RC_FINDING_KEYS" '
+		--argjson fkeys "$RC_FINDING_KEYS" \
+		--argjson impactsevs "$RC_IMPACT_SEVERITIES" '
 		# Exact membership. The obvious `[.x] | inside([...])` compares with
 		# `contains`, which on strings is SUBSTRING containment — it accepted
 		# "APPROV" as a verdict and "HIG"/"CRIT" as severities, and accepted
@@ -136,6 +145,10 @@ validate() { # json_string
 			# `description` is already uncapped. minLength stays: an empty
 			# headline renders as an empty bold span.
 			((has("title") | not) or (.title | nonempty_string)) and
+			((has("impact") | not) or (.impact | nonempty_string)) and
+			# A HIGH or CRITICAL must say who is hurt and how. An absent key
+			# reads as null, which is not a non-empty string.
+			(((.severity | oneof($impactsevs)) | not) or (.impact | nonempty_string)) and
 			(([keys[]] - $fkeys) | length) == 0
 		))
 	' >/dev/null 2>&1
@@ -169,6 +182,7 @@ validate_error() { # json_string
 		--argjson reqtop "$RC_REQUIRED_TOP_KEYS" \
 		--argjson fkeys "$RC_FINDING_KEYS" \
 		--argjson reqf "$RC_REQUIRED_FINDING_KEYS" \
+		--argjson impactsevs "$RC_IMPACT_SEVERITIES" \
 		--argjson sevs '["CRITICAL","HIGH","MEDIUM","LOW"]' \
 		--argjson vrds '["APPROVE","REQUEST CHANGES"]' '
 		def nonempty_string: type == "string" and length > 0;
@@ -224,6 +238,11 @@ validate_error() { # json_string
 							then "findings[\($i)].constraint must be a string" else empty end),
 						(if ($f | has("title")) and (($f.title | nonempty_string) | not)
 							then "findings[\($i)].title must be a non-empty string when present" else empty end),
+						(if ($f | has("severity")) and ($f.severity | oneof($impactsevs)) and (($f.impact | nonempty_string) | not)
+							then "findings[\($i)] is \($f.severity) and needs `impact`: a non-empty string naming who is affected, and how, if the change merges as-is"
+						elif ($f | has("impact")) and (($f.impact | nonempty_string) | not)
+							then "findings[\($i)].impact must be a non-empty string when present"
+						else empty end),
 						(["file", "evidence", "description", "recommendation"][] as $k
 							| if ($f | has($k)) and (($f[$k] | nonempty_string) | not)
 								then "findings[\($i)].\($k) must be a non-empty string" else empty end)
@@ -298,11 +317,12 @@ for raw in "${raw_files[@]}"; do
 	# Nothing downstream re-derives the verdict — rc-verify-evidence.sh copies it
 	# verbatim — so the block would render as a green APPROVE header over a
 	# verified CRITICAL. The coupling lives here rather than in the schema
-	# because the jq fallback would have to mirror a draft-07 if/then and the two
-	# would drift; sitting outside validate() is what makes both validation paths
-	# reach it. The reason is VERDICT_INCOHERENT, not SCHEMA_INVALID: the block
-	# IS schema-valid, and a maintainer told otherwise would validate it by hand
-	# and watch it pass.
+	# because it ties the top-level verdict to every finding at once — a
+	# cross-level rule, unlike the per-finding `impact` conditional — and
+	# sitting outside validate() is what makes both validation paths reach it.
+	# The reason is VERDICT_INCOHERENT, not SCHEMA_INVALID: the block IS
+	# schema-valid, and a maintainer told otherwise would validate it by hand and
+	# watch it pass.
 	#
 	# Both halves of the test below fail closed, and the polarity is why: jq
 	# failing outright is caught by the `||`, and jq succeeding while printing
@@ -418,12 +438,14 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
   "model": "optional: your own model ID, only if you know it",
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
   "constraint": "...", "description": "...", "recommendation": "...",
+  "impact": "who is affected, and how, if this merges as-is",
   "title": "optional headline" } ] }
 These are the only keys permitted at either level — the schema sets
 "additionalProperties": false, so any other key is rejected, however useful it
 looks. Put anything you would have added into `description`. Optional keys are
-`model` at the top level and `line`, `title` and `constraint` in a finding;
-every other key above is required.
+`model` at the top level and `line`, `title` and `constraint` in a finding.
+`impact` is required on every HIGH or CRITICAL finding and optional on MEDIUM
+and LOW. Every other key above is required.
 Emit only the block — no prose before or after.
 Correct only the defect named above: re-emit the SAME findings, with the same
 severities and the same evidence. This is a formatting repair, not a new review.

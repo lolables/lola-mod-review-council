@@ -180,6 +180,16 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# A correction that raises a finding to HIGH or CRITICAL must be able to supply
+# the impact those severities require (RC-130), so impact is correctable, and
+# the reducer's list of impact severities is a copy of this schema's `if` enum.
+correction_impact=$(jq -c '.properties.results.items.properties.corrections.properties.impact' "$VSCHEMA")
+assert_equals "$correction_impact" '{"type":"string","minLength":1}' "corrections.impact is a non-empty string"
+schema_isevs=$(jq -rc '(.properties.findings.items.if.properties.severity.enum // []) | sort' "$SCHEMA")
+isevs_line=$(grep -E 'def impact_severities' "$SCRIPTS_DIR/jq/apply-validation.jq") || isevs_line=""
+jq_isevs=$(grep -oE '[A-Z][A-Z]+' <<<"$isevs_line" | jq -Rsc 'split("\n") | map(select(. != "")) | sort') || jq_isevs="missing"
+assert_equals "$jq_isevs" "$schema_isevs" "apply-validation.jq impact_severities matches the schema's if enum"
+
 echo "Test: title is an optional finding property with no length bound"
 # The renderers have always headlined findings with `.title // ...`, but the
 # schema never had the property and sets additionalProperties:false — so every
@@ -219,6 +229,30 @@ else
 	echo "  PASS: model is optional"
 	PASS=$((PASS + 1))
 fi
+
+echo "Test: impact is an optional, non-empty finding string"
+# `impact` says who is hurt, and how, if the change merges as-is. The property
+# itself is optional: a MEDIUM or LOW finding may carry one and need not.
+impact_prop=$(jq -c '.properties.findings.items.properties.impact' "$SCHEMA")
+assert_equals "$impact_prop" '{"type":"string","minLength":1}' \
+	"impact is a non-empty string"
+impact_required=$(jq -c '.properties.findings.items.required' "$SCHEMA")
+if grep -qF '"impact"' <<<"$impact_required"; then
+	echo "  FAIL: impact is unconditionally required — every MEDIUM and LOW finding would need one"
+	FAIL=$((FAIL + 1))
+else
+	echo "  PASS: impact is not in the unconditional required list"
+	PASS=$((PASS + 1))
+fi
+
+echo "Test: impact is required on exactly HIGH and CRITICAL findings (RC-126)"
+# A conditional, so MEDIUM and LOW stay free of it. `required: [severity]` in
+# the `if` keeps a finding with no severity from matching vacuously.
+impact_if=$(jq -c '.properties.findings.items.if' "$SCHEMA")
+assert_equals "$impact_if" '{"properties":{"severity":{"enum":["CRITICAL","HIGH"]}},"required":["severity"]}' \
+	"the conditional names exactly CRITICAL and HIGH"
+impact_then=$(jq -c '.properties.findings.items.then' "$SCHEMA")
+assert_equals "$impact_then" '{"required":["impact"]}' "the conditional requires impact"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -93,7 +93,8 @@ does not. A disclosure is often a callout, a commit-provenance table or a
 merge-order paragraph rather than a sentence next to the code. Where the
 description does disclose the inclusion, the finding is narrower than it first
 appeared — that the disclosure is wrong, incomplete, or contradicted by the diff
-— or it is not a finding. Where no PR Description section was supplied, say so in
+— or it is not a finding. Where no PR Description section was supplied, there is
+no change description, so scope-creep criterion (c) does not apply; say so in
 the finding rather than asserting an absence you had no document to check.
 
 ### 2. Constitution Alignment
@@ -148,20 +149,31 @@ When a spec, design doc, or PR description cites an external standard (OSPS Base
 
 ## Severity Calibration
 
-| Condition                                                         | Severity |
-|-------------------------------------------------------------------|----------|
-| Implementation contradicts spec acceptance criteria               | CRITICAL |
-| Constitution principle violated without justification             | CRITICAL |
-| Unauthorized weakening of gatekeeping value                       | HIGH     |
-| Scope creep adding unrequested functionality with complexity cost | HIGH     |
-| Acceptance criterion from spec with no implementation             | HIGH     |
-| Cross-component contract break without consumer updates           | HIGH     |
-| Established structural pattern broken without documented reason   | HIGH     |
-| Duplicated business logic across modules (maintenance waste)      | MEDIUM   |
-| Minor scope addition (gold plating) with low complexity cost      | MEDIUM   |
-| Stale cross-reference or metadata inconsistency                   | MEDIUM   |
-| Trivial code duplication within single module                     | LOW      |
-| Minor wording improvement or optional cross-reference             | LOW      |
+| Condition                                                                         | Severity |
+|-----------------------------------------------------------------------------------|----------|
+| Implementation contradicts spec acceptance criteria                               | CRITICAL |
+| Constitution principle violated without justification                             | CRITICAL |
+| Unauthorized weakening of gatekeeping value                                       | HIGH     |
+| Scope creep that adds trust surface, commits a public contract, or is undisclosed | HIGH     |
+| Acceptance criterion from spec with no implementation                             | HIGH     |
+| Cross-component contract break without consumer updates                           | HIGH     |
+| Established structural pattern broken without documented reason                   | HIGH     |
+| Duplicated business logic across modules (maintenance waste)                      | MEDIUM   |
+| Scope creep with maintenance cost only (gold plating)                             | MEDIUM   |
+| Stale cross-reference or metadata inconsistency                                   | MEDIUM   |
+| Trivial code duplication within single module                                     | LOW      |
+| Minor wording improvement or optional cross-reference                             | LOW      |
+
+**Scope creep is MEDIUM unless one criterion holds.** HIGH only when the extra
+scope (a) adds trust or attack surface — network calls, permissions,
+untrusted-input parsing, new dependencies; (b) commits a contract users or
+downstream code will build on — API fields, config keys, file/wire formats,
+flags whose output others parse (an unrequested `--verbose` is MEDIUM under
+(b); a new machine-readable `--json` output is HIGH); or (c) is undisclosed —
+change claims X, ships X+Y (the Disclosure check above is the evidence). Change
+description = the PR/MR description, supplied as the PR Description section.
+With no change description supplied, (c) does not apply. Name the criterion and
+who it hurts in `impact`.
 
 ## Out of Scope
 
@@ -189,13 +201,13 @@ All mean: go back to Phase 1 and re-read files.
 
 ## Rationalization Table
 
-| Excuse                                              | Reality                                                                                                                                                                                |
-|-----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| "Spec is vague, so any implementation satisfies it" | Vague specs still have implicit constraints from project patterns, constitution, stated problem. Implementation drifting from problem being solved fails regardless of spec precision. |
-| "This is different way to do same thing"            | If codebase uses pattern X consistently and change introduces pattern Y without justification, that is structural drift. Consistency has value.                                        |
-| "We'll clean up waste later"                        | Orphaned code and unused dependencies compound. 'Later' is when someone copies orphaned pattern into new code.                                                                         |
-| "Constitution principle is aspirational"            | Constitutional principles are constraints, not suggestions. Relaxing requires documented authorization, not silent erosion.                                                            |
-| "It's only small scope addition"                    | Small additions accumulate. Each sets precedent for next. Gold plating is scope creep in nicer jacket.                                                                                 |
+| Excuse                                              | Reality                                                                                                                                                                                                        |
+|-----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| "Spec is vague, so any implementation satisfies it" | Vague specs still have implicit constraints from project patterns, constitution, stated problem. Implementation drifting from problem being solved fails regardless of spec precision.                         |
+| "This is different way to do same thing"            | If codebase uses pattern X consistently and change introduces pattern Y without justification, that is structural drift. Consistency has value.                                                                |
+| "We'll clean up waste later"                        | Orphaned code and unused dependencies compound. 'Later' is when someone copies orphaned pattern into new code.                                                                                                 |
+| "Constitution principle is aspirational"            | Constitutional principles are constraints, not suggestions. Relaxing requires documented authorization, not silent erosion.                                                                                    |
+| "It's only small scope addition"                    | Small additions accumulate, so report each one: unreported gold plating sets precedent for next. Size does not set severity — MEDIUM unless it adds trust surface, commits public contract, or is undisclosed. |
 
 ## Output
 

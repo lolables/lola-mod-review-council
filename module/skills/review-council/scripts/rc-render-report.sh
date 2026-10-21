@@ -366,9 +366,10 @@ if [[ -f "$evidence_file" ]] && [[ $verified_count -gt 0 ]]; then
 					cf_sev=$(jq -r '.severity' <<<"$cf")
 					cf_angle=$(jq -r '.angle' <<<"$cf")
 					cf_rec=$(jq -r '.recommendation' <<<"$cf")
+					cf_impact=$(jq -r '.impact // empty' <<<"$cf")
 					cf_label=$(persona_label "$cf_agent")
 					printf '  - %s (%s): %s — %s\n' \
-						"$cf_label" "$cf_sev" "$cf_angle" "$cf_rec"
+						"$cf_label" "$cf_sev" "$cf_angle" "$cf_rec${cf_impact:+ — Impact: $cf_impact}"
 				done
 			fi
 		done

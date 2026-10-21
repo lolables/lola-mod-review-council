@@ -34,6 +34,9 @@ several encode defects that shipped.
 | testing | `docs/README.md:3` | **verified**, survives consolidation | Bystander, and evidence beginning with `-`, which `grep` would read as an option without `--`. |
 | sre | `token.go:6`, partial-line quote | **verified**, survives consolidation | Bystander, and the only finding carrying the optional `constraint` field the schema permits. |
 
+Every HIGH and CRITICAL finding above also carries `impact`, which
+`verdict-schema.json` requires at those severities.
+
 ## Expected end state
 
 ```

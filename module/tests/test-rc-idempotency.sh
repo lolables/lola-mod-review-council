@@ -88,7 +88,7 @@ echo "Test 4: the gate-firing log is exempt and grows on every evaluation"
 s=$(new_session)
 # shellcheck disable=SC2016 # literal markdown fence, not command substitution.
 printf '```json\n%s\n```\n' \
-	'{"agent":"divisor-guard-code","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[{"severity":"CRITICAL","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Expired tokens are accepted.","recommendation":"Compare with <=."}]}' \
+	'{"agent":"divisor-guard-code","files_read":["auth/token.go"],"verdict":"APPROVE","findings":[{"severity":"CRITICAL","file":"auth/token.go","line":42,"evidence":"if exp < now","description":"Expired tokens are accepted.","recommendation":"Compare with <=.","impact":"A client holding an expired token keeps access past its expiry."}]}' \
 	>"$s/verdicts/divisor-guard-code.raw.md"
 bash "$SCRIPTS/rc-extract-verdict.sh" "$s" >/dev/null 2>&1
 bash "$SCRIPTS/rc-extract-verdict.sh" "$s" >/dev/null 2>&1

@@ -434,6 +434,7 @@ SES
      "evidence":"if exp < now",
      "description":"The expiry check rejects tokens at the exact boundary. A client refreshing on the boundary is logged out without warning.",
      "recommendation":"Use `<=` so a token expiring exactly now is still valid.",
+     "impact":"A client refreshing on the expiry boundary is logged out mid-session and loses unsaved work.",
      "status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
   ],
   "correctable": [], "stripped": [],

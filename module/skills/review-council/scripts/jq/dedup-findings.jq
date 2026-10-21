@@ -39,7 +39,10 @@
 # never displace a genuine CRITICAL.
 def sevrank(s): {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}[s] // 0;
 
-def credit: {agent, severity, angle: .description, recommendation};
+# impact is optional (required only on HIGH/CRITICAL), so an absent one adds no
+# key rather than a null the renderer would have to special-case.
+def credit: {agent, severity, angle: .description, recommendation}
+	+ (if .impact != null then {impact} else {} end);
 
 def script: .provenance.validator.result == "SCRIPT";
 

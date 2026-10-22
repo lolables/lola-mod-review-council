@@ -2756,6 +2756,64 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: reviewer prose is documented as untrusted and routed through one library (RC-139)"
+# Reviewer prose reaches a forge comment the bot account posts, and the reviewer
+# wrote it while reading a diff the change author controls. jq/md-neutralise.jq
+# is the one place it is defused. This pins each renderer call site to that
+# library and the two documents that tell a maintainer to extend it rather than
+# escape at a call site, so a new renderer path does not quietly print raw prose.
+rc139_missing=0
+rc139_site() { # file fixed-string description
+	if ! grep -qF -- "$2" "$SKILLS/scripts/$1"; then
+		echo "  missing: $1 does not neutralise, encode or fence $3"
+		rc139_missing=$((rc139_missing + 1))
+	fi
+}
+rc139_site lib/render-findings.sh '.[2] |= rc_md_title' 'the finding title'
+rc139_site lib/render-findings.sh '.[5, 6, 7, 8] |= rc_md_neutralise' 'description, recommendation, constraint and impact'
+rc139_site lib/render-findings.sh '.[9] |= rc_md_code' 'the printed file path'
+rc139_site lib/render-findings.sh '.[0] |= (split("/") | map(@uri) | join("/"))' 'the file path in the link URL'
+rc139_site lib/render-findings.sh "printf '[%s](%s)' \"\$loc\" \"\$url\"" 'the linked file path'
+rc139_site rc-render-report.sh "evidence_block \"\$ci_status\"" 'the forge-authored CI status'
+rc139_site rc-render-comment.sh "'include \"md-neutralise\"; rc_md_title' <<<\"\$tldr\"" 'the TL;DR'
+rc139_site rc-render-report.sh '.angle | tostring | rc_md_neutralise' 'the folded reviewer angle'
+rc139_site rc-render-report.sh '.recommendation | tostring | rc_md_neutralise' 'the folded reviewer recommendation'
+rc139_site rc-render-report.sh '.impact // empty | tostring | rc_md_neutralise' 'the folded reviewer impact'
+rc139_site rc-render-report.sh '| rc_md_title | gsub("\\|"; "&#124;")' 'the verdict cell'
+rc139_agents=$(tr '\n' ' ' <"$SCRIPT_DIR/../AGENTS.md" | tr -s ' ')
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
+if ! grep -qF 'Reviewer prose is untrusted at render time.' <<<"$rc139_agents" ||
+	! grep -qF '`rc_md_neutralise` (`scripts/jq/md-neutralise.jq`)' <<<"$rc139_agents"; then
+	echo "  missing: module/AGENTS.md does not say reviewer prose is untrusted and name the neutraliser"
+	rc139_missing=$((rc139_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
+if ! grep -qF 'file path a finding names is chosen by the change author' <<<"$rc139_agents" ||
+	! grep -qF '`ci-status.txt`' <<<"$rc139_agents"; then
+	echo "  missing: module/AGENTS.md does not cover the file path and the CI status"
+	rc139_missing=$((rc139_missing + 1))
+fi
+rc139_pipeline=$(sed -n '/^## Rendering reviewer prose/,/^## What spec mode reviews/p' "$SCRIPT_DIR/../../docs/dev/pipeline.md")
+if ! grep -qF 'scripts/jq/md-neutralise.jq' <<<"$rc139_pipeline"; then
+	echo "  missing: docs/dev/pipeline.md has no 'Rendering reviewer prose' section naming the library"
+	rc139_missing=$((rc139_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
+for rc139_row in '| TL;DR (`comment-summary.md`, first line) | `rc-render-comment.sh` | `rc_md_title` |' \
+	'`rc_md_code`' '`@uri`' '`ci-status.txt`' 'Still printed by the scripts'; do
+	if ! grep -qF -- "$rc139_row" <<<"$rc139_pipeline"; then
+		echo "  missing: docs/dev/pipeline.md 'Rendering reviewer prose' does not cover $rc139_row"
+		rc139_missing=$((rc139_missing + 1))
+	fi
+done
+if [[ "$rc139_missing" -eq 0 ]]; then
+	echo "  PASS: one neutraliser, used by every renderer and documented"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc139_missing untrusted-prose rule(s) missing (RC-139)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

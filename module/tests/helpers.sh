@@ -162,6 +162,23 @@ assert_jq_str() {
 	assert_equals "$actual" "$3" "$4"
 }
 
+# Assert that exactly <expected> lines of <text> match grep <args>. grep exits 1
+# when nothing matches, which is an answer here rather than an error, so only a
+# status above 1 (a malformed pattern) fails the assertion outright. Taking the
+# count as a plain assignment keeps that status visible (SC2312).
+# Usage: assert_match_count <text> <expected> <label> <grep-args...>
+assert_match_count() {
+	local text="$1" expected="$2" label="$3" n rc=0
+	shift 3
+	n=$(grep -c "$@" <<<"$text") || rc=$?
+	if [[ "$rc" -gt 1 ]]; then
+		echo "  FAIL: $label (grep exited $rc)"
+		FAIL=$((FAIL + 1))
+		return 0
+	fi
+	assert_equals "$n" "$expected" "$label"
+}
+
 # Create an empty session directory with the verdicts/ and verdicts/_meta/
 # subdirectories rc-prepare.sh creates, and print the path. Callers own it and
 # remove it. The _meta split is mirrored here so a hand-built session matches a

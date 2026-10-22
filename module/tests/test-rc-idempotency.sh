@@ -111,7 +111,7 @@ render_report "$s"
 # persona_label and the consolidated_from list never execute at all. Grep for
 # the finding's own location, so this fails the moment the fixture stops
 # reaching the section the test claims to cover.
-if grep -qF 'auth/token.go:1' "$s/report.md"; then
+if grep -qF '<code>auth\/token\.go\:1</code>' "$s/report.md"; then
 	echo "  PASS: the fixture renders a findings section"
 	PASS=$((PASS + 1))
 else

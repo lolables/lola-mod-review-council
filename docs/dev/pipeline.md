@@ -381,6 +381,115 @@ revise it, and the guarantee lives in the data rather than in each caller:
 The verdict word therefore sees an unrevisable HIGH and the review is REQUEST
 CHANGES. The comment table shows the check as "🔗 Symlink check".
 
+## Rendering reviewer prose
+
+Reviewers read a diff the change author controls, so everything a reviewer
+writes is untrusted when it is rendered. A prompt-injected reviewer could
+otherwise make the bot account post markup that closes the comment's
+`<details>` early, hides the rest of the comment in an unclosed `<!--`, forges
+a verdict heading or the hidden marker, pings people, runs a GitLab quick
+action, or embeds a tracking image. The same holds for two strings the
+reviewer does not write: a finding's file path, which the change author names
+(evidence verification only checks that the file exists), and the CI check
+names in `ci-status.txt`, which the forge reports and a pull request can set.
+
+Quoted text is fenced: `evidence_block` prints it inside a fence longer than
+any backtick run in it, so nothing inside can end the block. That covers
+`evidence` in both renderers and, in `report.md` only, the whole of
+`ci-status.txt` after its `# UNTRUSTED` envelope is stripped. Escaping the CI
+status line by line would also escape the script's own heading and table
+rows, so the table would not render either way; the fence shows it verbatim.
+
+Every other untrusted string goes through one jq library,
+`scripts/jq/md-neutralise.jq`, inside the renderer's existing jq call:
+
+| Field | Where | Def |
+|---|---|---|
+| `title` (or the first sentence of `description` standing in for it) | `rc_finding_block` | `rc_md_title` |
+| `description`, `recommendation`, `constraint`, `impact` | `rc_finding_block` | `rc_md_neutralise` |
+| `file` (and `:line`) as printed | `rc_finding_block`, via `link_location` | `rc_md_code` |
+| `file` in the link URL | `rc_finding_block`, then the forge's `rc_url_file` | `@uri` per path segment, `/` kept |
+| TL;DR (`comment-summary.md`, first line) | `rc-render-comment.sh` | `rc_md_title` |
+| folded reviewer `angle`, `recommendation` and `impact` | `rc-render-report.sh` "Also flagged by" | `rc_md_neutralise` |
+| per-agent verdict | `rc-render-report.sh` verdict table | `rc_md_title`, then `\|` to `&#124;` |
+
+`rc_md_code` prints a value as the same inert `<code>` element a code span
+becomes (step 3 below), after folding every line ending to a space; it keeps
+dashes, because a path is verbatim. jq's `@uri` leaves only `A-Z a-z 0-9 - _
+. ~` unencoded, so a space, `(`, `)` or `<` in a path cannot end the link.
+
+The library is not idempotent (`&amp;` becomes `&amp;amp;`), so each field is
+neutralised at exactly one call site. Never neutralise a neutralised string.
+The test `RC-139` in `test-rc-doc-guards.sh` pins those call sites.
+
+If the library cannot load, the comment renderer stops with an error naming
+`md-neutralise.jq` and writes no comment. Rendering on would drop the finding
+whose block failed while the severity counts still named it.
+
+Still printed by the scripts without the library, and why that is safe:
+
+- the line number, severity, counts and the Head SHA: an integer, a fixed
+  enum, script-computed numbers, and 40 lowercase hex characters (any other
+  SHA is left out);
+- persona labels: one fixed label per known persona (`persona_label`);
+- role names and model IDs in the provenance block: checked against an
+  allow-list and shown as `unrecognised` when they fail it
+  (`lib/render-provenance.sh`);
+- the base branch, constitution path, pack names, effort and the report's
+  changed-configuration paths: flattened to one line and printed in a code
+  span sized past every backtick run in them (`rc_md_code_span`);
+- the forge web URL: the recorded host, owner and repo when they pass their
+  patterns, else the host of the checkout's `origin` remote, which the
+  operator configured rather than the change;
+- the run ID on the marker: the session directory's name, left off unless it
+  is in `[A-Za-z0-9._-]`.
+
+What it does to a field, in order:
+
+1. Maps em and en dashes to `-`. This runs first, inside the library, because a
+   line of dashes that the neutraliser passed would otherwise become a setext
+   underline, and `- ## x` a list item holding a live heading.
+2. Folds every line ending a renderer honours (CRLF, lone CR, U+0085, U+2028,
+   U+2029) to `\n`, so the per-line rule below sees the lines the renderer sees.
+3. Finds code spans the way CommonMark pairs backticks and re-emits each as a
+   `<code>` element whose content is text only: `&`, `<` and `>` become
+   entities and every ASCII punctuation character is backslash-escaped.
+4. Outside those elements, `&` becomes `&amp;`, `<` becomes `&lt;`, and every
+   backtick that opens no span becomes `&#96;`. Nothing there can open HTML,
+   decode an entity or pair into a span.
+5. Wraps each `@mention` in `<code>`. A backslash does not stop GitHub linking
+   `\@user`, and an entity stops neither forge. A mention is `@` not preceded
+   by a word character, so `email@example.com` is left alone.
+6. Turns `![` into `!\[`, so an image renders as text and nothing is fetched.
+7. Backslash-escapes the first character of a line that would start a block
+   construct, after any indentation and list markers (`-`, `+`, `*`, `1.`,
+   `1)`): a heading, a blockquote, a tilde fence, a footnote or link reference
+   definition, a GitLab quick action (a line-start `/`), and a line made only
+   of thematic-break, setext-underline or table-delimiter characters. Backtick
+   fences need no rule, because step 4 leaves no unescaped backtick.
+
+Because step 3 emits `<code>`, HTML safety does not depend on finding code
+spans exactly as the renderer does. A span detected where the renderer sees
+none reads oddly, but is never live. Bold, italics, plain links and list
+markers survive.
+
+GitLab quick actions are matched against the raw source of a top-level
+paragraph that starts with `/` (gitlab-org/gitlab
+`lib/gitlab/quick_actions/extractor.rb`), and run `/approve`, `/close`,
+`/label`, `/assign` and the like with the posting token's rights. `\/` cannot
+match and renders `/`.
+
+`rc_md_title` first joins lines (and treats vertical tab and form feed as line
+ends), because a title is printed on one line between `**` markers; it also
+doubles a trailing backslash that would escape the closing `*`.
+
+The rules were checked against GitHub's `POST /markdown` (`mode: gfm`) and
+GitLab's `POST /api/v4/markdown` (`gfm: true`), which render without
+publishing. To add a rule, probe both endpoints first, then pin it in
+`test-rc-jq-programs.sh`. Escaping runs inside `rc_finding_block`, before the
+comment renderer measures each finding block, so it can make paring start
+earlier but cannot push a part past the forge limit.
+
 ## What spec mode reviews
 
 `/review-council specs` scans a fixed set of directories for spec files rather than sweeping the whole tree:

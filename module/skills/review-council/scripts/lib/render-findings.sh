@@ -22,16 +22,17 @@
 RC_FORGE_WEB="${RC_FORGE_WEB:-}"
 RC_HEAD_SHA="${RC_HEAD_SHA:-}"
 
+# Where jq/md-neutralise.jq lives, for `jq -L "$RC_JQ_DIR" 'include
+# "md-neutralise"; …'`. Resolved from this file, not from $0: both renderers
+# source it, and the comment renderer is itself sourced by the poster scripts.
+RC_JQ_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../jq" && pwd)"
+
 # Normalise em/en dashes in LLM-authored prose to the house style. Applied per
 # field rather than to the assembled body: evidence is verbatim source and must
 # keep whatever dashes the file holds, and a body-wide filter made the comment
 # and the report disagree about one finding. Static template text in the
 # renderers is written without those characters in the first place, so it needs
-# no filter at all.
-normalize_dashes() { # text
-	local t="${1//—/-}"
-	printf '%s' "${t//–/-}"
-}
+# no filter at all. Neutralised prose takes the pass inside jq/md-neutralise.jq.
 
 # Strip the `divisor-` prefix and one `-code`/`-spec` suffix from an agent file
 # name. Parameter expansion rather than a sed call: this runs once per finding
@@ -98,18 +99,20 @@ persona_emoji() { # agent-file-name
 }
 
 # Render a finding location as a forge deep-link when a rc_url_file hook is
-# defined AND returns a URL, else a plain code span. Reads $RC_FORGE_WEB /
+# defined AND returns a URL, else the bare code element. Reads $RC_FORGE_WEB /
 # $RC_HEAD_SHA.
-link_location() { # file line
-	local f="$1" l="$2" loc="$1" url=""
-	[[ -n "$l" && "$l" != "null" ]] && loc="$f:$l"
+#
+# The change author names the file, so both arguments arrive already made safe
+# by rc_finding_block's jq call: the location as an inert <code> element
+# (rc_md_code), the path percent-encoded per segment. The hook splices the path
+# into a URL as given, so a raw space, ")" or "<" could otherwise end the link.
+link_location() { # code-element uri-encoded-file line
+	local loc="$1" f="$2" l="$3" url=""
 	declare -F rc_url_file >/dev/null 2>&1 && url=$(rc_url_file "$RC_FORGE_WEB" "$RC_HEAD_SHA" "$f" "$l")
-	# shellcheck disable=SC2016 # the backticks are literal markdown code-span
-	# delimiters, not command substitution.
 	if [[ -n "$url" ]]; then
-		printf '[`%s`](%s)' "$loc" "$url"
+		printf '[%s](%s)' "$loc" "$url"
 	else
-		printf '`%s`' "$loc"
+		printf '%s' "$loc"
 	fi
 }
 
@@ -135,6 +138,8 @@ indent2() {
 # backtick at a time until no run that long occurs anywhere in the evidence.
 # Single-line evidence goes through the same form; it used to render as an
 # inline code span, which any backtick in the quoted source terminates.
+# rc-render-report.sh fences forge-authored CI status through it for the same
+# reason; the two-space indent renders the same at the top level.
 evidence_block() { # evidence-text
 	# shellcheck disable=SC2016 # the backticks are literal markdown fence
 	# delimiters, not command substitution.
@@ -165,6 +170,19 @@ evidence_block() { # evidence-text
 # the per-field form this replaces could not have carried one either, and the
 # framing gives up nothing that was ever available.
 #
+# Reviewer prose is untrusted at render time (the reviewer read a diff the
+# change author controls), so title, description, recommendation, constraint
+# and impact pass through jq/md-neutralise.jq inside this same call, and only
+# here: the library is not idempotent. Evidence does not: it is verbatim source
+# and evidence_block fences it instead. The title takes rc_md_title because it
+# is printed inline on the bullet's line. The library also maps em/en dashes to
+# "-" before neutralising, so the order cannot be got wrong here.
+#
+# The file path is chosen by the change author, not the reviewer, and is just
+# as hostile. Field 0 becomes the path percent-encoded per segment (jq's @uri,
+# "/" kept) for the link URL, and field 9 the printed location ("file:line")
+# as an rc_md_code element. The line is an integer and needs neither.
+#
 # test-rc-render-comment.sh "Test 6b" puts tabs and newlines in five fields at
 # once and fails on every assertion if the framing slips.
 #
@@ -192,7 +210,7 @@ rc_finding_block() { # finding-json [variant=full]
 	# shellcheck disable=SC2312 # The masked status is the point of the check
 	# below: the separator rules out a command substitution, so jq's status is
 	# recovered from the field count rather than from `$?`.
-	mapfile -d '' -t _fields < <(jq -j '
+	mapfile -d '' -t _fields < <(jq -j -L "$RC_JQ_DIR" 'include "md-neutralise";
 		[ .file,
 		  (.line // ""),
 		  (.title // (.description | split(". ")[0] | rtrimstr("."))),
@@ -201,10 +219,23 @@ rc_finding_block() { # finding-json [variant=full]
 		  .description,
 		  .recommendation,
 		  (.constraint // ""),
-		  (.impact // "")
-		] | (map(tostring) | join("\u0000")) + "\u0000"' <<<"$base")
-	if [[ "${#_fields[@]}" -lt 9 ]]; then
-		echo "rc-error: could not read finding fields; malformed finding JSON" >&2
+		  (.impact // ""),
+		  .file
+		] | map(tostring)
+		  | .[9] += (if .[1] == "" then "" else ":" + .[1] end)
+		  | .[0] |= (split("/") | map(@uri) | join("/"))
+		  | .[2] |= rc_md_title
+		  | .[5, 6, 7, 8] |= rc_md_neutralise
+		  | .[9] |= rc_md_code
+		  | join("\u0000") + "\u0000"' <<<"$base")
+	if [[ "${#_fields[@]}" -lt 10 ]]; then
+		# Say which input failed: a library that cannot load fails every
+		# finding, and is fixed in the install, not in findings.json.
+		if ! jq -n -L "$RC_JQ_DIR" 'include "md-neutralise"; empty' 2>/dev/null; then
+			echo "rc-error: could not load the jq library ${RC_JQ_DIR}/md-neutralise.jq" >&2
+		else
+			echo "rc-error: could not read finding fields; malformed finding JSON" >&2
+		fi
 		return 1
 	fi
 	f="${_fields[0]}"
@@ -218,9 +249,8 @@ rc_finding_block() { # finding-json [variant=full]
 	# words to solve a problem the renderer does not have.
 	t="${_fields[2]}"
 	agent="${_fields[3]}"
-	t=$(normalize_dashes "$t")
 	emoji=$(persona_emoji "$agent")
-	loc_link=$(link_location "$f" "$l")
+	loc_link=$(link_location "${_fields[9]}" "$f" "$l")
 	out+="- ${emoji} **${t}** (${loc_link})"$'\n\n'
 
 	# A collapsed finding is a pointer, not a summary: headline and permalink,
@@ -237,12 +267,6 @@ rc_finding_block() { # finding-json [variant=full]
 	rec="${_fields[6]}"
 	constraint="${_fields[7]}"
 	impact="${_fields[8]}"
-	# Prose the reviewer wrote takes the house-style dash pass; `evidence`
-	# deliberately does not (see normalize_dashes).
-	desc=$(normalize_dashes "$desc")
-	rec=$(normalize_dashes "$rec")
-	constraint=$(normalize_dashes "$constraint")
-	impact=$(normalize_dashes "$impact")
 	out+="$(evidence_block "$ev")"$'\n\n'
 	out+=$(printf '💡 **Recommendation:** %s\n' "$rec" | indent2)
 	# Who is hurt, and how, if the change merges as-is. Required on HIGH and

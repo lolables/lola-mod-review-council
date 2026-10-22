@@ -478,7 +478,8 @@ Fills `<!-- CI-COMMENTARY -->`.
 
 The `## Forge CI Status` table is script-owned: `rc-prepare.sh` writes it to
 `ci-status.txt` and `rc-render-report.sh` emits it near the top of the report,
-stripping the `# UNTRUSTED` envelope on the way through. This marker is for
+stripping the `# UNTRUSTED` envelope and fencing the rest verbatim (check names
+are forge-authored). This marker is for
 the one thing no script can derive — whether the CI state changes how the
 findings below should be read:
 

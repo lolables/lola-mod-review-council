@@ -295,10 +295,20 @@ if [[ -f "$ci_status_file" ]]; then
 	# prompt; here it would render as two H1s sitting alongside the report
 	# title. Only an envelope starting at line 1 is stripped, and only up to
 	# its terminating blank line, so a `#` line in a check summary survives.
-	awk 'NR == 1 && /^# UNTRUSTED/ { skip = 1 }
+	#
+	# Check names come from the forge, and a pull request can name its own CI
+	# jobs, so the rest is as hostile as quoted evidence and is fenced the same
+	# way (evidence_block sizes the fence past every backtick run in it).
+	# Neutralising line by line would escape the script's own heading and table
+	# rows too, so the table would not render either way; the fence at least
+	# shows it verbatim.
+	ci_status=$(awk 'NR == 1 && /^# UNTRUSTED/ { skip = 1 }
 	     skip && /^#/ { next }
 	     skip && /^$/ { skip = 0; next }
-	     { print }' "$ci_status_file"
+	     { print }' "$ci_status_file")
+	if [[ -n "$ci_status" ]]; then
+		evidence_block "$ci_status"
+	fi
 	echo ""
 fi
 
@@ -364,9 +374,10 @@ if [[ -f "$evidence_file" ]] && [[ $verified_count -gt 0 ]]; then
 					cf=$(jq -c "(.provenance.consolidated_from // [])[$cidx]" <<<"$base")
 					cf_agent=$(jq -r '.agent' <<<"$cf")
 					cf_sev=$(jq -r '.severity' <<<"$cf")
-					cf_angle=$(jq -r '.angle' <<<"$cf")
-					cf_rec=$(jq -r '.recommendation' <<<"$cf")
-					cf_impact=$(jq -r '.impact // empty' <<<"$cf")
+					# Reviewer-written, so untrusted (jq/md-neutralise.jq).
+					cf_angle=$(jq -r -L "$RC_JQ_DIR" 'include "md-neutralise"; .angle | tostring | rc_md_neutralise' <<<"$cf")
+					cf_rec=$(jq -r -L "$RC_JQ_DIR" 'include "md-neutralise"; .recommendation | tostring | rc_md_neutralise' <<<"$cf")
+					cf_impact=$(jq -r -L "$RC_JQ_DIR" 'include "md-neutralise"; .impact // empty | tostring | rc_md_neutralise' <<<"$cf")
 					cf_label=$(persona_label "$cf_agent")
 					printf '  - %s (%s): %s — %s\n' \
 						"$cf_label" "$cf_sev" "$cf_angle" "$cf_rec${cf_impact:+ — Impact: $cf_impact}"
@@ -398,7 +409,12 @@ if [[ -f "$verdict_map" ]]; then
 	agent_names=$(jq -r '.verdicts | keys[]' "$verdict_map" 2>/dev/null || true)
 	while IFS= read -r agent_name; do
 		[[ -n "$agent_name" ]] || continue
-		verdict=$(jq -r --arg a "$agent_name" '.verdicts[$a] // "UNKNOWN"' "$verdict_map")
+		# The extractor enum-checks verdicts, but this reads findings.json, not
+		# the extractor. A table cell must stay one line with no bare pipe, the
+		# same rule as the comment's deselection reasons.
+		verdict=$(jq -r -L "$RC_JQ_DIR" --arg a "$agent_name" 'include "md-neutralise";
+			.verdicts[$a] // "UNKNOWN" | tostring
+			| rc_md_title | gsub("\\|"; "&#124;")' "$verdict_map")
 		finding_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent==$a)] | length' "$verdict_map")
 		agent_persona=$(persona_label "$agent_name")
 		echo "| $agent_persona | $verdict | $finding_count |"

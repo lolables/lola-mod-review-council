@@ -19,6 +19,7 @@ source "$_RC_RENDER_DIR/lib/render-provenance.sh"
 # calling in:
 #
 #   rc_url_file    <forge_web> <sha> <file> <line>  -> deep-link URL, or empty
+#                  (<file> arrives percent-encoded; splice it in as given)
 #   rc_url_commit  <forge_web> <sha>                -> commit URL,   or empty
 #   rc_comment_limit                                -> max chars per comment
 #
@@ -166,10 +167,20 @@ _rc_variant() { # level severity
 # about which findings.json produced it, so the cache is scoped to one load and
 # _rc_load_findings clears it.
 declare -A _RC_BLOCK=()
+
+# A block that fails to render stops the whole render. Rendering on would
+# publish a comment whose severity counts name a finding it does not show.
+# Exit, not return: no caller checks this status, and the packer's own
+# non-zero return already means "does not fit". rc_finding_block has already
+# said why on stderr.
 _rc_block() { # index variant -> _RC_OUT
-	local key="$1:$2"
+	local key="$1:$2" block
 	if [[ -z "${_RC_BLOCK[$key]+set}" ]]; then
-		_RC_BLOCK[$key]="$(rc_finding_block "${_RC_F_JSON[$1]}" "$2")"$'\n\n'
+		if ! block="$(rc_finding_block "${_RC_F_JSON[$1]}" "$2")"; then
+			echo "rc-error: finding $(($1 + 1)) did not render; no comment written" >&2
+			exit 1
+		fi
+		_RC_BLOCK[$key]="${block}"$'\n\n'
 	fi
 	_RC_OUT="${_RC_BLOCK[$key]}"
 }
@@ -320,7 +331,13 @@ rc_render_comment_body() { # session_dir body_file
 	tldr="Automated review complete."
 	if [[ -f "$session_dir/comment-summary.md" ]]; then
 		tldr=$(head -n1 "$session_dir/comment-summary.md")
-		tldr=$(normalize_dashes "$tldr")
+		# Model-written, so untrusted like finding prose (jq/md-neutralise.jq).
+		# rc_md_title, not rc_md_neutralise: it is printed inline after
+		# "**TL;DR:**" at column 0, where a lone CR would start a new line.
+		if ! tldr=$(jq -Rr -L "$RC_JQ_DIR" 'include "md-neutralise"; rc_md_title' <<<"$tldr"); then
+			echo "rc-error: could not load the jq library ${RC_JQ_DIR}/md-neutralise.jq; no comment written" >&2
+			exit 1
+		fi
 	fi
 
 	# Neutral facts: head SHA and forge web host (parsed from the origin remote

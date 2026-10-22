@@ -1257,8 +1257,8 @@ else
 	echo "  PASS: no guessed host"
 	PASS=$((PASS + 1))
 fi
-# shellcheck disable=SC2016 # a literal markdown code span in the expected output
-if grep -qF '`auth/token.go:1`' "$sess/comment-body.md"; then
+# The headline wraps the location in parentheses; a linked one would open "([".
+if grep -qF '(<code>auth\/token\.go\:1</code>)' "$sess/comment-body.md"; then
 	echo "  PASS: the finding degraded to a plain code span"
 	PASS=$((PASS + 1))
 else
@@ -1372,6 +1372,30 @@ result=$(post "$sess" "$st")
 assert_json_field "$result" "status" "error" "status is error"
 no_writes "$st" "nothing written to the merge request"
 rm -rf "$sess" "$st"
+
+echo "Test P1: a change-author-named path is inert link text and an encoded URL"
+# The change author names the file, so this poster's rc_url_file must receive
+# the path percent-encoded and the link text must be inert code.
+sess=$(mktemp -d)
+make_review_session "$sess" gitlab 7 "$GL_ORIGIN"
+# shellcheck disable=SC2016 # a jq program; the backticks are part of the path.
+jq '.verified[0].file = "a`</details><img src=x>@octocat`.md" |
+    .verified += [.verified[0] | .file = "src/a b.go" | .line = 3 | .title = "Second"]' \
+	"$sess/verdicts/findings.json" >"$sess/verdicts/fj.tmp" && mv "$sess/verdicts/fj.tmp" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+body=$(cat "$sess/comment-body.md")
+opens=$(grep -oF "<details>" <<<"$body" | wc -l)
+closes=$(grep -oF "</details>" <<<"$body" | wc -l)
+assert_equals "$closes" "$opens" "<details> stays balanced"
+assert_match_count "$body" "0" "no live image" -F '<img'
+# shellcheck disable=SC2001 # [^<]* must stop at a newline; ${//} cannot bound it per line.
+code_free=$(sed 's#<code>[^<]*</code>##g' <<<"$body")
+assert_match_count "$code_free" "0" "no live mention" -E '(^|[^A-Za-z0-9_])@octocat'
+assert_match_count "$body" "1" "the hostile path is encoded in a GitLab blob URL" \
+	-E '\]\(https://gitlab\.example\.com/acme/widgets/-/blob/[0-9a-f]{40}/a%60%3C/details%3E%3Cimg%20src%3Dx%3E%40octocat%60\.md#L1\)'
+assert_match_count "$body" "1" "a path with a space links to its encoded GitLab URL" \
+	-E '\[<code>src\\/a b\\\.go\\:3</code>\]\(https://gitlab\.example\.com/acme/widgets/-/blob/[0-9a-f]{40}/src/a%20b\.go#L3\)'
+rm -rf "$sess"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

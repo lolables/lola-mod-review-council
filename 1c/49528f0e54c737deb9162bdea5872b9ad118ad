@@ -1,0 +1,43 @@
+.lola-eval/tests/case-007-go-fail-open/prompt.md
+  s_bddba429b402eb::t_49a9fa55910dce 1,3-6
+.lola-eval/tests/case-007-go-fail-open/rubric.md
+  s_bddba429b402eb::t_a9d6e726a75a1f 15-26,39-43,58-60,66-69,95-96,98-100
+.lola-eval/tests/case-007-go-fail-open/starter/README.md
+  s_bddba429b402eb::t_0a8b3fb6a96f85 10,19
+.lola-eval/tests/case-007-go-fail-open/starter/config.go
+  s_bddba429b402eb::t_d8cb42607dd1a1 14,33-34
+.lola-eval/tests/case-007-go-fail-open/starter/handlers.go
+  s_bddba429b402eb::t_f5104cc4b856c1 78
+.lola-eval/tests/case-007-go-fail-open/task.yaml
+  s_bddba429b402eb::t_f2fdf0815bd99a 3-11,16-22,35
+.taskfiles/lola-eval.yml
+  s_bddba429b402eb::t_f296fb5c39f25c 130,137-138
+.lola-eval/tests/case-007-go-fail-open/scaffold.sh
+  s_281e17ca56b94e::t_51471790428563 1-179
+.lola-eval/tests/case-007-go-fail-open/starter/auth.go
+  s_281e17ca56b94e::t_157bb73ff04d12 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c49528f0e54c737deb9162bdea5872b9ad118ad",
+  "prompts": {},
+  "sessions": {
+    "s_281e17ca56b94e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a748234446474ff61",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_bddba429b402eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c59ceab-a0dd-44c3-9371-f9275793ecfe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

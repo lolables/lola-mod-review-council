@@ -1,0 +1,50 @@
+.taskfiles/scripts/mutate-check.sh
+  h_4db53f42b9be42 1692-1724
+README.md
+  h_4db53f42b9be42 401-410
+docs/dev/pipeline.md
+  h_4db53f42b9be42 384-492
+module/AGENTS.md
+  h_4db53f42b9be42 49-58
+module/skills/review-council/phases/report.md
+  h_4db53f42b9be42 481-482
+module/skills/review-council/references/forge-adapters.md
+  h_4db53f42b9be42 275-279
+module/skills/review-council/scripts/jq/md-neutralise.jq
+  h_4db53f42b9be42 1-239
+module/skills/review-council/scripts/lib/render-findings.sh
+  h_4db53f42b9be42 25-29,35,102,104-110,113,115,141-142,173-185,213,222-238,253
+module/skills/review-council/scripts/rc-render-comment.sh
+  h_4db53f42b9be42 22,170-175,177,179-183,334-340
+module/skills/review-council/scripts/rc-render-report.sh
+  h_4db53f42b9be42 298-305,308-311,377-380,412-417
+module/tests/e2e/pipeline.venom.yml
+  h_4db53f42b9be42 31-34
+module/tests/helpers.sh
+  h_4db53f42b9be42 165-181
+module/tests/test-rc-doc-guards.sh
+  h_4db53f42b9be42 2759-2816
+module/tests/test-rc-idempotency.sh
+  h_4db53f42b9be42 114
+module/tests/test-rc-jq-programs.sh
+  h_4db53f42b9be42 248-473
+module/tests/test-rc-post-comment-github.sh
+  h_4db53f42b9be42 1358-1381
+module/tests/test-rc-post-comment-gitlab.sh
+  h_4db53f42b9be42 1260-1261,1376-1399
+module/tests/test-rc-render-comment.sh
+  h_4db53f42b9be42 17,143-147,238-240,330-331,335,483,646-796
+module/tests/test-rc-render-report.sh
+  h_4db53f42b9be42 605,612,625,634-653,1097,1111-1112,1146-1208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "733e3a1701e02fac6a5c91272dabe9062fe8e812",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+.taskfiles/scripts/mutate-check.sh
+  s_bddba429b402eb::t_8555a10d4cf7dd 1754-1767
+docs/dev/pipeline.md
+  s_bddba429b402eb::t_5f1991fc8fb904 185-186,248,277-278,294,321-322
+module/skills/review-council/phases/disposition.md
+  s_bddba429b402eb::t_4216899c58c412 45-49,308-309,312-313,352-354
+module/skills/review-council/references/pipeline-states.md
+  s_bddba429b402eb::t_5e33610fefc659 22
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_bddba429b402eb::t_dcf143c57b67a5 16-18,26-30,70,91-96,153,178-180,182,186-192
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_bddba429b402eb::t_8fee0c5b6f37ae 38,41-42
+module/tests/test-rc-check-disposition.sh
+  s_bddba429b402eb::t_bc1f4eb686748e 254,465,483-484,489,513-557
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4309edd5309cc78f2d81f1142a851ddf17fd1fbf",
+  "prompts": {},
+  "sessions": {
+    "s_bddba429b402eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c59ceab-a0dd-44c3-9371-f9275793ecfe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+module/tests/test-rc-post-comment-github.sh
+  s_8bb78e404a1ace::t_d6360304283334 1373
+module/tests/e2e/pipeline.venom.yml
+  s_8bb78e404a1ace::t_47262070def5ab 31-34
+module/tests/test-rc-render-comment.sh
+  s_8bb78e404a1ace::t_d6360304283334 679,745
+module/tests/test-rc-post-comment-gitlab.sh
+  s_8bb78e404a1ace::t_d6360304283334 1391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b9f5500f19f76177687ae186ee141a183f252d8",
+  "prompts": {},
+  "sessions": {
+    "s_8bb78e404a1ace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d5f082c-108e-4469-a827-f9dc2c3b57c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

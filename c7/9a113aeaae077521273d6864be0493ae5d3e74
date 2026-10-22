@@ -1,0 +1,48 @@
+module/tests/test-rc-doc-guards.sh
+  s_8bb78e404a1ace::t_1ed51b0b7341c0 441-458
+  s_8bb78e404a1ace::t_9d0dde936439d3 459
+.taskfiles/scripts/mutate-check.sh
+  s_8bb78e404a1ace::t_a9d6428c662f85 1740-1746
+docs/dev/pipeline.md
+  s_8bb78e404a1ace::t_3686396eb55d34 25,171-175,184-185,225,267-269,275,288,309
+module/skills/review-council/SKILL.md
+  s_8bb78e404a1ace::t_d1c74e46b4e98e 224,232-237,867-871,877,940-944
+module/skills/review-council/phases/disposition.md
+  s_8bb78e404a1ace::t_eaa8b912ecc95a 304-313,320-323,327,337-339,343-349,382
+module/skills/review-council/phases/verify.md
+  s_8bb78e404a1ace::t_5f6cafeff711de 126-128,391,624,714-715,717-734,736,743-753
+module/skills/review-council/references/pipeline-states.md
+  s_8bb78e404a1ace::t_e05ff7eb7d1ef7 17,19-22
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_8bb78e404a1ace::t_e4619d6fb9ec07 8,16-20,123,129
+module/skills/review-council/scripts/jq/recompute-verdicts.jq
+  s_8bb78e404a1ace::t_f58af0ae025620 5-7
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_8bb78e404a1ace::t_d32252b8694e2c 23-30,64,102-103,138-152,157-171,174
+module/skills/review-council/scripts/rc-recompute-verdicts.sh
+  s_8bb78e404a1ace::t_f372dbb703f694 15-17
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_8bb78e404a1ace::t_0f28d14a8a30c9 10-12
+module/tests/e2e/lib/rc-pipeline.yml
+  s_8bb78e404a1ace::t_47b52ec2657bda 53-54
+module/tests/test-rc-check-disposition.sh
+  s_8bb78e404a1ace::t_1208810ba3ca34 251-253,256,260-264,437-479
+module/tests/test-rc-pipeline.sh
+  s_8bb78e404a1ace::t_9dc40c042e1773 115-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c79a113aeaae077521273d6864be0493ae5d3e74",
+  "prompts": {},
+  "sessions": {
+    "s_8bb78e404a1ace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d5f082c-108e-4469-a827-f9dc2c3b57c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

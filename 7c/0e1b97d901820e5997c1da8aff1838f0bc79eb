@@ -1,0 +1,37 @@
+.lola-eval/tests/case-007-go-fail-open/starter/go.mod
+  s_8bb78e404a1ace::t_6ddf57d3d0fc63 1-3
+.lola-eval/tests/case-007-go-fail-open/starter/config.go
+  s_8bb78e404a1ace::t_11b18556415461 1-39
+.lola-eval/tests/case-007-go-fail-open/starter/README.md
+  s_8bb78e404a1ace::t_2906ef4f04904f 1-22
+.lola-eval/tests/case-007-go-fail-open/starter/config.example.json
+  s_8bb78e404a1ace::t_f910d9e97aa02f 1-4
+.lola-eval/tests/case-007-go-fail-open/rubric.md
+  s_8bb78e404a1ace::t_319132e451b2dd 1-121
+.lola-eval/tests/case-007-go-fail-open/starter/handlers.go
+  s_8bb78e404a1ace::t_a18558e3031a58 1-108
+.lola-eval/tests/case-007-go-fail-open/starter/main.go
+  s_8bb78e404a1ace::t_fb0103470eb6b1 1-29
+.lola-eval/tests/case-007-go-fail-open/prompt.md
+  s_8bb78e404a1ace::t_bb99cc3b4a4b00 1-5
+.lola-eval/tests/case-007-go-fail-open/starter/.gitignore
+  s_8bb78e404a1ace::t_aaca4127fb8162 1-5
+.lola-eval/tests/case-007-go-fail-open/task.yaml
+  s_8bb78e404a1ace::t_3986249b23b97b 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c0e1b97d901820e5997c1da8aff1838f0bc79eb",
+  "prompts": {},
+  "sessions": {
+    "s_8bb78e404a1ace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d5f082c-108e-4469-a827-f9dc2c3b57c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

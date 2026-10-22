@@ -1,0 +1,21 @@
+module/agents/divisor-adversary-code.md
+  s_8bb78e404a1ace::t_75e3fb3a07b78c 7,65,76-79,121-142,154,158,181
+module/tests/test-rc-doc-guards.sh
+  s_8bb78e404a1ace::t_23b6b1d2f1d013 47,2818-2847
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2c78b590f61e00d880a358152ae9550f39340a0",
+  "prompts": {},
+  "sessions": {
+    "s_8bb78e404a1ace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d5f082c-108e-4469-a827-f9dc2c3b57c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

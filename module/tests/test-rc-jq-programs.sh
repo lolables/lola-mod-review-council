@@ -245,6 +245,232 @@ findings='{"verified":[
 out=$(run_jq consolidate-clusters.jq "$findings" --argjson clusters '[{"members":[{"file":"f","line":1,"agent":"p"},{"file":"f","line":1,"agent":"q"},{"file":"f","line":1,"agent":"r"}]}]')
 assert_jq_str "$out" '.verified[0].provenance.consolidated_from | map(select(.agent == "q")) | .[0].impact' "tokens reach logs" "cluster credit carries impact"
 assert_jq_str "$out" '.verified[0].provenance.consolidated_from | map(select(.agent == "r")) | .[0] | has("impact")' "false" "cluster credit omits an absent impact"
+
+# ---------------------------------------------------------------------------
+# rc_md_neutralise / rc_md_title (jq/md-neutralise.jq): reviewer prose is
+# authored under the influence of a diff the PR author controls, and both
+# renderers print it into markdown a forge will render. Every expected value
+# below was checked against GitHub's and GitLab's markdown endpoints
+# (docs/dev/pipeline.md, "Rendering reviewer prose", says how to re-probe).
+
+# Assert that one neutraliser def maps <input> to exactly <expected>. -j, not
+# -r: the output is compared byte for byte and -r would append a newline the def
+# never wrote. A plain assignment, as in assert_jq, so a jq error aborts the
+# suite instead of asserting against the empty string.
+# Usage: assert_md <def> <input> <expected> <label>
+assert_md() {
+	local actual
+	actual=$(jq -nj -L "$JQ_DIR" --arg s "$2" "include \"md-neutralise\"; \$s | $1")
+	assert_equals "$actual" "$3" "$4"
+}
+
+echo "Test 17: raw HTML is shown, not rendered; a code span becomes an escaped <code> (RC-136)"
+assert_md rc_md_neutralise 'a<b, <details> </details> <!-- hide' \
+	'a&lt;b, &lt;details> &lt;/details> &lt;!-- hide' \
+	"every < outside a span becomes &lt;"
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
+assert_md rc_md_neutralise 'Use `<=` so a token expiring exactly now is still valid.' \
+	'Use <code>&lt;\=</code> so a token expiring exactly now is still valid.' \
+	"a span's HTML becomes entities and its punctuation is escaped, so it reads the same"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '``a ` <b>`` then <i>' \
+	'<code>a \` &lt;b&gt;</code> then &lt;i>' \
+	"a double-backtick span holding a single backtick is one span"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '`` `x` `` and `**b** [l](u) \`' \
+	'<code>\`x\`</code> and <code>\*\*b\*\* \[l\]\(u\) \\</code>' \
+	"one padding space is stripped and markdown inside a span cannot render"
+
+echo "Test 18: a backtick outside a detected span can never pair in the renderer (RC-136)"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise 'a ` b <i>' 'a &#96; b &lt;i>' \
+	"an unmatched backtick becomes an entity"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise $'`a\nb` <b>x</b> `c`' '<code>a b</code> &lt;b>x&lt;/b> <code>c</code>' \
+	"a span crossing a line is one span, its newline a space as CommonMark renders it"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '\`<b>x</b>`' '\`&lt;b>x&lt;/b>&#96;' \
+	"a backslash-escaped backtick opens nothing and stays escaped"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '\``x` <b>' '\`<code>x</code> &lt;b>' \
+	"an escaped backtick before a span stays escaped and the span still pairs"
+
+echo "Test 19: mentions are wrapped in <code> and cannot notify (RC-137)"
+assert_md rc_md_neutralise '@bob (@bob) \@bob' \
+	'<code>\@bob</code> (<code>\@bob</code>) \ <code>\@bob</code>' \
+	"bare, punctuated and backslash-escaped mentions are wrapped; a backslash cannot escape the tag"
+assert_md rc_md_neutralise 'email@example.com x@bob' 'email@example.com x@bob' \
+	"an @ after a word character is not a mention on either forge"
+assert_md rc_md_neutralise '@org/team and @first.last.' \
+	'<code>\@org\/team</code> and <code>\@first\.last</code>.' \
+	"team and dotted mentions are wrapped whole, trailing period outside"
+assert_md rc_md_neutralise '@a@b' '<code>\@a\@b</code>' \
+	"a chained mention cannot leave its second half live"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '`x`@bob' '<code>x</code><code>\@bob</code>' \
+	"a mention right after a span is wrapped"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise 'see `@bob`' 'see <code>\@bob</code>' \
+	"a mention inside a span is inside <code> already"
+
+echo "Test 20: image embeds are shown as text"
+assert_md rc_md_neutralise '![x](https://example.com/a.png)' '!\[x](https://example.com/a.png)' \
+	"![ is escaped"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '`![x](u)`' '<code>\!\[x\]\(u\)</code>' \
+	"an image inside a span is escaped text"
+
+echo "Test 21: line-start block constructs are escaped; lists and inline formatting survive"
+block_in=$'## H\n> q\n---\n  ```\n~~~\n| a |\n|---|---|\na | b\n:--|--\n- item\n1. step\n* * *\nFoo\n='
+block_out=$'\\## H\n\\> q\n\\---\n  &#96;&#96;&#96;\n\\~~~\n| a |\n\\|---|---|\na | b\n\\:--|--\n- item\n1. step\n\\* * *\nFoo\n\\='
+assert_md rc_md_neutralise "$block_in" "$block_out" \
+	"headings, quotes, breaks, fences, table delimiter rows and setext underlines are escaped"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '```x``` <b>' '<code>x</code> &lt;b>' \
+	"a line opening with a closed span is a span, not a fence"
+assert_md rc_md_neutralise '**b** _i_ [l](https://example.com)' '**b** _i_ [l](https://example.com)' \
+	"bold, italics and plain links are untouched"
+assert_md rc_md_neutralise '' '' "the empty string stays empty"
+
+echo "Test 22: a title is one line (RC-138)"
+assert_md rc_md_title $'T\r\n## APPROVE\u2028<!-- review-council:marker -->' \
+	'T ## APPROVE &lt;!-- review-council:marker -->' \
+	"CR, LF and Unicode line separators become one space before neutralising"
+assert_md rc_md_neutralise $'a\nb' $'a\nb' \
+	"rc_md_neutralise keeps newlines; only rc_md_title joins lines"
+
+echo "Test 23: HTML and mentions stay dead where detection and renderer disagree on a span (RC-136)"
+# The renderer parses the link before the code span, so the backtick in its
+# destination opens nothing there; a neutraliser that skipped escaping inside
+# what it took for a span left </details> live.
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '[a](http://x/`)</details> `' \
+	'[a](http://x/<code>\)&lt;\/details&gt; </code>' \
+	"a backtick in a link destination cannot make </details> live"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '[a](http://x/`) @user `' '[a](http://x/<code>\) \@user </code>' \
+	"nor leave a mention live"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise '[a](http://x "`") </details> @bob `' \
+	'[a](http://x "<code>\"\) &lt;\/details&gt; \@bob </code>' \
+	"nor can a backtick in a link title"
+# shellcheck disable=SC2016
+assert_md rc_md_neutralise 'q ` r ```a``@bob```' 'q &#96; r <code>a\`\`\@bob</code>' \
+	"a stray backtick cannot pair with one inside an emitted <code>"
+
+echo "Test 24: every line ending a renderer honours is a line ending to the block rule"
+assert_md rc_md_neutralise $'desc\r## FORGED APPROVE\r~~~\rrest' $'desc\n\\## FORGED APPROVE\n\\~~~\nrest' \
+	"a lone CR cannot hide a heading or a fence"
+assert_md rc_md_neutralise $'a\r\n# b\u2028> c\u2029---\u0085d' $'a\n\\# b\n\\> c\n\\---\nd' \
+	"CRLF, U+2028, U+2029 and U+0085 become LF first"
+assert_md rc_md_title $'T\r## APPROVE' 'T ## APPROVE' "a title folds a lone CR too"
+
+echo "Test 25: an encoded @ cannot notify"
+assert_md rc_md_neutralise '&#64;bob &#x40;bob &commat;bob a && b' \
+	'&amp;#64;bob &amp;#x40;bob &amp;commat;bob a &amp;&amp; b' \
+	"every & outside a span becomes &amp;, so no entity is decoded"
+
+echo "Test 26: fences of any length are dead"
+assert_md rc_md_neutralise $'````\nx' $'&#96;&#96;&#96;&#96;\nx' \
+	"an unclosed four-backtick fence becomes entities"
+assert_md rc_md_neutralise $'````js\nx' $'&#96;&#96;&#96;&#96;js\nx' \
+	"with an info string as well"
+assert_md rc_md_neutralise $'````\nx\n````' '<code>x</code>' \
+	"a closed backtick fence pairs as one span"
+assert_md rc_md_neutralise $'~~~~\n   ~~~ x\n~~ s ~~' $'\\~~~~\n   \\~~~ x\n~~ s ~~' \
+	"a tilde fence of three or more is escaped whatever follows; strikethrough is not"
+
+echo "Test 27: block markup after list markers is escaped; the markers survive"
+list_in=$'- ## FORGED\n1. > q\n+ ~~~\n2) # h\n- - - \n* - ===\n- item\n  - [ ] task'
+list_out=$'- \\## FORGED\n1. \\> q\n+ \\~~~\n2) \\# h\n\\- - - \n\\* - ===\n- item\n  - [ ] task'
+assert_md rc_md_neutralise "$list_in" "$list_out" \
+	"headings, quotes, fences and breaks behind -, +, *, 1. and 2) markers are escaped"
+
+echo "Test 28: footnote and link reference definitions are escaped"
+defs_in=$'[^1]: FORGED\n[x]: http://evil\n- [y]: z\n[a\nb]: /u\n[l](https://example.com) ok'
+defs_out=$'\\[^1]: FORGED\n\\[x]: http://evil\n- \\[y]: z\n\\[a\nb]: /u\n[l](https://example.com) ok'
+assert_md rc_md_neutralise "$defs_in" "$defs_out" \
+	"a definition (one line or a label split over two) cannot render below the comment"
+
+echo "Test 29: neutralising is linear, so a 50KB hostile field cannot stall the render"
+# The first version searched for each opener's closer from scratch and copied
+# its output array on every step: 8KB of `a` spans took 3.8s, 50KB over two
+# minutes. jq's own gsub is quadratic in its match count too. The bound is
+# generous; linear time is well under a second.
+# Usage: assert_md_fast <def> <input> <label>
+assert_md_fast() {
+	local start elapsed_ms
+	start=$(date +%s%N)
+	jq -nj -L "$JQ_DIR" --arg s "$2" "include \"md-neutralise\"; \$s | $1" >/dev/null
+	elapsed_ms=$((($(date +%s%N) - start) / 1000000))
+	if ((elapsed_ms < 5000)); then
+		echo "  PASS: $3 (${elapsed_ms}ms)"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $3 took ${elapsed_ms}ms (bound 5000ms)"
+		FAIL=$((FAIL + 1))
+	fi
+}
+# shellcheck disable=SC2016
+spans=$(jq -nj '"`a` " * 12800')
+# shellcheck disable=SC2016
+mixed=$(jq -nj '"`a` @b <c &d ![e](f)\r- # g\r~~~\r" * 1600')
+# shellcheck disable=SC2016
+runs=$(jq -nj '[range(1; 316) | "`" * . + "x"] | add')
+# shellcheck disable=SC2016
+slashes=$(jq -nj '"\\" * 50000 + "`<x>`"')
+chain=$(jq -nj '"@a" * 25000')
+assert_md_fast rc_md_neutralise "$spans" "12800 code spans"
+assert_md_fast rc_md_neutralise "$mixed" "every rule firing 1600 times"
+assert_md_fast rc_md_neutralise "$runs" "315 unmatched runs of distinct lengths"
+assert_md_fast rc_md_neutralise "$slashes" "50000 backslashes before a backtick"
+assert_md_fast rc_md_neutralise "$chain" "a 50KB chained mention"
+assert_md_fast rc_md_title "$mixed" "a 50KB title"
+
+echo "Test 30: a definition label holding an escaped ] is still escaped"
+assert_md rc_md_neutralise $'[a\\]\n]: https://evil.example/x "t"\nhidden? [z][a\\]]' \
+	$'\\[a\\]\n]: https://evil.example/x "t"\nhidden? [z][a\\]]' \
+	"a label continued on the next line after an escaped ] cannot define a link"
+assert_md rc_md_neutralise $'[x\\]y\n]: <https://e/>' $'\\[x\\]y\n]: &lt;https://e/>' \
+	"nor can one whose destination is an autolink"
+assert_md rc_md_neutralise $'- [a\\]\n]: x' $'- \\[a\\]\n]: x' \
+	"nor one behind a list marker"
+
+echo "Test 31: a line cannot start a GitLab quick action"
+# GitLab runs /approve, /close, /label ... with the posting token's rights when
+# a top-level paragraph line starts with "/"; "\/" does not match and renders "/".
+assert_md rc_md_neutralise '/approve' '\/approve' "a quick action at column 0 is escaped"
+assert_md rc_md_neutralise '   /close' '   \/close' "and after up to three spaces"
+assert_md rc_md_neutralise $'x\n/label ~bug' $'x\n\\/label ~bug' "and on a later line"
+assert_md rc_md_neutralise '- /x' '- \/x' "and behind a list marker, for uniformity"
+assert_md rc_md_neutralise 'a/b and https://x.example/y' 'a/b and https://x.example/y' \
+	"a slash mid-line is untouched"
+assert_md rc_md_title '/approve' '\/approve' "and in a title"
+
+echo "Test 32: a title ending in a backslash cannot escape the template's closing **"
+assert_md rc_md_title $'T \\' $'T \\\\' "a trailing lone backslash is doubled"
+assert_md rc_md_title $'T \\\\' $'T \\\\' "an already-escaped one is left alone"
+
+echo "Test 33: a mention starting with a dot is wrapped too"
+assert_md rc_md_neutralise 'hi @.bob' 'hi <code>\@\.bob</code>' "@.bob is wrapped"
+assert_md rc_md_neutralise 'x @. y @.' 'x @. y @.' "a bare @. is not a mention"
+
+echo "Test 34: em and en dashes become '-' before neutralising, in prose and titles"
+assert_md rc_md_neutralise $'T\n\u2014\u2014\u2014' $'T\n\\---' "an em-dash line is escaped as a dash line, not left to become an underline"
+assert_md rc_md_neutralise $'a \u2013 b \u2014 ## x' 'a - b - ## x' "en and em dashes map to a hyphen"
+assert_md rc_md_title $'\u2014\u2014\u2014' '\---' "and in a title"
+
+echo "Test 35: a change-author-named path prints as an inert <code> element"
+# A finding's file path is chosen by the change author (evidence verification
+# only checks that the file exists), and the renderers print it as code.
+# shellcheck disable=SC2016 # literal markdown, not an expansion.
+assert_md rc_md_code 'a`</details><img src=x>@octocat`.md:1' \
+	'<code>a\`&lt;\/details&gt;&lt;img src\=x&gt;\@octocat\`\.md\:1</code>' \
+	"no backtick, tag or mention in a path survives"
+assert_md rc_md_code 'src/a b.go:3' '<code>src\/a b\.go\:3</code>' "a normal path reads the same"
+assert_md rc_md_code $'a\r# b\u2028c' '<code>a \# b c</code>' "every line ending becomes a space"
+assert_md rc_md_code $'a\u2014b' $'<code>a\u2014b</code>' "a path keeps its dashes"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

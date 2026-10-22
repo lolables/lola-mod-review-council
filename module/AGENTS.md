@@ -46,3 +46,13 @@ Rules:
    scripts from structured data — never hand-formatted by the model per forge.
    The model contributes prose (a narrative, a one-line summary); scripts own
    structure.
+5. **Reviewer prose is untrusted at render time.** Reviewers read diffs the
+   change author controls, so a prompt-injected reviewer can put markup in any
+   field it writes. Scripts pass every reviewer-written field through
+   `rc_md_neutralise` (`scripts/jq/md-neutralise.jq`) before printing it, and
+   new call sites must too. Extend that library; never escape at a call site.
+   The file path a finding names is chosen by the change author, so it is
+   printed through `rc_md_code` and percent-encoded in link URLs. Quoted text
+   is fenced instead: evidence, and in the report the forge-authored
+   `ci-status.txt`. If the library cannot load, the render stops rather than
+   drop a finding.

@@ -272,9 +272,11 @@ script defines before calling in:
 | `rc_url_commit`    | `forge_web sha`           | commit URL, or empty         | `${web}/commit/${sha}`                | `${web}/-/commit/${sha}`                  |
 | `rc_comment_limit` | none                      | max characters per comment   | `65536`                               | `1000000`                                 |
 
-When a URL hook is undefined (standalone fallback) or returns empty (e.g. no
-head SHA), the renderer emits a plain `` `code span` `` / plain short-sha. That
-is the entire per-forge URL surface.
+`file` arrives percent-encoded per path segment (`/` kept), because the change
+author names the file; a hook splices it in as given. When a URL hook is
+undefined (standalone fallback) or returns empty (e.g. no head SHA), the
+renderer emits the location unlinked, as an inert `<code>` element / plain
+short-sha. That is the entire per-forge URL surface.
 
 `rc_comment_limit` is a **fact about the API**, not a policy. GitHub rejects an
 issue comment over 65,536 characters, and a 30-finding review already renders

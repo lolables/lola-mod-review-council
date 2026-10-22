@@ -398,6 +398,16 @@ An ID or name that is not a plain identifier is shown as `unrecognised` rather
 than printed; a branch name, constitution path or pack name is shown inside a
 code span nothing in it can close.
 
+**Reviewer text is displayed, not executed.** Reviewers read the change under
+review, so the council treats what they write as untrusted when it renders the
+comment and `report.md`. In finding text, `@name` mentions appear as code and
+notify nobody, image embeds and raw HTML appear as plain text, and a line that
+would start a heading, quote, table, code block or GitLab quick action appears
+literally. Bold, italics, inline code and links still render. A finding's
+file path, which the change's author chooses, is shown as inert code that still
+links to the file, and `report.md` shows the forge's CI check names as a
+verbatim code block.
+
 GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
 gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is
 absent or the forge is neither, the comment body is rendered to a file and you

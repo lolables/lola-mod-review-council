@@ -28,9 +28,10 @@ testcases:
         assertions:
           - result.content ShouldContainSubstring "## Council Verdict"
           - result.content ShouldContainSubstring "REQUEST CHANGES"
-          # Verified findings are present...
-          - result.content ShouldContainSubstring "cmd/root.go"
-          - result.content ShouldContainSubstring "internal/auth/token.go"
+          # Verified findings are present, their locations rendered through
+          # rc_md_code (single quotes: venom keeps the backslashes literal)...
+          - result.content ShouldContainSubstring '<code>cmd\/root\.go\:4</code>'
+          - result.content ShouldContainSubstring '<code>internal\/auth\/token\.go\:6</code>'
           # ...and discarded ones must not be. Stripping a finding and then
           # printing it is the same failure as never stripping it.
           - result.content ShouldNotContainSubstring "DROP TABLE"

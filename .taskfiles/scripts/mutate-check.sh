@@ -1689,6 +1689,39 @@ check_mutation "RC-133 an unchanged severity is recorded as a calibration" \
 	's/ and \$e\.corrections\.severity != \$f\.severity$//' \
 	test-rc-apply-validation.sh
 
+# Rule 1 of jq/md-neutralise.jq: raw HTML in reviewer prose would let a
+# reviewer close the comment's <details> or hide the rest of it. The "&" in
+# the replacement text is not in the sed pattern, so it needs no escaping.
+check_mutation "RC-136 reviewer prose can carry raw HTML" \
+	jq/md-neutralise.jq \
+	's/_rc_md_replace("<"; "&lt;")/./' \
+	test-rc-jq-programs.sh
+
+# Rule 2: a mention in reviewer prose pings from the bot account.
+check_mutation "RC-137 reviewer prose can ping people" \
+	jq/md-neutralise.jq \
+	's/then _rc_md_mentions else \. end/then . else . end/' \
+	test-rc-jq-programs.sh
+
+# Rule 5 at its call site: the title is printed on the bullet's own line.
+check_mutation "RC-138 a finding title can span lines" \
+	lib/render-findings.sh \
+	's/\.\[2\] |= rc_md_title/.[2] |= rc_md_neutralise/' \
+	test-rc-render-comment.sh
+
+# The change author names a finding's file: printed raw in a code span, a
+# backtick in the path closes it and the rest renders live.
+check_mutation "RC-140 a file path prints as a raw code span" \
+	lib/render-findings.sh \
+	's/\.\[9\] |= rc_md_code/.[9] |= ("`" + . + "`")/' \
+	test-rc-render-comment.sh
+
+# Unencoded, a space, ")" or "<" in the path ends the deep-link URL.
+check_mutation "RC-141 a file path reaches the link URL unencoded" \
+	lib/render-findings.sh \
+	's/split("\/") | map(@uri) | join("\/")/./' \
+	test-rc-post-comment-github.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

@@ -1,0 +1,84 @@
+module/tests/test-rc-doc-guards.sh
+  s_8bb78e404a1ace::t_1ed51b0b7341c0 441-458
+  s_8bb78e404a1ace::t_9d0dde936439d3 459
+.taskfiles/scripts/mutate-check.sh
+  s_8bb78e404a1ace::t_a9d6428c662f85 1740-1746
+  s_8bb78e404a1ace::t_c4c4ea412fdd6b 1747-1753
+  s_bddba429b402eb::t_8555a10d4cf7dd 1754-1767
+docs/dev/pipeline.md
+  s_8bb78e404a1ace::t_3686396eb55d34 25,171-175,226,269-271,279,292,313
+  s_8bb78e404a1ace::t_502a6cfee3bdc6 184
+  s_bddba429b402eb::t_5f1991fc8fb904 185-186,248,277-278,294,321-322
+module/skills/review-council/SKILL.md
+  s_8bb78e404a1ace::t_d1c74e46b4e98e 224,232-237,867-871,877,940-944
+module/skills/review-council/phases/disposition.md
+  s_8bb78e404a1ace::t_eaa8b912ecc95a 306,314-317,324-327,331,341-343,347-350,387
+  s_8bb78e404a1ace::t_2e38db9b59b4f7 310-311
+  s_8bb78e404a1ace::t_502a6cfee3bdc6 307,351
+  s_bddba429b402eb::t_4216899c58c412 45-49,308-309,312-313,352-354
+module/skills/review-council/phases/verify.md
+  s_8bb78e404a1ace::t_5f6cafeff711de 126-128,391,624,714-715,717-734,736,743-753
+module/skills/review-council/references/pipeline-states.md
+  s_8bb78e404a1ace::t_e05ff7eb7d1ef7 17,19-21
+  s_bddba429b402eb::t_5e33610fefc659 22
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_8bb78e404a1ace::t_e4619d6fb9ec07 8,16-20,123,129
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_8bb78e404a1ace::t_d32252b8694e2c 24,69,114-115,157-160,162-170,175-177,181,183-185,195
+  s_8bb78e404a1ace::t_81fb2ff1bb658a 25,31,150-152,154-156,161
+  s_8bb78e404a1ace::t_2e38db9b59b4f7 32-35
+  s_bddba429b402eb::t_dcf143c57b67a5 16-18,26-30,70,91-96,153,178-180,182,186-192
+module/skills/review-council/scripts/rc-recompute-verdicts.sh
+  s_8bb78e404a1ace::t_f372dbb703f694 15-17
+module/skills/review-council/scripts/rc-verify-evidence.sh
+  s_8bb78e404a1ace::t_0f28d14a8a30c9 10-12
+  s_bddba429b402eb::t_8fee0c5b6f37ae 38,41-42
+module/tests/e2e/lib/rc-pipeline.yml
+  s_8bb78e404a1ace::t_47b52ec2657bda 53-54
+module/tests/test-rc-check-disposition.sh
+  s_8bb78e404a1ace::t_1208810ba3ca34 255-256,259,263-267,440,444-464,470,473,474,480-481
+  s_8bb78e404a1ace::t_e4dc94e1c53057 441-443
+  s_8bb78e404a1ace::t_d4b03234df3645 53-55,466-469,471-472,475-479,482,485-488,490-491,492-511
+  s_8bb78e404a1ace::t_2d63300cc5477e 512
+  s_bddba429b402eb::t_bc1f4eb686748e 254,465,483-484,489,513-557
+module/tests/test-rc-pipeline.sh
+  s_8bb78e404a1ace::t_9dc40c042e1773 115-118
+module/tests/test-rc-idempotency.sh
+  s_8bb78e404a1ace::t_a0ab3c710ac99c 189
+.lola-eval/tests/case-023-disposition-false-fix/starter/.rc-session/verdicts/verdicts-map.json
+  s_8bb78e404a1ace::t_e0f6ffb7edb6b8 1-3
+.lola-eval/tests/case-025-disposition-scoping-hint/starter/.rc-session/verdicts/verdicts-map.json
+  s_8bb78e404a1ace::t_e0f6ffb7edb6b8 1-4
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/.rc-session/verdicts/verdicts-map.json
+  s_8bb78e404a1ace::t_e0f6ffb7edb6b8 1-3
+.lola-eval/tests/case-022-disposition-injection/starter/.rc-session/verdicts/verdicts-map.json
+  s_8bb78e404a1ace::t_e0f6ffb7edb6b8 1-3
+.lola-eval/tests/case-024-disposition-true-fix/starter/.rc-session/verdicts/verdicts-map.json
+  s_8bb78e404a1ace::t_e0f6ffb7edb6b8 1-3
+module/skills/review-council/scripts/jq/recompute-verdicts.jq
+  s_8bb78e404a1ace::t_81fb2ff1bb658a 5-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "27a8715419103f7a3a2dc0657cc888165df83166",
+  "prompts": {},
+  "sessions": {
+    "s_8bb78e404a1ace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d5f082c-108e-4469-a827-f9dc2c3b57c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_bddba429b402eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c59ceab-a0dd-44c3-9371-f9275793ecfe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -448,6 +448,35 @@ assert_jq_str "$result" '.corrected' '1' "CRITICAL->HIGH with impact accepted"
 assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F1") | "\(.severity) \(.impact)"' "HIGH callers stall" "F1 lowered with its new impact"
 rm -rf "$s"
 
+echo "Test 25: a severity correction is recorded once in calibrated_from (RC-133)"
+# The arbiter makes every severity change after intake, calibration included,
+# and provenance.calibrated_from is their one audit record: the orchestrator
+# writes verification.txt's SEVERITY CALIBRATION section from it. Only a change
+# of level is recorded. A line fix, or a severity echoed at the level the
+# finding already holds, is not a calibration.
+s=$(mk_session)
+validation "$s" '{"results":[
+ {"id":"F1","file":"a.go","result":"CORRECTED","reason":"needs a misconfiguration the code does not have","corrections":{"severity":"MEDIUM"}},
+ {"id":"F2","file":"b.go","result":"CORRECTED","reason":"the assignment is on line 10","corrections":{"line":10}}]}'
+result=$(bash "$SCRIPT" "$s")
+assert_json_field "$result" "status" "ok" "both corrections applied"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F1") | .provenance.calibrated_from | tojson' \
+	'[{"from":"HIGH","to":"MEDIUM","reason":"needs a misconfiguration the code does not have"}]' \
+	"F1's downgrade recorded with from, to and reason"
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | .provenance | has("calibrated_from")' \
+	"false" "a line-only correction records no calibration"
+bash "$SCRIPT" "$s" --final >/dev/null
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F1") | .provenance.calibrated_from | length' \
+	"1" "a re-run does not record the downgrade twice"
+rm -rf "$s"
+
+s=$(mk_session)
+validation "$s" '{"results":[{"id":"F2","file":"b.go","result":"CORRECTED","reason":"the assignment is on line 10","corrections":{"severity":"MEDIUM","line":10}}]}'
+bash "$SCRIPT" "$s" >/dev/null
+assert_jq_str "$(<"$s/verdicts/findings.json")" '.verified[] | select(.id=="F2") | "\(.line) \(.provenance | has("calibrated_from"))"' \
+	"10 false" "a severity echoed at its own level is not a calibration"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

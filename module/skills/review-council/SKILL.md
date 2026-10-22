@@ -224,12 +224,13 @@ stateDiagram-v2
     Verify --> Render: effort=quick
     Verify --> Render: nothing_to_do (no findings file)
     Verify --> Correction: correctable>0
-    Verify --> Calibrate: correctable=0
+    Verify --> Consolidate: correctable=0
     Correction --> Correction: correction_error (fix corrections.json)
-    Correction --> Calibrate
-    Calibrate --> Validate: verified>0 & not all LOW
-    Calibrate --> Render: nothing to validate & no conversation
-    Calibrate --> Disposition: nothing to validate & conversation
+    Correction --> Consolidate
+    Consolidate --> [*]: consolidate_error (stop)
+    Consolidate --> Validate: verified>0 & not all LOW (arbiter calibrates + validates)
+    Consolidate --> Render: nothing to validate & no conversation
+    Consolidate --> Disposition: nothing to validate & conversation
     Validate --> Render: no conversation
     Validate --> Disposition: conversation
     Disposition --> Render
@@ -798,9 +799,9 @@ verdict; record it per `${PHASES_DIR}/verify.md` whenever it is non-empty.
 **Everything below is the `ok` path.** The `nothing_to_do` arm has already
 left Step 4 for Step 6 — do not fall through into what follows.
 
-**Then, read `${PHASES_DIR}/verify.md`** for the correction round, severity
-calibration, cross-agent consolidation, and validation gate procedures. Run
-these in this order:
+**Then, read `${PHASES_DIR}/verify.md`** for the correction round, cross-agent
+consolidation, and arbiter (severity calibration and validation gate)
+procedures. Run these in this order:
 
 - **Run the correction round (verify.md Step 1) whenever `correctable` is
   greater than 0** — skipped entirely on `quick` effort.
@@ -821,7 +822,6 @@ these in this order:
     says and re-run (nothing was applied).
   - Skip only when there are zero correctable findings — never because *all*
     of an agent's findings are correctable (verify.md "When to skip").
-- Apply severity calibration (LLM judgment on findings severity)
 - **Consolidate cross-agent duplicates (verify.md Step 3c) — SCRIPT-OWNED,
   you MUST run it (standard and deep only).**
   - When 2+ verified findings share a file, judge which describe the same
@@ -830,17 +830,21 @@ these in this order:
     per `${REFERENCES_DIR}/consolidation-schema.json`.
   - Then run: `bash ${SCRIPTS_DIR}/rc-consolidate.sh ${session_dir}`
   - It folds each cluster into one primary finding and is a safe no-op when
-    nothing qualifies. Run it **before** the validation gate so the validator
-    sees the consolidated set.
+    nothing qualifies. Run it **before** the arbiter so it calibrates and
+    validates the consolidated set — one judgement per defect.
   - On `status: "consolidate_error"` the fold would have removed more findings
     than it declared merged, so it was refused and `findings.json` is
     unchanged. Stop the review and report the message verbatim.
   - Do not re-run it and do not proceed to the validation gate: the manifest
     is not what failed, so rewriting it changes nothing, and every later stage
     reads the same document.
-- **Run the validation gate (verify.md Step 4) — outcomes are SCRIPT-APPLIED.**
-  - Dispatch the fresh-context validator over the verified findings, each
-    under its `id`. Save its JSON reply verbatim to
+- **Run the arbiter (verify.md Step 4) — outcomes are SCRIPT-APPLIED.** One
+  dispatch calibrates severity and runs the validation gate.
+  - Dispatch agent type `review-council-arbiter` over the verified findings,
+    each under its `id`. Host without named dispatch, or without that agent:
+    a generic fresh-context subagent with
+    `${AGENTS_DIR}/review-council-arbiter.md` inlined at the top of its
+    prompt (verify.md Step 4, "Dispatch"). Save its JSON reply verbatim to
     `${session_dir}/verdicts/_meta/validation.json`
     (`${REFERENCES_DIR}/validation-schema.json`).
   - Judge each RETRACTED entry: if its `evidence` is assertion, or quotes
@@ -849,8 +853,9 @@ these in this order:
     `--dispute <ids>` (comma-separated) for the noted ids. Never apply an
     outcome by hand: the script ties each one to its finding by `id` and
     echoed `file`, and rejects any that do not tie back.
-  - On `ok`, continue. On `retry`, re-ask the validator about the `pending`
-    ids only, passing each rejected `{id, reason}`; save the reply verbatim,
+  - On `ok`, continue. On `retry`, re-ask the arbiter about the `pending`
+    ids: the same once-per-review inputs, with only those findings, passing
+    each rejected `{id, reason}`; save the reply verbatim,
     then run again with `--final` (plus `--dispute` for any retraction still
     unsupported). Once only.
   - On `validation_error`, nothing was applied: if it names a `--dispute` id
@@ -861,15 +866,15 @@ these in this order:
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
 **Effort-conditional behavior:**
-- **quick**: Skip correction round, severity calibration, cross-agent
-  consolidation, validation gate. Run only `rc-verify-evidence.sh`
+- **quick**: Skip correction round, cross-agent consolidation, arbiter
+  (severity calibration and validation gate). Run only `rc-verify-evidence.sh`
   (mechanical evidence check).
   Proceed directly to Step 5, skipping Step 4.5 (Disposition) — its own
   gate also excludes `quick`, so this is a shortcut, not a divergence.
 - **standard**: Full verification as above.
 - **deep**: Run Steps 1-3 of verify.md per-subsystem (iterate over
-  subdirectories in `${session_dir}/verdicts/`). Then run validation
-  gate once over aggregated findings from all subsystems, providing
+  subdirectories in `${session_dir}/verdicts/`). Then dispatch the arbiter
+  once over aggregated findings from all subsystems, providing
   subsystem map from `${session_dir}/subsystems.json` as context.
 
 **Update tracking:** Set Verification (iteration N) status to `complete`,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end pipeline test: extract -> verify -> consolidate -> render.
+# End-to-end pipeline test: extract -> verify -> consolidate -> arbiter -> render.
 #
 # Every other suite here binds a single script and exercises it alone. That
 # leaves the seams between them untested, and the seams are where defects hide:
@@ -92,9 +92,28 @@ rc=0
 REVIEW_ROOT="$root" bash "$S/rc-verify-evidence.sh" "$session" >/dev/null 2>&1 || rc=$?
 assert_equals "$rc" "0" "re-running verification with clusters.json present exits clean"
 
-echo "Stage 4: render the report"
+echo "Stage 3b: the arbiter calibrates and validates"
 # Restore the consolidated state the re-entrancy check above overwrote.
 bash "$S/rc-consolidate.sh" "$session" >/dev/null
+# One arbiter dispatch calibrates and validates the consolidated set
+# (phases/verify.md Step 4). This reply confirms three findings and raises the
+# wall-clock LOW to MEDIUM. The script applies it by id; the level change must
+# land in calibrated_from, which verification.txt's SEVERITY CALIBRATION
+# section is written from, and in the rendered report (Stage 4).
+cat >"$session/verdicts/_meta/validation.json" <<'JSON'
+{"results":[
+{"id":"F1","file":"internal/mcp/tools.go","result":"CONFIRMED","reason":"line 23 decodes the request body without checking the error"},
+{"id":"F3","file":"cmd/root.go","result":"CONFIRMED","reason":"line 4 matches the description"},
+{"id":"F4","file":"internal/auth/token.go","result":"CORRECTED","reason":"the expiry check gates every authenticated request, so an untestable clock is worth fixing before merge","corrections":{"severity":"MEDIUM"}},
+{"id":"F5","file":"docs/README.md","result":"CONFIRMED","reason":"line 3 matches the description"}
+]}
+JSON
+result=$(bash "$S/rc-apply-validation.sh" "$session")
+assert_json_field "$result" "status" "ok" "every arbiter outcome applied"
+assert_jq "$findings" '[.verified[] | select(.id=="F4") | (.provenance.calibrated_from // [])[] | "\(.from)->\(.to)"] | join(",")' \
+	"LOW->MEDIUM" "the arbiter's severity change is recorded once in calibrated_from"
+
+echo "Stage 4: render the report"
 # The verification log is the orchestrator's artifact, not any script's —
 # phases/verify.md writes it as the record of what was checked and why. Stand in
 # for that here, at the point in the pipeline the orchestrator would, because
@@ -152,6 +171,15 @@ if echo "$report" | grep -qF "**Impact:** An MCP client sending a malformed dele
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the verified HIGH's impact is missing from the report"
+	FAIL=$((FAIL + 1))
+fi
+# The arbiter's calibration reaches the reader as the finding's new level.
+medium_section=$(echo "$report" | sed -n '/^### 🟡 MEDIUM (1)$/,/^### /p')
+if grep -qF "Expiry comparison reads the wall clock directly" <<<"$medium_section"; then
+	echo "  PASS: the calibrated finding renders under MEDIUM"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the calibrated finding is not rendered under MEDIUM"
 	FAIL=$((FAIL + 1))
 fi
 # Per-agent table must reflect verbatim verdicts from the reviewers, under the

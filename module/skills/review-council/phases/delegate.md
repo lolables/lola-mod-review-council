@@ -56,7 +56,7 @@ If orchestrating tool lacks named subagent dispatch, read agent `.md` file from 
 
 ## Tool Profile
 
-Subagents never execute anything from reviewed repository or review tooling — Makefile/Taskfile targets, tests, builds, scripts, interpreter or `jq -f` run on a file they ship; temp copies included. Effect on host unknown. Whether the change works is CI's job, not review's: where forge CI data exists, SKILL.md Step 2.5 hands its results to reviewers instead. Read-only inspection commands stay allowed (`grep`, `find`, `jq` filters, `wc`, `head`, `tail`, `sed -n`, `git log`/`show`/`diff`), with no writes, temp files or redirects. Applies to every subagent this skill dispatches: reviewers, correction round, triage, validator, Disposition, prose.
+Subagents never execute anything from reviewed repository or review tooling — Makefile/Taskfile targets, tests, builds, scripts, interpreter or `jq -f` run on a file they ship; temp copies included. Effect on host unknown. Whether the change works is CI's job, not review's: where forge CI data exists, SKILL.md Step 2.5 hands its results to reviewers instead. Read-only inspection commands stay allowed (`grep`, `find`, `jq` filters, `wc`, `head`, `tail`, `sed -n`, `git log`/`show`/`diff`), with no writes, temp files or redirects. Applies to every subagent this skill dispatches: reviewers, correction round, triage, arbiter (validator), Disposition, prose.
 
 - Host can allowlist shell commands: allow only read-only inspection commands above, no write tools. Two exceptions, neither granting more than its purpose:
   - Curator code reviewer: its sanctioned forge issue query (its own `Tool Access` narrows shell further).

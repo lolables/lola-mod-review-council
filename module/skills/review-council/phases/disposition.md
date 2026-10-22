@@ -55,14 +55,15 @@ gate requires a passing check at any effort, conversation or not.
 Dispatch **one** fresh-context subagent for the whole session — it has not
 seen any prior review phase (delegation, verification, correction,
 calibration, validation). Fresh context matters here for the same reason it
-matters for the Validation Gate: an agent that watched the original findings
+matters for the arbiter (`verify.md` Step 4): an agent that watched the
+original findings
 get produced is primed to defend them; an agent seeing them cold, alongside
 the conversation, judges each claim on its own merits.
 
 **Agent profile:**
 
 - Read-only over the materialized review root (same profile as the
-  Validation Gate — read-only inspection commands; no write, edit, or
+  arbiter — read-only inspection commands; no write, edit, or
   delete of source files; no fetching external resources; no executing
   anything from reviewed repository or review tooling, per `delegate.md`
   "Tool Profile").
@@ -78,13 +79,14 @@ the conversation, judges each claim on its own merits.
     `provenance.disposition.reason`, which holds the quoted scoping hint.
   - Never add, remove, or rewrite a finding's `description`,
     `recommendation`, or `evidence` fields — those belong to the reviewer and
-    validator, not this phase.
+    arbiter, not this phase.
   - Step 4's check (`rc-check-disposition.sh`) audits edits against exactly
     this list; a write outside it means subagent departed from its prompt, and
     the script discards every edit it made.
 - **This phase never changes a finding's `severity`.**
-  - Recalibration belongs to `verify.md` Step 2, which records every level
-    change in `provenance.calibrated_from`; a severity write here would carry
+  - Recalibration belongs to the arbiter (`verify.md` Step 4):
+    `rc-apply-validation.sh` records every level change it makes in
+    `provenance.calibrated_from`; a severity write here would carry
     no such record, because `severity` is not a key in the
     `provenance.disposition` shape and no Step 3 action produces a level
     change.
@@ -396,8 +398,8 @@ applied by the subagent; Step 4, applied by the orchestrator) and
 file `rc-check-disposition.sh` writes. Never write disposition reasoning
 into a finding's prose fields (`description`, `recommendation`), and never
 inject it as an HTML comment anywhere a later render step might emit it
-verbatim — provenance is JSON, not prose, for the same reason `verify.md`'s
-calibration and validator provenance are.
+verbatim — provenance is JSON, not prose, for the same reason the arbiter's
+calibration and validation provenance are.
 
 **Evidence discipline.** Every `resolved` or `kept` disposition quotes the
 source it read (Step 3, rule 2). "The comment says so" is never sufficient

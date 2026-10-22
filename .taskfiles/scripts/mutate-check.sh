@@ -1675,6 +1675,20 @@ check_mutation "RC-131 a corrected impact without a raise to HIGH" \
 	's#^\([[:space:]]*\)or ((\$c | has("impact")) and .*$#\1or false#' \
 	test-rc-apply-validation.sh
 
+# A validator severity correction left no calibration record, so
+# verification.txt's SEVERITY CALIBRATION section had nothing to be written
+# from. The mutant drops the append.
+check_mutation "RC-133 a severity correction is not recorded in calibrated_from" \
+	jq/apply-validation.jq \
+	's/^\([[:space:]]*\)then \.provenance\.calibrated_from += .*$/\1then ./' \
+	test-rc-apply-validation.sh
+
+# A correction that echoed the finding's own level was recorded as a calibration.
+check_mutation "RC-133 an unchanged severity is recorded as a calibration" \
+	jq/apply-validation.jq \
+	's/ and \$e\.corrections\.severity != \$f\.severity$//' \
+	test-rc-apply-validation.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

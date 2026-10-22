@@ -18,6 +18,13 @@
 # The severity list is a copy of verdict-schema.json's enum, and the impact
 # severities a copy of its finding-level `if` enum (the HIGH/CRITICAL that must
 # carry an impact); test-verdict-schema.sh compares every copy against the schema.
+#
+# Every severity change after intake is a CORRECTED outcome from the arbiter
+# (phases/verify.md Step 4), calibration included. One whose severity differs
+# from the finding's level also appends {from, to, reason} to
+# provenance.calibrated_from: the one audit record of severity changes, which
+# the orchestrator writes verification.txt's SEVERITY CALIBRATION section from.
+# A re-run cannot append twice: the finding's outcome is then ALREADY_FINAL.
 
 def outcomes: ["CONFIRMED", "CORRECTED", "RETRACTED"];
 def correctable_fields: ["severity", "line", "title", "description", "recommendation", "impact"];
@@ -94,6 +101,9 @@ def bad_correction($f):
         | . + $e.corrections
         | .provenance.validator = {result: $e.result, reason: $e.reason,
                                    changed_from: $was}
+        | if ($e.corrections | has("severity")) and $e.corrections.severity != $f.severity
+          then .provenance.calibrated_from += [{from: $f.severity, to: $e.corrections.severity, reason: $e.reason}]
+          else . end
       else
         .status = "stripped" | .reason = "VALIDATOR_RETRACTED"
         | .provenance.validator = {result: $e.result, reason: $e.reason,

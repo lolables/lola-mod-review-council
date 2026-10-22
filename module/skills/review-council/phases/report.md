@@ -117,9 +117,10 @@ Two roles the selector cannot know are yours to add:
   nothing dispatched you with a named model; `reported` is your own model ID
   if you know it, otherwise `[]`. Replace `<your-model-id>` in the command below with that
   ID, or with nothing (`[]`) when you do not know it.
-- `validator`, if the validation gate ran: `requested` is the model ID you
-  passed when you dispatched it, otherwise `host default`; `reported` is the
-  model ID the validator reported, otherwise `[]`.
+- `validator` (the arbiter, `verify.md` Step 4), if the validation gate ran:
+  `requested` is the model ID you passed when you dispatched it, otherwise
+  `host default`; `reported` is the model ID the arbiter reported, otherwise
+  `[]`.
 
 Replace any earlier entries for those two roles rather than appending beside
 them, so a re-render stays one entry per role:

@@ -24,6 +24,9 @@ host-agnostic.
   `test-verdict-schema.sh` / `test-rc-extract-verdict.sh`. Changing what
   `rc-verify-evidence.sh` reads → recheck `phases/verify.md` "Interpreting
   Evidence Check Results".
+- `agents/review-council-arbiter.md` (calibration rules, reply example) ↔
+  `validation-schema.json` ↔ `scripts/jq/apply-validation.jq`. RC-105 runs the
+  reply example through the jq program; RC-058/059/128/129 pin the rules there.
 - `pr-conversation.txt` envelope in `scripts/lib/prepare-context.sh`
   (delimiters, `Author:`/`Timestamp:`/`Body:`, column-0 anchoring) ↔ the
   "Column 0 is the entire trust boundary" paragraph in `disposition.md`'s
@@ -47,6 +50,10 @@ anything in code fences/backticks.
 
 Five: guard, adversary, testing, sre, curator. Architect, Scribe, Herald and
 Envoy were removed — update any reference to them you find.
+
+`module/agents/review-council-arbiter.md` is not a persona: it calibrates and
+validates verified findings (`verify.md` Step 4). Never give it a `divisor-`
+name — that prefix is the persona discovery glob.
 
 ## Eval cases (`.lola-eval/tests/`)
 

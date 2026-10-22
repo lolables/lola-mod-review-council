@@ -1,0 +1,71 @@
+module/agents/divisor-adversary-code.md
+  s_8bb78e404a1ace::t_75e3fb3a07b78c 7,65,76-79,121-126,128-140,142,181
+  s_bddba429b402eb::t_aafb663238ee5d 127,141,154,158
+module/tests/test-rc-doc-guards.sh
+  s_8bb78e404a1ace::t_23b6b1d2f1d013 47,2818-2823,2827-2835,2839-2851
+  s_bddba429b402eb::t_506113c16c1ff1 2824-2826,2836-2838
+.lola-eval/tests/case-007-go-fail-open/starter/go.mod
+  s_8bb78e404a1ace::t_6ddf57d3d0fc63 1-3
+.lola-eval/tests/case-007-go-fail-open/starter/config.go
+  s_8bb78e404a1ace::t_11b18556415461 1-13,15-32,35-37
+  s_bddba429b402eb::t_d8cb42607dd1a1 14,33-34
+.lola-eval/tests/case-007-go-fail-open/starter/README.md
+  s_8bb78e404a1ace::t_2906ef4f04904f 1-9,11-18,20-22
+  s_bddba429b402eb::t_0a8b3fb6a96f85 10,19
+.lola-eval/tests/case-007-go-fail-open/starter/config.example.json
+  s_8bb78e404a1ace::t_f910d9e97aa02f 1-4
+.lola-eval/tests/case-007-go-fail-open/rubric.md
+  s_8bb78e404a1ace::t_319132e451b2dd 1-14,27-38,44-57,61-65,70-94,97,101-127
+  s_bddba429b402eb::t_a9d6e726a75a1f 15-26,39-43,58-60,66-69,95-96,98-100
+.lola-eval/tests/case-007-go-fail-open/starter/handlers.go
+  s_8bb78e404a1ace::t_a18558e3031a58 1-3,4-8,9-61,62-77,79-80
+  s_bddba429b402eb::t_f5104cc4b856c1 78
+.lola-eval/tests/case-007-go-fail-open/starter/main.go
+  s_8bb78e404a1ace::t_fb0103470eb6b1 1-29
+.lola-eval/tests/case-007-go-fail-open/prompt.md
+  s_8bb78e404a1ace::t_bb99cc3b4a4b00 2
+  s_bddba429b402eb::t_49a9fa55910dce 1,3-6
+.lola-eval/tests/case-007-go-fail-open/starter/.gitignore
+  s_8bb78e404a1ace::t_aaca4127fb8162 1-5
+.lola-eval/tests/case-007-go-fail-open/task.yaml
+  s_8bb78e404a1ace::t_3986249b23b97b 1-2,12-15,23-34,36-37
+  s_bddba429b402eb::t_f2fdf0815bd99a 3-11,16-22,35
+.taskfiles/lola-eval.yml
+  s_bddba429b402eb::t_f296fb5c39f25c 130,137-138
+.lola-eval/tests/case-007-go-fail-open/scaffold.sh
+  s_281e17ca56b94e::t_51471790428563 1-179
+.lola-eval/tests/case-007-go-fail-open/starter/auth.go
+  s_281e17ca56b94e::t_157bb73ff04d12 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad656e12700d85e964c022c6cd03818b2d034014",
+  "prompts": {},
+  "sessions": {
+    "s_281e17ca56b94e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a748234446474ff61",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_8bb78e404a1ace": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1d5f082c-108e-4469-a827-f9dc2c3b57c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_bddba429b402eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c59ceab-a0dd-44c3-9371-f9275793ecfe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

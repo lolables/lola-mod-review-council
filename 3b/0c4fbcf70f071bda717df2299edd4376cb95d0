@@ -1,0 +1,22 @@
+module/skills/review-council/SKILL.md
+  s_bddba429b402eb::t_e402ed6b3162f2 1075-1078
+  s_bddba429b402eb::t_b61edbd9d2ded8 1079
+module/tests/test-rc-doc-guards.sh
+  s_bddba429b402eb::t_78272c83e16954 2874-2885
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b0c4fbcf70f071bda717df2299edd4376cb95d0",
+  "prompts": {},
+  "sessions": {
+    "s_bddba429b402eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c59ceab-a0dd-44c3-9371-f9275793ecfe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

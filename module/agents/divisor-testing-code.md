@@ -28,12 +28,13 @@ unverified.
 
 ## Source Documents
 
-Before reviewing, read:
+Your prompt opens with a Review context section holding the severity
+definitions, the selected packs' calibration notes and the verdict output
+format; do not open those files for them. Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context: build & test commands
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
-4. Appropriate convention pack for project language — check its `testing_conventions` section for ecosystem-specific tooling
+3. The full convention pack for the project language (Calibration Rules, Custom Rules, `testing_conventions`) — check its `testing_conventions` section for ecosystem-specific tooling
 
 ## Review Scope
 
@@ -45,7 +46,7 @@ Do NOT review spec artifacts. Scope is exclusively code in the changeset — spe
 
 ### Phase 1 — Read & Map
 
-Read every file in changeset. Build map:
+Read every file in changeset (your round's bundle holds them). Build map:
 
 - What test files exist? What production code do they exercise?
 - What production code paths lack corresponding tests?

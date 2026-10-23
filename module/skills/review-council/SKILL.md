@@ -410,11 +410,13 @@ Read `${session_dir}/tracking.md` (created by rc-prepare.sh).
 Determine current state from tracking file:
 - All phases complete and verdict recorded: report existing verdict, stop.
 - Delegation or Verification in progress: resume from next incomplete phase.
-- Starting fresh: proceed to Step 2.1, and run Steps 2.1 through 2.5 in
+- Starting fresh: proceed to Step 2.1, and run Steps 2.1 through 2.7 in
   order before Step 3. Each carries its own skip condition — 2.1 and 2.4 are
   deep-mode only, 2.3 is opt-in, 2.5 needs `ci-status.txt` — but 2.2 (Council
-  Selection) runs at every effort level and decides who is dispatched, so
-  jumping straight to Step 3 is never correct.
+  Selection), 2.6 (Batch Plan) and 2.7 (Reviewer Context) run at every effort
+  level. 2.2 decides who is dispatched, and without 2.7 every code reviewer's
+  zero-finding APPROVE fails closed as `CONTEXT_MISSING`, so jumping straight
+  to Step 3 is never correct.
 
 Enables re-entry: if skill invoked mid-run, resumes without
 repeating completed work.
@@ -632,6 +634,44 @@ computed is not grounds to withhold a review.
 count and the measurement — a review delivered in four rounds costs four times
 the dispatches, and the operator should learn that from the run rather than from
 the bill.
+
+Proceed to Step 2.7 (Reviewer Context).
+
+### Step 2.7: REVIEWER CONTEXT (scripted, all efforts)
+
+```bash
+bash "${SCRIPTS_DIR}/rc-build-context.sh" "${session_dir}"
+```
+
+Reviewers skip documents they are only told to open (issue #101), so this step
+builds what Step 3 hands them instead, from `batch-plan.json` as it stands:
+
+- `${session_dir}/prompts/preamble.md` — severity definitions, the selected
+  packs' calibration notes and the verdict output format. Pasted verbatim at
+  the top of every code-review prompt.
+- `${session_dir}/prompts/[<subsystem>/]batch{N}-context.md` — one bundle per
+  round holding the line-numbered text of that round's changed files, up to a
+  per-file and a per-bundle size cap. Files left out are listed under its
+  "Read directly" heading with the reason. Handed to each reviewer by path.
+- `${session_dir}/prompts/context.json` — the round index
+  `rc-extract-verdict.sh` uses to check a zero-finding APPROVE's
+  `context_check`.
+
+It also records a `## Phase: Context` block in `tracking.md`, with each round's
+inlined and read-directly counts.
+
+- `ok` — proceed.
+- `error` — the batch plan, the review root or a shipped reference section is
+  missing, or a subsystem name is unsafe as a path. Fix what the message names
+  and re-run; do not dispatch without it. Without `context.json`, every
+  zero-finding APPROVE from a code reviewer is refused as `CONTEXT_MISSING`.
+- `nothing_to_do` — no session directory.
+
+Only code reviewers (`divisor-*-code`) receive the preamble and a bundle, and
+only their zero-finding APPROVEs are subject to the context check. Spec
+reviewers get neither and are never checked, so a spec verdict never draws
+`CONTEXT_MISSING`. The step still runs in every mode: it is harmless where no
+code reviewer is dispatched, and a deep run can mix code and spec councils.
 
 Proceed to Step 3 (Delegation).
 
@@ -987,8 +1027,14 @@ reached, and the session is interactive — present the verified findings and as
 "Would you like me to fix these issues and re-review?"
 
 - **User says yes:** Fix findings, increment the iteration counter, and return
-  to Step 3 (Delegation). The next pass re-runs Step 6 and overwrites the
-  artifacts, so the report always describes the latest iteration.
+  to Step 2.7 (Reviewer Context), then Step 3 (Delegation). Re-running
+  `rc-build-context.sh` puts the fixed files in the bundles; skip it and the
+  next reviewers read pre-fix text, while their quotes are checked against the
+  edited tree. `diff.patch`, and with it every hunk range, is still the
+  original change's: iteration has never re-captured the diff, so reviewers
+  see the fixes in the bundle but not in the diff. The next pass re-runs Step 6
+  and overwrites the artifacts, so the report always describes the latest
+  iteration.
 - **User says no, or the session is non-interactive, or no answer comes:** the
   run is already complete. The Step 6 artifacts stand as the outcome.
 
@@ -1164,7 +1210,9 @@ whether sent, and the action (created/updated/manual).
 
 Maintain `${session_dir}/tracking.md` throughout run. Update after
 each phase completes. Preparation and Quality Gates phases written
-by `rc-prepare.sh`. Orchestrator writes subsequent phases.
+by `rc-prepare.sh`; Batch Plan by `rc-plan-batches.sh` and Context by
+`rc-build-context.sh`, which replace their block on a re-run. Orchestrator
+writes subsequent phases.
 
 ```markdown
 # Review Council Session Tracking
@@ -1248,6 +1296,25 @@ by `rc-prepare.sh`. Orchestrator writes subsequent phases.
 
 - Forge CI: {available | unavailable}
 - Forge CI failures: {count}
+
+## Phase: Batch Plan
+
+- Batching: {applied | not applied}
+- Reason: {reason}
+- Context bytes: {count}
+- Unattributed bytes: {count}
+- Byte budget: {count}
+- File cap: {count}
+- Batches: {count}
+- Batch {N}: {count} file(s), {count} bytes
+  (deep mode: Subsystem {name} batch {N}: ...; one line per round)
+
+## Phase: Context
+
+- Preamble: prompts/preamble.md
+- Packs: {pack files | none}
+- Round [{subsystem} ]batch {N}: {count} inlined, {count} read directly, context check {required | waived}
+  (one line per round)
 
 ## Phase: Delegation (iteration {N})
 

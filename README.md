@@ -68,6 +68,11 @@ name, the council inlines the arbiter's file into a generic subagent instead.
 Each reviewer agent reviews independently and returns a verdict. The council verifies every finding against actual file
 content — stripping fabricated evidence — then produces a unified result: **APPROVE** or **REQUEST CHANGES**.
 
+Code reviewers are handed the full text of the changed files in their round, not only the diff, so reading around a
+change costs them nothing. A code reviewer that approves with no findings must quote a line of one of those files from
+outside the diff, or it is asked once to look again; the check is skipped when no such line exists, such as for a
+change that only adds new files.
+
 A HIGH or CRITICAL finding blocks the merge, so it has to say what goes wrong. Each one carries an **Impact** line
 naming who is affected and how if the change merges as-is, printed under its recommendation in the report and the PR
 comment; a reviewer that leaves it out is asked once to add it. At `standard` and `deep` effort, the arbiter lowers to
@@ -708,9 +713,10 @@ and written to `batch-plan.json` and `batches.txt` in the session directory.
 
 Each round leaves its own artifacts, named so that a session directory reads the
 same way whoever produced it: `batch{N}-files.txt` and `batch{N}-diff.patch` for
-the round's inputs, and `verdicts/batch{N}/{agent}.raw.md` for what each reviewer
-returned. A run that fits in one round keeps the unbatched `verdicts/{agent}.raw.md`
-layout. Findings are merged across rounds during verification, not before it, so
+the round's inputs, `prompts/batch{N}-context.md` for the full text of the
+round's changed files that its reviewers are handed, and
+`verdicts/batch{N}/{agent}.raw.md` for what each reviewer returned. A run that
+fits in one round keeps the unbatched `verdicts/{agent}.raw.md` layout. Findings are merged across rounds during verification, not before it, so
 every round's verdict survives as its own file.
 
 A batch closes when adding the next group of files would exceed either budget:

@@ -11,7 +11,12 @@
 # shellcheck disable=SC2154 # review_root and root_abs are the caller's globals,
 # set before sourcing as described above; standalone they look unassigned.
 
-resolve() { [[ "$review_root" == "." ]] && echo "$1" || echo "${review_root%/}/$1"; }
+# Map a repo-relative changeset path to a path under the review root. The "."
+# root yields "./<path>", never the bare path: the result is handed to awk and
+# cmp as an operand, and a bare `x=1` is an awk variable assignment (awk then
+# reads stdin instead) while a bare `-l` is a cmp option. Both are legal file
+# names in a change under review. Changeset paths are never absolute.
+resolve() { [[ "$review_root" == "." ]] && echo "./$1" || echo "${review_root%/}/$1"; }
 
 # True when <path> resolves inside the review root. The `file` field is
 # LLM-authored: without this, `../../etc/shadow` (or any absolute path reachable

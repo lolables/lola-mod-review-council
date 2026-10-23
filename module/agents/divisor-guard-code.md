@@ -28,16 +28,17 @@ unverified.
 
 ## Source Documents
 
-Before reviewing, read:
+Your prompt opens with a Review context section holding the severity
+definitions, the selected packs' calibration notes and the verdict output
+format; do not open those files for them. Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context only, not conventions. Not governance: that comes from the `Constitution:` line of your delegation prompt
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
-4. Appropriate convention pack for project language — check for project-specific structural patterns Guard should enforce
+3. The full convention pack for the project language (Calibration Rules, Custom Rules) — check for project-specific structural patterns Guard should enforce
 
 ## Review Scope
 
-Review scope is changeset provided in delegation prompt. Read every file in changeset before producing findings. Compare against spec, plan, constitution, established project patterns to detect drift. See reviewer-protocol.md for evidence discipline rules.
+Review scope is changeset provided in delegation prompt. Read every file in changeset (your round's bundle holds them) before producing findings. Compare against spec, plan, constitution, established project patterns to detect drift. See reviewer-protocol.md for evidence discipline rules.
 
 Do NOT review spec artifacts. Scope is exclusively code in the changeset — specs, plans, and governance documents are read for intent context only, never audited as the subject of review. A spec that the code contradicts yields a finding against the code, not against the spec.
 
@@ -45,7 +46,7 @@ Do NOT review spec artifacts. Scope is exclusively code in the changeset — spe
 
 ### Phase 1 — Read & Map
 
-Read every file in changeset. Build map:
+Read every file in changeset (your round's bundle holds them). Build map:
 
 - What spec/plan does changeset implement? Acceptance criteria?
 - What governance constraints apply (constitution, convention packs)?

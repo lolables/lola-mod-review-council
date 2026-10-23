@@ -193,6 +193,57 @@ noise=$(<"$err")
 assert_equals "$noise" "" "missing file: nothing on stderr"
 rm -f "$f" "$err"
 
+echo "Test: rc_diff_index emits one F row per section and one H row per hunk"
+# The planner and rc-build-context.sh must agree on which section is which path,
+# so both read the diff through this one function (#101).
+d=$(mktemp -d)
+cat >"$d/diff.patch" <<'DIFF'
+diff --git a/a.go b/a.go
+--- a/a.go
++++ b/a.go
+@@ -1,3 +1,4 @@ func A()
+ x
++y
+ z
+ w
+@@ -40,2 +41,0 @@
+-gone
+-gone
+@@ -60 +60 @@
+-old
++new
+diff --git a/old.go b/old.go
+--- a/old.go
++++ /dev/null
+@@ -1,2 +0,0 @@
+-a
+-b
+diff --git a/dir b/x.go b/dir b/x.go
+--- a/dir b/x.go	
++++ b/dir b/x.go	
+@@ -5,0 +6,2 @@
+++++ not a header
++second
+DIFF
+out=$(rc_diff_index "$d/diff.patch")
+h_rows=$(grep '^H' <<<"$out" || true)
+assert_equals "$h_rows" "$(printf 'H\ta.go\t1\t4\nH\ta.go\t60\t60\nH\tdir b/x.go\t6\t7')" \
+	"new-side ranges, zero-count hunks dropped, deletion has none, ' b/' path kept"
+f_paths=$(awk -F'\t' '$1 == "F" { print $2 }' <<<"$out")
+assert_equals "$f_paths" "$(printf 'a.go\nold.go\ndir b/x.go')" \
+	"deletion falls back to the --- path; a +++ content line is not a header"
+total=$(awk -F'\t' '$1 == "F" { s += $3 } END { print s }' <<<"$out")
+size=$(wc -c <"$d/diff.patch" | tr -d '[:space:]')
+assert_equals "$total" "$size" "F bytes add up to the whole diff"
+x_bytes=$(awk -F'\t' '$1 == "F" && $2 == "dir b/x.go" { print $3 }' <<<"$out")
+[[ "$x_bytes" =~ ^[1-9][0-9]*$ ]] && pass=ok || pass=bad
+assert_equals "$pass" "ok" "spaced path (git adds a trailing TAB to its ---/+++ lines) has a numeric byte count"
+rm -rf "$d"
+
+echo "Test: rc_diff_index on a missing diff prints nothing and succeeds"
+out=$(rc_diff_index /nonexistent/diff.patch)
+assert_equals "$out" "" "no rows"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

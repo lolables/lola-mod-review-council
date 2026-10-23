@@ -74,7 +74,12 @@ s=$(new_session)
 printf '```json\n%s\n```\n' \
 	'{"agent":"divisor-guard-code","files_read":["a.go"],"verdict":"APPROVE","findings":[]}' \
 	>"$s/verdicts/divisor-guard-code.raw.md"
+write_waived_context "$s"
 bash "$SCRIPTS/rc-extract-verdict.sh" "$s" >/dev/null 2>&1
+# Without this, a run that extracts nothing leaves verdicts/ trivially
+# unchanged and the idempotence claim below holds for no work at all.
+[[ -f "$s/verdicts/divisor-guard-code.json" ]] && extracted=yes || extracted=no
+assert_equals "$extracted" "yes" "the first run extracted the verdict"
 assert_idempotent "rc-extract-verdict.sh (verdicts/)" "$s/verdicts" \
 	bash "$SCRIPTS/rc-extract-verdict.sh" "$s"
 rm -rf "$s"

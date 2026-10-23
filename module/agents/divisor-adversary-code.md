@@ -39,12 +39,13 @@ Use as reasoning anchors, not mechanical checklists. Cite relevant CWE ID where 
 
 ## Source Documents
 
-Before reviewing, read:
+Your prompt opens with a Review context section holding the severity
+definitions, the selected packs' calibration notes and the verdict output
+format; do not open those files for them. Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context: CI configuration, security constraints
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
-4. Appropriate convention pack for project language — check calibration rules and calibration notes for language-specific security patterns
+3. The full convention pack for the project language (Calibration Rules, Custom Rules) — check its calibration rules for language-specific security patterns
 
 ## Review Scope
 
@@ -56,7 +57,7 @@ Do NOT review spec artifacts. Scope is exclusively code in the changeset — spe
 
 ### Phase 1 — Read & Map
 
-Read every file in changeset. Identify:
+Read every file in changeset (your round's bundle holds them). Identify:
 
 - Security-relevant code paths (authn, authz, input validation, crypto, privilege transitions)
 - Trust boundaries (where untrusted data enters system)

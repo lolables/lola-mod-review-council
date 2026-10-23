@@ -1787,6 +1787,62 @@ check_mutation "RC-166 the Disposition check reads the live verdicts-map.json" \
 	's|^declared=$(jq -c \. "\$declared_file")$|declared=$(jq -c . "$vdir/verdicts-map.json")|' \
 	test-rc-check-disposition.sh
 
+# #101: the gate's polarity. Accepting on anything but "ok" would pass a
+# context_gate that printed nothing or a rejection.
+check_mutation "RC-177 a failed context check is accepted" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$gate_out" != "ok" \]\]; then$/\1if false; then/' \
+	test-rc-extract-verdict.sh
+
+# #101: hunk overlap. Dropping the overlap test lets a quote inside a diff
+# hunk, visible from the diff alone, count as grounding.
+check_mutation "RC-178 a quote inside a hunk passes the context check" \
+	rc-extract-verdict.sh \
+	's/all(\.\[0\] > \$hi or \.\[1\] < \$lo)/true/' \
+	test-rc-extract-verdict.sh
+
+# #101: the full-line rule. Without it a one-letter fragment, present on line
+# 1 of nearly every file, grounds an APPROVE no one read a file for.
+check_mutation "RC-179 a fragment of the cited line passes the context check" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if \[\[ -z "\$line_text" || "\$cev" != \*"\$line_text"\* \]\]; then$/\1if false; then/' \
+	test-rc-extract-verdict.sh
+
+# #101: one quote per line per round. Without it an orchestrator can paste one
+# reviewer's passing quote into every other reviewer's re-dispatch (case-032).
+check_mutation "RC-185 a copied quote passes the context check" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)elif \[\[ -n "\${context_claims\["\$claim"\]:-}" \]\]; then$/\1elif false; then/' \
+	test-rc-extract-verdict.sh
+
+# #101: a refused block revokes the reviewer's earlier json. Without it an
+# old accepted verdict outlives this run's refusal and verification reads it.
+check_mutation "RC-186 a refused verdict's earlier json survives" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)rm -f "\$(dirname "\$raw")\/\$agent\.json"$/\1:/' \
+	test-rc-extract-verdict.sh
+
+# #101: an unchanged accepted quote keeps its line across runs. Plain sorted
+# order lets a re-dispatched reviewer take it and revoke the holder (case-032).
+check_mutation "RC-187 a re-dispatched reviewer displaces an accepted quote" \
+	rc-extract-verdict.sh \
+	's/^raw_files=("\${held_raw\[@\]}" "\${new_raw\[@\]}")$/raw_files=("${new_raw[@]}" "${held_raw[@]}")/' \
+	test-rc-extract-verdict.sh
+
+# #101: the bundle reads files named by the changeset. A path that resolves
+# outside the review root must be left out, not inlined.
+check_mutation "RC-180 a path outside the review root is inlined in the bundle" \
+	rc-build-context.sh \
+	's/^\([[:space:]]*\)elif ! path_in_root "\$fpath"; then$/\1elif false; then/' \
+	test-rc-build-context.sh
+
+# #101: with root ".", resolve() must prefix "./" so a file named like an
+# option or an assignment (x=1, a=b) is not read as one.
+check_mutation "RC-181 a bare path is resolved for review root ." \
+	lib/evidence.sh \
+	's/echo "\.\/\$1"/echo "$1"/' \
+	test-rc-build-context.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

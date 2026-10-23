@@ -1,0 +1,5 @@
+# Build and test artifacts
+*.exe
+*.test
+*.out
+/vendor/

@@ -1,0 +1,37 @@
+task_version: "2"
+description: |
+  Caller contract in unchanged lines (issue #101). The feature branch of
+  a Go per-tenant quota service changes Lookup in quota.go to return nil
+  for a tenant with no quota configured, instead of the default quota,
+  deletes defaultQuota, and updates the Lookup(unknown) test to expect
+  nil. The change looks complete and `go test` passes. But Allow, near
+  the bottom of the same file, still does `q := Lookup(tenant); return
+  used < q.Limit`, so any request from an unconfigured tenant now panics
+  with a nil dereference: a crash any caller can trigger.
+
+  Calibration decoy: Lookup's `return &q` hands back a copy of the map
+  value, which is safe in Go; calling it a dangling pointer or a
+  writable alias of the map is a false positive.
+
+  Allow sits outside every diff hunk, context lines included. The defect
+  is reachable only by reading unchanged lines of the changed file. At
+  the module commit before #101 reviewers get the diff but not the full
+  text of changed files, and a score below pass_threshold there is the
+  expected baseline. Do not "fix" a low baseline score by moving Allow
+  into the diff.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-008-go-caller-contract/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

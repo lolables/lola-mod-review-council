@@ -222,7 +222,8 @@ It short-circuits with:
 ```json
 { "status": "extract_error", "valid": 3,
   "invalid": [ { "agent": "...",
-  "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "AGENT_MISMATCH" | "RESERVED_AGENT",
+  "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "APPROVE_UNGROUNDED"
+            | "CONTEXT_MISSING" | "AGENT_MISMATCH" | "RESERVED_AGENT",
   "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
@@ -247,14 +248,33 @@ means a `rc-check-symlinks.raw.md` exists somewhere under `verdicts/`. That
 name belongs to the symlink check, which `rc-check-symlinks.sh` writes as
 `verdicts/rc-check-symlinks.json` directly; no reviewer writes it, so the file
 is never extracted. Delete it and re-run the extractor — nothing is re-dispatched.
+`APPROVE_UNGROUNDED` means a code reviewer's (`divisor-*-code`) APPROVE with no
+findings whose `context_check` is missing or fails (issue #101); spec
+reviewers' verdicts are never checked. It must quote, byte for byte, a
+non-blank line of one of its round's files that lies outside the diff hunks, so
+a reviewer that read only the diff cannot file it, and must not cite the same
+line text another code reviewer's accepted quote in that round already cites
+(the first raw file in sorted order keeps it; a rejected verdict reserves
+nothing). The check is waived for a
+round in which no file has such a line, and when there is no diff (`--scope
+all`). `CONTEXT_MISSING` means the extractor could not
+run that check: the session has no usable `prompts/context.json` or review
+root, or the raw file sits in a directory no round writes to. The fault is the
+orchestrator's, so nothing is re-dispatched: run `rc-build-context.sh` (SKILL.md
+Step 2.7) or move the file to its round's planned verdict path, as the `detail`
+says, and re-run the extractor.
 
 The one-round re-dispatch (remediation text plus, when present, that agent's
 `invalid[].detail` — set for `SCHEMA_INVALID`, `VERDICT_INCOHERENT`,
-`AGENT_MISMATCH` and `RESERVED_AGENT`, absent
+`APPROVE_UNGROUNDED`, `CONTEXT_MISSING`, `AGENT_MISMATCH` and
+`RESERVED_AGENT`, absent
 for `NO_JSON_BLOCK` — then re-run the extractor) happens in the Delegation
 phase — see
-`phases/delegate.md` — "Verdict Collection". By the time this phase starts,
-that round has already run. Your job here is to interpret its outcome:
+`phases/delegate.md` — "Verdict Collection". In it the orchestrator relays
+`detail` and remediation verbatim and never supplies, suggests or exemplifies a
+`context_check` value: a quote it wrote, or another reviewer's, proves nothing
+about the reviewer that files it. By the time this phase starts, that round has
+already run. Your job here is to interpret its outcome:
 
 - Every agent now shows `status: "ok"` (a clean reviewer with no findings is
   still `ok` with an empty `findings` array): proceed to Step 1 using the
@@ -263,6 +283,12 @@ that round has already run. Your job here is to interpret its outcome:
   now validates, but **log each still-invalid agent loudly** in `verification.txt`
   and surface it in the report — never let a dropped finding pass silently as a
   clean zero.
+- An `APPROVE_UNGROUNDED` entry that still fails is such a still-invalid agent:
+  its verdict is not counted, and it is logged in `verification.txt` and
+  surfaced in the local report, never the forge comment, which would tell an
+  author which reviewer's approval did not count. It carries no finding, so it
+  is not written to `gate-firings.jsonl` and needs no log line when the
+  re-dispatch succeeds.
 - A `VERDICT_INCOHERENT` entry gets logged **even when the re-dispatch
   succeeds**, which no other reason requires.
   - The agent picks its own remedy — raise the verdict to `REQUEST CHANGES`, or

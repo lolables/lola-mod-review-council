@@ -12,6 +12,16 @@
       "enum": ["APPROVE", "REQUEST CHANGES"]
     },
     "model": { "type": "string", "minLength": 1 },
+    "context_check": {
+      "type": "object",
+      "required": ["file", "line", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1, "maximum": 10000000 },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
     "findings": {
       "type": "array",
       "items": {

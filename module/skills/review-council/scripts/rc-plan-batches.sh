@@ -91,44 +91,13 @@ file_cap=$(rc_config_int "Batch size" "$RC_DEFAULT_BATCH_FILES")
 context_bytes=0
 [[ -f "$diff_file" ]] && context_bytes=$(wc -c <"$diff_file" | tr -d '[:space:]')
 
-# Per-file diff bytes, as `path<TAB>bytes` rows.
-#
-# The path is read from the `+++ b/<path>` header rather than from the
-# `diff --git a/<p> b/<p>` line, which is genuinely ambiguous for a path
-# containing " b/" — git writes both halves unquoted and there is no way back.
-# A deletion has `+++ /dev/null`, so the `--- a/<path>` half is kept as the
-# fallback, and a binary or malformed section falls back to the first " b/" in
-# the header line. Only the lines BEFORE the section's first `@@` are read as
-# headers: an added line of content may itself begin with `+++`.
-#
-# LC_ALL=C makes awk's length() count bytes rather than characters, which is
-# what a context budget is denominated in.
-attribution=$(LC_ALL=C awk '
-	function flush() { if (path != "") printf "%s\t%d\n", path, bytes; path = ""; bytes = 0 }
-	/^diff --git / {
-		flush()
-		hdr = 1; apath = ""; bytes = length($0) + 1
-		line = $0; sub(/^diff --git /, "", line)
-		i = index(line, " b/")
-		path = (i > 0) ? substr(line, i + 3) : ""
-		next
-	}
-	{
-		bytes += length($0) + 1
-		if (!hdr) next
-		if ($0 ~ /^--- /) {
-			p = substr($0, 5)
-			if (p != "/dev/null") { sub(/^a\//, "", p); apath = p }
-		} else if ($0 ~ /^\+\+\+ /) {
-			p = substr($0, 5)
-			if (p != "/dev/null") { sub(/^b\//, "", p); path = p }
-			else if (apath != "") path = apath
-		} else if ($0 ~ /^@@/) {
-			hdr = 0
-		}
-	}
-	END { flush() }
-' "$diff_file" 2>/dev/null || true)
+# Per-file diff bytes, as `path<TAB>bytes` rows, from the shared parser in
+# rc-lib.sh (rc_diff_index documents the header rules). The fallback keeps
+# the planner's long-standing contract: an unreadable diff prices every file
+# at zero and the file cap alone bounds the batches.
+# shellcheck disable=SC2310 # the fallback is deliberate; set -e is not wanted here.
+diff_rows=$(rc_diff_index "$diff_file" 2>/dev/null || true)
+attribution=$(awk -F'\t' '$1 == "F" { print $2 "\t" $3 }' <<<"$diff_rows")
 
 declare -A file_bytes=()
 while IFS=$'\t' read -r path bytes; do

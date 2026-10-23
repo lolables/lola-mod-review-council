@@ -1301,6 +1301,18 @@ assert_jq "$sess/verdicts/findings.json" '[.verified[] | select(.provenance.vali
 	"only the real script finding is final"
 rm -rf "$sess" "$root"
 
+echo "Test 38: a file named like an awk assignment verifies under review root '.'"
+# resolve() must hand awk "./a=b", not "a=b": awk takes an operand of the form
+# name=value as a variable assignment and reads stdin instead of the file.
+s=$(new_session)
+src=$(mktemp -d)
+printf 'secret = load()\n' >"$src/a=b"
+agent_json "$s" "divisor-adversary-code" "REQUEST CHANGES" \
+	'[{"severity":"LOW","file":"a=b","line":1,"evidence":"secret = load()","description":"d","recommendation":"r"}]'
+result=$(cd "$src" && bash "$SCRIPT" "$s" . </dev/null)
+assert_jq_str "$result" '.verified' "1" "finding on a=b verified"
+rm -rf "$s" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -47,13 +47,16 @@ _warned_no_validator=0
 # here and test-rc-extract-verdict.sh diffs these two lines against the schema
 # — drift fails the suite instead of silently splitting the two validation
 # paths apart. Keep each on one line: the test extracts them with sed.
-readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model"]'
+readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model","context_check"]'
 readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation","impact"]'
+# The keys of the optional top-level `context_check` object, all required
+# inside it. Same one-line rule as above — the schema-drift test reads it.
+readonly RC_CONTEXT_CHECK_KEYS='["file","line","evidence"]'
 # The subsets of the two lists above that "required" in verdict-schema.json
-# names: what the rejection message calls a missing key. `model` is the one
-# optional top-level key; `line`, `title`, `constraint` and `impact` are the
-# optional finding keys. Same one-line rule as above — the schema-drift test
-# reads them.
+# names: what the rejection message calls a missing key. `model` and
+# `context_check` are the optional top-level keys; `line`, `title`,
+# `constraint` and `impact` are the optional finding keys. Same one-line rule
+# as above — the schema-drift test reads them.
 readonly RC_REQUIRED_TOP_KEYS='["agent","files_read","verdict","findings"]'
 readonly RC_REQUIRED_FINDING_KEYS='["severity","file","evidence","description","recommendation"]'
 # The severities on which a finding must carry `impact` — the enum in the
@@ -113,6 +116,7 @@ validate() { # json_string
 	printf '%s' "$json" | jq -e \
 		--argjson topkeys "$RC_TOP_KEYS" \
 		--argjson fkeys "$RC_FINDING_KEYS" \
+		--argjson cckeys "$RC_CONTEXT_CHECK_KEYS" \
 		--argjson impactsevs "$RC_IMPACT_SEVERITIES" '
 		# Exact membership. The obvious `[.x] | inside([...])` compares with
 		# `contains`, which on strings is SUBSTRING containment — it accepted
@@ -127,6 +131,10 @@ validate() { # json_string
 		(.verdict | oneof(["APPROVE","REQUEST CHANGES"])) and
 		(.findings | type) == "array" and
 		((has("model") | not) or (.model | nonempty_string)) and
+		((has("context_check") | not) or (.context_check | type == "object"
+			and (([keys[]] - $cckeys) | length) == 0
+			and (.file | nonempty_string) and (.evidence | nonempty_string)
+			and (.line | integerish) and .line >= 1 and .line <= 10000000)) and
 		(([keys[]] - $topkeys) | length) == 0 and
 		(all(.findings[];
 			(.severity | oneof(["CRITICAL","HIGH","MEDIUM","LOW"])) and
@@ -182,6 +190,7 @@ validate_error() { # json_string
 		--argjson reqtop "$RC_REQUIRED_TOP_KEYS" \
 		--argjson fkeys "$RC_FINDING_KEYS" \
 		--argjson reqf "$RC_REQUIRED_FINDING_KEYS" \
+		--argjson cckeys "$RC_CONTEXT_CHECK_KEYS" \
 		--argjson impactsevs "$RC_IMPACT_SEVERITIES" \
 		--argjson sevs '["CRITICAL","HIGH","MEDIUM","LOW"]' \
 		--argjson vrds '["APPROVE","REQUEST CHANGES"]' '
@@ -206,7 +215,18 @@ validate_error() { # json_string
 				(if has("findings") and ((.findings | type) != "array")
 					then "`findings` must be an array (use [] for a clean review)" else empty end),
 				(if has("model") and ((.model | nonempty_string) | not)
-					then "`model` must be a non-empty string when present" else empty end)
+					then "`model` must be a non-empty string when present" else empty end),
+				(if has("context_check") then
+					if (.context_check | type) != "object" then "`context_check` must be an object"
+					else ((.context_check | keys) - $cckeys) as $cx
+						| ($cckeys - (.context_check | keys)) as $cm
+						| if ($cx | length) > 0 then "context_check unrecognised key(s): " + quote($cx) + " — only " + quote($cckeys) + " are permitted"
+						elif ($cm | length) > 0 then "context_check missing key(s): " + quote($cm)
+						elif ((.context_check.line | integerish) and .context_check.line >= 1 and .context_check.line <= 10000000) | not then "context_check.line must be an integer from 1"
+						elif ((.context_check.file | nonempty_string) and (.context_check.evidence | nonempty_string)) | not then "context_check.file and .evidence must be non-empty strings"
+						else empty end
+					end
+				else empty end)
 			]
 			+ (($reqtop - keys) as $miss
 				| if ($miss | length) > 0 then ["missing required key(s): " + quote($miss)] else [] end)
@@ -258,6 +278,173 @@ validate_error() { # json_string
 	'
 }
 
+# The #101 context check reads the round index rc-build-context.sh wrote and
+# matches quotes against the review tree with the same matcher evidence
+# verification uses (lib/evidence.sh), so a context_check quote meets exactly
+# the test a finding's evidence does, containment included. The root is only
+# resolved here; a session without one fails the check when it is needed
+# (CONTEXT_MISSING), not up front, because verdicts carrying findings and
+# waived rounds never need it.
+context_index="$session_dir/prompts/context.json"
+review_root=$(rc_parse_kv "$session_dir/session.txt" "Review root")
+root_abs=""
+if [[ -n "$review_root" ]]; then
+	root_abs=$(cd "$review_root" 2>/dev/null && pwd -P) || root_abs=""
+fi
+# shellcheck source=module/skills/review-council/scripts/lib/evidence.sh
+source "$(dirname "$0")/lib/evidence.sh"
+
+# Place a verified context_check quote against its round's hunks. Prints
+# `clean` when an occurrence of <evidence> in <file> covers <line> and touches
+# no hunk of that file, `in_hunk` when every occurrence covering <line> touches
+# one, and `off_line` when none covers it.
+quote_span() { # file line evidence round
+	local f="$1" line="$2" ev="$3" round="$4" nl k fpath occs occ hi seen=off_line
+	# The quote spans one line per newline it holds, plus one. A single trailing
+	# newline ends the last line rather than starting another, so it adds none.
+	nl="${ev%$'\n'}"
+	nl="${nl//[!$'\n']/}"
+	k=$((${#nl} + 1))
+	fpath=$(resolve "$f")
+	# rc_evidence_status has just matched this quote, so a scan failure here is
+	# not expected; if one happens, no occurrences reads as `off_line`.
+	# shellcheck disable=SC2310 # the `||` is that fallback, so set -e is
+	# suspended inside on purpose.
+	occs=$(evidence_lines "$fpath" "$ev") || occs=""
+	while IFS= read -r occ; do
+		[[ -n "$occ" ]] || continue
+		hi=$((occ + k - 1))
+		[[ "$line" -ge "$occ" && "$line" -le "$hi" ]] || continue
+		seen=in_hunk
+		if jq -e --arg f "$f" --argjson lo "$occ" --argjson hi "$hi" \
+			'[.files[] | select(.path == $f) | .hunks[]] | all(.[0] > $hi or .[1] < $lo)' <<<"$round" >/dev/null 2>&1; then
+			echo clean
+			return 0
+		fi
+	done <<<"$occs"
+	echo "$seen"
+}
+
+# Render a reviewer-controlled string for a rejection detail: JSON-quoted, so a
+# newline in it cannot add prose of the reviewer's choosing to the message the
+# re-dispatch relays, and capped, so it cannot bury the rest of the detail.
+detail_str() { # value
+	jq -nr --arg s "$1" '$s[0:120] | tojson'
+}
+
+# Print the text of line <n> of changeset path <path> with surrounding
+# whitespace trimmed; nothing when the line is blank or past the end. The file
+# is read through resolve(), so awk never sees a bare operand it could take for
+# an assignment or an option.
+cited_line() { # path n
+	local fpath text
+	fpath=$(resolve "$1")
+	text=$(LC_ALL=C awk -v n="$2" 'NR == n { print; exit }' "$fpath")
+	text="${text#"${text%%[![:space:]]*}"}"
+	printf '%s' "${text%"${text##*[![:space:]]}"}"
+}
+
+# Decide the context check for one zero-finding APPROVE. Sets `gate_out` to
+# `ok` or `<REASON><TAB><detail>`, and on an accepted quote `gate_claim` to the
+# round and cited line text the caller then records as held. Run directly
+# rather than in a command substitution so that claim can reach the caller.
+# Fails closed by construction: `ok` is assigned in exactly two places, after
+# the waiver and after every check has passed; the caller presets a rejection
+# and rejects anything but `ok`. Called under `||`, so a command that fails in
+# here neither aborts the run nor returns early: it leaves a variable empty,
+# and the next check rejects on that.
+context_gate() { # rel block
+	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder
+	if ! jq -e '.rounds | type == "array"' "$context_index" >/dev/null 2>&1; then
+		gate_out=$'CONTEXT_MISSING\t'"No usable prompts/context.json in this session, so a zero-finding APPROVE cannot be checked. Run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then re-run this extractor. No re-dispatch is needed."
+		return 0
+	fi
+	vd=$(dirname "${rel#verdicts/}")
+	[[ "$vd" == "." ]] && vd=""
+	round=$(jq -c --arg d "$vd" 'first(.rounds[] | select(.verdict_dir == $d)) // empty' "$context_index" 2>/dev/null)
+	# The index is readable, so rebuilding it would not add this directory: the
+	# raw file is somewhere the batch plan never sends a reviewer. Still
+	# CONTEXT_MISSING, as the fix is the orchestrator's and costs no re-dispatch.
+	if [[ -z "$round" ]]; then
+		qdir=$(detail_str "verdicts/${vd:+$vd/}")
+		gate_out=$'CONTEXT_MISSING\t'"This raw file is in $qdir, a directory no round writes to, so prompts/context.json has nothing to check it against. Move it to the verdict path its round was planned with (the round's verdict_dir in prompts/context.json), then re-run this extractor. No re-dispatch is needed."
+		return 0
+	fi
+	gate=$(jq -r '.gate' <<<"$round")
+	if [[ "$gate" == "waived" ]]; then
+		gate_out=ok
+		return 0
+	fi
+	if [[ -z "$root_abs" ]]; then
+		gate_out=$'CONTEXT_MISSING\t'"session.txt names no Review root that exists, so the context_check quote has no tree to be matched against. Restore the session's review root, then re-run this extractor. No re-dispatch is needed."
+		return 0
+	fi
+	cc=$(jq -c '.context_check // empty' <<<"$block")
+	if [[ -z "$cc" ]]; then
+		gate_out=$'APPROVE_UNGROUNDED\t'"An APPROVE with no findings must carry \`context_check\`: {\"file\", \"line\", \"evidence\"} quoting a line of one of this round's files that lies outside the diff hunks. Your round's bundle lists the files and says whether the check is waived. If you found a defect after all, file it and keep or change the verdict to match."
+		return 0
+	fi
+	cfile=$(jq -r '.file' <<<"$cc")
+	cline=$(jq -r '.line' <<<"$cc")
+	cev=$(jq -r '.evidence' <<<"$cc")
+	qfile=$(detail_str "$cfile")
+	# Reviewers given absolute paths in their prompt cite them back. Inside the
+	# root, that is the same file as its repo-relative name; outside, it stays
+	# absolute, matches no round file, and is refused. Containment is still
+	# checked on the result by rc_evidence_status.
+	if [[ "$cfile" == "$root_abs"/* ]]; then
+		cfile="${cfile#"$root_abs"/}"
+	elif [[ "$review_root" == /* && "$cfile" == "${review_root%/}"/* ]]; then
+		cfile="${cfile#"${review_root%/}"/}"
+	fi
+	while [[ "$cfile" == ./* ]]; do cfile="${cfile#./}"; done
+	# The minimal validator accepts 12.0 as an integer and jq prints it that
+	# way; bash arithmetic below must only ever see a plain bounded integer.
+	if [[ ! "$cline" =~ ^[1-9][0-9]{0,7}$ ]]; then
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.line must be a plain integer from 1."
+		return 0
+	fi
+	if ! jq -e --arg f "$cfile" 'any(.files[]; .path == $f)' <<<"$round" >/dev/null 2>&1; then
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.file $qfile is not one of this round's files. Quote from a file listed in your round's bundle."
+		return 0
+	fi
+	status=$(rc_evidence_status "$cfile" "" "$cev")
+	if [[ "$status" != "verified" ]]; then
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.evidence does not verify against $qfile ($status). Copy a contiguous quote out of the file; never include the bundle's line numbers."
+		return 0
+	fi
+	span=$(quote_span "$cfile" "$cline" "$cev" "$round")
+	case "$span" in
+	clean)
+		# A fragment such as one letter of `package` occurs on line 1 of nearly
+		# every file and is fileable without reading anything. The whole cited
+		# line, trimmed, is not.
+		line_text=$(cited_line "$cfile" "$cline")
+		claim="$vd"$'\t'"$line_text"
+		if [[ -z "$line_text" || "$cev" != *"$line_text"* ]]; then
+			gate_out=$'APPROVE_UNGROUNDED\t'"context_check.evidence must include the whole cited line ($cline of $qfile, surrounding whitespace aside), and that line must not be blank. Cite a non-blank line and quote all of it."
+		# Case-032: an orchestrator pasted one reviewer's passing quote into three
+		# re-dispatch prompts, and all three passed. Each reviewer's quote has to
+		# come from its own reading, so within a round a cited line's text is
+		# held by the first accepted quote; text rather than position, since a
+		# copied `}` passes at any line it occurs on.
+		elif [[ -n "${context_claims["$claim"]:-}" ]]; then
+			holder=$(detail_str "${context_claims["$claim"]}")
+			gate_out=$'APPROVE_UNGROUNDED\t'"context_check cites the same line as ${holder}'s in this round. Each reviewer quotes a line it chose from its own reading of the files; quote a different line."
+		else
+			gate_out=ok
+			gate_claim="$claim"
+		fi
+		;;
+	off_line)
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.line $cline is not a line the quote occupies in $qfile. Cite the line the quote is on."
+		;;
+	*)
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check quotes lines inside the diff hunks of $qfile; those are visible from the diff alone. Quote a line outside every hunk; the bundle marks which files have such lines."
+		;;
+	esac
+}
+
 invalid_json="[]"
 valid_count=0
 # {role, model} for every valid verdict that names its own model, applied to
@@ -266,9 +453,37 @@ model_reports="[]"
 # Set once any block reaches validate(), whichever way it then went: the
 # validation mode is a fact about this run only when something was validated.
 validated_any=0
+# Line text each accepted context_check holds, per round: "<verdict_dir><TAB>
+# <text>" -> agent. Read by context_gate, written by the loop on acceptance.
+declare -A context_claims=()
+# The context check's duplicate rule lets the first accepted quote keep its
+# line, so the order below decides who that is, and it must give the same
+# answer on every run. Sorted, because readdir order is not the same on every
+# filesystem (this container's and CI's differ). And a reviewer whose
+# <agent>.json already carries the context_check its raw file still holds was
+# accepted on an earlier run: it goes first. Otherwise a re-dispatched
+# reviewer that picked the same line would take it on the next run, purely by
+# sorting earlier, and revoke a verdict nothing was wrong with (case-032).
+held_before() { # raw
+	local json prev cur
+	json="${1%.raw.md}.json"
+	[[ -f "$json" ]] || return 1
+	prev=$(jq -c '.context_check // empty' "$json" 2>/dev/null) || return 1
+	[[ -n "$prev" ]] || return 1
+	# shellcheck disable=SC2310 # the caller's `if` suspends set -e here anyway.
+	cur=$(extract_block "$1" | jq -c '.context_check // empty' 2>/dev/null) || return 1
+	[[ "$cur" == "$prev" ]]
+}
 raw_files=()
 while IFS= read -r -d '' f; do raw_files+=("$f"); done \
-	< <(find "$vdir" -path "$vdir/_meta" -prune -o -name '*.raw.md' -type f -print0 2>/dev/null || true)
+	< <(find "$vdir" -path "$vdir/_meta" -prune -o -name '*.raw.md' -type f -print0 2>/dev/null | LC_ALL=C sort -z || true)
+held_raw=()
+new_raw=()
+for raw in "${raw_files[@]}"; do
+	# shellcheck disable=SC2310 # a predicate: any failure inside means "not held".
+	if held_before "$raw"; then held_raw+=("$raw"); else new_raw+=("$raw"); fi
+done
+raw_files=("${held_raw[@]}" "${new_raw[@]}")
 for raw in "${raw_files[@]}"; do
 	agent=$(basename "$raw")
 	agent="${agent%.raw.md}"
@@ -285,6 +500,11 @@ for raw in "${raw_files[@]}"; do
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RESERVED_AGENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
 	fi
+	# Revoke before judging: a json left from an earlier run would otherwise
+	# outlive this run's refusal of the same reviewer, and verification reads
+	# every json it finds. Only an accepted block writes it back below. After
+	# the reserved-name check, whose json is the symlink script's own.
+	rm -f "$(dirname "$raw")/$agent.json"
 	block=$(extract_block "$raw")
 	if [[ -z "$block" ]] || ! echo "$block" | jq -e . >/dev/null 2>&1; then
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
@@ -368,6 +588,44 @@ for raw in "${raw_files[@]}"; do
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "VERDICT_INCOHERENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
 	fi
+	# Issue #101. A zero-finding APPROVE is the verdict a reviewer that read only
+	# the diff can still file with full confidence, and 20 dogfood dispatches
+	# did exactly that. It must quote a line outside the hunks of a file in its
+	# round. That proves less than a read, which the issue accepts, but it makes
+	# a no-look APPROVE cost a look. Fails closed in the same polarity as the
+	# coherence check above: anything but `ok`, including the function failing,
+	# rejects. Not logged to gate-firings.jsonl, which keeps CRITICAL/HIGH
+	# claims a re-dispatch could delete; this verdict carries none.
+	#
+	# Only code reviewers are gated: #101 is scoped to code review, and only
+	# they are handed a bundle to quote from. Deep mode can mix code and spec
+	# councils in one session, so the session's Mode is too coarse; the agent
+	# is. It is this file's stem, which the orchestrator names, not the
+	# reviewer, and the AGENT_MISMATCH check above has already held the
+	# block's own `agent` to it. The test lists who is gated, so an
+	# unexpected name skips the gate. That is acceptable: every code reviewer
+	# in the roster is named divisor-*-code, a name outside it receives no
+	# bundle it could quote, and the reserved-name and mismatch checks above
+	# leave a reviewer no way to file under another stem.
+	is_bare_approve=$(jq -r 'if .verdict == "APPROVE" and (.findings | length) == 0 then "yes" else "no" end' <<<"$block" 2>/dev/null) || is_bare_approve="yes"
+	if [[ "$agent" == *-code && "$is_bare_approve" != "no" ]]; then
+		# Preset to a rejection, so a context_gate that sets nothing rejects,
+		# and forced back to it should the function itself fail. Its own
+		# fail-closed design is described above the function.
+		gate_unevaluated=$'APPROVE_UNGROUNDED\tThe context check could not be evaluated; re-emit the verdict with a valid context_check.'
+		gate_out="$gate_unevaluated"
+		gate_claim=""
+		# shellcheck disable=SC2310 # set -e is suspended inside on purpose.
+		context_gate "$rel" "$block" || gate_out="$gate_unevaluated"
+		if [[ "$gate_out" != "ok" ]]; then
+			invalid_json=$(jq --arg a "$agent" --arg r "${gate_out%%$'\t'*}" --arg d "${gate_out#*$'\t'}" --arg p "$rel" \
+				'. + [{agent:$a, reason:$r, detail:$d, path:$p}]' <<<"$invalid_json")
+			continue
+		fi
+		# Nothing after the gate refuses a verdict, so the line is held from
+		# here; a refused quote never reaches this and reserves nothing.
+		[[ -z "$gate_claim" ]] || context_claims["$gate_claim"]="$agent"
+	fi
 	echo "$block" | jq . >"$(dirname "$raw")/$agent.json"
 	valid_count=$((valid_count + 1))
 	# A reviewer's `model` is its own claim about itself, kept exactly as given:
@@ -436,6 +694,7 @@ if [[ "$invalid_count" -gt 0 ]]; then
 Your response must be exactly one fenced ```json block matching verdict-schema.json:
 { "agent": "...", "files_read": [...], "verdict": "APPROVE|REQUEST CHANGES",
   "model": "optional: your own model ID, only if you know it",
+  "context_check": {"file": "...", "line": 88, "evidence": "..."},
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
   "constraint": "...", "description": "...", "recommendation": "...",
   "impact": "who is affected, and how, if this merges as-is",
@@ -443,12 +702,18 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
 These are the only keys permitted at either level — the schema sets
 "additionalProperties": false, so any other key is rejected, however useful it
 looks. Put anything you would have added into `description`. Optional keys are
-`model` at the top level and `line`, `title` and `constraint` in a finding.
+`model` and `context_check` at the top level and `line`, `title` and `constraint` in a finding.
 `impact` is required on every HIGH or CRITICAL finding and optional on MEDIUM
 and LOW. Every other key above is required.
+`context_check` is required on a code reviewer's APPROVE with no findings,
+unless your round's bundle says it is not required: quote a line outside the
+diff hunks.
 Emit only the block — no prose before or after.
 Correct only the defect named above: re-emit the SAME findings, with the same
 severities and the same evidence. This is a formatting repair, not a new review.
+For APPROVE_UNGROUNDED alone, the fix is to look past the diff: add the
+`context_check` quote, or, if that look turns up a defect, file it and set the
+verdict to match.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \
 		--arg sv "$schema_validation" \

@@ -127,7 +127,7 @@ tasks:
       - "{{.LOLA_EVAL}} test --case {{.CASE}}"
 
   test-quality:
-    desc: Run the core review-quality cases (case-001 through case-007)
+    desc: Run the core review-quality cases (case-001 through case-008)
     deps: [provision, _ensure-init, _preflight]
     cmds:
       - |
@@ -135,7 +135,7 @@ tasks:
         for case in case-001-go-security case-002-ts-architecture \
                     case-003-py-mixed case-004-go-clean \
                     case-005-py-meta case-006-ts-pack \
-                    case-007-go-fail-open; do
+                    case-007-go-fail-open case-008-go-caller-contract; do
           echo "=== Running $case ==="
           if ! {{.LOLA_EVAL}} test --case "$case"; then
             failed=$((failed + 1))

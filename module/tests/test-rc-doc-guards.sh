@@ -44,6 +44,7 @@ testing_flat=$(tr '\n' ' ' <"$TESTING_MD" | tr -s ' ')
 testing_spec_flat=$(tr '\n' ' ' <"$TESTING_SPEC_MD" | tr -s ' ')
 delegate_flat=$(tr '\n' ' ' <"$DELEGATE_MD" | tr -s ' ')
 curator_flat=$(tr '\n' ' ' <"$CURATOR_MD" | tr -s ' ')
+adversary_flat=$(tr '\n' ' ' <"$ADVERSARY_MD" | tr -s ' ')
 guard_flat=$(tr '\n' ' ' <"$GUARD_MD" | tr -s ' ')
 pipeline_states_flat=$(tr '\n' ' ' <"$PIPELINE_STATES_MD" | tr -s ' ')
 arbiter_flat=$(tr '\n' ' ' <"$ARBITER_MD" | tr -s ' ')
@@ -2830,6 +2831,40 @@ if [[ "$rc139_missing" -eq 0 ]]; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: $rc139_missing untrusted-prose rule(s) missing (RC-139)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-170: issue #74. Fail-open defaults (unset, zero or empty value that loosens
+# behaviour) show up only when a reviewer asks what happens when the value is
+# absent, and the diff rarely shows the absent case. Before this criterion no
+# persona asked. Pin the four parts that make it reviewable rather than a
+# hunch: the criterion itself, the evidence rule (cite the default's source or
+# the search proving none), the two calibration exemptions that keep it off
+# documented and validated-override defaults, and both severity rows. HIGH
+# covers a change that makes an existing pass-through reachable, the shape the
+# diff hides best.
+echo "Test: Adversary checks for fail-open defaults with cited evidence (RC-170)"
+rc170_missing=0
+for rc170_phrase in \
+	'### 7. Fail-Open Defaults' \
+	'determine behaviour when value absent, nil, zero or empty' \
+	'cite line supplying default (struct literal, constructor, loader, schema, flag definition), or show search proving none exists' \
+	'Report when absence widens access, removes limit or skips check' \
+	'Permissive default documented and intentional' \
+	'Default always overridden by validated layer' \
+	'new, or existing pass-through change makes reachable' \
+	'| Fail-open default introduced by change on auth/TLS/limit path (CWE-1188) | HIGH |' \
+	'| Any other fail-open default (CWE-1188) | MEDIUM |'; do
+	if ! grep -qF -- "$rc170_phrase" <<<"$adversary_flat"; then
+		echo "  missing: $rc170_phrase"
+		rc170_missing=$((rc170_missing + 1))
+	fi
+done
+if [[ "$rc170_missing" -eq 0 ]]; then
+	echo "  PASS: fail-open-default criterion, evidence rule, exemptions and severity intact"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc170_missing fail-open-default rule(s) missing (RC-170)"
 	FAIL=$((FAIL + 1))
 fi
 

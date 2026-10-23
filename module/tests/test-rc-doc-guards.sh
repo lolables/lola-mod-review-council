@@ -2833,6 +2833,25 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-171: the verdict block's key set lived only in reviewer-protocol.md, which
+# reviewers reach only by opening it. On three 2026-10-22 runs all six that
+# never opened it failed the format gate (no `files_read`, a `summary` or
+# `category` key), against two of the nine that did (one named itself
+# `curator`). The contract has to travel in the prompt itself.
+echo "Test: delegation prompts carry the verdict output contract inline (RC-171)"
+# shellcheck disable=SC2016 # literal markdown and template text, not expansions.
+if grep -qF '**Output contract**: append to every code review delegation prompt' <<<"$delegate_flat" &&
+	grep -qF 'Its `agent` field is exactly `{agent-name}`' <<<"$delegate_flat" &&
+	grep -qF '`files_read` (every file you opened)' <<<"$delegate_flat" &&
+	grep -qF 'no `summary`, `category` or any other key' <<<"$delegate_flat" &&
+	grep -qF 'append the "Output contract" paragraph from Code Review Delegation above to every spec review delegation prompt' <<<"$delegate_flat"; then
+	echo "  PASS: code and spec prompts name the agent id and the closed key set"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the output contract is left to a file reviewers may not open"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

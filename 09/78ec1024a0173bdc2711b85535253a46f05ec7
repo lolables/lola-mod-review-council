@@ -1,0 +1,22 @@
+module/tests/test-rc-extract-verdict.sh
+  s_79338e21b2f230::t_6f69793e467c93 1431-1528
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_79338e21b2f230::t_44d673c81c588f 320,328-334,343-346,348-352,361-364,387,394-395,400,406-408,410-414,417,420,545-548
+  s_79338e21b2f230::t_f82f40ff857d94 335-342,354,366-367,409
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0978ec1024a0173bdc2711b85535253a46f05ec7",
+  "prompts": {},
+  "sessions": {
+    "s_79338e21b2f230": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "89d9e0da-2f52-442c-998b-7fd625ac4429",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

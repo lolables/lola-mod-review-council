@@ -1,0 +1,28 @@
+module/tests/test-rc-doc-guards.sh
+  s_bddba429b402eb::t_c667065cd5e7a8 629
+  s_bddba429b402eb::t_d7250d425dcd47 617
+  s_bddba429b402eb::t_c3fc152585a88d 2855-2873
+module/skills/review-council/phases/report.md
+  s_bddba429b402eb::t_e55708151ccdbd 220-222
+  s_bddba429b402eb::t_43c2aab6d1942b 189-198
+  s_bddba429b402eb::t_c9e4ee31e8317d 164-168
+module/skills/review-council/SKILL.md
+  s_bddba429b402eb::t_583876f05906ec 1024-1025,1028-1032
+  s_bddba429b402eb::t_989d213d9b640b 1040-1041
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b1ab182f84dec3fef7cf78fbad91f5c828a0db7",
+  "prompts": {},
+  "sessions": {
+    "s_bddba429b402eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2c59ceab-a0dd-44c3-9371-f9275793ecfe",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

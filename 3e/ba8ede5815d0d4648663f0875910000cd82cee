@@ -1,0 +1,93 @@
+.lola-eval/tests/case-008-go-caller-contract/prompt.md
+  s_d4195feb479306::t_cb0b9907736dba 1-7
+.lola-eval/tests/case-008-go-caller-contract/rubric.md
+  s_d4195feb479306::t_2b777f53da63e5 1-123
+.lola-eval/tests/case-008-go-caller-contract/scaffold.sh
+  s_d4195feb479306::t_d8a9d2735f5624 1-184
+.lola-eval/tests/case-008-go-caller-contract/starter/.gitignore
+  s_d4195feb479306::t_579d6f387798c8 1-5
+.lola-eval/tests/case-008-go-caller-contract/starter/README.md
+  s_d4195feb479306::t_2f9c79dadf6903 1-9
+.lola-eval/tests/case-008-go-caller-contract/starter/go.mod
+  s_d4195feb479306::t_b6def5edf18706 1-3
+.lola-eval/tests/case-008-go-caller-contract/starter/quota.go
+  s_d4195feb479306::t_84429da58386c1 1-86
+.lola-eval/tests/case-008-go-caller-contract/starter/quota_test.go
+  s_d4195feb479306::t_be7baf1e00242c 1-58
+.lola-eval/tests/case-008-go-caller-contract/task.yaml
+  s_d4195feb479306::t_1468ec5d730668 1-37
+.taskfiles/lola-eval.yml
+  s_d4195feb479306::t_6748ea7699cb66 130,138
+.taskfiles/scripts/mutate-check.sh
+  s_d4195feb479306::t_b6401beededdcd 1790-1845
+README.md
+  s_d4195feb479306::t_4ae461da62b9e3 71-75,716-719
+docs/dev/pipeline.md
+  s_d4195feb479306::t_9fb3e581734a63 23,25,69,71,92-93,102,118,154,160-169,172,175-192,195,206,217,220-225,340-341
+module/agents/divisor-adversary-code.md
+  s_d4195feb479306::t_66f49f9595c050 42-44,48,60
+module/agents/divisor-curator-code.md
+  s_d4195feb479306::t_4d5bbc2d300b64 100-102,106-108,112,139
+module/agents/divisor-guard-code.md
+  s_d4195feb479306::t_9fd0b4541e161d 31-33,37,41,49
+module/agents/divisor-sre-code.md
+  s_d4195feb479306::t_8bc4e9ed6f7717 31-33,37-39,43,51
+module/agents/divisor-testing-code.md
+  s_d4195feb479306::t_eb2612a874876e 31-33,37,49
+module/skills/review-council-debug/SKILL.md
+  s_d4195feb479306::t_361438758e523f 226-228,231-232,496-502
+module/skills/review-council/SKILL.md
+  s_d4195feb479306::t_bb1f7dac211d45 413,416-419,638-675,1030-1037,1213-1215,1300-1318
+module/skills/review-council/phases/delegate.md
+  s_d4195feb479306::t_51cc34378c7683 55-72,143-153,156,261,301,360-366,376,397-400,436-438,528,626-629,635-650
+module/skills/review-council/phases/verify.md
+  s_d4195feb479306::t_f351a8e3b3c0c9 225-226,251-265,269-270,273-277,286-291
+module/skills/review-council/references/reviewer-protocol.md
+  s_d4195feb479306::t_d73bf7ab5a9923 68-73,100,103,111-114,125-136,167,189,191-192,199-204
+module/skills/review-council/references/verdict-schema.json
+  s_d4195feb479306::t_ad62be1ee9e100 15-24
+module/skills/review-council/scripts/rc-build-context.sh
+  s_d4195feb479306::t_16abc64c64d5a6 1-362
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_d4195feb479306::t_612eccdf06956c 50,52-54,56-59,119,134-137,193,218-229,281-447,456-476,479-486,503-507,591-628,697,705,708-710,714-716
+module/skills/review-council/scripts/rc-lib.sh
+  s_d4195feb479306::t_a3ad2ecc654d3f 193-200,410-470
+module/tests/helpers.sh
+  s_d4195feb479306::t_e5e4697c82acbb 195-212
+module/tests/test-rc-batch-verdicts.sh
+  s_d4195feb479306::t_b76f74f55c8426 36,131
+module/tests/test-rc-build-context.sh
+  s_d4195feb479306::t_df68219e86f06e 1-319
+module/tests/test-rc-deep-mode.sh
+  s_d4195feb479306::t_09d7698fd90674 28,101,131
+module/tests/test-rc-doc-guards.sh
+  s_d4195feb479306::t_0bc20b8cb62e14 478-482,485-490,492-494,2488,2950-3054
+module/tests/test-rc-extract-verdict.sh
+  s_d4195feb479306::t_ef64d4b27135d0 204-205,250,404,632-648,738,795,835,865,883,894,914,931,957,1024,1034,1044,1072,1085,1220-1683
+module/tests/test-rc-idempotency.sh
+  s_d4195feb479306::t_15e92b131abe6e 77,79-82
+module/skills/review-council/scripts/lib/evidence.sh
+  s_d4195feb479306::t_6e9b136c0180b3 14-19
+module/skills/review-council/scripts/rc-plan-batches.sh
+  s_d4195feb479306::t_f4d3d1004376ef 94-100
+module/tests/test-rc-lib.sh
+  s_d4195feb479306::t_6e0e2e505e1ed1 196-246
+module/tests/test-rc-verify-evidence.sh
+  s_d4195feb479306::t_da983dcc70da34 1304-1315
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3eba8ede5815d0d4648663f0875910000cd82cee",
+  "prompts": {},
+  "sessions": {
+    "s_d4195feb479306": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e22f1007-78c4-4eda-b8b7-207f59ca67e1",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

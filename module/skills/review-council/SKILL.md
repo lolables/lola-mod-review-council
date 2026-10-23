@@ -1072,6 +1072,11 @@ and learnings extraction guidance.
 **Update tracking:** Set Report status to `complete`, record council
 verdict and learnings count.
 
+**The run ends here**, or at Step 7 when post intent was recorded. Never
+schedule a wakeup, timer or follow-up turn at any point in the run: a
+dispatched subagent's completion notification resumes you, and a scheduled
+turn that fires after the run has ended is billed for nothing.
+
 ### Step 7: POST (opt-in, terminal)
 
 **Skip entirely unless post intent was recorded.** Read `Post intent:` from

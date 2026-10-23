@@ -2871,6 +2871,18 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-173: a headless run waited on a background subagent by scheduling a
+# wakeup; the wakeup fired after the report was done and billed a second turn.
+echo "Test: the run ends after its last step and schedules nothing (RC-173)"
+if grep -qF 'Never schedule a wakeup, timer or follow-up turn' <<<"$skill_flat" &&
+	grep -qF 'completion notification resumes you' <<<"$skill_flat"; then
+	echo "  PASS: SKILL.md forbids scheduled follow-ups"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: nothing stops the orchestrator scheduling a turn past the run's end"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

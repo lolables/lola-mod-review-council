@@ -221,7 +221,7 @@ stateDiagram-v2
     Extract --> Extract: nothing_to_do (write held responses)
     Extract --> [*]: nothing_to_do, none held (stop)
     Extract --> Verify: ok
-    Verify --> Render: effort=quick
+    Verify --> Recompute: effort=quick
     Verify --> Render: nothing_to_do (no findings file)
     Verify --> Correction: correctable>0
     Verify --> Consolidate: correctable=0
@@ -229,11 +229,12 @@ stateDiagram-v2
     Correction --> Consolidate
     Consolidate --> [*]: consolidate_error (stop)
     Consolidate --> Validate: verified>0 & not all LOW (arbiter calibrates + validates)
-    Consolidate --> Render: nothing to validate & no conversation
-    Consolidate --> Disposition: nothing to validate & conversation
-    Validate --> Render: no conversation
-    Validate --> Disposition: conversation
-    Disposition --> Render
+    Consolidate --> Recompute: nothing to validate
+    Validate --> Recompute
+    Recompute --> [*]: validation_error (stop or re-verify)
+    Recompute --> Render: quick or no conversation
+    Recompute --> Disposition: conversation
+    Disposition --> Render: check recomputes verdicts
     Render --> Report
     Report --> [*]
 ```
@@ -863,12 +864,17 @@ procedures. Run these in this order:
     otherwise stop and report the message verbatim.
   - On `nothing_to_do` (session directory or `findings.json` missing), stop
     and report.
+- **Recompute per-agent verdicts (verify.md Step 6) — SCRIPT-OWNED, every
+  effort.** Run `bash ${SCRIPTS_DIR}/rc-recompute-verdicts.sh ${session_dir}`
+  last. It derives `findings.json` `.verdicts` from findings left and verdicts
+  filed; never edit `.verdicts` by hand. On `ok`, log each `changes` entry in
+  `verification.txt`; on `validation_error`, act per verify.md Step 6.
 - Determine iteration verdict: APPROVE or REQUEST CHANGES
 
 **Effort-conditional behavior:**
 - **quick**: Skip correction round, cross-agent consolidation, arbiter
   (severity calibration and validation gate). Run only `rc-verify-evidence.sh`
-  (mechanical evidence check).
+  (mechanical evidence check), then `rc-recompute-verdicts.sh`.
   Proceed directly to Step 5, skipping Step 4.5 (Disposition) — its own
   gate also excludes `quick`, so this is a shortcut, not a divergence.
 - **standard**: Full verification as above.
@@ -931,10 +937,11 @@ Step 2 is orchestrator-facing setup, not part of the prompt text itself.
 After the subagent returns:
 
 - Resolved findings move from `verified` to `stripped` in `findings.json`
-  (reason `DISPOSITION_RESOLVED`); agents left with zero remaining verified
-  findings are upgraded to `APPROVE` per `verify.md` Step 6's logic. Only
-  `resolved` removals count toward that check — `suppressed-low` removals are
-  verdict-neutral and do NOT (`disposition.md` Step 4).
+  (reason `DISPOSITION_RESOLVED`). Do not edit `.verdicts`: the check below
+  recomputes it per `verify.md` Step 6, upgrading agents left with no
+  findings to `APPROVE`. Only `resolved` removals count toward that —
+  `suppressed-low` removals are verdict-neutral and do NOT
+  (`disposition.md` Step 4).
 - Findings marked `provenance.validator.result: "SCRIPT"` (from `rc-check-symlinks`) are never handed to the subagent and never moved.
 - Run `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir}`
   (`disposition.md` Step 4, "Check"). A reply never clears HIGH/CRITICAL:

@@ -123,8 +123,9 @@ reads each agent's `verdicts/{agent}.json` (written by `rc-extract-verdict.sh`
   (`{primary, merged}`), added by Step 3c for the report renderer. Absent
   when no semantic consolidation occurred.
 - `verdicts`: the per-agent verdict map, copied verbatim from each agent's
-  JSON — never re-derived from finding counts. Source of truth for the
-  report's per-agent verdict table (see Step 6 — Verdict Upgrade Logic).
+  JSON (also kept as filed in `verdicts/verdicts-map.json`). Source of truth
+  for both per-agent verdict tables. Script-owned: Step 6 derives it
+  (`rc-recompute-verdicts.sh`) — never hand-edit it.
 - `missing_verdicts`: agents that `session-manifest.json` records as dispatched
   but which produced no verdict file. Empty when the council is complete, and
   empty when the session carries no manifest — absence of the manifest claims
@@ -387,8 +388,7 @@ After correction round, remove all findings remaining unverified:
 - Log each stripped finding:
   > "Finding `{title}` from `{agent}` stripped — {reason: file does not exist | evidence not found in file | correction failed}"
 
-- If stripping leaves agent with zero remaining findings but REQUEST CHANGES verdict, upgrade to APPROVE and note:
-  > "Agent `{name}` verdict changed to APPROVE — all findings were unverified."
+- Stripping that leaves agent with zero findings changes its verdict in Step 6 (script), not here.
 
 ---
 
@@ -621,8 +621,7 @@ Log each `provenance.calibrated_from` entry to Step 5 — SEVERITY CALIBRATION:
 > "Finding `{title}` severity {from} → {to} — {reason}"
 
 Verdict changes are Step 6's job: if every finding from an agent whose verdict
-was REQUEST CHANGES is retracted, Step 6 upgrades the verdict (same logic as
-Step 3).
+was REQUEST CHANGES is retracted, Step 6's script upgrades the verdict.
 
 Record retracted findings as false positive patterns in learnings (same as stripped-findings logic in report phase).
 
@@ -712,24 +711,46 @@ Update `${session_dir}/tracking.md` Phase: Verification with fields: findings to
 
 ## Step 6 — Verdict Upgrade Logic
 
-Per-agent verdicts come from `findings.json` `.verdicts` (verbatim from each
-agent's JSON — never re-derive them from finding counts). If stripping or
-validator retraction leaves an agent with zero verified findings and that
-agent's entry in `.verdicts` was `REQUEST CHANGES`, set that entry to
-`APPROVE` and log the change.
+Per-agent verdicts in `findings.json` `.verdicts` are SCRIPT-OWNED. Run,
+every effort (`quick` included — stripping alone can empty an agent):
 
-If stripping leaves agent with zero findings, upgrade to APPROVE.
+```
+bash ${SCRIPTS_DIR}/rc-recompute-verdicts.sh ${session_dir}
+```
 
-The upgrade above only ever moves a verdict toward APPROVE. The reverse
+It derives each agent's verdict from findings left and verdict agent filed
+(`verdicts/verdicts-map.json`), rules in `scripts/jq/recompute-verdicts.jq`,
+first match wins:
+
+| Rule | Agent | Verdict |
+|------|-------|---------|
+| `HIGH_OR_CRITICAL` | filed a verified HIGH or CRITICAL | `REQUEST CHANGES` |
+| `NO_FINDINGS` | holds no finding | `APPROVE` |
+| `DECLARED` | anything else | verdict it filed |
+
+Agent holds finding it filed, or is credited on (`provenance.consolidated_from`),
+in `verified` or stripped as `DISPOSITION_SUPPRESSED_LOW`. Entry for agent that
+filed no verdict dropped (`NOT_DECLARED`). Never edit `.verdicts` by hand:
+script overwrites edit that contradicts these rules.
+
+`NO_FINDINGS` only ever moves a verdict toward APPROVE. The reverse
 direction is mechanical too: **any agent still holding a verified HIGH or
 CRITICAL finding after consolidation and the arbiter's calibration and validation is set to
 REQUEST CHANGES**, whatever it declared. `rc-extract-verdict.sh` rejects an
 APPROVE filed over a HIGH or CRITICAL finding at intake, but a validator
 severity adjustment (Step 4 — CORRECTED) or a consolidation that folds a
 cluster into a higher-severity primary (Step 3c) can raise a severity after
-that gate, so intake alone does not settle it. Log each such change in
-`verification.txt` (Step 5 — SEVERITY CALIBRATION) alongside the finding that
-forced it.
+that gate, so intake alone does not settle it.
+
+Dispatch on `status`:
+- `ok` — payload `changes` lists every entry changed as `{agent, from, to,
+  rule}` (empty: map already followed). Log each in `verification.txt`
+  (Step 5 — SEVERITY CALIBRATION):
+  > "Agent `{agent}` verdict {from} → {to} — {rule}"
+- `validation_error` — `findings.json` unchanged. Missing or unreadable
+  `verdicts-map.json`: re-run `rc-verify-evidence.sh`, then Steps 1-6 in
+  order. Otherwise stop, report message verbatim.
+- `nothing_to_do` — no `findings.json`; nothing to recompute.
 
 If all verified verdicts **APPROVE** after stripping and deduplication, verification phase returns APPROVE. Include stripped findings and deduplication notes as warnings in output.
 

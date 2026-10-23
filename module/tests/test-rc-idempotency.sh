@@ -186,6 +186,7 @@ cat >"$s/verdicts/findings.json" <<'FJ'
  {"id":"F2","agent":"divisor-guard-code","severity":"MEDIUM","file":"b.go","line":9,"evidence":"y","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}
 ],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{"divisor-guard-code":"REQUEST CHANGES"}}
 FJ
+printf '{"divisor-guard-code":"REQUEST CHANGES"}\n' >"$s/verdicts/verdicts-map.json"
 bash "$SCRIPTS/rc-check-disposition.sh" "$s" --snapshot >/dev/null
 jq '.verified[1] += {status: "stripped", reason: "DISPOSITION_RESOLVED",
 	provenance: {disposition: {source: "pr-comment", action: "resolved", claim: "fixed", claim_verified: true,
@@ -199,6 +200,20 @@ jq '.stripped[0].severity = "HIGH"' "$s/edited.json" >"$s/verdicts/findings.json
 bash "$SCRIPTS/rc-check-disposition.sh" "$s" >/dev/null
 assert_idempotent "rc-check-disposition.sh (after a restore)" "$s/verdicts" \
 	bash "$SCRIPTS/rc-check-disposition.sh" "$s"
+rm -rf "$s"
+
+# --- rc-recompute-verdicts.sh -----------------------------------------------
+echo "Test 10: rc-recompute-verdicts.sh is idempotent over a corrected map"
+s=$(new_session)
+printf '{"divisor-guard-code":"REQUEST CHANGES","divisor-sre-code":"APPROVE"}\n' >"$s/verdicts/verdicts-map.json"
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"divisor-sre-code","severity":"HIGH","file":"a.go","line":3,"status":"verified","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,
+ "verdicts":{"divisor-guard-code":"REQUEST CHANGES","divisor-sre-code":"APPROVE"}}
+FJ
+assert_idempotent "rc-recompute-verdicts.sh" "$s/verdicts" \
+	bash "$SCRIPTS/rc-recompute-verdicts.sh" "$s"
 rm -rf "$s"
 
 echo ""

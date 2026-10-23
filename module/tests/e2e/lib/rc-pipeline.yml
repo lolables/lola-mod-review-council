@@ -50,6 +50,8 @@ steps:
       mkdir -p "$W/session/verdicts/_meta"
       cp "$W/clusters.json" "$W/session/verdicts/_meta/clusters.json"
       bash "$SC/rc-consolidate.sh" "$W/session" >/dev/null 2>&1
+      # verify.md Step 6: per-agent verdicts derived by script, at every effort.
+      bash "$SC/rc-recompute-verdicts.sh" "$W/session" >/dev/null 2>&1
 
       # The verification log is written by the orchestrator, not by any script
       # in this chain — phases/verify.md owns it as the record of what was

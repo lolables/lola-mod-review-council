@@ -438,6 +438,25 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-163: the per-agent verdict map was hand-edited from prose after the
+# evidence check built it, and both renderers print it as is (#52). The rules
+# are a script now; the prose must send the orchestrator to it, after
+# validation and at every effort, and forbid the hand edit in both phases.
+echo "Test: per-agent verdicts are recomputed by script, never hand-edited (RC-163)"
+disposition_flat=$(tr '\n' ' ' <"$DISPOSITION_MD" | tr -s ' ')
+# shellcheck disable=SC2016 # literal markdown and template text, not expansions.
+if grep -qF 'bash ${SCRIPTS_DIR}/rc-recompute-verdicts.sh ${session_dir}' "$VERIFY_MD" &&
+	grep -qF 'Never edit `.verdicts` by hand' <<<"$verify_flat" &&
+	grep -qF '`quick` included' <<<"$verify_flat" &&
+	grep -qF 'Never edit `findings.json.verdicts`: check below recomputes it' <<<"$disposition_flat" &&
+	grep -qF 'rc-recompute-verdicts.sh ${session_dir}`' "$SKILL_MD"; then
+	echo "  PASS: verify.md Step 6, disposition.md Step 4 and SKILL.md route verdicts through the script"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a phase still leaves the per-agent verdict map to a hand edit"
+	FAIL=$((FAIL + 1))
+fi
+
 # The Verdict Coherence Rule further down reads as a licence to keep a
 # unanimous APPROVE. Left unreconciled, that is two rules over one decision —
 # exactly how the original gap survived. Pin the sentence that partitions them.

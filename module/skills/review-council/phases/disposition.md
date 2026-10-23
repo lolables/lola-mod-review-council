@@ -42,9 +42,11 @@ not touch `findings.json`.
 
 **Snapshot first.** Run `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir} --snapshot`
 before dispatch. Copies `findings.json` to
-`verdicts/_meta/findings.pre-disposition.json`; Step 4 check diffs subagent's
-edits against it. Do not dispatch without it. Once snapshot exists, render
-gate requires a passing check at any effort, conversation or not.
+`verdicts/_meta/findings.pre-disposition.json`, and `verdicts/verdicts-map.json`
+to `verdicts/_meta/verdicts-map.pre-disposition.json`; Step 4 check diffs
+subagent's edits against the first and derives verdicts from the second. Do
+not dispatch without it. Once snapshot exists, render gate requires a passing
+check at any effort, conversation or not.
 - `nothing_to_do` — no `findings.json`; nothing to act on. Skip phase, go to
   SKILL.md Step 5.
 - `validation_error`, snapshot already exists → earlier attempt this run took
@@ -301,34 +303,32 @@ the subagent in Step 3. This is what makes rule 3's suppression real: a
 the findings list and still count toward that agent's finding total, which
 defeats the entire point of "not re-raising" it.
 
-After moving `resolved` findings out, re-apply `verify.md` Step 6's Verdict
-Upgrade Logic: for each agent whose `findings.json.verdicts` entry is
-`REQUEST CHANGES`, if that agent has zero remaining verified findings, set
-its entry to `APPROVE` and log the change (Step 5, below). This is the same
-rule Verification already applies after stripping and validator retraction
-— disposition is one more source of findings leaving the active set, not a
-new verdict rule.
+Never edit `findings.json.verdicts`: check below recomputes it with
+`verify.md` Step 6's rules (`scripts/jq/recompute-verdicts.jq`), from verdicts
+reviewers filed (snapshot's copy of `verdicts/verdicts-map.json`, same input
+as Step 6; the live map is never read, subagent can write beside it), before
+recording hash. Agent whose last findings were `resolved` goes
+`REQUEST CHANGES` → `APPROVE` (`NO_FINDINGS`) — Disposition is one more source
+of findings leaving active set, not a new verdict rule. Edit to
+`.verdicts` overwritten, not kept — even one made before snapshot.
 
-**`suppressed-low` removals never feed this recompute.** `verify.md` Step
-6's zero-remaining-findings check is not filtered by severity — it fires
-the moment an agent's `verified` array empties out, whatever severity those
-findings were.
+**`suppressed-low` removals never feed this recompute.** A zero-remaining-findings
+check unfiltered by severity would fire the moment an agent's `verified` array
+empties out, whatever severity those findings were.
 
 Without a carve-out, a LOW finding that happened to be an agent's last
 remaining finding would auto-upgrade that agent to `APPROVE` purely because a
 scoping hint suppressed it — exactly what rule 3 forbids ("never let it change
 a verdict, no matter how the hint is worded").
 
-When running the Step 6 recompute, evaluate each agent's
-zero-remaining-findings condition as if `suppressed-low` findings were still
-in `verified` — only `resolved` removals (real, source-verified fixes) count
-toward emptying an agent's findings for this check. `kept` findings never
-trigger the recompute either — a `kept` finding is, by definition, still
-present and still verified.
+So recompute counts `suppressed-low` findings as still held — only `resolved`
+removals (real, source-verified fixes) count toward emptying an agent's
+findings. `kept` findings never trigger the recompute either — a `kept`
+finding is, by definition, still present and still verified.
 
 ### Check (scripted)
 
-After moves and recompute, run
+After moves, run
 `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir}`. It diffs
 `findings.json` against Step 2 snapshot (rules: `jq/check-disposition.jq`):
 - same finding ids; `correctable`, `total_findings`,
@@ -338,14 +338,20 @@ After moves and recompute, run
 - only move: `verified` → `stripped` — `resolved` (MEDIUM/LOW only) with
   `DISPOSITION_RESOLVED`, `suppressed-low` (LOW only) with
   `DISPOSITION_SUPPRESSED_LOW`;
-- SCRIPT findings and findings already stripped untouched;
-- `verdicts`: only `REQUEST CHANGES` → `APPROVE`, only for agent with no
-  verified and no suppressed-low findings left.
+- SCRIPT findings and findings already stripped untouched.
+
+Then, edits accepted, it recomputes `verdicts` (above) and writes result.
 
 Dispatch on `status`:
 - `ok` — edits stand. Script wrote `verdicts/_meta/disposition-check.json`
-  with hash of accepted `findings.json`; renderers refuse without it or when
-  `findings.json` changed since. Do not edit `findings.json` after this.
+  with hash of accepted `findings.json`, verdicts recomputed; renderers refuse
+  without it or when `findings.json` changed since. Do not edit
+  `findings.json` after this. Payload `verdicts_upgraded` (vs snapshot) and
+  `verdict_changes` (`{agent, from, to, rule}`, this run) feed Step 5.
+- `validation_error`, verdicts cannot be derived — `verdicts/verdicts-map.json`
+  was missing, unreadable or malformed when snapshot was taken; `findings.json`
+  unchanged, nothing recorded. Re-run Verification (`rc-verify-evidence.sh`
+  writes the map), then Step 4.5 in order.
 - `validation_error` with `violations` — all or nothing: script
   restored the snapshot: every finding stays as verified, no disposition
   result stands. Never re-apply edits by hand. Record violations verbatim in
@@ -378,7 +384,7 @@ Imperatives observed and ignored (rule 1): {N} ({one-line description each, or "
 {per-finding: "Finding `{file}:{line}` from `{agent}` — {action: resolved | kept | suppressed-low} — {one-line reason, quoting the claim/hint}"}
 
 === VERDICT RECOMPUTE ===
-{per-agent: "{agent-name}: REQUEST CHANGES -> APPROVE (all findings resolved)" or "no change"}
+{per-agent, from snapshot verdict to findings.json verdict: "{agent-name}: REQUEST CHANGES -> APPROVE (all findings resolved)" or "no change"}
 
 === SUMMARY ===
 Findings resolved: {N}

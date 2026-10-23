@@ -22,7 +22,7 @@ conditional:
 | **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
-| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate |
+| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `rc-recompute-verdicts.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate; per-agent verdicts derived last |
 | **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
 | **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
@@ -168,7 +168,11 @@ flowchart TD
    validation gate in one reply; `rc-apply-validation.sh` applies it by finding id. Calibration lowers to MEDIUM a
    HIGH or CRITICAL whose `impact` names no affected party and mechanism, and a Guard scope-creep HIGH that adds no
    trust surface, commits no contract others build on, and is mentioned in the PR/MR description (or was reviewed
-   without one). Criteria live in `references/severity.md`.
+   without one). Criteria live in `references/severity.md`. Last, `rc-recompute-verdicts.sh` derives each agent's
+   verdict in `findings.json` `.verdicts` from the findings left and the verdict it filed (`verdicts-map.json`), by
+   the rules in `scripts/jq/recompute-verdicts.jq`: a verified HIGH or CRITICAL forces REQUEST CHANGES, an agent
+   holding no finding is APPROVE, anything else keeps its filed verdict. Both per-agent tables print that map, which
+   used to be hand-edited from prose.
 11. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
@@ -177,7 +181,9 @@ flowchart TD
     CRITICAL finding. `rc-check-disposition.sh` snapshots `findings.json` before the subagent runs and diffs its
     edits against that snapshot afterwards; any edit outside the allowed set restores the snapshot whole, and the
     renderers refuse unless the check passed on the exact `findings.json` they render (its SHA-256 is recorded in
-    `disposition-check.json`). See `phases/disposition.md` for the full contract.
+    `disposition-check.json`). Once the edits pass, the check recomputes `.verdicts` with the same jq program from
+    the copy of `verdicts-map.json` taken with the snapshot before hashing, so a resolved reply upgrades its agent
+    and no edit to `.verdicts` or to the map survives. See `phases/disposition.md` for the full contract.
 12. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
     runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
     behind
@@ -217,6 +223,7 @@ flowchart TD
   vcor["Verify: rc-apply-corrections.sh"]
   vcon["Verify: rc-consolidate.sh"]
   vval["Verify: rc-apply-validation.sh"]
+  vrec["Verify: rc-recompute-verdicts.sh"]
   vorc["Verify: orchestrator write-up"]
   dsp["Disposition subagent"]
   vdck["Disposition: rc-check-disposition.sh"]
@@ -238,6 +245,7 @@ flowchart TD
       corj["corrections.json"]
       dtxt["disposition.txt"]
       snap["findings.pre-disposition.json"]
+      vsnap["verdicts-map.pre-disposition.json"]
       dchk["disposition-check.json"]
     end
   end
@@ -258,11 +266,17 @@ flowchart TD
   vcon -->|"merged back in place"| find
   find --> vval
   vval -->|"outcomes applied in place"| find
+  vmap --> vrec
+  find --> vrec
+  vrec -->|"verdicts derived in place"| find
   vorc --> vtxt
   dsp --> dtxt
   find -->|"--snapshot"| snap
   dsp -->|"edits in place"| find
   snap --> vdck
+  vmap -->|"--snapshot"| vsnap
+  vsnap --> vdck
+  vdck -->|"verdicts recomputed in place"| find
   vdck -->|"rule broken: snapshot restored"| find
   vdck --> dchk
   dchk -->|"missing or hash mismatch: the renderers refuse"| rrep
@@ -275,9 +289,9 @@ flowchart TD
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
   classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
-  class vevi,vcor,vcon,vval,vorc,dsp,vdck sysC
+  class vevi,vcor,vcon,vval,vrec,vorc,dsp,vdck sysC
   class rrep sysD
-  class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,snap,dchk,meta1,learn sysE
+  class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,snap,vsnap,dchk,meta1,learn sysE
 ```
 
 Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project-hash>/<timestamp>-<random>/` containing:
@@ -296,7 +310,7 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   `requested` only with a model ID it passed at dispatch, `rc-extract-verdict.sh` adds each valid verdict's optional
   `model` to `reported`, and the orchestrator adds the coordinator and validator roles it alone knows
 - `verdicts/` — each reviewer's raw output (`{agent}.raw.md`) and schema-validated verdict (`{agent}.json`), the
-  canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdict map)
+  canonical `findings.json` (verified/correctable/stripped findings) and `verdicts-map.json` (the per-agent verdicts as filed, which `rc-recompute-verdicts.sh` derives `.verdicts` from)
   and, when the change touches a symlink, the script verdict `rc-check-symlinks.json`. `findings.json.stale` is a
   previous run's `findings.json`, which `rc-verify-evidence.sh` moves aside before checking anything; it is kept for
   debugging only, and neither the renderers nor `rc-decide-verdict.sh` read it
@@ -304,7 +318,8 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), the
   verdict-format check the extractor ran (`schema-validation.txt`: `full` or `minimal`, the worst of every extraction), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail), `findings.pre-disposition.json` (the snapshot
-  Disposition's edits are checked against) and `disposition-check.json` (the check's result and the SHA-256 of the
+  Disposition's edits are checked against), `verdicts-map.pre-disposition.json` (the filed verdicts the check
+  derives `.verdicts` from, copied with that snapshot) and `disposition-check.json` (the check's result and the SHA-256 of the
   `findings.json` it accepted). `rc-render-report.sh` refuses to render without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 

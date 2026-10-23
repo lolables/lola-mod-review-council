@@ -471,6 +471,99 @@ assert_md rc_md_code 'src/a b.go:3' '<code>src\/a b\.go\:3</code>' "a normal pat
 assert_md rc_md_code $'a\r# b\u2028c' '<code>a \# b c</code>' "every line ending becomes a space"
 assert_md rc_md_code $'a\u2014b' $'<code>a\u2014b</code>' "a path keeps its dashes"
 
+# ---------------------------------------------------------------------------
+# recompute-verdicts.jq: each agent's verdict in findings.json, derived from the
+# findings and the verdict it filed. Before it, three rules lived in prose and
+# were applied by hand-editing .verdicts, and both renderers print that map as
+# is (#52). Each case builds one document and asks for one agent's verdict.
+
+# shellcheck disable=SC2016 # jq programs; every $ is jq's.
+finding() { # agent severity [extra-json]
+	local extra="${3:-}"
+	[[ -n "$extra" ]] || extra='{}'
+	jq -nc --arg a "$1" --arg s "$2" --argjson x "$extra" \
+		'{agent: $a, severity: $s, file: "a.go", line: 1} + $x'
+}
+# recompute <declared-map> <verified> <stripped> [verdicts-map] [correctable]
+# -> the program's output over a document holding those arrays.
+# shellcheck disable=SC2016 # jq programs; every $ is jq's.
+recompute() {
+	local map="${4:-}" corr="${5:-}" d
+	[[ -n "$map" ]] || map='{}'
+	[[ -n "$corr" ]] || corr='[]'
+	d=$(jq -nc --argjson v "$2" --argjson s "$3" --argjson m "$map" --argjson c "$corr" \
+		'{verified: $v, correctable: $c, stripped: $s, verdicts: $m}')
+	run_jq recompute-verdicts.jq "$d" --argjson declared "$1"
+}
+A=divisor-guard-code
+B=divisor-testing-code
+V=".doc.verdicts[\"$A\"]"
+
+echo "Test 36: the rule table, first match wins (RC-160)"
+high=$(finding "$A" HIGH)
+crit=$(finding "$A" CRITICAL)
+med=$(finding "$A" MEDIUM)
+other_high=$(finding "$B" HIGH)
+out=$(recompute "{\"$A\":\"APPROVE\"}" "[$high]" '[]')
+assert_jq_str "$out" "$V" "REQUEST CHANGES" "a verified HIGH forces REQUEST CHANGES over a filed APPROVE"
+out=$(recompute "{\"$A\":\"APPROVE\"}" "[$crit]" '[]')
+assert_jq_str "$out" "$V" "REQUEST CHANGES" "so does a verified CRITICAL"
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\"}" '[]' '[]')
+assert_jq_str "$out" "$V" "APPROVE" "no findings left upgrades REQUEST CHANGES to APPROVE"
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\"}" "[$med]" '[]')
+assert_jq_str "$out" "$V" "REQUEST CHANGES" "a MEDIUM left keeps the filed REQUEST CHANGES"
+out=$(recompute "{\"$A\":\"APPROVE\"}" "[$med]" '[]')
+assert_jq_str "$out" "$V" "APPROVE" "a MEDIUM left keeps the filed APPROVE"
+out=$(recompute "{\"$A\":\"APPROVE\"}" "[$other_high]" '[]')
+assert_jq_str "$out" "$V" "APPROVE" "another agent's HIGH does not force this one"
+
+echo "Test 37: what counts as a finding left (RC-161)"
+# A suppressed-low strip is a commenter's scoping hint and never changes a
+# verdict (disposition.md rule 3), so it still counts. Every other strip, a
+# correctable finding, and another agent's finding do not.
+sup=$(finding "$A" LOW '{"status":"stripped","reason":"DISPOSITION_SUPPRESSED_LOW"}')
+res=$(finding "$A" MEDIUM '{"status":"stripped","reason":"DISPOSITION_RESOLVED"}')
+gone=$(finding "$A" HIGH '{"status":"stripped","reason":"FILE_NOT_FOUND"}')
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\"}" '[]' "[$sup]")
+assert_jq_str "$out" "$V" "REQUEST CHANGES" "a suppressed-low strip still counts as left"
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\"}" '[]' "[$res, $gone]")
+assert_jq_str "$out" "$V" "APPROVE" "resolved and evidence-failed strips do not"
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\"}" '[]' '[]' '{}' "[$high]")
+assert_jq_str "$out" "$V" "APPROVE" "a correctable finding does not"
+
+echo "Test 38: an agent credited on a consolidated finding still holds it"
+# Step 3c folds a secondary into another agent's primary and removes it from
+# verified. Its reviewer's concern survives in the primary, so it is not
+# upgraded to APPROVE; the HIGH is the primary's, so it is not forced either.
+primary=$(finding "$B" HIGH "{\"provenance\":{\"consolidated_from\":[{\"agent\":\"$A\",\"severity\":\"MEDIUM\"}]}}")
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\",\"$B\":\"REQUEST CHANGES\"}" "[$primary]" '[]')
+assert_jq_str "$out" "$V" "REQUEST CHANGES" "a credited agent keeps its filed REQUEST CHANGES"
+out=$(recompute "{\"$A\":\"APPROVE\",\"$B\":\"REQUEST CHANGES\"}" "[$primary]" '[]')
+assert_jq_str "$out" "$V" "APPROVE" "and its filed APPROVE: the primary's HIGH forces only the primary's agent"
+
+echo "Test 39: the map's agents are the declared ones; every change is reported"
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\",\"$B\":\"APPROVE\"}" "[$med]" '[]' \
+	"{\"$A\":\"APPROVE\",\"divisor-x\":\"APPROVE\"}")
+assert_jq_str "$out" '.doc.verdicts | tojson' "{\"$A\":\"REQUEST CHANGES\",\"$B\":\"APPROVE\"}" \
+	"a hand edit is corrected, a missing agent restored, an added one dropped"
+assert_jq_str "$out" '[.changes[] | "\(.agent)=\(.from)>\(.to):\(.rule)"] | join(" ")' \
+	"$A=APPROVE>REQUEST CHANGES:DECLARED $B=null>APPROVE:NO_FINDINGS divisor-x=APPROVE>null:NOT_DECLARED" \
+	"each change names the agent, both values and the rule"
+out=$(recompute "{\"$A\":\"REQUEST CHANGES\"}" "[$med]" '[]' "{\"$A\":\"REQUEST CHANGES\"}")
+assert_jq_str "$out" '.changes | length' "0" "a map that already follows from the findings reports no change"
+assert_jq_str "$out" '.doc.verified | length' "1" "and the findings pass through untouched"
+
+echo "Test 40: inputs the rules cannot read are refused, not guessed at"
+for bad in '[]' '{"x":"MAYBE"}' '{"x":null}' 'null'; do
+	out=$(recompute "$bad" '[]' '[]')
+	assert_jq_str "$out" '.problem | type' "string" "declared map $bad is refused"
+	assert_jq_str "$out" 'has("doc")' "false" "and no document is produced for it"
+done
+for bad in '[]' '{"verified":{},"stripped":[]}' '{"verified":[1],"stripped":[]}' '{"verified":[]}'; do
+	out=$(run_jq recompute-verdicts.jq "$bad" --argjson declared "{\"$A\":\"APPROVE\"}")
+	assert_jq_str "$out" '.problem | type' "string" "findings document $bad is refused"
+done
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

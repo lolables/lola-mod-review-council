@@ -614,7 +614,7 @@ fi
 # RC-020: `<!-- TLDR -->` is the one marker the orchestrator may never delete —
 # every report has an outcome to summarise. That makes its fallback load-bearing
 # in a way no other marker's is: the marker's source, comment-summary.md, is
-# written by a subagent that can be skipped (quick mode) or can fail, be
+# written by a subagent that is not dispatched (quick mode) or can fail, be
 # interrupted, or return prose without writing the file (any mode). Scoping the
 # fallback to quick mode alone leaves the orchestrator with no instruction on the
 # failure path, and its two options there are both defects — invent a summary, or
@@ -626,7 +626,7 @@ echo "Test: the TLDR fallback covers every absent-or-empty case, not just quick 
 if grep -qF 'is absent or empty**, replace the marker with the literal line `Automated review complete.`' <<<"$report_flat" &&
 	grep -qF 'This is not a `quick`-mode special case' <<<"$report_flat" &&
 	grep -qF 'The marker is never deleted instead' <<<"$report_flat" &&
-	grep -qF 'in any effort mode, whether the subagent was skipped or dispatched and failed' <<<"$skill_flat" &&
+	grep -qF 'at `quick` effort, where no subagent runs, or in any mode when a dispatched one failed' <<<"$skill_flat" &&
 	grep -qF 'fill `<!-- TLDR -->` with the literal line `Automated review complete.` instead. Never delete it' <<<"$skill_flat"; then
 	echo "  PASS: fallback is unconditional on effort and the marker is never dropped"
 	PASS=$((PASS + 1))
@@ -2849,6 +2849,25 @@ if grep -qF '**Output contract**: append to every code review delegation prompt'
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the output contract is left to a file reviewers may not open"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-172: the prose subagent saw only findings.json, which holds per-agent
+# verdicts but not the council's, so one REQUEST CHANGES among four APPROVEs
+# came back as the council verdict. Two other runs skipped the dispatch
+# outright, and the fallback wording listed "skipped" as a normal outcome.
+echo "Test: the prose subagent gets the decided verdict and is not optional (RC-172)"
+# shellcheck disable=SC2016 # literal markdown and template text, not expansions.
+if grep -qF 'Dispatch a prose subagent with **only** `${session_dir}/verdicts/findings.json` and `${session_dir}/verdict.txt`' <<<"$skill_flat" &&
+	grep -qF 'with **only** `${session_dir}/verdicts/findings.json` and `${session_dir}/verdict.txt`' <<<"$report_flat" &&
+	grep -qF 'never re-derive it from the per-agent verdicts' <<<"$report_flat" &&
+	grep -qF 'At `standard` and `deep` effort this dispatch is required' <<<"$skill_flat" &&
+	grep -qF 'At `standard` and `deep` effort this dispatch is required' <<<"$report_flat" &&
+	! grep -qF 'whether the subagent was skipped or dispatched and failed' <<<"$skill_flat"; then
+	echo "  PASS: SKILL.md and report.md hand the prose subagent verdict.txt and require it"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the prose subagent can still guess the verdict, or be skipped"
 	FAIL=$((FAIL + 1))
 fi
 

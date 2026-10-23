@@ -161,9 +161,11 @@ is prose only — it never touches structure.
    stdout to `${session_dir}/report.md`.
 
 2. **Dispatch a prose subagent** with **only** `${session_dir}/verdicts/findings.json`
-   as input — no report template, no other session files, and executes
-   nothing (`phases/delegate.md` "Tool Profile"). It returns two
-   plain-text blobs and nothing else:
+   and `${session_dir}/verdict.txt` as input — no report template, no other
+   session files, and executes nothing (`phases/delegate.md` "Tool Profile").
+   At `standard` and `deep` effort this dispatch is required; the orchestrator
+   never writes the TL;DR or narrative itself. It returns two plain-text blobs
+   and nothing else:
 
    - A one-line TL;DR (plain-language, under 25 words) — write to
      `${session_dir}/comment-summary.md`. This is the same one-liner that
@@ -183,6 +185,16 @@ is prose only — it never touches structure.
    markdown structure — structure is owned by the render scripts, and the
    subagent has no access to the report template. If it returns anything
    beyond the two blobs, discard the extra and keep only the prose.
+
+   Tell the subagent that the council verdict is the first line of
+   `verdict.txt`, decided by `rc-decide-verdict.sh`, and that it must state
+   that verdict and never re-derive it from the per-agent verdicts in
+   `findings.json`: one reviewer's REQUEST CHANGES does not make the council's
+   verdict REQUEST CHANGES. If its TL;DR or narrative still names another
+   verdict, re-dispatch it once and name the contradiction. If the second reply
+   also disagrees, write neither file: the TL;DR takes the fallback in step 4,
+   and the `<!-- NARRATIVE -->` marker is deleted like any section whose phase
+   produced nothing.
 
 3. **Splice deterministically.** `rc-render-report.sh` streams to stdout and
    performs no stateful file edits, so filling the marker is not the model
@@ -205,8 +217,9 @@ is prose only — it never touches structure.
      uses when the file is missing.
    - This is not a `quick`-mode special case. The file is missing in `quick`
      mode because the subagent is never dispatched, and it can be missing in
-     any mode because a dispatched subagent failed, was interrupted, or
-     returned prose without writing it.
+     any mode because a dispatched subagent failed, was interrupted,
+     returned prose without writing it, or twice named a verdict other than
+     `verdict.txt` (step 2).
    - The marker is never deleted instead: unlike every other marker it is not
      conditional on a phase having run, so an empty source is a fallback, not
      a reason to drop the section.

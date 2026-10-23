@@ -450,6 +450,9 @@ Still printed by the scripts without the library, and why that is safe:
 - role names and model IDs in the provenance block: checked against an
   allow-list and shown as `unrecognised` when they fail it
   (`lib/render-provenance.sh`);
+- the council version: the digits and dots of the installed skill's `VERSION`
+  stamp, in fixed words, only when the whole stamp has a shape the release flow
+  writes, else `unknown` (`rc_council_version`, `lib/council-version.sh`);
 - the base branch, constitution path, pack names, effort and the report's
   changed-configuration paths: flattened to one line and printed in a code
   span sized past every backtick run in them (`rc_md_code_span`);

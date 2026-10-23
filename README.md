@@ -382,6 +382,12 @@ block, written by scripts rather than by the model:
   only the head.
 - **Rules**: the constitution and the project packs the review ran under, or
   `none`.
+- **Council version**: the installed council that ran the review: `vX.Y.Z` for
+  an install from a release, `unreleased, after vX.Y.Z` (or `unreleased, before
+  the first release`) for an install from `main`, and `unknown` when the
+  skill's `VERSION` stamp is missing or in no shape the release flow writes.
+  An install older than a fix shows a lower version, so a stale install is
+  visible from the report alone.
 - **Verdict format check**: `full` when reviewer verdicts were checked by the
   `jsonschema` validator, `minimal` when the jq fallback ran because it was
   missing or incompatible. The session keeps the worst mode any extraction used.

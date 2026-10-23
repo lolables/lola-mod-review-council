@@ -2542,6 +2542,92 @@ echo "APPROVE WITH ADVISORIES" >"$sess/verdict.txt"
 assert_same_provenance "$sess" "the full block, coverage line included, matches across both renderers"
 rm -rf "$sess"
 
+# The installed skill's VERSION stamp names the council that ran (#89). It is
+# read from disk and printed into a public comment, so only the three shapes
+# release-bump.sh writes are shown, and never the file's own text otherwise.
+# rc_council_version lives in lib/council-version.sh; it is reached here
+# through render-provenance.sh, which is how both renderers load it.
+PROVENANCE_LIB="$SCRIPT_DIR/../skills/review-council/scripts/lib/render-provenance.sh"
+SKILL_VERSION_FILE="$SCRIPT_DIR/../skills/review-council/VERSION"
+
+echo "Test: rc_council_version shows a stamp only in a shape the release flow writes (#89)"
+vdir=$(mktemp -d)
+while IFS='|' read -r label content want; do
+	# shellcheck disable=SC2059 # the fixture's \n and \r escapes are the point.
+	printf "$content" >"$vdir/VERSION"
+	got=$(
+		# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+		source "$PROVENANCE_LIB"
+		rc_council_version "$vdir/VERSION"
+	)
+	assert_equals "$got" "$want" "$label"
+done <<'STAMPS'
+a release|0.1.0\n|v0.1.0
+a multi-digit release|12.30.405\n|v12.30.405
+a release without a trailing newline|0.1.0|v0.1.0
+development after a release|0.1.0+dev\n|unreleased, after v0.1.0
+development before the first release|0.0.0+dev\n|unreleased, before the first release
+0.0.0 is never a release|0.0.0\n|unknown
+an empty file|\n|unknown
+a leading v|v0.1.0\n|unknown
+two components|0.1\n|unknown
+a leading zero|01.2.3\n|unknown
+a pre-release suffix|0.1.0-rc1\n|unknown
+any other build suffix|0.1.0+evil\n|unknown
+a trailing space|0.1.0 \n|unknown
+a CRLF line ending|0.1.0\r\n|unknown
+a second line|0.1.0\nextra\n|unknown
+markdown after the version|0.1.0`<img src=x>`\n|unknown
+a newline before the version|\n0.1.0\n|unknown
+STAMPS
+got=$(
+	# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+	source "$PROVENANCE_LIB"
+	rc_council_version "$vdir/absent"
+)
+assert_equals "$got" "unknown" "a missing file"
+mkdir "$vdir/dir"
+got=$(
+	# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+	source "$PROVENANCE_LIB"
+	rc_council_version "$vdir/dir"
+)
+assert_equals "$got" "unknown" "a directory in the file's place"
+# A long line whose first 64 bytes are a valid version must not pass as one.
+printf '1.2.3%01000d\n' 0 >"$vdir/VERSION"
+got=$(
+	# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+	source "$PROVENANCE_LIB"
+	rc_council_version "$vdir/VERSION"
+)
+assert_equals "$got" "unknown" "an oversized stamp"
+rm -rf "$vdir"
+
+echo "Test: the provenance block names the shipped skill's version in both renderers (#89)"
+want_version=$(
+	# shellcheck source=module/skills/review-council/scripts/lib/render-provenance.sh
+	source "$PROVENANCE_LIB"
+	rc_council_version "$SKILL_VERSION_FILE"
+)
+if [[ -n "$want_version" && "$want_version" != "unknown" ]]; then
+	echo "  PASS: the shipped VERSION stamp is in a recognised shape ($want_version)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the shipped VERSION stamp renders as '$want_version'"
+	FAIL=$((FAIL + 1))
+fi
+sess=$(mktemp -d)
+make_facts_session "$sess"
+write_verification_log "$sess"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+assert_body_line "$sess" '**Council version:**' "**Council version:** ${want_version}<br>" \
+	"the comment names the council version"
+rules_then_version=$(grep -A1 -F '**Rules:**' "$sess/comment-body.md" | tail -n1)
+assert_equals "$rules_then_version" "**Council version:** ${want_version}<br>" \
+	"the version line follows the Rules line"
+assert_same_provenance "$sess" "the version line matches across both renderers"
+rm -rf "$sess"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

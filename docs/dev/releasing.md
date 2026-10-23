@@ -80,16 +80,20 @@ commits and commits that do not follow Conventional Commits.
 ## The skill's version stamp
 
 lola installs `module/`, not the repository root, so the root `VERSION` never
-reaches an installed council. `module/skills/review-council/VERSION` does, so
-an installed council can name its own version (#89). It holds one line:
+reaches an installed council. `module/skills/review-council/VERSION` does: the
+provenance block of the report and the PR comment, and the
+`scripts/review-open-prs.sh` plan, read it to name the council that ran (#89).
+Both use `rc_council_version` in
+`module/skills/review-council/scripts/lib/council-version.sh`. It holds one
+line:
 
-| Content | Where |
-|---|---|
-| `X.Y.Z` | the release commit, so an install from the `vX.Y.Z` tag |
-| `X.Y.Z+dev` | every commit after release X.Y.Z, so an install from `main` |
-| `0.0.0+dev` | every commit before the first release |
+| Content | Where | Shown as |
+|---|---|---|
+| `X.Y.Z` | the release commit, so an install from the `vX.Y.Z` tag | `vX.Y.Z` |
+| `X.Y.Z+dev` | every commit after release X.Y.Z, so an install from `main` | unreleased, after `vX.Y.Z` |
+| `0.0.0+dev` | every commit before the first release | unreleased, before the first release |
 
-Never edit the stamp by hand:
+Anything else, or no file, is shown as unknown. Never edit the stamp by hand:
 `test-rc-doc-guards.sh` (RC-150) fails unless it is `VERSION` or `VERSION+dev`.
 
 ## How the next version is suggested

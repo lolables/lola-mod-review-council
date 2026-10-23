@@ -531,6 +531,30 @@ assert_contains "$OUT" "--cli must be one of" "the error lists the accepted valu
 assert_equals "$RC" "2" "usage errors exit 2"
 
 echo ""
+echo "Test: the plan names the installed council version of the chosen host (#89)"
+# HOME is a fixture so the developer's own install never reaches the
+# assertion; CLAUDE_CONFIG_DIR is emptied for the same reason.
+vhome=$(mktemp -d)
+mkdir -p "$vhome/.claude/skills/review-council" "$vhome/.config/opencode/skills/review-council"
+printf '0.2.0\n' >"$vhome/.claude/skills/review-council/VERSION"
+printf '0.1.0+dev\n' >"$vhome/.config/opencode/skills/review-council/VERSION"
+RUN_ENV=(HOME="$vhome" CLAUDE_CONFIG_DIR= XDG_CONFIG_HOME=)
+STUB_CLIS="claude opencode"
+run_case "__eof__" --repo acme/widgets
+assert_contains "$OUT" "Council version: v0.2.0 (user: $vhome/.claude/skills/review-council)" \
+	"a dry run names claude's installed council"
+assert_not_contains "$OUT" "opencode/skills" "the other host's install is not named"
+run_case "__eof__" --repo acme/widgets --cli opencode
+assert_contains "$OUT" "Council version: unreleased, after v0.1.0 (user: $vhome/.config/opencode/skills/review-council)" \
+	"--cli opencode names opencode's installed council"
+rm -f "$vhome/.claude/skills/review-council/VERSION"
+run_case "yes" --repo acme/widgets --run
+assert_contains "$OUT" "Council version: unknown (no VERSION stamp: installed before versions were stamped)" \
+	"a --run plan flags an install that predates version stamps"
+RUN_ENV=()
+rm -rf "$vhome"
+
+echo ""
 echo "Test: no agent CLI at all is a precondition failure"
 STUB_CLIS=""
 run_case "__eof__" --repo acme/widgets

@@ -204,6 +204,46 @@ out=$(require_commands bash jq 2>&1) || rc=$?
 assert_equals "$rc" "0" "binaries that exist exit 0"
 assert_equals "$out" "" "and nothing is printed"
 
+# The batch driver names the council it is about to run (#89) from each
+# installed skill's VERSION stamp. The stamp's rules are rc_council_version's
+# (module/.../lib/council-version.sh), pinned in test-rc-render-comment.sh;
+# these cases cover where the driver looks and what it adds.
+echo ""
+echo "Test: council_install_lines names every lola install location of the chosen host"
+cdir=$(mktemp -d)
+mkdir -p "$cdir/home/.claude/skills/review-council" "$cdir/proj/.claude/skills/review-council" \
+	"$cdir/cfg/skills/review-council" "$cdir/xdg/opencode/skills/review-council"
+printf '0.2.0\n' >"$cdir/home/.claude/skills/review-council/VERSION"
+printf '0.2.0+dev\n' >"$cdir/proj/.claude/skills/review-council/VERSION"
+printf '0.3.0\n' >"$cdir/cfg/skills/review-council/VERSION"
+printf '0.4.0\n' >"$cdir/xdg/opencode/skills/review-council/VERSION"
+actual=$(cd "$cdir/proj" && HOME="$cdir/home" CLAUDE_CONFIG_DIR="" XDG_CONFIG_HOME="" council_install_lines claude)
+assert_equals "$actual" "Council version: unreleased, after v0.2.0 (project: $cdir/proj/.claude/skills/review-council)
+Council version: v0.2.0 (user: $cdir/home/.claude/skills/review-council)" \
+	"claude: the project install, then the user install"
+actual=$(cd "$cdir/cfg" && HOME="$cdir/home" CLAUDE_CONFIG_DIR="$cdir/cfg" council_install_lines claude)
+assert_equals "$actual" "Council version: v0.3.0 (user: $cdir/cfg/skills/review-council)" \
+	"claude: CLAUDE_CONFIG_DIR moves the user install, as it moves what claude loads"
+actual=$(cd "$cdir/home" && HOME="$cdir/home" XDG_CONFIG_HOME="$cdir/xdg" council_install_lines opencode)
+assert_equals "$actual" "Council version: v0.4.0 (user: $cdir/xdg/opencode/skills/review-council)" \
+	"opencode: the user install under XDG_CONFIG_HOME"
+printf '0.1.0\033[2J\n' >"$cdir/proj/.claude/skills/review-council/VERSION"
+actual=$(cd "$cdir/proj" && HOME="$cdir/empty" CLAUDE_CONFIG_DIR="" council_install_lines claude)
+assert_equals "$actual" "Council version: unknown (project: $cdir/proj/.claude/skills/review-council)" \
+	"a stamp carrying a terminal escape is not printed"
+mkdir -p "$cdir/home/.config/opencode/skills/review-council"
+actual=$(cd "$cdir/home" && HOME="$cdir/home" XDG_CONFIG_HOME="" council_install_lines opencode)
+assert_equals "$actual" "Council version: unknown (no VERSION stamp: installed before versions were stamped) (user: $cdir/home/.config/opencode/skills/review-council)" \
+	"opencode: ~/.config without XDG_CONFIG_HOME, and an unstamped install says so"
+actual=$(cd "$cdir/home" && HOME="$cdir/home" CLAUDE_CONFIG_DIR="" council_install_lines claude)
+assert_equals "$actual" "Council version: v0.2.0 (user: $cdir/home/.claude/skills/review-council)" \
+	"run from HOME, the project and user locations are one install, listed once"
+mkdir -p "$cdir/empty/proj"
+actual=$(cd "$cdir/empty/proj" && HOME="$cdir/empty" CLAUDE_CONFIG_DIR="" council_install_lines claude)
+assert_equals "$actual" "Council version: unknown (no review-council skill in $cdir/empty/proj/.claude/skills/review-council or $cdir/empty/.claude/skills/review-council)" \
+	"no install at all is reported rather than left out"
+rm -rf "$cdir"
+
 for lib in target.sh prs.sh; do
 	[[ -f "$LIB_DIR/$lib" ]] || {
 		echo "ERROR: library not found: $LIB_DIR/$lib" >&2

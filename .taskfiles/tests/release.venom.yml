@@ -28,8 +28,17 @@ testcases:
           printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
           printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
           printf 'TAGTYPE=%s\n' "$(git -C "${REPO_DIR}" cat-file -t v0.1.0)"
-          printf 'SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s)"
-          printf 'COMMITTED=%s\n' "$(git -C "${REPO_DIR}" show --name-only --format= HEAD | sort | tr '\n' ' ')"
+          # The tag names the release commit; HEAD is the commit after it
+          # that reopens development, so an install from main between
+          # releases never reads as the release itself.
+          printf 'SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s 'v0.1.0^{commit}')"
+          printf 'COMMITTED=%s\n' "$(git -C "${REPO_DIR}" show --name-only --format= 'v0.1.0^{commit}' | LC_ALL=C sort | tr '\n' ' ')"
+          printf 'STAMPED=%s\n' "$(git -C "${REPO_DIR}" show "v0.1.0:${SKILL_VERSION_PATH}")"
+          printf 'HEAD_SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s)"
+          printf 'HEAD_COMMITTED=%s\n' "$(git -C "${REPO_DIR}" show --name-only --format= HEAD | tr '\n' ' ')"
+          printf 'HEAD_STAMP=%s\n' "$(cat "${REPO_DIR}/${SKILL_VERSION_PATH}")"
+          printf 'PARENT_IS_TAG=%s\n' "$([ "$(git -C "${REPO_DIR}" rev-parse HEAD^)" = "$(git -C "${REPO_DIR}" rev-parse 'v0.1.0^{commit}')" ] && echo yes || echo no)"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
           cat "${REPO_DIR}/CHANGELOG.md"
           rm -rf "${TEST_DIR}"
         assertions:
@@ -40,7 +49,14 @@ testcases:
           - result.systemout ShouldContainSubstring "TAGS=v0.1.0"
           - result.systemout ShouldContainSubstring "TAGTYPE=tag"
           - 'result.systemout ShouldContainSubstring "SUBJECT=chore(release): v0.1.0"'
-          - result.systemout ShouldContainSubstring "COMMITTED=CHANGELOG.md VERSION"
+          - result.systemout ShouldContainSubstring "COMMITTED=CHANGELOG.md VERSION module/skills/review-council/VERSION "
+          - result.systemout ShouldContainSubstring "STAMPED=0.1.0"
+          - result.systemout ShouldNotContainSubstring "STAMPED=0.1.0+dev"
+          - 'result.systemout ShouldContainSubstring "HEAD_SUBJECT=chore(release): reopen development after v0.1.0"'
+          - result.systemout ShouldContainSubstring "HEAD_COMMITTED=module/skills/review-council/VERSION "
+          - result.systemout ShouldContainSubstring "HEAD_STAMP=0.1.0+dev"
+          - result.systemout ShouldContainSubstring "PARENT_IS_TAG=yes"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
           - result.systemout ShouldContainSubstring "## [0.1.0]"
           - result.systemout ShouldContainSubstring "Add a first command"
           - result.systemout ShouldNotContainSubstring "## [unreleased]"
@@ -164,13 +180,15 @@ testcases:
           git init -q --initial-branch=main "${REPO_DIR}"
           cp "{{.root}}/cliff.toml" "${REPO_DIR}/cliff.toml"
           printf '0.0.0\n' >"${REPO_DIR}/VERSION"
-          git -C "${REPO_DIR}" add VERSION cliff.toml
+          seed_skill_version "${REPO_DIR}" "0.0.0+dev"
+          git -C "${REPO_DIR}" add VERSION cliff.toml "${SKILL_VERSION_PATH}"
           git -C "${REPO_DIR}" commit -qm "chore(deps): seed"
           code=0
           out="$(ROOT_DIR="${REPO_DIR}" bash "${RELEASE_BUMP}" 0.1.0 </dev/null 2>&1)" || code=$?
           printf '%s\n' "${out}"
           printf 'CODE=%s\n' "${code}"
           printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'STAMP=%s\n' "$(cat "${REPO_DIR}/${SKILL_VERSION_PATH}")"
           printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list | tr '\n' ' ')"
           printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
           printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
@@ -180,6 +198,7 @@ testcases:
           - result.systemout ShouldContainSubstring "has no section for 0.1.0"
           - result.systemout ShouldContainSubstring "CODE=1"
           - result.systemout ShouldContainSubstring "VERSION=0.0.0"
+          - result.systemout ShouldContainSubstring "STAMP=0.0.0+dev"
           - result.systemout ShouldContainSubstring "TAGS= "
           - result.systemout ShouldContainSubstring "CHANGELOG=absent"
           - result.systemout ShouldContainSubstring "DIRTY=0"
@@ -308,6 +327,9 @@ testcases:
           commit_in "${REPO_DIR}" "fix(cli): correct the exit code"
           run_bump "" >/dev/null
           printf 'RELEASE_LINES=%s\n' "$(grep -c 'chore(release)' "${REPO_DIR}/CHANGELOG.md" || true)"
+          # git-cliff prints a commit's description without its type, so the
+          # reopen commit would surface as this text, not as chore(release).
+          printf 'REOPEN_LINES=%s\n' "$(grep -ci 'reopen development' "${REPO_DIR}/CHANGELOG.md" || true)"
           printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
           git-cliff --config "${REPO_DIR}/cliff.toml" --repository "${REPO_DIR}" \
             --output "${TEST_DIR}/regenerated.md" 2>/dev/null
@@ -320,6 +342,7 @@ testcases:
         assertions:
           - result.code ShouldEqual 0
           - result.systemout ShouldContainSubstring "RELEASE_LINES=0"
+          - result.systemout ShouldContainSubstring "REOPEN_LINES=0"
           - result.systemout ShouldContainSubstring "VERSION=0.5.2"
           - result.systemout ShouldContainSubstring "REGENERATED=identical"
 
@@ -394,6 +417,7 @@ testcases:
           run_bump "" || code=$?
           printf 'CODE=%s\n' "${code}"
           printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'STAMP=%s\n' "$(cat "${REPO_DIR}/${SKILL_VERSION_PATH}")"
           printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
           printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
           printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
@@ -403,6 +427,7 @@ testcases:
           - result.systemout ShouldContainSubstring "commit failed"
           - result.systemout ShouldContainSubstring "CODE=1"
           - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "STAMP=0.5.0+dev"
           - result.systemout ShouldContainSubstring "CHANGELOG=absent"
           - result.systemout ShouldContainSubstring "DIRTY=0"
           - result.systemout ShouldContainSubstring "TAGS=v0.5.0 "
@@ -453,12 +478,75 @@ testcases:
           run_bump "" || code=$?
           printf 'CODE=%s\n' "${code}"
           printf 'SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s)"
+          printf 'STAMP=%s\n' "$(cat "${REPO_DIR}/${SKILL_VERSION_PATH}")"
           rm -rf "${TEST_DIR}"
         assertions:
           - result.code ShouldEqual 0
           - result.systemout ShouldContainSubstring "CODE=1"
           - 'result.systemout ShouldContainSubstring "git tag -a v0.5.1 -m v0.5.1"'
+          # Development is not reopened on an untagged release commit; the
+          # error names that step too, so the stamp is not left behind on main.
+          - result.systemout ShouldContainSubstring "0.5.1+dev"
           - 'result.systemout ShouldContainSubstring "SUBJECT=chore(release): v0.5.1"'
+          - result.systemout ShouldContainSubstring "STAMP=0.5.1"
+
+  - name: a rejected reopen commit keeps the release and names the recovery command
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
+          # Rejects only the second commit release-bump.sh makes.
+          printf '#!/bin/sh\ngrep -q "reopen development" "$1" && exit 1\nexit 0\n' >"${REPO_DIR}/.git/hooks/commit-msg"
+          chmod +x "${REPO_DIR}/.git/hooks/commit-msg"
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'SUBJECT=%s\n' "$(git -C "${REPO_DIR}" log -1 --format=%s)"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          printf 'STAMP=%s\n' "$(cat "${REPO_DIR}/${SKILL_VERSION_PATH}")"
+          printf 'DIRTY=%s\n' "$(git -C "${REPO_DIR}" status --porcelain | wc -l | tr -d ' ')"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "v0.5.1 is tagged"
+          - result.systemout ShouldContainSubstring "0.5.1+dev"
+          - 'result.systemout ShouldContainSubstring "SUBJECT=chore(release): v0.5.1"'
+          - result.systemout ShouldContainSubstring "TAGS=v0.5.0 v0.5.1 "
+          - result.systemout ShouldContainSubstring "STAMP=0.5.1"
+          - result.systemout ShouldNotContainSubstring "STAMP=0.5.1+dev"
+          - result.systemout ShouldContainSubstring "DIRTY=0"
+
+  - name: a checkout without the skill's VERSION stamp is refused before anything is written
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          source "{{.root}}/.taskfiles/tests/lib/release-test-helpers.sh"
+          init_release_repo "{{.root}}" 0.5.0
+          git -C "${REPO_DIR}" tag -a v0.5.0 -m v0.5.0
+          git -C "${REPO_DIR}" rm -q "${SKILL_VERSION_PATH}"
+          git -C "${REPO_DIR}" commit -qm "feat(cli): drop the stamp"
+          code=0
+          run_bump "" || code=$?
+          printf 'CODE=%s\n' "${code}"
+          printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
+          printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
+          printf 'CHANGELOG=%s\n' "$([ -e "${REPO_DIR}/CHANGELOG.md" ] && echo present || echo absent)"
+          rm -rf "${TEST_DIR}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "no module/skills/review-council/VERSION"
+          - result.systemout ShouldContainSubstring "CODE=1"
+          - result.systemout ShouldContainSubstring "VERSION=0.5.0"
+          - result.systemout ShouldContainSubstring "TAGS=v0.5.0 "
+          - result.systemout ShouldContainSubstring "CHANGELOG=absent"
 
   - name: an unstaged change aborts before anything is written
     steps:

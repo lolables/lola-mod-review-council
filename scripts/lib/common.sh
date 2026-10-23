@@ -113,3 +113,61 @@ _rc_glab_env="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/module/skil
 # shellcheck source=module/skills/review-council/scripts/lib/glab-env.sh
 source "$_rc_glab_env"
 unset _rc_glab_env
+
+# The rules for reading an installed skill's VERSION stamp are the council's
+# own, for the same reason: the plan header below and the report header must
+# name one install the same way. Only the classifier comes from this clone;
+# the stamps it reads are the installed ones.
+_rc_council_version="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/module/skills/review-council/scripts/lib/council-version.sh"
+[[ -f "$_rc_council_version" ]] || {
+	echo "Incomplete checkout: ${_rc_council_version} not found; run the scripts from a clone of this repository." >&2
+	exit 1
+}
+# shellcheck source=module/skills/review-council/scripts/lib/council-version.sh
+source "$_rc_council_version"
+unset _rc_council_version
+
+# council_install_lines <claude|opencode> -> one "Council version: <version>
+# (<scope>: <dir>)" line per review-council skill installed where lola installs
+# it for that host, project scope first: ./.claude/skills and
+# ${CLAUDE_CONFIG_DIR:-~/.claude}/skills for claude (CLAUDE_CONFIG_DIR because
+# claude loads from there; lola itself writes ~/.claude), ./.opencode/skills
+# and ${XDG_CONFIG_HOME:-~/.config}/opencode/skills for opencode. Which of two
+# installs the host loads is the host's decision, so both are named. Run from
+# HOME, the two claude locations are one directory, named once.
+#
+# An install with no VERSION file predates stamping, which is the stale
+# install this header exists to expose, so it says so rather than plain
+# "unknown". With no install at all, one line names both places looked in.
+council_install_lines() {
+	local cli="$1" project user dir scope version found=0
+	case "$cli" in
+	opencode)
+		project="$PWD/.opencode/skills/review-council"
+		user="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills/review-council"
+		;;
+	*)
+		project="$PWD/.claude/skills/review-council"
+		user="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/review-council"
+		;;
+	esac
+	for scope in project user; do
+		if [[ "$scope" == "project" ]]; then
+			dir="$project"
+			[[ "$dir" != "$user" ]] || continue
+		else
+			dir="$user"
+		fi
+		[[ -d "$dir" ]] || continue
+		found=1
+		if [[ -e "$dir/VERSION" ]]; then
+			version=$(rc_council_version "$dir/VERSION")
+		else
+			version="unknown (no VERSION stamp: installed before versions were stamped)"
+		fi
+		echo "Council version: ${version} (${scope}: ${dir})"
+	done
+	if [[ "$found" -eq 0 ]]; then
+		echo "Council version: unknown (no review-council skill in ${project} or ${user})"
+	fi
+}

@@ -19,6 +19,9 @@
 # printed bare) are never escaped: they are replaced with `unrecognised` when
 # they fail their allow-list, because a value that needs escaping is not an ID
 # or a role.
+# The Council version line is rc_council_version's (lib/council-version.sh):
+# fixed words and the digits of the skill's VERSION stamp, and only when the
+# stamp has a shape release-bump.sh writes.
 # The Verdict format check line is one of three fixed strings chosen from
 # verdicts/_meta/schema-validation.txt; that file's text is never interpolated.
 # The Coverage gap line names findings.json .missing_verdicts through
@@ -62,6 +65,10 @@ _RC_PROV_MODELS_JQ='if type != "array" then empty else
 	| .[]
 	| "- \(.who | uniq | join(", ")): requested \(.key[0]) · \(if .key[1] == [] then "not reported" else "reported " + (.key[1] | join(", ")) end)"
 end'
+
+# rc_council_version, for the Council version line.
+# shellcheck source=module/skills/review-council/scripts/lib/council-version.sh
+source "$(dirname "${BASH_SOURCE[0]}")/council-version.sh"
 
 # Print <value> as an inline code span that nothing in it can close: the
 # delimiter is one backtick longer than the longest backtick run in the value,
@@ -224,13 +231,18 @@ _rc_prov_coverage() { # session_dir
 # trailing spaces because editors strip those. A models.json that is missing, unreadable or
 # holds no entry renders the not-recorded line.
 rc_render_provenance() { # session_dir head_sha [commit_link_hook] [forge_web]
-	local session_dir="$1" head="$2" hook="${3:-}" web="${4:-}" line models
+	local session_dir="$1" head="$2" hook="${3:-}" web="${4:-}" line models skill_dir
 	line=$(_rc_prov_reviewed "$session_dir" "$head" "$hook" "$web")
 	if [[ -n "$line" ]]; then
 		printf '%s<br>\n' "$line"
 	fi
 	line=$(_rc_prov_rules "$session_dir")
 	printf '%s<br>\n' "$line"
+	# This file is scripts/lib/ of the skill that is running, so the stamp
+	# two levels up is the one installed beside the code rendering the report.
+	skill_dir=$(dirname "${BASH_SOURCE[0]}")/../..
+	line=$(rc_council_version "$skill_dir/VERSION")
+	printf '%s<br>\n' "**Council version:** ${line}"
 	line=$(_rc_prov_format_check "$session_dir")
 	if [[ -n "$line" ]]; then
 		printf '%s<br>\n' "$line"

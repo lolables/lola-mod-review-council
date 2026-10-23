@@ -15,8 +15,14 @@ export GIT_AUTHOR_EMAIL="review-council@test.invalid"
 export GIT_COMMITTER_NAME="Review Council Test"
 export GIT_COMMITTER_EMAIL="review-council@test.invalid"
 
+# The skill's own version stamp, relative to the checkout root. Between
+# releases it reads <VERSION>+dev; release-bump.sh stamps the bare version into
+# the release commit and reopens it afterwards.
+SKILL_VERSION_PATH="module/skills/review-council/VERSION"
+
 # Build a scratch checkout that release-bump.sh can operate on: a git repo
-# carrying a VERSION file and the project's cliff.toml.
+# carrying a VERSION file, the skill's VERSION stamp and the project's
+# cliff.toml.
 #
 # The real cliff.toml is copied rather than a fixture written inline. The
 # suggestion levels and changelog grouping these tests assert are properties
@@ -34,8 +40,18 @@ init_release_repo() {
 	git init -q --initial-branch=main "${REPO_DIR}"
 	cp "${source_root}/cliff.toml" "${REPO_DIR}/cliff.toml"
 	printf '%s\n' "${version}" >"${REPO_DIR}/VERSION"
-	git -C "${REPO_DIR}" add VERSION cliff.toml
+	seed_skill_version "${REPO_DIR}" "${version}+dev"
+	git -C "${REPO_DIR}" add VERSION cliff.toml "${SKILL_VERSION_PATH}"
 	git -C "${REPO_DIR}" commit -qm "chore: seed the scratch checkout"
+}
+
+# Write <content> to the skill's VERSION stamp in <repo>, creating its
+# directory. Does not stage or commit.
+# Usage: seed_skill_version <repo> <content>
+seed_skill_version() {
+	local repo="${1}" content="${2}"
+	mkdir -p "${repo}/${SKILL_VERSION_PATH%/*}"
+	printf '%s\n' "${content}" >"${repo}/${SKILL_VERSION_PATH}"
 }
 
 # Commit a message against a unique file so every call changes the tree.

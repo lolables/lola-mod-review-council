@@ -34,11 +34,14 @@ The task:
    a release with nothing releasable since the last tag (see below), a version that is not `MAJOR.MINOR.PATCH`
    (no leading zeros, so `0.6.00` is rejected), a version not greater than
    `VERSION`, and a version whose tag already exists.
-2. Writes the new version to `VERSION`.
+2. Writes the new version to `VERSION` and to the skill's own stamp,
+   `module/skills/review-council/VERSION` (see below).
 3. Regenerates `CHANGELOG.md` with the new version as its newest section, and
    checks that the section exists.
-4. Commits both files as `chore(release): vX.Y.Z` and creates the annotated tag
-   `vX.Y.Z`.
+4. Commits the three files as `chore(release): vX.Y.Z` and creates the
+   annotated tag `vX.Y.Z`.
+5. Rewrites the skill stamp to `X.Y.Z+dev` and commits it as
+   `chore(release): reopen development after vX.Y.Z`.
 
 Nothing is pushed. `git push --follow-tags` publishes: the tag triggers
 `.github/workflows/release.yml`, which checks the tag matches `VERSION` and
@@ -66,8 +69,32 @@ commits and commits that do not follow Conventional Commits.
   `CHANGELOG.md` are restored to their committed state (a `CHANGELOG.md` that
   was not tracked is removed) and the task exits with an error. Fix the cause
   and run the task again.
-- **Only the tag fails**: the release commit stays. The error names the command
-  that finishes the job: `git tag -a vX.Y.Z -m vX.Y.Z`.
+- **Only the tag fails**: the release commit stays. The error names the
+  commands that finish the job: `git tag -a vX.Y.Z -m vX.Y.Z`, then the reopen
+  commit below.
+- **Only the reopen commit fails**: the release commit and the tag stay, and
+  the skill stamp is restored to `X.Y.Z`. The error names the command that
+  writes `X.Y.Z+dev` and commits it. Run it before anything else lands on
+  `main`, or installs from `main` will read as the release.
+
+## The skill's version stamp
+
+lola installs `module/`, not the repository root, so the root `VERSION` never
+reaches an installed council. `module/skills/review-council/VERSION` does: the
+provenance block of the report and the PR comment, and the
+`scripts/review-open-prs.sh` plan, read it to name the council that ran (#89).
+Both use `rc_council_version` in
+`module/skills/review-council/scripts/lib/council-version.sh`. It holds one
+line:
+
+| Content | Where | Shown as |
+|---|---|---|
+| `X.Y.Z` | the release commit, so an install from the `vX.Y.Z` tag | `vX.Y.Z` |
+| `X.Y.Z+dev` | every commit after release X.Y.Z, so an install from `main` | unreleased, after `vX.Y.Z` |
+| `0.0.0+dev` | every commit before the first release | unreleased, before the first release |
+
+Anything else, or no file, is shown as unknown. Never edit the stamp by hand:
+`test-rc-doc-guards.sh` (RC-150) fails unless it is `VERSION` or `VERSION+dev`.
 
 ## How the next version is suggested
 

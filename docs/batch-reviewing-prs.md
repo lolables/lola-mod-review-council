@@ -58,8 +58,10 @@ requests](#gitlab-merge-requests) covers what differs. Elsewhere on this page,
 
    - Either a user-scope install, or a project-scope one inside the clone.
      Follow the README's [Install](../README.md#install) section.
-   - Nothing checks this up front, so a missing council surfaces as a failed
-     review on the first PR, after you have already confirmed the run.
+   - The plan's `Council version:` line (step 7) names each install found
+     where lola puts one for the agent CLI, or says none was found. Nothing
+     stops the run on it, so read it before you confirm: a missing council
+     otherwise surfaces as a failed review on the first PR.
    - The repository you review does not have to be checked out anywhere: given
      a PR number or URL, the council materializes the PR head into its own
      cache — see [Reviewing PRs you haven't checked
@@ -75,6 +77,7 @@ requests](#gitlab-merge-requests) covers what differs. Elsewhere on this page,
    Repository: ovh/venom
    Forge: github (github.com)
    Agent CLI: claude
+   Council version: v0.1.0 (user: /home/you/.claude/skills/review-council)
    Unreviewed: 929 927 917 914
    Re-review (new commits): (none)
    Requested re-review: (none)
@@ -100,6 +103,26 @@ Most of that plan prints on every run. Six lines are conditional:
 - `Ignored (approved):` — only on a batch run under `--ignore-approved`.
 - `Council marker from another account (queued anyway):` — only when there is one.
 - `Effort: forced to '<tier>' for every PR (--effort).` — only under `--effort`.
+
+`Council version:` prints once per review-council skill installed where lola
+installs one for the chosen agent CLI: `./.claude/skills/` and
+`~/.claude/skills/` (or `$CLAUDE_CONFIG_DIR/skills/`) for claude,
+`./.opencode/skills/` and `~/.config/opencode/skills/` (or
+`$XDG_CONFIG_HOME/opencode/skills/`) for opencode, project first. When there
+are two, the host decides which it loads. The version is read from the
+installed skill's `VERSION` stamp and reads as one of:
+
+- `vX.Y.Z` — installed from release X.Y.Z.
+- `unreleased, after vX.Y.Z` — installed from `main` after that release.
+- `unreleased, before the first release` — installed from `main` before any
+  release.
+- `unknown (no VERSION stamp: installed before versions were stamped)` — an
+  install older than the stamp itself; reinstall it.
+- `unknown` — a stamp in no shape the release flow writes; its text is not
+  printed.
+
+The provenance block of every comment the run posts names the version that
+actually ran.
 
 ## How a PR reaches the queue
 

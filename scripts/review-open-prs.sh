@@ -202,6 +202,10 @@
 # Like the address list above, this is batch triage and does not apply to a PR
 # you name explicitly.
 #
+# The plan names the installed council version, read from the VERSION stamp
+# of each review-council skill lola installs for the chosen CLI (project
+# scope, then user scope), so a stale install shows before anything runs.
+#
 # Default is a DRY RUN: it classifies the PRs and prints the plan, but does
 # not invoke claude or post anything. Pass --run to execute.
 #
@@ -679,6 +683,9 @@ done
 echo "Repository: ${REPO}"
 echo "Forge: ${FORGE} (${FORGE_HOST})"
 echo "Agent CLI: ${AGENT_CLI}"
+# The council that will run, so a stale install shows in the plan and in a
+# saved run's output, not only in the comments it posts (#89).
+council_install_lines "$AGENT_CLI"
 echo "Unreviewed: ${UNREVIEWED[*]:-(none)}"
 echo "Re-review (new commits): ${STALE[*]:-(none)}"
 echo "Requested re-review: ${REQUESTED[*]:-(none)}"

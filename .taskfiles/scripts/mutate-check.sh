@@ -1722,6 +1722,28 @@ check_mutation "RC-141 a file path reaches the link URL unencoded" \
 	's/split("\/") | map(@uri) | join("\/")/./' \
 	test-rc-post-comment-github.sh
 
+# The council version line is posted to a public comment, and the stamp sits in
+# an install anyone can edit: without the shape check its text is printed raw
+# (#89).
+check_mutation "RC-151 council version printed without the shape check" \
+	lib/council-version.sh \
+	's#if \[\[ ${\#stamp} -gt 64 || ! "\$stamp" =~ \$re || "\$stamp" == "0.0.0" \]\]; then#if [[ -z "$stamp" ]]; then#' \
+	test-rc-render-comment.sh
+
+# Truncating the read is not a length check: the first 64 bytes of a longer
+# line can be a valid version on their own (#89).
+check_mutation "RC-152 council version stamp read without the length cap" \
+	lib/council-version.sh \
+	's#if \[\[ ${\#stamp} -gt 64 || #if [[ #' \
+	test-rc-render-comment.sh
+
+# An install from main between releases carries X.Y.Z+dev; shown as the
+# release it follows, a stale main install is indistinguishable from it (#89).
+check_mutation "RC-153 a development stamp is shown as the release it follows" \
+	lib/council-version.sh \
+	's#"unreleased, after v${stamp%+dev}"#"v${stamp%+dev}"#' \
+	test-rc-render-comment.sh
+
 # --- #52: the per-agent verdict map, derived by script ----------------------
 #
 # After rc-verify-evidence.sh built .verdicts, its rules were hand-edits from

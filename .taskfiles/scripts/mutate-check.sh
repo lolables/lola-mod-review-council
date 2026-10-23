@@ -1722,6 +1722,21 @@ check_mutation "RC-141 a file path reaches the link URL unencoded" \
 	's/split("\/") | map(@uri) | join("\/")/./' \
 	test-rc-post-comment-github.sh
 
+# --- #52: the per-agent verdict map, derived by script ----------------------
+#
+# After rc-verify-evidence.sh built .verdicts, its rules were hand-edits from
+# prose, and both renderers print the map as is.
+check_mutation "RC-160 a verified HIGH no longer forces REQUEST CHANGES" \
+	jq/recompute-verdicts.jq \
+	's/\.agent == \$a and (\.severity == "HIGH" or \.severity == "CRITICAL")/false/' \
+	test-rc-jq-programs.sh
+
+# A scoping hint never changes a verdict (disposition.md rule 3).
+check_mutation "RC-161 a suppressed-low strip lets its agent upgrade to APPROVE" \
+	jq/recompute-verdicts.jq \
+	's/, (\.stripped\[\] | select(\.reason == "DISPOSITION_SUPPRESSED_LOW"))//' \
+	test-rc-jq-programs.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

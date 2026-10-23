@@ -201,6 +201,20 @@ assert_idempotent "rc-check-disposition.sh (after a restore)" "$s/verdicts" \
 	bash "$SCRIPTS/rc-check-disposition.sh" "$s"
 rm -rf "$s"
 
+# --- rc-recompute-verdicts.sh -----------------------------------------------
+echo "Test 10: rc-recompute-verdicts.sh is idempotent over a corrected map"
+s=$(new_session)
+printf '{"divisor-guard-code":"REQUEST CHANGES","divisor-sre-code":"APPROVE"}\n' >"$s/verdicts/verdicts-map.json"
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"divisor-sre-code","severity":"HIGH","file":"a.go","line":3,"status":"verified","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":1,"duplicates_consolidated":0,
+ "verdicts":{"divisor-guard-code":"REQUEST CHANGES","divisor-sre-code":"APPROVE"}}
+FJ
+assert_idempotent "rc-recompute-verdicts.sh" "$s/verdicts" \
+	bash "$SCRIPTS/rc-recompute-verdicts.sh" "$s"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

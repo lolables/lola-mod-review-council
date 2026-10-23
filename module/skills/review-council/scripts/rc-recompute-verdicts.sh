@@ -12,7 +12,9 @@ rc_trap_errors
 #
 # After the evidence check built the map, nothing wrote it again: the
 # orchestrator applied the upgrade and REQUEST CHANGES rules by hand-edit, and
-# both renderers print the map as is (#52). Run it after validation.
+# both renderers print the map as is (#52). Run it as verify.md Step 6, after
+# validation. After Disposition, rc-check-disposition.sh applies the same
+# program before it records the hash the render gate checks.
 #
 # Every agent whose entry changes is listed in the `changes` payload, each with
 # the rule that set it, for verification.txt. A map that already follows from

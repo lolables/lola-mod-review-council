@@ -1737,6 +1737,34 @@ check_mutation "RC-161 a suppressed-low strip lets its agent upgrade to APPROVE"
 	's/, (\.stripped\[\] | select(\.reason == "DISPOSITION_SUPPRESSED_LOW"))//' \
 	test-rc-jq-programs.sh
 
+# After Disposition the check is the recompute: nobody else writes .verdicts,
+# so a resolved reply that empties an agent must upgrade it here.
+check_mutation "RC-162 the Disposition check keeps the verdicts it was handed" \
+	rc-check-disposition.sh \
+	"s/^if jq -e '\.changes | length > 0' \"\$work\/recompute\.json\" >\/dev\/null; then$/if false; then/" \
+	test-rc-check-disposition.sh
+
+# The snapshot carries any .verdicts edit made before it was taken; only the
+# filed map can correct one when Verification's recompute was skipped.
+check_mutation "RC-164 the Disposition check takes filed verdicts from the snapshot" \
+	rc-check-disposition.sh \
+	's|^declared=$(jq -c \. "\$declared_file")$|declared=$(jq -c .verdicts "$snapshot")|' \
+	test-rc-check-disposition.sh
+
+# snapshot_ok does not require .verdicts; keys on a missing one crashed the
+# check after findings.json was already replaced.
+check_mutation "RC-165 a snapshot without a .verdicts object crashes the check" \
+	rc-check-disposition.sh \
+	's/((\$pre\[0\]\.verdicts | objects) \/\/ {}) as \$o/$pre[0].verdicts as $o/' \
+	test-rc-check-disposition.sh
+
+# The subagent can write beside findings.json, so the filed verdicts are read
+# from the copy --snapshot took, never the live map.
+check_mutation "RC-166 the Disposition check reads the live verdicts-map.json" \
+	rc-check-disposition.sh \
+	's|^declared=$(jq -c \. "\$declared_file")$|declared=$(jq -c . "$vdir/verdicts-map.json")|' \
+	test-rc-check-disposition.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

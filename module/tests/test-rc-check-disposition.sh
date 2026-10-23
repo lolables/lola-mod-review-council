@@ -50,6 +50,9 @@ mk_session() {
   "divisor-testing-code":"REQUEST CHANGES","divisor-sre-code":"REQUEST CHANGES",
   "rc-check-symlinks":"REQUEST CHANGES","divisor-curator-code":"APPROVE"}}
 FJ
+	# The verdicts as filed, which rc-verify-evidence.sh writes and the check
+	# derives .verdicts from.
+	jq '.verdicts' "$s/verdicts/findings.json" >"$s/verdicts/verdicts-map.json"
 	printf '%s' "$s"
 }
 
@@ -248,13 +251,20 @@ assert_jq_str "$result" '[.resolved, .suppressed_low, .kept, .verdicts_upgraded]
 assert_jq "$s/verdicts/findings.json" '[.verified[] | .id] | tojson' '["F1","F3","F5","F6"]' "edits kept, not restored"
 rm -rf "$s"
 
-echo "Test 7: an agent left with no findings is upgraded; re-running is idempotent"
+echo "Test 7: an agent left with no findings is upgraded by the check; re-running is idempotent (RC-162)"
+# Nobody edits .verdicts after Disposition: the check recomputes it
+# (jq/recompute-verdicts.jq) and records the hash of the result (#52).
 s=$(mk_session)
 snapshot "$s"
-edit "$s" 'resolve("F2") | resolve("F3") | .verdicts["divisor-guard-code"] = "APPROVE"'
+edit "$s" 'resolve("F2") | resolve("F3")'
 result=$(bash "$SCRIPT" "$s")
 assert_accepted "$s" "verdict upgraded"
 assert_jq_str "$result" '.verdicts_upgraded' '1' "one verdict upgraded"
+assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-guard-code"]' 'APPROVE' "guard is APPROVE in findings.json"
+assert_jq_str "$result" '[.verdict_changes[] | "\(.agent):\(.rule)"] | join(",")' 'divisor-guard-code:NO_FINDINGS' \
+	"the change is reported with its rule"
+leftover=$(find "$s/verdicts" -maxdepth 1 -name '.findings.*' -print)
+assert_equals "$leftover" "" "no staging file left behind"
 assert_idempotent "re-running the check changes nothing" "$s/verdicts" bash "$SCRIPT" "$s"
 rm -rf "$s"
 
@@ -295,10 +305,6 @@ negative "moved with the wrong reason" 'move("F2"; "resolved"; "DISPOSITION_SUPP
 negative "moved with no disposition" '([.verified[] | select(.id == "F2")] | first | .status = "stripped" | .reason = "DISPOSITION_RESOLVED") as $f | .verified |= map(select(.id != "F2")) | .stripped += [$f]' 'F2: moved to stripped without'
 negative "resolved left in verified" '.verified |= map(if .id == "F2" then disp("resolved") else . end)' 'F2: marked resolved but left in verified'
 negative "status rewritten in place" 'on("F2"; .status = "stripped")' 'F2: status or reason changed'
-negative "verdict flipped with findings left" '.verdicts["divisor-adversary-code"] = "APPROVE"' 'verdicts.divisor-adversary-code'
-negative "verdict flipped on a suppressed-low" 'suppress("F4") | .verdicts["divisor-testing-code"] = "APPROVE"' 'verdicts.divisor-testing-code'
-negative "verdict downgraded" '.verdicts["divisor-curator-code"] = "REQUEST CHANGES"' 'verdicts.divisor-curator-code'
-negative "verdict agent removed" 'del(.verdicts["divisor-curator-code"])' 'verdicts: agents'
 negative "correctable changed" '.correctable = [.verified[1]]' 'correctable changed'
 negative "total_findings changed" '.total_findings = 1' 'total_findings changed'
 negative "missing_verdicts changed" '.missing_verdicts = ["divisor-guard-code"]' 'missing_verdicts changed'
@@ -430,6 +436,124 @@ assert_json_field "$result" "status" "ok" "changed after validation: the validat
 assert_jq "$s/verdicts/_meta/disposition-check.json" '.findings_sha256' "$validated" \
 	"changed after validation: the hash recorded is of the validated bytes"
 rm -rf "$s" "$bin"
+
+echo "Test 17: a .verdicts edit is corrected by the recompute, not kept (#52)"
+# The check derives the map again from the filed verdicts (verdicts-map.json)
+# and what Disposition left, so an edit to the map neither stands nor needs its
+# own rule.
+# corrected <label> <jq-edit> <agent> <verdict>
+corrected() {
+	local s
+	s=$(mk_session)
+	snapshot "$s"
+	edit "$s" "$2"
+	result=$(bash "$SCRIPT" "$s")
+	assert_accepted "$s" "$1"
+	assert_jq "$s/verdicts/findings.json" ".verdicts[\"$3\"] // \"absent\"" "$4" "$1: $3 is $4"
+	assert_jq "$s/verdicts/findings.json" '.verdicts | keys | join(",")' \
+		"divisor-adversary-code,divisor-curator-code,divisor-guard-code,divisor-sre-code,divisor-testing-code,rc-check-symlinks" \
+		"$1: the map holds the snapshot's agents"
+	rm -rf "$s"
+}
+corrected "flipped over a HIGH" '.verdicts["divisor-adversary-code"] = "APPROVE"' divisor-adversary-code "REQUEST CHANGES"
+corrected "flipped with a MEDIUM left" '.verdicts["divisor-guard-code"] = "APPROVE"' divisor-guard-code "REQUEST CHANGES"
+corrected "flipped on a suppressed-low" 'suppress("F4") | .verdicts["divisor-testing-code"] = "APPROVE"' divisor-testing-code "REQUEST CHANGES"
+corrected "downgraded" '.verdicts["divisor-curator-code"] = "REQUEST CHANGES"' divisor-curator-code "APPROVE"
+corrected "agent removed" 'del(.verdicts["divisor-curator-code"])' divisor-curator-code "APPROVE"
+corrected "agent added" '.verdicts["divisor-invented-code"] = "APPROVE"' divisor-invented-code "absent"
+
+echo "Test 18: the filed verdicts come from verdicts-map.json, not the snapshot (RC-164)"
+# Skip Verification's recompute and hand-edit an agent holding only a MEDIUM
+# and a LOW (filed REQUEST CHANGES) to APPROVE before the snapshot. The
+# snapshot then carries the edit; the check must still restore the filed
+# verdict, which only verdicts-map.json holds.
+s=$(mk_session)
+jq '.verdicts["divisor-guard-code"] = "APPROVE"' "$s/verdicts/findings.json" >"$s/edited.json"
+mv "$s/edited.json" "$s/verdicts/findings.json"
+snapshot "$s"
+result=$(bash "$SCRIPT" "$s")
+assert_accepted "$s" "edit before the snapshot"
+assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-guard-code"]' 'REQUEST CHANGES' \
+	"edit before the snapshot: the filed verdict is restored"
+assert_jq_str "$result" '[.verdict_changes[] | "\(.agent):\(.from)>\(.to):\(.rule)"] | join(",")' \
+	'divisor-guard-code:APPROVE>REQUEST CHANGES:DECLARED' "edit before the snapshot: the correction is reported"
+rm -rf "$s"
+
+echo "Test 19: no readable verdicts-map.json is refused, nothing recorded"
+# refused_map <label> <setup-command...>: the edits pass, the map the snapshot
+# copied cannot be read.
+refused_map() {
+	local s label="$1"
+	shift
+	s=$(mk_session)
+	"$@" "$s/verdicts/verdicts-map.json"
+	snapshot "$s"
+	edit "$s" 'resolve("F2")'
+	cp "$s/verdicts/findings.json" "$s/before.json"
+	result=$(bash "$SCRIPT" "$s")
+	assert_json_field "$result" "status" "validation_error" "$label: validation_error"
+	assert_absent "$s/verdicts/_meta/disposition-check.json" "$label: no check file"
+	if cmp -s "$s/before.json" "$s/verdicts/findings.json"; then
+		echo "  PASS: $label: findings.json unchanged"
+		PASS=$((PASS + 1))
+	else
+		echo "  FAIL: $label: findings.json changed"
+		FAIL=$((FAIL + 1))
+	fi
+	rm -rf "$s"
+}
+truncate_map() { printf '{"divisor-guard-code":' >"$1"; }
+two_maps() { printf '{}\n{}\n' >"$1"; }
+bad_value() { printf '{"divisor-guard-code":"LGTM"}\n' >"$1"; }
+refused_map "missing map" rm -f
+refused_map "map not JSON" truncate_map
+refused_map "map holds two documents" two_maps
+refused_map "map holds a verdict outside the enum" bad_value
+
+echo "Test 20: a snapshot .verdicts that is missing or not an object is corrected (RC-165)"
+# snapshot_ok does not require .verdicts and the recompute reads a missing or
+# non-object map as empty, so a hand edit that broke it before the snapshot is
+# corrected like any other; counting upgrades against it must not crash.
+# broken_verdicts <label> <jq-edit>
+broken_verdicts() {
+	local s
+	s=$(mk_session)
+	jq "$2" "$s/verdicts/findings.json" >"$s/edited.json"
+	mv "$s/edited.json" "$s/verdicts/findings.json"
+	snapshot "$s"
+	edit "$s" 'resolve("F2") | resolve("F3")'
+	result=$(bash "$SCRIPT" "$s")
+	assert_accepted "$s" "$1"
+	assert_jq_str "$result" '.verdicts_upgraded' '0' "$1: nothing in the snapshot to upgrade"
+	assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-guard-code"]' 'APPROVE' "$1: guard derived APPROVE"
+	assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-adversary-code"]' 'REQUEST CHANGES' \
+		"$1: adversary derived REQUEST CHANGES"
+	rm -rf "$s"
+}
+broken_verdicts "verdicts missing" 'del(.verdicts)'
+broken_verdicts "verdicts a string" '.verdicts = "x"'
+
+echo "Test 21: verdicts-map.json is read as the snapshot copied it (RC-166)"
+# The Disposition subagent can write beside findings.json, so a map it edits
+# after the snapshot must not decide a verdict. Guard keeps F2 (MEDIUM) and
+# filed REQUEST CHANGES.
+# late_map <label> <setup-command...>
+late_map() {
+	local s label="$1"
+	shift
+	s=$(mk_session)
+	snapshot "$s"
+	edit "$s" 'resolve("F3")'
+	"$@" "$s/verdicts/verdicts-map.json"
+	result=$(bash "$SCRIPT" "$s")
+	assert_accepted "$s" "$label"
+	assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-guard-code"]' 'REQUEST CHANGES' \
+		"$label: guard keeps its filed verdict"
+	rm -rf "$s"
+}
+approve_guard() { printf '{"divisor-guard-code":"APPROVE"}\n' >"$1"; }
+late_map "map rewritten after the snapshot" approve_guard
+late_map "map removed after the snapshot" rm -f
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -7,7 +7,9 @@ rc_trap_errors
 # rc-verify-evidence.sh <session_dir> [review_root]
 # Consumes verdicts/<agent>.json (produced by rc-extract-verdict.sh), verifies
 # each finding mechanically, deduplicates, and writes the canonical findings.json.
-# Verdict is copied verbatim from each agent's JSON — never re-derived.
+# Verdict is copied verbatim from each agent's JSON into verdicts-map.json and
+# findings.json `.verdicts`; rc-recompute-verdicts.sh derives the latter from
+# the former once findings have been stripped and validated.
 
 session_dir="${1:-}"
 [[ -n "$session_dir" && -d "$session_dir" ]] || {
@@ -33,10 +35,11 @@ findings_file="$vdir/findings.json"
 if [[ -e "$findings_file" || -L "$findings_file" ]]; then
 	mv -f "$findings_file" "$findings_file.stale"
 fi
-# The Disposition snapshot and check (rc-check-disposition.sh) describe that
+# The Disposition snapshots and check (rc-check-disposition.sh) describe that
 # earlier findings.json, and ids restart at F1 every run: a snapshot left here
 # would refuse this run's or check its edits against the wrong findings.
-rm -f "$vdir/_meta/findings.pre-disposition.json" "$vdir/_meta/disposition-check.json"
+rm -f "$vdir/_meta/findings.pre-disposition.json" "$vdir/_meta/verdicts-map.pre-disposition.json" \
+	"$vdir/_meta/disposition-check.json"
 
 # Gather agent JSON files. Allow-list by agent-name prefix, and kept that way
 # even now that orchestrator-written state lives in verdicts/_meta/ rather than

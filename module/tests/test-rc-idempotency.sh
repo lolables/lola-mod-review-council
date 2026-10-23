@@ -186,6 +186,7 @@ cat >"$s/verdicts/findings.json" <<'FJ'
  {"id":"F2","agent":"divisor-guard-code","severity":"MEDIUM","file":"b.go","line":9,"evidence":"y","description":"d","recommendation":"r","verdict":"REQUEST CHANGES","status":"verified","provenance":{}}
 ],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{"divisor-guard-code":"REQUEST CHANGES"}}
 FJ
+printf '{"divisor-guard-code":"REQUEST CHANGES"}\n' >"$s/verdicts/verdicts-map.json"
 bash "$SCRIPTS/rc-check-disposition.sh" "$s" --snapshot >/dev/null
 jq '.verified[1] += {status: "stripped", reason: "DISPOSITION_RESOLVED",
 	provenance: {disposition: {source: "pr-comment", action: "resolved", claim: "fixed", claim_verified: true,

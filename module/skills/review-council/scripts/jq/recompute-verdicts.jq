@@ -2,7 +2,9 @@
 # derived from the findings and the verdict that agent filed.
 #
 # Input: findings.json. Args: $declared (--argjson), the per-agent verdicts the
-# reviewers filed: rc-recompute-verdicts.sh passes verdicts/verdicts-map.json.
+# reviewers filed. Both callers, rc-recompute-verdicts.sh after validation and
+# rc-check-disposition.sh after Disposition, pass verdicts/verdicts-map.json,
+# which only rc-verify-evidence.sh writes.
 # Output: {doc: <findings.json with .verdicts replaced>, changes: [{agent,
 # from, to, rule}]}, one change per agent whose entry the document held
 # differently; or {problem: string} when an input is not one the rules can read.

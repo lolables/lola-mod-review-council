@@ -112,6 +112,10 @@ result=$(bash "$S/rc-apply-validation.sh" "$session")
 assert_json_field "$result" "status" "ok" "every arbiter outcome applied"
 assert_jq "$findings" '[.verified[] | select(.id=="F4") | (.provenance.calibrated_from // [])[] | "\(.from)->\(.to)"] | join(",")' \
 	"LOW->MEDIUM" "the arbiter's severity change is recorded once in calibrated_from"
+# verify.md Step 6: the per-agent verdicts are derived from what validation
+# left, by script, before anything renders them (#52).
+result=$(bash "$S/rc-recompute-verdicts.sh" "$session")
+assert_json_field "$result" "status" "ok" "per-agent verdicts recomputed"
 
 echo "Stage 4: render the report"
 # The verification log is the orchestrator's artifact, not any script's —

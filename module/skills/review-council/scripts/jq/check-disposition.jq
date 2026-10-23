@@ -5,7 +5,7 @@
 # "snapshot"), $pre (--slurpfile: the snapshot rc-check-disposition.sh
 # --snapshot wrote; unused, and may be null, in snapshot mode).
 # Output, check mode: {violations: [string], counts: {resolved, suppressed_low,
-# kept, verdicts_upgraded}}. No violations means every edit is within the rules.
+# kept}}. No violations means every edit is within the rules.
 # Output, snapshot mode: whether the input is a document the check can tie
 # finding by finding (snapshot_ok), so --snapshot and the check share one
 # definition of it.
@@ -13,10 +13,11 @@
 # The subagent reads PR conversation the PR author controls, and the council
 # verdict depends only on the severities left in `verified`. So the rules bound
 # what a reply can do, whatever the subagent was talked into: it may write
-# status, reason and provenance.disposition on a finding, move a finding from
-# verified to stripped as resolved (MEDIUM/LOW only) or suppressed-low (LOW
-# only), and upgrade an agent's REQUEST CHANGES to APPROVE once that agent has
-# nothing left. Nothing else.
+# status, reason and provenance.disposition on a finding, and move a finding
+# from verified to stripped as resolved (MEDIUM/LOW only) or suppressed-low (LOW
+# only). Nothing else. `verdicts` is not checked here: rc-check-disposition.sh
+# derives it afresh from what passes these rules (jq/recompute-verdicts.jq), so
+# no edit to it survives the check.
 #
 # Every id a message echoes from the edited document is truncated and quoted:
 # the subagent writes that document, and the message reaches the orchestrator.
@@ -95,24 +96,6 @@ def finding_problems($o; $n; $from; $to):
 		end)
 	end;
 
-# An agent's verdict may only go REQUEST CHANGES -> APPROVE, and only once it
-# has no verified finding left. A suppressed-low finding still counts as left:
-# rule 3's scoping hint never changes a verdict.
-def verdict_problems($old; $new):
-	($old.verdicts // {}) as $ov | ($new.verdicts // {}) as $nv
-	| if ($nv | type) != "object" or ($ov | type) != "object" then "verdicts is not an object"
-	elif ($nv | keys) != ($ov | keys) then "verdicts: agents were added or removed"
-	else
-		$ov | keys[] as $a | select($nv[$a] != $ov[$a])
-		| if $ov[$a] != "REQUEST CHANGES" or $nv[$a] != "APPROVE" then
-			"verdicts.\($a) changed from \($ov[$a] | show); the only change allowed is REQUEST CHANGES -> APPROVE"
-		elif any($new.verified[]; .agent == $a) then
-			"verdicts.\($a) upgraded to APPROVE while the agent still has verified findings"
-		elif any($new.stripped[]; .agent == $a and .reason == "DISPOSITION_SUPPRESSED_LOW") then
-			"verdicts.\($a) upgraded to APPROVE on a suppressed-low removal; suppressed-low is verdict-neutral"
-		else empty end
-	end;
-
 if $mode == "snapshot" then snapshot_ok
 else
 $pre[0] as $old
@@ -137,16 +120,13 @@ else
 		($old.verified[], $old.stripped[]
 		 | . as $o
 		 | select($by_id | has($o.id))
-		 | finding_problems($o; $by_id[$o.id]; ($old | where($o.id)); ($new | where($o.id)))),
-		verdict_problems($old; $new)
+		 | finding_problems($o; $by_id[$o.id]; ($old | where($o.id)); ($new | where($o.id))))
 	] as $violations
 	| {violations: $violations,
 	   counts: {
 		resolved: [$new.stripped[] | select(.reason == "DISPOSITION_RESOLVED")] | length,
 		suppressed_low: [$new.stripped[] | select(.reason == "DISPOSITION_SUPPRESSED_LOW")] | length,
-		kept: [$new.verified[] | select((.provenance | objects | .disposition | objects | .action) == "kept")] | length,
-		verdicts_upgraded: (($old.verdicts // {}) as $ov | ($new.verdicts // {}) as $nv
-			| [$ov | keys[]? | select($ov[.] != $nv[.]?)] | length)
+		kept: [$new.verified[] | select((.provenance | objects | .disposition | objects | .action) == "kept")] | length
 	   }}
 end
 end

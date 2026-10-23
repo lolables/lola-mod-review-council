@@ -2834,6 +2834,22 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: the skill's VERSION stamp follows the release VERSION (RC-150)"
+# RC-150: lola installs module/, not the repo root, so the skill carries its own
+# copy of the version for the run headers to name (#89). release-bump.sh stamps
+# <VERSION> into the release commit and <VERSION>+dev into the one after it; any
+# other value is a stamp edited by hand, or a release flow that stopped writing
+# it, and every install from that tree would name the wrong council.
+rc150_root=$(cat "$SCRIPT_DIR/../../VERSION")
+rc150_skill=$(cat "$SKILLS/VERSION")
+if [[ "$rc150_skill" == "$rc150_root" || "$rc150_skill" == "${rc150_root}+dev" ]]; then
+	echo "  PASS: skill VERSION '$rc150_skill' matches release VERSION '$rc150_root'"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: skill VERSION '$rc150_skill' is neither '$rc150_root' nor '${rc150_root}+dev' (RC-150)"
+	FAIL=$((FAIL + 1))
+fi
+
 # RC-170: issue #74. Fail-open defaults (unset, zero or empty value that loosens
 # behaviour) show up only when a reviewer asks what happens when the value is
 # absent, and the diff rarely shows the absent case. Before this criterion no

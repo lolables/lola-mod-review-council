@@ -8,12 +8,21 @@
 # major version is 0, a breaking change bumps the minor and a feature bumps the
 # patch, so nothing here ever auto-suggests 1.0.0.
 #
+# The installed skill carries its own copy of the version
+# (module/skills/review-council/VERSION), since lola installs module/ and not
+# this file: it is how an installed council names its own version. Between
+# releases it reads <last release>+dev, so an install from main is never
+# mistaken for the release it follows. The release commit stamps the bare
+# version, and a second commit, after the tag, reopens it as <new>+dev. Both
+# are chore(release) commits, which cliff.toml leaves out of the changelog.
+#
 # A release with nothing releasable since the last tag is refused: git-cliff
 # would write no section for it, and .github/workflows/release.yml fails on a
 # tag whose version has no changelog section. If git-cliff produces no section
 # for any other reason, or the release commit is rejected (a hook, say),
-# VERSION and CHANGELOG.md are restored to HEAD. If only the tag fails, the
-# commit is kept and the error names the command that finishes the job.
+# VERSION, the skill stamp and CHANGELOG.md are restored to HEAD. If the tag or
+# the reopening commit fails, what succeeded is kept and the error names the
+# commands that finish the job.
 #
 # Nothing is pushed. The tag stays local until the operator pushes it, which is
 # what triggers .github/workflows/release.yml.
@@ -27,6 +36,8 @@ ROOT_DIR="${ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 GIT_CLIFF="${GIT_CLIFF:-git-cliff}"
 GIT_CLIFF_VERSION="2.14.2"
 SEMVER_RE='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+# Relative to ROOT_DIR, as git takes it.
+SKILL_VERSION="module/skills/review-council/VERSION"
 
 die() {
 	printf 'error: %s\n' "$*" >&2
@@ -51,11 +62,12 @@ is_greater() {
 	[[ "${sorted%%$'\n'*}" == "${current}" ]]
 }
 
-# Return VERSION and CHANGELOG.md to HEAD. The tree was clean on entry, so HEAD
-# is the right state; a CHANGELOG.md that HEAD does not track is removed.
+# Return VERSION, the skill stamp and CHANGELOG.md to HEAD. The tree was clean
+# on entry, so HEAD is the right state; a CHANGELOG.md that HEAD does not track
+# is removed.
 restore_release_files() {
-	git -C "${ROOT_DIR}" reset -q HEAD -- VERSION CHANGELOG.md
-	git -C "${ROOT_DIR}" checkout -q HEAD -- VERSION
+	git -C "${ROOT_DIR}" reset -q HEAD -- VERSION "${SKILL_VERSION}" CHANGELOG.md
+	git -C "${ROOT_DIR}" checkout -q HEAD -- VERSION "${SKILL_VERSION}"
 	if git -C "${ROOT_DIR}" cat-file -e HEAD:CHANGELOG.md 2>/dev/null; then
 		git -C "${ROOT_DIR}" checkout -q HEAD -- CHANGELOG.md
 	else
@@ -72,6 +84,7 @@ fi
 
 [[ -f "${ROOT_DIR}/VERSION" ]] || die "no VERSION file in ${ROOT_DIR}"
 [[ -f "${ROOT_DIR}/cliff.toml" ]] || die "no cliff.toml in ${ROOT_DIR}"
+[[ -f "${ROOT_DIR}/${SKILL_VERSION}" ]] || die "no ${SKILL_VERSION} in ${ROOT_DIR}"
 
 if ! git -C "${ROOT_DIR}" diff --quiet || ! git -C "${ROOT_DIR}" diff --cached --quiet; then
 	die "working tree has uncommitted changes; commit or stash them first"
@@ -128,6 +141,7 @@ if git -C "${ROOT_DIR}" rev-parse -q --verify "refs/tags/v${new}" >/dev/null 2>&
 fi
 
 printf '%s\n' "${new}" >"${ROOT_DIR}/VERSION"
+printf '%s\n' "${new}" >"${ROOT_DIR}/${SKILL_VERSION}"
 
 # Regenerate the whole file rather than prepending. The release commit written
 # below is skipped by cliff.toml's commit_parsers, so a later full regeneration
@@ -144,18 +158,29 @@ printf '%s\n' "${new}" >"${ROOT_DIR}/VERSION"
 # visible so a failure other than a missing section is not misreported.
 if ! bash "$(dirname "${BASH_SOURCE[0]}")/changelog-section.sh" "${new}" "${ROOT_DIR}/CHANGELOG.md" >/dev/null; then
 	restore_release_files
-	die "CHANGELOG.md has no section for ${new}: nothing releasable; VERSION and CHANGELOG.md were restored"
+	die "CHANGELOG.md has no section for ${new}: nothing releasable; VERSION, ${SKILL_VERSION} and CHANGELOG.md were restored"
 fi
 
-git -C "${ROOT_DIR}" add VERSION CHANGELOG.md
+git -C "${ROOT_DIR}" add VERSION "${SKILL_VERSION}" CHANGELOG.md
 if ! git -C "${ROOT_DIR}" commit -qm "chore(release): v${new}"; then
 	restore_release_files
-	die "release commit failed (a hook may have rejected it); VERSION and CHANGELOG.md were restored"
+	die "release commit failed (a hook may have rejected it); VERSION, ${SKILL_VERSION} and CHANGELOG.md were restored"
 fi
+
+# The command that reopens development, named by both failure paths below.
+reopen_cmd="printf '%s\\n' ${new}+dev > ${SKILL_VERSION} && git commit -m 'chore(release): reopen development after v${new}' -- ${SKILL_VERSION}"
+
 # The commit stays if tagging fails: it is valid on its own, and the tag is a
-# single command away.
+# single command away. Development is not reopened on an untagged release
+# commit, so the error names that step as well.
 if ! git -C "${ROOT_DIR}" tag -a "v${new}" -m "v${new}"; then
-	die "release commit created but tagging failed; finish with: git tag -a v${new} -m v${new}"
+	die "release commit created but tagging failed; finish with: git tag -a v${new} -m v${new} && ${reopen_cmd}"
+fi
+
+printf '%s+dev\n' "${new}" >"${ROOT_DIR}/${SKILL_VERSION}"
+if ! git -C "${ROOT_DIR}" commit -qm "chore(release): reopen development after v${new}" -- "${SKILL_VERSION}"; then
+	git -C "${ROOT_DIR}" checkout -q HEAD -- "${SKILL_VERSION}"
+	die "v${new} is tagged, but the commit reopening development failed (a hook may have rejected it); finish with: ${reopen_cmd}"
 fi
 
 printf "✅ Released v%s — run 'git push --follow-tags' when ready\\n" "${new}"

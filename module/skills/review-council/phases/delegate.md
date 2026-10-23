@@ -329,6 +329,12 @@ Hints are additive — supplement, not replace, generic focus area. Do NOT frame
 
 For each agent, instruct to return verdict (**APPROVE** or **REQUEST CHANGES**) with all findings. Every finding must include **Evidence** field quoting actual code or content observed.
 
+**Output contract**: append to every code review delegation prompt, with `{agent-name}` replaced by the identifier you dispatch:
+
+> Your response is one fenced ```json block and nothing else. Its `agent` field is exactly `{agent-name}`. Its required top-level keys are `agent`, `files_read` (every file you opened), `verdict` (`APPROVE` or `REQUEST CHANGES`) and `findings`; `model` is the only optional one. The key set is closed at both levels: no `summary`, `category` or any other key, because the validator rejects the whole verdict for one. Put extra context in a finding's `description`. The full shape is in the "Output Format" section of `reviewer-protocol.md`.
+
+The persona file and `reviewer-protocol.md` carry the same contract, but a reviewer reaches the protocol only by opening it, and on observed runs six of fifteen did not: all six failed the format gate and cost a repair round.
+
 **Grounding requirement**: append to every code review delegation prompt:
 
 > When citing line numbers, confirm them by reading the actual file — do not compute line numbers from the diff. When claiming something is absent or not referenced, search for it with `grep -rn`, report that search in your Description field, and anchor the finding's Evidence to a contiguous verbatim quote of the code whose counterpart is missing — evidence is matched byte for byte against the cited file, so a search transcript there can never verify. Only reference identifiers (variable names, file names, targets) you have directly read in source files.
@@ -482,6 +488,8 @@ Instruct agents to review listed spec artifacts (not code), plus project context
 > Before submitting your verdict, re-read the severity pack definitions. Verify each finding's severity meets the stated boundary for that level.
 
 **Model self-report**: append the "Model self-report" paragraph from Code Review Delegation above to every spec review delegation prompt, unchanged.
+
+**Output contract**: append the "Output contract" paragraph from Code Review Delegation above to every spec review delegation prompt, with `{agent-name}` replaced the same way.
 
 **When linked issues available** (`${session_dir}/linked-issues.txt` exists): append "Linked Issues" section to each delegation prompt with full content of `linked-issues.txt`, followed by:
 

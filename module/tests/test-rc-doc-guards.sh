@@ -614,7 +614,7 @@ fi
 # RC-020: `<!-- TLDR -->` is the one marker the orchestrator may never delete —
 # every report has an outcome to summarise. That makes its fallback load-bearing
 # in a way no other marker's is: the marker's source, comment-summary.md, is
-# written by a subagent that can be skipped (quick mode) or can fail, be
+# written by a subagent that is not dispatched (quick mode) or can fail, be
 # interrupted, or return prose without writing the file (any mode). Scoping the
 # fallback to quick mode alone leaves the orchestrator with no instruction on the
 # failure path, and its two options there are both defects — invent a summary, or
@@ -626,7 +626,7 @@ echo "Test: the TLDR fallback covers every absent-or-empty case, not just quick 
 if grep -qF 'is absent or empty**, replace the marker with the literal line `Automated review complete.`' <<<"$report_flat" &&
 	grep -qF 'This is not a `quick`-mode special case' <<<"$report_flat" &&
 	grep -qF 'The marker is never deleted instead' <<<"$report_flat" &&
-	grep -qF 'in any effort mode, whether the subagent was skipped or dispatched and failed' <<<"$skill_flat" &&
+	grep -qF 'at `quick` effort, where no subagent runs, or in any mode when a dispatched one failed' <<<"$skill_flat" &&
 	grep -qF 'fill `<!-- TLDR -->` with the literal line `Automated review complete.` instead. Never delete it' <<<"$skill_flat"; then
 	echo "  PASS: fallback is unconditional on effort and the marker is never dropped"
 	PASS=$((PASS + 1))
@@ -2830,6 +2830,56 @@ if [[ "$rc139_missing" -eq 0 ]]; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: $rc139_missing untrusted-prose rule(s) missing (RC-139)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-171: the verdict block's key set lived only in reviewer-protocol.md, which
+# reviewers reach only by opening it. On three 2026-10-22 runs all six that
+# never opened it failed the format gate (no `files_read`, a `summary` or
+# `category` key), against two of the nine that did (one named itself
+# `curator`). The contract has to travel in the prompt itself.
+echo "Test: delegation prompts carry the verdict output contract inline (RC-171)"
+# shellcheck disable=SC2016 # literal markdown and template text, not expansions.
+if grep -qF '**Output contract**: append to every code review delegation prompt' <<<"$delegate_flat" &&
+	grep -qF 'Its `agent` field is exactly `{agent-name}`' <<<"$delegate_flat" &&
+	grep -qF '`files_read` (every file you opened)' <<<"$delegate_flat" &&
+	grep -qF 'no `summary`, `category` or any other key' <<<"$delegate_flat" &&
+	grep -qF 'append the "Output contract" paragraph from Code Review Delegation above to every spec review delegation prompt' <<<"$delegate_flat"; then
+	echo "  PASS: code and spec prompts name the agent id and the closed key set"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the output contract is left to a file reviewers may not open"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-172: the prose subagent saw only findings.json, which holds per-agent
+# verdicts but not the council's, so one REQUEST CHANGES among four APPROVEs
+# came back as the council verdict. Two other runs skipped the dispatch
+# outright, and the fallback wording listed "skipped" as a normal outcome.
+echo "Test: the prose subagent gets the decided verdict and is not optional (RC-172)"
+# shellcheck disable=SC2016 # literal markdown and template text, not expansions.
+if grep -qF 'Dispatch a prose subagent with **only** `${session_dir}/verdicts/findings.json` and `${session_dir}/verdict.txt`' <<<"$skill_flat" &&
+	grep -qF 'with **only** `${session_dir}/verdicts/findings.json` and `${session_dir}/verdict.txt`' <<<"$report_flat" &&
+	grep -qF 'never re-derive it from the per-agent verdicts' <<<"$report_flat" &&
+	grep -qF 'At `standard` and `deep` effort this dispatch is required' <<<"$skill_flat" &&
+	grep -qF 'At `standard` and `deep` effort this dispatch is required' <<<"$report_flat" &&
+	! grep -qF 'whether the subagent was skipped or dispatched and failed' <<<"$skill_flat"; then
+	echo "  PASS: SKILL.md and report.md hand the prose subagent verdict.txt and require it"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the prose subagent can still guess the verdict, or be skipped"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-173: a headless run waited on a background subagent by scheduling a
+# wakeup; the wakeup fired after the report was done and billed a second turn.
+echo "Test: the run ends after its last step and schedules nothing (RC-173)"
+if grep -qF 'Never schedule a wakeup, timer or follow-up turn' <<<"$skill_flat" &&
+	grep -qF 'completion notification resumes you' <<<"$skill_flat"; then
+	echo "  PASS: SKILL.md forbids scheduled follow-ups"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: nothing stops the orchestrator scheduling a turn past the run's end"
 	FAIL=$((FAIL + 1))
 fi
 

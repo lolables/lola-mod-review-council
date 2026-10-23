@@ -1021,10 +1021,15 @@ render again.
 and learnings extraction guidance.
 
 - Dispatch a prose subagent with **only**
-  `${session_dir}/verdicts/findings.json` as input. It returns a
+  `${session_dir}/verdicts/findings.json` and `${session_dir}/verdict.txt`
+  as input. It returns a
   one-line TL;DR and a 2-4 paragraph narrative — nothing else, no
   structure. Write the TL;DR to `${session_dir}/comment-summary.md`
-  and the narrative to `${session_dir}/narrative.md`.
+  and the narrative to `${session_dir}/narrative.md`. At `standard` and
+  `deep` effort this dispatch is required: never write the TL;DR or
+  narrative yourself, and never replace prose the subagent returned with
+  your own. `${PHASES_DIR}/report.md` step 2 covers a reply that states
+  a verdict other than `verdict.txt`.
 - Splice deterministically: replace the single `<!-- NARRATIVE -->`
   line in `${session_dir}/report.md` with the verbatim contents of
   `${session_dir}/narrative.md`, and the single `<!-- TLDR -->` line
@@ -1032,8 +1037,8 @@ and learnings extraction guidance.
   This is a plain string substitution performed by the orchestrator,
   not the model free-forming the report.
 - Whenever `${session_dir}/comment-summary.md` is absent or empty —
-  in any effort mode, whether the subagent was skipped or dispatched
-  and failed — fill `<!-- TLDR -->` with the literal line
+  at `quick` effort, where no subagent runs, or in any mode when a
+  dispatched one failed — fill `<!-- TLDR -->` with the literal line
   `Automated review complete.` instead. Never delete it: the TL;DR
   marker is the one marker that is not conditional on a phase running.
 - Extract learnings from review (patterns, anti-patterns, gaps)
@@ -1066,6 +1071,11 @@ and learnings extraction guidance.
 
 **Update tracking:** Set Report status to `complete`, record council
 verdict and learnings count.
+
+**The run ends here**, or at Step 7 when post intent was recorded. Never
+schedule a wakeup, timer or follow-up turn at any point in the run: a
+dispatched subagent's completion notification resumes you, and a scheduled
+turn that fires after the run has ended is billed for nothing.
 
 ### Step 7: POST (opt-in, terminal)
 

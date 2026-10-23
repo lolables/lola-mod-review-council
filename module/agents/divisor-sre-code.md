@@ -28,18 +28,19 @@ unverified.
 
 ## Source Documents
 
-Before reviewing, read:
+Your prompt opens with a Review context section holding the severity
+definitions, the selected packs' calibration notes and the verdict output
+format; do not open those files for them. Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — overview, technologies, build & test commands, workflow
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
-4. Release pipeline configs if present (e.g., `.goreleaser.yaml`, `.github/workflows/`, `Makefile`, CI configs)
-5. Dependency manifests if present (e.g., `go.mod`, `package.json`, `requirements.txt`, `Cargo.toml`)
-6. Convention pack for project language — check CI/CD guidance and dependency management patterns
+3. Release pipeline configs if present (e.g., `.goreleaser.yaml`, `.github/workflows/`, `Makefile`, CI configs)
+4. Dependency manifests if present (e.g., `go.mod`, `package.json`, `requirements.txt`, `Cargo.toml`)
+5. The full convention pack for the project language (Calibration Rules, Custom Rules) — check CI/CD guidance and dependency management patterns
 
 ## Review Scope
 
-Scope is changeset from delegation prompt. Read every file in changeset before producing findings. See reviewer-protocol.md for evidence discipline rules.
+Scope is changeset from delegation prompt. Read every file in changeset (your round's bundle holds them) before producing findings. See reviewer-protocol.md for evidence discipline rules.
 
 Do NOT review spec artifacts. Scope is exclusively code in the changeset — specs, plans, and governance documents are read for intent context only, never audited as the subject of review.
 
@@ -47,7 +48,7 @@ Do NOT review spec artifacts. Scope is exclusively code in the changeset — spe
 
 ### Phase 1 — Read & Map
 
-Read every file in changeset. Build map:
+Read every file in changeset (your round's bundle holds them). Build map:
 
 - Which operational artifacts affected (CI configs, dependency manifests, build scripts, release configs)?
 - Which runtime behavior changes (exit codes, error messages, logging, observability)?

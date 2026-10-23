@@ -65,7 +65,12 @@ Module references at `${REFERENCES_DIR}`. Pack filenames encode type and trigger
 
 Load packs from resolution chain in order (higher-priority locations override same-named files):
 
-1. Always load `${REFERENCES_DIR}/severity.md`.
+1. If your prompt opens with a Review context section (code review), it holds
+   the severity definitions and each selected pack's Calibration Notes: do not
+   open `${REFERENCES_DIR}/severity.md` for them. The steps below still apply
+   to the full packs, which carry the Calibration Rules, Custom Rules and
+   `testing_conventions` the Review context does not. Otherwise, load
+   `${REFERENCES_DIR}/severity.md`.
 2. Identify primary language from `tracking.md`. If `${REFERENCES_DIR}/lang-{language}.md` exists, load it — includes all base conventions.
 3. No language pack exists — load `${REFERENCES_DIR}/base.md`.
 4. Framework detected — load `${REFERENCES_DIR}/fw-{framework}.md` if exists. Framework packs additive — supplement language pack, not replace.
@@ -92,10 +97,10 @@ End with clear verdict and one-paragraph summary. Each persona applies domain-sp
 
 Your entire response MUST be a single fenced ```json code block and nothing
 else — no prose before or after it. The orchestrator extracts this block and
-validates it against `${REFERENCES_DIR}/verdict-schema.json`. A response the
+validates it against the verdict schema (`verdict-schema.json`). A response the
 validator rejects is re-dispatched once; do not add commentary outside the block.
 
-Four rules govern the block, and they apply before you copy the shape below:
+Five rules govern the block, and they apply before you copy the shape below:
 
 - **The key set is closed.** The schema sets `"additionalProperties": false` at
   both the top level and inside each finding, so any other key is rejected and
@@ -103,10 +108,10 @@ Four rules govern the block, and they apply before you copy the shape below:
   `category` or `references` key is the most common way to lose a review. There
   is no key for extra context: put it in `description`.
 - **Required vs optional.** `agent`, `files_read`, `verdict` and `findings` are
-  all required; `model` is the one optional top-level key. Inside a finding,
-  `severity`, `file`, `evidence`, `description` and `recommendation` are
-  required; `line`, `title` and `constraint` are optional, and so is `impact`
-  below HIGH.
+  all required; `model` and `context_check` are the optional top-level keys.
+  Inside a finding, `severity`, `file`, `evidence`, `description` and
+  `recommendation` are required; `line`, `title` and `constraint` are optional,
+  and so is `impact` below HIGH.
 - **Every HIGH and CRITICAL finding carries `impact`.** One or two sentences
   naming who is affected and the mechanism that hurts them if the change merges
   as-is: "a client refreshing on the expiry boundary is logged out mid-session".
@@ -117,6 +122,18 @@ Four rules govern the block, and they apply before you copy the shape below:
 - **`files_read` MUST list every file you opened** — it replaces the prose
   attestation, and a verdict whose `files_read` omits a file you quote from is
   not a verdict anyone can check.
+- **In code review, a zero-finding APPROVE carries `context_check`** — an
+  object, never a string:
+  `{"file": "<path>", "line": <n>, "evidence": "<the whole line, verbatim>"}`,
+  quoting, byte for byte, a line of one of your round's files that lies outside
+  the diff hunks, with `line` the line the quote sits on. Quote the whole of
+  that line, not a fragment of it, and pick a non-blank one. Choose the line
+  from your own reading: a quote of the same line another reviewer in your
+  round already used is rejected. It shows the review looked past the diff;
+  without it the verdict is re-dispatched once. Your round's bundle says when the check is
+  waived — no such line exists, or there is no diff (`--scope all`); then leave
+  it out. A verdict with findings never needs it, and spec reviewers never
+  file it.
 
 ```json
 {
@@ -147,7 +164,7 @@ the headline the defect needs rather than trimming to a budget. Omit it and the
 first sentence of `description` is used instead, which is why that sentence
 should stand on its own.
 
-- `verdict` MUST be `APPROVE` or `REQUEST CHANGES` — see "## Verdict" above.
+- `verdict` MUST be `APPROVE` or `REQUEST CHANGES` — see "## Verdict" in reviewer-protocol.md.
   `APPROVE WITH ADVISORIES` is a council-level aggregate the orchestrator
   derives from multiple reviewer verdicts (see `report.md`); no individual
   reviewer emits it.
@@ -169,15 +186,21 @@ should stand on its own.
   - For an absence finding, quote the present code whose counterpart is
     missing and put the search you ran in `description` — for a repo-level
     absence with no local counterpart, quote the nearest file that should
-    have referenced it (see "Verify absence" above).
+    have referenced it (see "Verify absence" in reviewer-protocol.md).
 
-A clean review returns an empty `findings` array — do not manufacture findings:
+A clean review returns an empty `findings` array, plus, in code review,
+`context_check` unless the check is waived — do not manufacture findings:
 
 ```json
 {
   "agent": "divisor-guard-code",
   "files_read": ["stringset.go", "stringset_test.go"],
   "verdict": "APPROVE",
-  "findings": []
+  "findings": [],
+  "context_check": {
+    "file": "stringset.go",
+    "line": 31,
+    "evidence": "func (s StringSet) Has(v string) bool {"
+  }
 }
 ```

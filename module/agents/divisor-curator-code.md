@@ -97,18 +97,19 @@ Any other bash usage violates operating contract.
 
 ## Source Documents
 
-Before reviewing, read:
+Your prompt opens with a Review context section holding the severity
+definitions, the selected packs' calibration notes and the verdict output
+format; do not open those files for them. Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project overview, behavioral constraints, recent changes, project structure
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
-4. Content convention pack (if present in pack resolution chain) — skip content quality checks if not loaded
-5. `README.md` — project description and installation steps
-6. Existing documentation issues — if Docs repo configured, query via forge tool's issue list command (e.g., `gh issue list --repo <DOCS_REPO> --state open` or `glab issue list --repo <DOCS_REPO> --state opened`)
+3. Content convention pack (if present in pack resolution chain) — skip content quality checks if not loaded
+4. `README.md` — project description and installation steps
+5. Existing documentation issues — if Docs repo configured, query via forge tool's issue list command (e.g., `gh issue list --repo <DOCS_REPO> --state open` or `glab issue list --repo <DOCS_REPO> --state opened`)
 
 ## Review Scope
 
-Review scope is changeset provided in delegation prompt. Read every file in changeset before producing findings. Classify changed files as user-facing or internal to determine whether documentation checks apply. See reviewer-protocol.md for evidence discipline rules.
+Review scope is changeset provided in delegation prompt. Read every file in changeset (your round's bundle holds them) before producing findings. Classify changed files as user-facing or internal to determine whether documentation checks apply. See reviewer-protocol.md for evidence discipline rules.
 
 Do NOT review spec artifacts. Scope is exclusively code in the changeset — specs, plans, and governance documents are read for intent context only, never audited as the subject of review.
 
@@ -135,7 +136,7 @@ Classify files as user-facing or internal based on path patterns:
 
 ### Phase 1 — Read & Map
 
-Read every file in changeset. Build map:
+Read every file in changeset (your round's bundle holds them). Build map:
 
 - Which files user-facing vs internal?
 - What user-facing behavior changes does changeset introduce?

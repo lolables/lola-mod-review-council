@@ -25,6 +25,7 @@ cat >"$s/verdicts/api/divisor-adversary-code.raw.md" <<'RAW'
 {"agent":"divisor-adversary-code","files_read":["api/handler.go"],"verdict":"APPROVE","findings":[]}
 ```
 RAW
+write_waived_context "$s"
 result=$(bash "$EXTRACT" "$s")
 assert_json_field "$result" "status" "ok" "extract deep status ok"
 if [[ -f "$s/verdicts/auth/divisor-adversary-code.json" ]]; then
@@ -97,6 +98,7 @@ cat >"$s/verdicts/api/divisor-adversary-code.raw.md" <<'RAW'
 {"agent":"divisor-adversary-code","files_read":[],"verdict":"APPROVE","findings":[]}
 ```
 RAW
+write_waived_context "$s"
 bash "$EXTRACT" "$s" >/dev/null
 src=$(mktemp -d)
 mkdir -p "$src/auth"
@@ -126,6 +128,7 @@ cat >"$s/verdicts/api/divisor-guard-code.raw.md" <<'RAW'
 {"agent":"divisor-guard-code","files_read":[],"verdict":"APPROVE","findings":[]}
 ```
 RAW
+write_waived_context "$s"
 bash "$EXTRACT" "$s" >/dev/null
 src=$(mktemp -d)
 result=$(cd "$src" && bash "$VERIFY" "$s" .)

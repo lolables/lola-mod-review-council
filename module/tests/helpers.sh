@@ -192,6 +192,24 @@ new_session() {
 	printf '%s' "$s"
 }
 
+# Write a prompts/context.json that waives the #101 context check for every
+# verdict directory the session has. For suites whose subject is not that gate:
+# without an index the extractor refuses every zero-finding APPROVE as
+# CONTEXT_MISSING, by design. Call it once the suite's verdicts/ subdirectories
+# exist, so it covers them; with no verdicts/ at all the root entry ("") still
+# covers unnested verdicts.
+# Usage: write_waived_context <session_dir>
+write_waived_context() {
+	local s="$1" dirs=""
+	mkdir -p "$s/prompts"
+	if [[ -d "$s/verdicts" ]]; then
+		dirs=$(find "$s/verdicts" -path "$s/verdicts/_meta" -prune -o -type d -print)
+	fi
+	jq -Rn --arg v "$s/verdicts" \
+		'[inputs | ltrimstr($v) | ltrimstr("/")] | sort | {rounds: map({subsystem: null, batch: 1, bundle: "", verdict_dir: ., gate: "waived", files: []})}' \
+		<<<"$dirs" >"$s/prompts/context.json"
+}
+
 # Run <cmd> twice and assert <state_path> is unchanged between the two runs.
 #
 # The snapshot is taken AFTER the first run, not before: the first run is the

@@ -33,6 +33,7 @@ cat >"$s/verdicts/batch2/divisor-guard-code.raw.md" <<'RAW'
 {"agent":"divisor-guard-code","files_read":["internal/api/handler.go"],"verdict":"APPROVE","findings":[]}
 ```
 RAW
+write_waived_context "$s"
 result=$(bash "$EXTRACT" "$s")
 assert_json_field "$result" "status" "ok" "extract batched status ok"
 if [[ -f "$s/verdicts/batch1/divisor-guard-code.json" ]]; then
@@ -127,6 +128,7 @@ cat >"$s/verdicts/auth/batch2/divisor-adversary-code.raw.md" <<'RAW'
 {"agent":"divisor-adversary-code","files_read":["auth/keys.go"],"verdict":"APPROVE","findings":[]}
 ```
 RAW
+write_waived_context "$s"
 result=$(bash "$EXTRACT" "$s")
 assert_json_field "$result" "status" "ok" "extract deep+batched status ok"
 if [[ -f "$s/verdicts/auth/batch1/divisor-adversary-code.json" ]] &&

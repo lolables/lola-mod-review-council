@@ -190,6 +190,14 @@ RC_DEFAULT_BATCH_BYTES=131072
 # shellcheck disable=SC2034 # read by the scripts that source this file.
 RC_DEFAULT_BATCH_FILES=50
 
+# rc-build-context.sh inlines a changed file into its round's bundle only up to
+# this size (#101). Beyond it the reviewer reads the file on demand, as before:
+# a generated file or a lockfile would otherwise crowd every other file out of
+# a bundle that is itself bounded by the batch byte budget. Not configurable;
+# the per-bundle bound (Batch bytes) already is.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_CONTEXT_FILE_BYTES=32768
+
 # How many comments one verdict may span when the project sets no `Max
 # comments`. Three, not one: a trimmed comment loses reviewer analysis that a
 # PR reader has no other way to reach, since the full report stays in the
@@ -397,6 +405,67 @@ rc_parse_kv() {
 	grep -m1 -E "^[-[:space:]]*${key}:" "$file" 2>/dev/null |
 		sed -E "s/^[-[:space:]]*${key}:[[:space:]]*//" |
 		sed -E 's/[[:space:]]+$//' || true
+}
+
+# rc_diff_index <diff_file>
+# One pass over a unified git diff, printing tab-separated rows:
+#   F<TAB>path<TAB>bytes          one per file section
+#   H<TAB>path<TAB>start<TAB>end  one per hunk: its new-side line range
+# rc-plan-batches.sh prices batches on the F rows and rc-build-context.sh
+# locates hunks from the H rows. They share this parser so the two can never
+# disagree about which section belongs to which path (#101).
+#
+# The path is read from the `+++ b/<path>` header rather than from the
+# `diff --git a/<p> b/<p>` line, which is genuinely ambiguous for a path
+# containing " b/" — git writes both halves unquoted and there is no way back.
+# A deletion has `+++ /dev/null`, so the `--- a/<path>` half is kept as the
+# fallback, and a binary or malformed section falls back to the first " b/" in
+# the header line. Only the lines BEFORE the section's first `@@` are read as
+# headers: an added line of content may itself begin with `+++`.
+#
+# Git appends one TAB to a `---`/`+++` path that contains a space, so that
+# TAB is stripped. A path git C-quotes (a non-ASCII name under core.quotePath,
+# written `+++ "b/\303\251.go"`) passes through still quoted, as it did in the
+# old planner; a consumer matching it against changeset.txt will not find it.
+#
+# A hunk range includes its context lines, because they are visible in the
+# diff too. A hunk whose new-side count is 0 (a pure deletion) adds no lines
+# and prints no H row. LC_ALL=C makes length() count bytes, the unit a context
+# budget is denominated in. A missing file prints nothing: an empty diff is
+# the `--scope all` case, not an error.
+rc_diff_index() { # diff_file
+	[[ -f "$1" ]] || return 0
+	LC_ALL=C awk '
+		function flush() { if (path != "") printf "F\t%s\t%d\n", path, bytes; path = ""; bytes = 0 }
+		/^diff --git / {
+			flush()
+			hdr = 1; apath = ""; bytes = length($0) + 1
+			line = $0; sub(/^diff --git /, "", line)
+			i = index(line, " b/")
+			path = (i > 0) ? substr(line, i + 3) : ""
+			next
+		}
+		{
+			bytes += length($0) + 1
+			if (hdr && $0 ~ /^--- /) {
+				p = substr($0, 5); sub(/\t$/, "", p)
+				if (p != "/dev/null") { sub(/^a\//, "", p); apath = p }
+			} else if (hdr && $0 ~ /^\+\+\+ /) {
+				p = substr($0, 5); sub(/\t$/, "", p)
+				if (p != "/dev/null") { sub(/^b\//, "", p); path = p }
+				else if (apath != "") path = apath
+			} else if ($0 ~ /^@@ /) {
+				hdr = 0
+				if (path != "" && match($0, /\+[0-9]+(,[0-9]+)?/)) {
+					n = split(substr($0, RSTART + 1, RLENGTH - 1), r, ",")
+					start = r[1] + 0
+					count = (n > 1) ? r[2] + 0 : 1
+					if (count > 0) printf "H\t%s\t%d\t%d\n", path, start, start + count - 1
+				}
+			}
+		}
+		END { flush() }
+	' "$1"
 }
 
 # Fail loudly. With pipefail set, a failing pipeline stage can otherwise abort

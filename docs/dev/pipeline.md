@@ -20,8 +20,9 @@ conditional:
 | **Cost Estimate**     | `rc-cost-estimate.sh` (deep effort only)                           | Price the fan-out before dispatch; record acknowledgement |
 | **Quality Gates**     | `SKILL.md` "Step 2.5: QUALITY GATES", CI data from `rc-prepare.sh` | Forge CI status checks (code review with a PR only)       |
 | **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
+| **Reviewer Context**  | `rc-build-context.sh`                                              | Build the shared prompt preamble and each round's file bundle |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
-| **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict              |
+| **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict; gate bare APPROVEs |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `rc-recompute-verdicts.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate; per-agent verdicts derived last |
 | **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
 | **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
@@ -65,8 +66,9 @@ flowchart TD
   qg{"PR CI data available?"}
   qgrun["Quality Gates: run CI checks"]
   plan["Batch plan: split the changeset into delegation rounds on context bytes"]
+  ctx["Reviewer context: preamble, one file bundle per round, round index"]
   del["Delegate: construct prompts, dispatch agents in parallel"]
-  ext["Extract: schema-validate each reviewer's JSON verdict"]
+  ext["Extract: schema-validate each reviewer's JSON verdict, gate zero-finding APPROVEs"]
   ver["Verify: format gate, correction, strip, merge-base advisories, consolidation, arbiter (calibration + validation gate)"]
   dispgate{"Re-review conversation to triage? (not quick effort)"}
   disp["Disposition: triage untrusted PR conversation (GitHub and GitLab)"]
@@ -87,7 +89,8 @@ flowchart TD
   qg -->|yes| qgrun
   qgrun --> plan
   qg -->|no| plan
-  plan --> del
+  plan --> ctx
+  ctx --> del
   del --> ext
   ext -->|extract_error - re-dispatch once| del
   ext -->|ok| ver
@@ -96,7 +99,7 @@ flowchart TD
   dispgate -->|no| report
   disp --> report
   report --> iter
-  iter -->|user accepts fix and re-review| del
+  iter -->|user accepts fix and re-review| ctx
   iter -->|no| postgate
   postgate -->|yes| post
   postgate -->|no| done
@@ -112,7 +115,7 @@ flowchart TD
   class qgrun sysB
   class ver,disp sysC
   class report sysD
-  class dec,sel,triage,cost,plan,ext,post sysE
+  class dec,sel,triage,cost,plan,ctx,ext,post sysE
   class qg,iter,dispgate,decgate,postgate sysF
 ```
 
@@ -148,21 +151,48 @@ flowchart TD
      entirely
 
 6. **Quality Gates** — fetch CI status checks from the forge (code review with PR only)
-7. **Batch plan** — split the changeset into the delegation rounds step 8 dispatches, on the resource a round
+7. **Batch plan** — split the changeset into the delegation rounds step 9 dispatches, on the resource a round
    spends: context bytes. Files are grouped by parent directory and a batch closes when adding the next group
    would exceed either `Batch bytes` (default 131072) or `Batch size` (default 50 files); in deep mode both
    budgets apply within each subsystem. A shell pass over `diff.patch` and `changeset.txt`, no model judgment.
    The plan is written to `batch-plan.json` and `batches.txt` on every run, single-batch runs included, so a
    changeset that needed no split is distinguishable from a step that was skipped. See "Batching" in the README
-8. **Delegate** — construct prompts with changeset, diff, and prior run context; dispatch agents in parallel with model
+8. **Reviewer context** — build what every code reviewer is handed rather than told to open, because reviewers
+   skipped the documents their agent files listed (issue #101). `rc-build-context.sh` writes, under `prompts/`:
+   `preamble.md` (the severity definitions, the selected packs' calibration notes and the verdict output format,
+   pasted byte-identical at the top of every code-review prompt); one `[<subsystem>/]batch{N}-context.md` bundle per
+   round, holding the line-numbered text of that round's changed files up to a per-file cap (`RC_CONTEXT_FILE_BYTES`)
+   and the batch byte budget, with every file left out listed under "Read directly" and its reason; and
+   `context.json`, the round index the extractor checks against. Each round's files carry their new-side hunk ranges,
+   parsed by the same `rc_diff_index` the batch planner uses, so the two never disagree about the diff. Files are
+   read through the evidence matcher's root containment, so a path escaping the review root is never inlined
+9. **Delegate** — construct prompts with the preamble, changeset, diff, the round's bundle path and prior run context; dispatch agents in parallel with model
    tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
    fenced ` ```json ` verdict block — no markdown prose.
-9. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
+10. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
    `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
    extraction failure rather than a silently dropped finding.
+   A code reviewer's (`divisor-*-code`) schema-valid APPROVE with no findings must also carry `context_check`: a
+   verbatim quote of a whole, non-blank line of one of its round's files that lies outside the diff hunks, matched
+   with the evidence matcher against the round and hunks in `prompts/context.json`, and not the line text another
+   code reviewer's accepted quote in the same round already cites. A quote accepted by an earlier extraction and
+   unchanged keeps its line, so a re-dispatched reviewer cannot displace it; otherwise raw files are taken in sorted
+   byte order and the first keeps the line. A rejected verdict reserves nothing, and any verdict JSON an earlier
+   extraction wrote for it is removed, so verification never ingests a verdict this run refused. Without it a no-look APPROVE
+   costs nothing to file. Spec reviewers are never checked. A failure is `APPROVE_UNGROUNDED` and gets the one
+   re-dispatch; it is not written to `gate-firings.jsonl`, which keeps CRITICAL/HIGH claims and this verdict carries
+   none. The gate is waived for a round with no line outside its hunks, and when there is no diff (`--scope all`). A
+   session without a usable index, or a raw file in a directory no round writes to, is `CONTEXT_MISSING`: the
+   orchestrator rebuilds the index or moves the file and re-extracts, with nothing re-dispatched.
+   Known limits. The gate raises the cost of a no-look APPROVE; it does not prove the review's depth, and a
+   reviewer that files any finding, even a LOW, is not gated at all. #101 accepted both when it chose this gate
+   (issue option (b)); inlining the files is what makes depth cheap. The one-line-per-round rule blocks one
+   reviewer's quote being copied to the others, not an orchestrator that writes a distinct quote for each. And a
+   path git C-quotes (non-ASCII under `core.quotePath`) gets no hunk data from `rc_diff_index`, so every line of
+   that file counts as outside the hunks and any verified quote from it passes.
    The schema requires `impact` (who is hurt, and how) on every HIGH and CRITICAL finding; the jq fallback mirrors
    that conditional from `RC_IMPACT_SEVERITIES`.
-10. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
+11. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
    strip fabricated findings, deduplicate, then dispatch the arbiter once over the survivors. Writes the canonical
    `verdicts/findings.json`. The arbiter (`agents/review-council-arbiter.md`) calibrates severity and runs the
    validation gate in one reply; `rc-apply-validation.sh` applies it by finding id. Calibration lowers to MEDIUM a
@@ -173,7 +203,7 @@ flowchart TD
    the rules in `scripts/jq/recompute-verdicts.jq`: a verified HIGH or CRITICAL forces REQUEST CHANGES, an agent
    holding no finding is APPROVE, anything else keeps its filed verdict. Both per-agent tables print that map, which
    used to be hand-edited from prose.
-11. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
+12. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
     claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
@@ -184,13 +214,15 @@ flowchart TD
     `disposition-check.json`). Once the edits pass, the check recomputes `.verdicts` with the same jq program from
     the copy of `verdicts-map.json` taken with the snapshot before hashing, so a resolved reply upgrades its agent
     and no edit to `.verdicts` or to the map survives. See `phases/disposition.md` for the full contract.
-12. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
+13. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
     runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
     behind
-13. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
-    to fix them and re-review. Accepting returns to Delegate and overwrites the report on the next pass. The ceiling
-    depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep` allows 5
-14. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
+14. **Iterate** — *after* the report is written, and only in an interactive session with findings left to fix, offer
+    to fix them and re-review. Accepting returns to Reviewer context, which rebuilds the bundles from the fixed
+    files, then to Delegate, and overwrites the report on the next pass. `diff.patch` and its hunk ranges stay the
+    original change's. The ceiling depends on effort: `quick` never offers, `standard` allows 3 iterations, `deep`
+    allows 5
+15. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
     in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
     the report can never disagree. The post script writes upstream only when `session.txt` (written by preparation
     alone, unlike the model-appended `tracking.md`) records the user's `Post intent: yes` and the orchestrator sets
@@ -305,6 +337,8 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `diff.patch` — full patch (code review)
 - `batch-plan.json` and `batches.txt` — the delegation rounds and the budgets they were measured against, written on
   every run so a changeset that needed no split reads differently from a step that never ran
+- `prompts/` — what reviewers are handed: `preamble.md`, one `[<subsystem>/]batch{N}-context.md` bundle per round,
+  and `context.json`, the round index (files, hunk ranges, verdict directory, gate) `rc-extract-verdict.sh` reads
 - `models.json` — model provenance for the verdict header. One `{role, requested, reported}` entry per dispatched
   reviewer: `rc-select-council.sh` seeds `requested` as `host default` and `reported` as `[]`, the orchestrator replaces
   `requested` only with a model ID it passed at dispatch, `rc-extract-verdict.sh` adds each valid verdict's optional

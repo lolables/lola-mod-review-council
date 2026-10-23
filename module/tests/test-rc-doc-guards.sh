@@ -475,10 +475,23 @@ fi
 # the codes must carry each one. The codes are read from the extractor, so one
 # added there and left out of a document fails here without anyone first
 # writing a guard for it. This replaces RC-018's VERDICT_INCOHERENT-only check.
+# Codes reach `--arg r` either as a literal or, from the #101 context gate, as
+# the head of a `<CODE>\t<detail>` string the caller splits, written with
+# `printf '<CODE>\t` or as `$'<CODE>\t'`. Both shapes
+# are discovered, and any other `--arg r`, quoted or bare, fails the guard: a
+# code routed some third way would otherwise escape it unseen.
 debug_flat=$(tr '\n' ' ' <"$SCRIPT_DIR/../skills/review-council-debug/SKILL.md" | tr -s ' ')
 echo "Test: every extractor reason code is enumerated in each document (RC-066)"
-rc066_reasons=$(grep -oE -- '--arg r "[A-Z_]+"' "$SKILLS/scripts/rc-extract-verdict.sh" | sed -E 's/.*"([A-Z_]+)"/\1/' | sort -u)
+rc066_src="$SKILLS/scripts/rc-extract-verdict.sh"
+rc066_literal=$(grep -oE -- '--arg r "[A-Z_]+"' "$rc066_src" | sed -E 's/.*"([A-Z_]+)"/\1/')
+rc066_gate=$(grep -oE "(printf '|[$]')[A-Z_]+\\\\t" "$rc066_src" | sed -E "s/^(printf '|[$]')([A-Z_]+).*/\2/" || true)
+rc066_reasons=$(printf '%s\n%s\n' "$rc066_literal" "$rc066_gate" | sed '/^$/d' | sort -u)
+# shellcheck disable=SC2016 # literal shell text searched for, not expanded.
+rc066_unknown=$(grep -oE -- '--arg r ("[^"]*"|[^" ][^ ]*)' "$rc066_src" | grep -vE -- '--arg r "[A-Z_]+"$' | grep -vF -- '--arg r "${gate_out%%' || true)
 rc066_missing=""
+if [[ -n "$rc066_unknown" ]]; then
+	rc066_missing+=" (undiscoverable: ${rc066_unknown//$'\n'/; })"
+fi
 declare -A rc066_docs=([verify]="$verify_flat" [delegate]="$delegate_flat" [debug]="$debug_flat")
 for reason in $rc066_reasons; do
 	for doc in verify delegate debug; do
@@ -2472,7 +2485,7 @@ if ! grep -qF 'Set it only if you know it; otherwise leave it out.' <<<"$delegat
 	rc113_missing=$((rc113_missing + 1))
 fi
 # shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
-if ! grep -qF '`model` is the one optional top-level key' <<<"$protocol_flat"; then
+if ! grep -qF '`model` and `context_check` are the optional top-level keys' <<<"$protocol_flat"; then
 	echo "  missing: reviewer-protocol.md does not list model as optional"
 	rc113_missing=$((rc113_missing + 1))
 fi
@@ -2931,6 +2944,111 @@ if grep -qF 'Never schedule a wakeup, timer or follow-up turn' <<<"$skill_flat" 
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: nothing stops the orchestrator scheduling a turn past the run's end"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-174: issue #101. Reviewers skipped the documents their agent files listed.
+# The fixed preamble and the round bundle travel in the prompt instead, and
+# SKILL.md must run the script that builds them.
+echo "Test: delegation pastes the preamble and hands over the round bundle (RC-174)"
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+if grep -qF 'bash "${SCRIPTS_DIR}/rc-build-context.sh" "${session_dir}"' "$SKILL_MD" &&
+	grep -qF 'prompts/preamble.md' <<<"$delegate_flat" &&
+	grep -qF 'Your primary input is' <<<"$delegate_flat" &&
+	! grep -qF 'Read every file in this changeset before producing any findings' <<<"$delegate_flat"; then
+	echo "  PASS: preamble inline, bundle by path, old read-request gone"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: delegation still asks reviewers to read what it could hand them"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-175: no code persona may still list severity.md as a read; it arrives in
+# the preamble, and a stale list item restores the skippable instruction.
+echo "Test: code personas do not list severity.md as a document to open (RC-175)"
+rc175=0
+for f in "$AGENTS"/divisor-*-code.md; do
+	rc175_docs=$(awk '/^## Source Documents/{on=1;next} on&&/^## /{exit} on' "$f")
+	if grep -qF 'severity.md' <<<"$rc175_docs"; then
+		rc175_name=$(basename "$f")
+		echo "  FAIL: $rc175_name still lists severity.md under Source Documents (RC-175)"
+		rc175=$((rc175 + 1))
+	fi
+done
+if [[ $rc175 -eq 0 ]]; then
+	echo "  PASS: severity definitions come from the prompt"
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-176: the protocol's Output Format reaches reviewers through the preamble,
+# so the context_check rule must live inside that section, not elsewhere. The
+# extractor gates code reviewers only, so the rule must say spec ones skip it,
+# and it refuses a line another reviewer in the round already quoted.
+echo "Test: the Output Format section states the context_check rule (RC-176)"
+of=$(awk '/^## Output Format$/{on=1;next} on&&/^## /{exit} on' "$PROTOCOL_MD" | tr '\n' ' ' | tr -s ' ')
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+if grep -qF '`context_check`' <<<"$of" && grep -qF 'outside the diff hunks' <<<"$of" &&
+	grep -qF 'In code review, a zero-finding APPROVE carries' <<<"$of" &&
+	grep -qF 'spec reviewers never file it' <<<"$of" &&
+	grep -qF 'a quote of the same line another reviewer in your round already used is rejected' <<<"$of"; then
+	echo "  PASS: context_check documented where the preamble copies from"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewers would not learn the context_check rule from their prompt"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-182: Step 2.7 builds context.json, without which every code reviewer's
+# bare APPROVE fails closed as CONTEXT_MISSING, and the bundles of changed-file
+# text. A fresh start that stops the pre-delegation run at 2.5 skips it, and an
+# iteration that returns straight to Step 3 hands reviewers pre-fix text.
+echo "Test: re-entry and iteration both run Step 2.7 before delegating (RC-182)"
+if grep -qF 'run Steps 2.1 through 2.7 in order before Step 3' <<<"$skill_flat" &&
+	grep -qF 'return to Step 2.7 (Reviewer Context)' <<<"$skill_flat"; then
+	echo "  PASS: no path reaches delegation without fresh reviewer context"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a fresh start or an iteration can delegate on missing or stale bundles"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-183: where named agent types are missing, the orchestrator dispatched
+# generic agents and improvised the prompt: the persona first (no prefix shared
+# across the five dispatches, defeating #30), a paraphrased persona, a
+# hand-narrowed changeset, file text pasted in place of the bundle path, and
+# one round for a multi-batch plan. The fallback changes how the persona
+# arrives and nothing else.
+echo "Test: fallback dispatch keeps the preamble first and the prompt's content (RC-183)"
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+if grep -qF 'directly after the preamble, never above it' <<<"$delegate_flat" &&
+	grep -qF 'never pastes file contents itself' <<<"$delegate_flat" &&
+	grep -qF 'never narrows the changeset or a round' <<<"$delegate_flat" &&
+	grep -qF 'dispatches every round in `batch-plan.json`' <<<"$delegate_flat" &&
+	! grep -qF 'include full content at top of delegation prompt' <<<"$delegate_flat"; then
+	echo "  PASS: the fallback path fixes the persona's place and changes nothing else"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: fallback dispatch can reorder, paraphrase or narrow the reviewer prompt"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-184: on a live run the gate fired and the orchestrator's re-dispatch
+# messages handed three rejected reviewers another reviewer's valid quote, and
+# all three copied it. A quote the orchestrator supplied proves nothing about
+# the reviewer. Two others filed context_check as a bare string, because the
+# code-prompt paragraph never showed the object shape.
+echo "Test: the orchestrator never supplies a context_check, and the prompt shows its shape (RC-184)"
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+if grep -qF 'never supplies, suggests or exemplifies a `context_check` value' <<<"$delegate_flat" &&
+	grep -qF 'never another reviewer' <<<"$delegate_flat" &&
+	grep -qF '"context_check": {"file": "<path>", "line": <n>, "evidence": "<the whole line, verbatim>"}' <<<"$delegate_flat" &&
+	grep -qF 'never supplies, suggests or exemplifies a `context_check` value' <<<"$verify_flat"; then
+	echo "  PASS: context_check quotes come from the reviewer, in object shape"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the orchestrator may hand reviewers a quote, or the shape is not shown"
 	FAIL=$((FAIL + 1))
 fi
 

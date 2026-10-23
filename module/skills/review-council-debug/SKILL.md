@@ -223,12 +223,13 @@ Validate JSON output:
 - `status` present (`ok`, `extract_error`, `nothing_to_do`, or `skip`)?
 - On `ok`, did `verdicts/<agent>.json` get written for every agent?
 - On `extract_error`, does the per-agent `reason` (`NO_JSON_BLOCK` /
-  `SCHEMA_INVALID` / `VERDICT_INCOHERENT` / `AGENT_MISMATCH` /
-  `RESERVED_AGENT`) and `remediation` text give an
-  LLM orchestrator enough to re-dispatch that one agent? A
+  `SCHEMA_INVALID` / `VERDICT_INCOHERENT` / `APPROVE_UNGROUNDED` /
+  `CONTEXT_MISSING` / `AGENT_MISMATCH` / `RESERVED_AGENT`) and `remediation`
+  text give an LLM orchestrator enough to re-dispatch that one agent? A
   `VERDICT_INCOHERENT` block is schema-valid — it declares APPROVE over a
   CRITICAL or HIGH finding — so do not expect `jsonschema validate` to
-  reject it.
+  reject it. The same holds for `APPROVE_UNGROUNDED` and `CONTEXT_MISSING`,
+  which only a code reviewer's zero-finding APPROVE can draw.
 - `jq` can parse output as valid JSON?
 
 ### Step 3: Test rc-verify-evidence.sh
@@ -492,6 +493,13 @@ Test these scenarios for robustness:
   `reason: "VERDICT_INCOHERENT"` with a `detail` naming the remedies. The
   distinct reason matters here: the block passes `jsonschema validate`, so
   `SCHEMA_INVALID` would send you chasing a schema break that does not exist.
+- **Ungrounded APPROVE**: a zero-finding APPROVE from a `*-code` agent in the
+  real session (a spec agent's is never checked). With
+  no `context_check`, expect `reason: "APPROVE_UNGROUNDED"` and a `detail`
+  naming the failed condition, unless the round's gate is waived in
+  `prompts/context.json`. In a session without `prompts/context.json`, expect
+  `reason: "CONTEXT_MISSING"` with a `detail` that says to run
+  `rc-build-context.sh` and re-extract, not to re-dispatch.
 - **Misfiled verdict**: a schema-valid block whose `agent` differs from its
   filename. Expect `reason: "AGENT_MISMATCH"` with a `detail` naming both
   agents, and no `<agent>.json` written for that file.

@@ -1,0 +1,22 @@
+.lola-eval/provision.sh
+  s_5b006f81a8fc67::t_fef110b7304ff6 76-79,81-102
+  s_5b006f81a8fc67::t_a8913bbe3280a6 17-18
+module/tests/test-lola-eval-provision.sh
+  s_5b006f81a8fc67::t_f554f3a8d63dba 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d82f7b177de3f0547cdf12b63b9756e9161d496",
+  "prompts": {},
+  "sessions": {
+    "s_5b006f81a8fc67": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08e9a279-fbdf-4901-8c20-558b432f8854",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

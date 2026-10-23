@@ -1,0 +1,24 @@
+module/skills/review-council/scripts/rc-lib.sh
+  s_79338e21b2f230::t_d16f2e406b68fc 402-457
+module/tests/test-rc-lib.sh
+  s_79338e21b2f230::t_dd189aeb4cb7a2 196-243
+module/skills/review-council/scripts/rc-plan-batches.sh
+  s_79338e21b2f230::t_d16f2e406b68fc 94-97,100
+  s_79338e21b2f230::t_d53e994b3de306 98-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ebc628fb0a33e87bebc2268c87c77c9461f67b5",
+  "prompts": {},
+  "sessions": {
+    "s_79338e21b2f230": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "89d9e0da-2f52-442c-998b-7fd625ac4429",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

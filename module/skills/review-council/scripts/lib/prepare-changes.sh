@@ -471,4 +471,6 @@ elif echo "$changeset_files" | grep -qE "pyproject\.toml|setup\.py"; then
 	fi
 fi
 
-[[ "$framework" == "unknown" ]] && framework="none"
+if [[ "$framework" == "unknown" ]]; then
+	framework="none"
+fi

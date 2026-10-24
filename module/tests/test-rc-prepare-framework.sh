@@ -308,6 +308,25 @@ meta_title=$(grep -c '^title: ' "$session_dir/pr-metadata.txt" || true)
 assert_equals "$meta_title" "1" "pr-metadata.txt keeps the title on one line"
 rm -rf "$launch_dir" "$source_repo" "$bindir" "$cache"
 
+# The ERR trap reports any sourced file whose last command fails, so a
+# detection result must never leave prepare-changes.sh on a non-zero status. An
+# rc-error on a healthy run teaches readers to ignore the line.
+echo ""
+echo "Test 8: framework detection reports no rc-error on stderr"
+for case_spec in "go-module:go.mod main.go" "none:main.go"; do
+	want_framework=${case_spec%%:*}
+	read -ra files <<<"${case_spec#*:}"
+	work=$(mktemp -d)
+	cache_dir=$(mktemp -d)
+	make_changeset_repo "$work" "${files[@]}"
+	result=$(cd "$work" && AGENTS_DIR="$SCRIPT_DIR/../agents" XDG_CACHE_HOME="$cache_dir" \
+		"$RC_TIMEOUT_BIN" 40 bash "$SCRIPT" --mode code 2>"$cache_dir/stderr")
+	assert_json_field "$result" "framework" "$want_framework" "framework is $want_framework"
+	errors=$(grep -c 'rc-error' "$cache_dir/stderr" || true)
+	assert_equals "$errors" "0" "no rc-error on stderr when framework is $want_framework"
+	rm -rf "$work" "$cache_dir"
+done
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

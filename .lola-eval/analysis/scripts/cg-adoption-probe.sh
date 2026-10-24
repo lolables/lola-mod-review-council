@@ -97,18 +97,6 @@ if [[ "$range_file_count" -eq 0 ]]; then
 fi
 echo "cloned voxpupuli/openvox-ca, range ${BASE_SHA}..${HEAD_SHA} touches $range_file_count files" >&2
 
-# --- provision the module into the clone's project-level .claude/ ----------
-# Identical to ctx-adoption-probe.sh's provisioning step — see its
-# PROVISIONING NOTE for why project-level (not CLAUDE_CONFIG_DIR-level) is
-# what makes review-council discoverable under an isolated config dir.
-mkdir -p "$repo_dir/.claude/agents" "$repo_dir/.claude/skills"
-cp "$MODULE_DIR"/agents/*.md "$repo_dir/.claude/agents/"
-cp -a "$MODULE_DIR"/skills/. "$repo_dir/.claude/skills/"
-if [[ -d "$MODULE_DIR/references" ]]; then
-	mkdir -p "$repo_dir/.claude/references"
-	cp -a "$MODULE_DIR"/references/. "$repo_dir/.claude/references/"
-fi
-
 # --- build the CodeGraph index the codegraph/both arms need ----------------
 # Timed and sized here rather than left implicit: an operator adopting
 # CodeGraph pays this cost once per repo, and "how long does the index take,
@@ -180,15 +168,18 @@ PROMPT="Use /review-council to review this repository. Scope: the commit range $
 
 WITH_SCRATCH="$PROJECT_ROOT/.taskfiles/scripts/with-scratch.sh"
 
-# Mirrors ctx-adoption-probe.sh's run_arm: fresh isolated CLAUDE_CONFIG_DIR,
+# Mirrors ctx-adoption-probe.sh's run_arm: fresh isolated CLAUDE_CONFIG_DIR
+# with the module lola-installed into it (see that script's PROVISIONING NOTE),
 # transcript persisted under $out_dir (never $work, which the EXIT trap
 # deletes), with-scratch.sh isolation for the review-council session cache,
 # and check_claude_result aborting the whole script loudly on any failure —
 # see ctx-adoption-probe.sh's comment above its own run_arm for why a
 # truncated run must never fall through to the analysis below.
-run_arm() { # arm_name config_dir extra_claude_args...
-	local arm="$1" config_dir="$2"
+run_arm() { # arm_name arm_home extra_claude_args...
+	local arm="$1" arm_home="$2"
+	local config_dir="$arm_home/.claude"
 	shift 2
+	install_review_council "$arm_home" "$MODULE_DIR"
 	seed_auth "$config_dir"
 
 	local transcript_file="$out_dir/${arm}.transcript.jsonl"
@@ -207,17 +198,18 @@ run_arm() { # arm_name config_dir extra_claude_args...
 	) >"$transcript_file" 2>"$stderr_file" || status=$?
 
 	check_claude_result "$status" "$stderr_file" "$arm arm"
+	check_named_agents "$transcript_file" "$MODULE_DIR" "$arm arm"
 	echo "$transcript_file"
 }
 
 echo "--- running codegraph arm (isolated CLAUDE_CONFIG_DIR + codegraph settings/mcp, --strict-mcp-config) ---" >&2
-codegraph_transcript="$(run_arm codegraph "$work/cfg-codegraph" \
+codegraph_transcript="$(run_arm codegraph "$work/home-codegraph" \
 	--settings "$work/cg/settings.json" --mcp-config "$work/cg/mcp.json" \
 	--strict-mcp-config \
 	--append-system-prompt-file "$work/codegraph-instruction.md")"
 
 echo "--- running both arm (isolated CLAUDE_CONFIG_DIR + codegraph+context-mode settings/mcp, --strict-mcp-config) ---" >&2
-both_transcript="$(run_arm both "$work/cfg-both" \
+both_transcript="$(run_arm both "$work/home-both" \
 	--settings "$work/both-settings.json" --mcp-config "$work/cg/mcp.json" "$work/ctx/mcp.json" \
 	--strict-mcp-config \
 	--append-system-prompt-file "$work/codegraph-instruction.md")"

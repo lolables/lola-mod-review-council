@@ -53,6 +53,15 @@ produced, artifacts on disk. `ctx-adoption-probe.sh` reports
 `persona_dispatch_count` and the verdict line alongside its routing rate for this
 reason.
 
+A dispatch count alone does not prove the dispatch path. If reviewers are not
+registered agent types, the orchestrator falls back to generic agents with
+inlined personas, and those prompts still name every persona. Install the
+module with `lola install`, not a file copy: the module's agent files have no
+`name:` frontmatter, and Claude Code registers an agent only when its
+frontmatter has one. Then check the stream-json `init` event's `agents` list.
+The probes do both, via `install_review_council` and `check_named_agents` in
+`.lola-eval/analysis/scripts/lib/live-claude.sh`.
+
 ## Isolate the environment on both arms
 
 A "no flags" arm is not a control if the host supplies the thing under test

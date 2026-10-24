@@ -17,17 +17,15 @@
 # clones unauthenticated and drives Review Council's --scope range directly,
 # never touching the forge path.
 #
-# PROVISIONING NOTE: an isolated CLAUDE_CONFIG_DIR has no review-council
-# skill — CLAUDE_CONFIG_DIR only isolates user-level plugins/auth, it is not
-# where Claude Code looks for project skills. Project-level skills/agents are
-# discovered from `<cwd>/.claude/{skills,agents}` regardless of
-# CLAUDE_CONFIG_DIR, so this script copies module/agents and module/skills
-# (recursively — module/skills/review-council/references lives under
-# skills/, not a separate top-level dir) into the clone's own .claude/, the
-# same three directories the eval harness used to copy per starter, minus
-# the .lola/ and .opencode/ pieces that only matter for the lola-eval
-# harness and OpenCode, neither of which this script drives — this script
-# runs the `claude` CLI directly, once per arm.
+# PROVISIONING NOTE: each arm gets its own home directory with the module
+# installed by `lola install -s user` (install_review_council in
+# lib/live-claude.sh), and runs with CLAUDE_CONFIG_DIR=<arm home>/.claude —
+# the layout a real user install produces. A plain copy of module/agents into
+# the clone's .claude/ is NOT equivalent: the module's agent files carry no
+# `name:` frontmatter, so Claude Code never registers them and every reviewer
+# runs as a generic agent with an inlined persona (#109). Each arm's
+# transcript is checked for the registered types (check_named_agents) before
+# its numbers are trusted.
 #
 # Each arm gets a fresh, isolated CLAUDE_CONFIG_DIR: on a RiotBox host with
 # RIOTBOX_CONTEXT_MODE=1, the DEFAULT CLAUDE_CONFIG_DIR has context-mode (and
@@ -115,18 +113,6 @@ if [[ "$range_file_count" -eq 0 ]]; then
 fi
 echo "cloned voxpupuli/openvox-ca, range ${BASE_SHA}..${HEAD_SHA} touches $range_file_count files" >&2
 
-# --- provision the module into the clone's project-level .claude/ ----------
-# See the PROVISIONING NOTE above for why project-level (not
-# CLAUDE_CONFIG_DIR-level) is what makes this discoverable under an isolated
-# config dir.
-mkdir -p "$repo_dir/.claude/agents" "$repo_dir/.claude/skills"
-cp "$MODULE_DIR"/agents/*.md "$repo_dir/.claude/agents/"
-cp -a "$MODULE_DIR"/skills/. "$repo_dir/.claude/skills/"
-if [[ -d "$MODULE_DIR/references" ]]; then
-	mkdir -p "$repo_dir/.claude/references"
-	cp -a "$MODULE_DIR"/references/. "$repo_dir/.claude/references/"
-fi
-
 # --- context-mode config for the treatment arm ------------------------------
 bash "$SCRIPT_DIR/ctx-mode-config.sh" "$work/ctx"
 
@@ -151,9 +137,11 @@ WITH_SCRATCH="$PROJECT_ROOT/.taskfiles/scripts/with-scratch.sh"
 # nothing — a budget-cap abort surfaces here as a loud ERROR with the CLI's
 # own diagnostic in stderr_file, not a silently-truncated transcript treated
 # as a complete one.
-run_arm() { # arm_name config_dir extra_claude_args...
-	local arm="$1" config_dir="$2"
+run_arm() { # arm_name arm_home extra_claude_args...
+	local arm="$1" arm_home="$2"
+	local config_dir="$arm_home/.claude"
 	shift 2
+	install_review_council "$arm_home" "$MODULE_DIR"
 	seed_auth "$config_dir"
 
 	local transcript_file="$out_dir/${arm}.transcript.jsonl"
@@ -172,14 +160,15 @@ run_arm() { # arm_name config_dir extra_claude_args...
 	) >"$transcript_file" 2>"$stderr_file" || status=$?
 
 	check_claude_result "$status" "$stderr_file" "$arm arm"
+	check_named_agents "$transcript_file" "$MODULE_DIR" "$arm arm"
 	echo "$transcript_file"
 }
 
 echo "--- running off arm (isolated CLAUDE_CONFIG_DIR, no --settings/--mcp-config) ---" >&2
-off_transcript="$(run_arm off "$work/cfg-off")"
+off_transcript="$(run_arm off "$work/home-off")"
 
 echo "--- running on arm (isolated CLAUDE_CONFIG_DIR + context-mode settings/mcp, --strict-mcp-config) ---" >&2
-on_transcript="$(run_arm on "$work/cfg-on" \
+on_transcript="$(run_arm on "$work/home-on" \
 	--settings "$work/ctx/settings.json" --mcp-config "$work/ctx/mcp.json" \
 	--strict-mcp-config)"
 

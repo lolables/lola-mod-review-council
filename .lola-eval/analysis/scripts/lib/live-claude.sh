@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Shared helpers for scripts that make live, paid `claude` invocations under
-# an isolated CLAUDE_CONFIG_DIR: ctx-measure-tax.sh and ctx-hook-probe.sh.
+# an isolated CLAUDE_CONFIG_DIR: ctx-measure-tax.sh, ctx-hook-probe.sh,
+# ctx-adoption-probe.sh and cg-adoption-probe.sh.
 # Source this file; do not execute it directly.
 #
 # Provides:
 #   - seed_auth()          — copy host credentials into a clean config dir
 #   - check_claude_result() — abort loudly on a failed `claude` invocation
+#   - install_review_council() — lola user-scope install into an isolated home
+#   - check_named_agents()  — abort unless init registered every module agent
 
 # Guard: skip if already loaded
 [[ -n "${_LIVE_CLAUDE_LOADED:-}" ]] && return 0
@@ -51,6 +54,44 @@ check_claude_result() { # status stderr_file context
 	if [[ -s $stderr_file ]]; then
 		echo "ERROR: claude wrote to stderr ($context), treating as failure:" >&2
 		cat "$stderr_file" >&2
+		exit 1
+	fi
+}
+
+# Installs the review-council module into $home_dir/.claude the way users
+# install it (`lola install -s user`), so $home_dir/.claude can be passed to
+# `claude` as CLAUDE_CONFIG_DIR. A raw copy of module/agents is not
+# equivalent: the module's agent files carry only `description:`, Claude
+# Code registers an agent only when its frontmatter has `name:`, and lola is
+# what adds that line (#109). HOME scopes lola's own registry to $home_dir
+# too; CLAUDE_CONFIG_DIR is unset so lola cannot write to the caller's.
+install_review_council() { # home_dir module_dir
+	local home_dir="$1" module_dir="$2"
+	if ! command -v lola >/dev/null; then
+		echo "ERROR: lola not on PATH — needed to install review-council the way users do" >&2
+		exit 1
+	fi
+	mkdir -p "$home_dir"
+	env -u CLAUDE_CONFIG_DIR HOME="$home_dir" lola mod add "$module_dir" -n review-council >/dev/null
+	env -u CLAUDE_CONFIG_DIR HOME="$home_dir" lola install review-council -a claude-code -s user -f >/dev/null
+}
+
+# Aborts the calling script unless the transcript's system/init event lists
+# every agent in $module_dir/agents as a registered type. Without them the
+# orchestrator dispatches generic agents with inlined personas — a run that
+# completes and looks normal but measures the fallback path, not the one a
+# real install takes. Expected names are discovered from the module so a new
+# reviewer is covered without editing this check.
+check_named_agents() { # transcript_file module_dir context
+	local transcript_file="$1" module_dir="$2" context="$3"
+	local agent_files=("$module_dir"/agents/*.md) expected missing
+	expected="$(jq -nc '$ARGS.positional | map(sub(".*/"; "") | sub("\\.md$"; ""))' --args "${agent_files[@]}")"
+	missing="$(jq -rs --argjson expected "$expected" '
+		(map(select(.type == "system" and .subtype == "init")) | first | .agents // []) as $registered
+		| $expected - $registered | join(" ")
+	' "$transcript_file")"
+	if [[ -n $missing ]]; then
+		echo "ERROR: reviewer agents not registered ($context): $missing — the run used generic-agent fallback; see $transcript_file" >&2
 		exit 1
 	fi
 }

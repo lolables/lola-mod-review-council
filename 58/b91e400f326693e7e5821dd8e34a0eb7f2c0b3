@@ -1,0 +1,37 @@
+module/skills/review-council-debug/SKILL.md
+  s_468167375b25ce::t_d7f302194119c2 227
+  s_468167375b25ce::t_d9e96a110e00b8 231
+module/skills/review-council/SKILL.md
+  s_468167375b25ce::t_b67bdfbf669252 749-750
+module/tests/test-rc-extract-verdict.sh
+  s_468167375b25ce::t_8099beb95dfc22 641,1604,1646
+  s_468167375b25ce::t_70405fe6718057 1347,1631
+  s_468167375b25ce::t_8ca09c9073b56c 1322-1334
+  s_468167375b25ce::t_4bf6d86efdbac4 1317,1319-1321,1335-1346,1350-1351
+module/skills/review-council/phases/delegate.md
+  s_468167375b25ce::t_8099beb95dfc22 648-649,668-674
+  s_468167375b25ce::t_b67bdfbf669252 619-620
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_468167375b25ce::t_b6bafa872b5aaa 300-302,327-330,355-356,364,424-435,462,493-496,499,643,654
+  s_468167375b25ce::t_8099beb95dfc22 449-452,455,741
+docs/dev/pipeline.md
+  s_468167375b25ce::t_42a873bd88ff09 182-185
+module/skills/review-council/phases/verify.md
+  s_468167375b25ce::t_8099beb95dfc22 226,255-261,272,289
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "58b91e400f326693e7e5821dd8e34a0eb7f2c0b3",
+  "prompts": {},
+  "sessions": {
+    "s_468167375b25ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a3154979-2b3a-465d-9bf4-acdb3ce3e3e4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

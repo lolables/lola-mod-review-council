@@ -1,0 +1,26 @@
+module/tests/test-rc-doc-guards.sh
+  s_5b006f81a8fc67::t_dda914fe2a17b9 3073-3089
+module/skills/review-council/phases/delegate.md
+  s_5b006f81a8fc67::t_880a787fddbcc9 86-94
+.lola-eval/config.yaml
+  s_5b006f81a8fc67::t_e9a09b2fe82b47 54-58,61-65
+  s_5b006f81a8fc67::t_8069bbf04979cd 66
+module/skills/review-council/SKILL.md
+  s_5b006f81a8fc67::t_f5a14e9363edc4 730-732
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ac216a055cc01e8e72de5d316891c6ae24876e5",
+  "prompts": {},
+  "sessions": {
+    "s_5b006f81a8fc67": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08e9a279-fbdf-4901-8c20-558b432f8854",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

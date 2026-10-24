@@ -1,0 +1,21 @@
+module/tests/test-rc-prepare-framework.sh
+  s_b3c8aec80da15b::t_b6773969454b4e 311-329
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_b3c8aec80da15b::t_57d248aa856884 474-476
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "502257fa6783152626fdc98cf9677af766ed12b8",
+  "prompts": {},
+  "sessions": {
+    "s_b3c8aec80da15b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c880f27f-6f52-4a0a-a87f-bc646f798158",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_c24b39e51dcff6::t_4ecd16c52a9605 474-476
+module/tests/test-rc-prepare-framework.sh
+  s_c24b39e51dcff6::t_d346b7e0189efb 311-329
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9e370a60987928ccaccca928ef42846f415bd16",
+  "prompts": {},
+  "sessions": {
+    "s_c24b39e51dcff6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5004d3d3-4cf7-4029-8c0b-788c7cb4413b",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

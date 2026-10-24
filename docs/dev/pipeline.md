@@ -179,9 +179,10 @@ flowchart TD
    unchanged keeps its line, so a re-dispatched reviewer cannot displace it; otherwise raw files are taken in sorted
    byte order and the first keeps the line. A rejected verdict reserves nothing, and any verdict JSON an earlier
    extraction wrote for it is removed, so verification never ingests a verdict this run refused. Without it a no-look APPROVE
-   costs nothing to file. Spec reviewers are never checked. A failure is `APPROVE_UNGROUNDED` and gets the one
-   re-dispatch; it is not written to `gate-firings.jsonl`, which keeps CRITICAL/HIGH claims and this verdict carries
-   none. The gate is waived for a round with no line outside its hunks, and when there is no diff (`--scope all`). A
+   costs nothing to file. Spec reviewers are never checked. A quote that occurs once in its file is placed there
+   whatever line it cites, and the verdict JSON records that line (#113). A collision is `APPROVE_COLLIDED` and gets a
+   re-dispatch of its own; any other failure is `APPROVE_UNGROUNDED` and gets the one re-dispatch. Neither is written
+   to `gate-firings.jsonl`, which keeps CRITICAL/HIGH claims and this verdict carries none. The gate is waived for a round with no line outside its hunks, and when there is no diff (`--scope all`). A
    session without a usable index, or a raw file in a directory no round writes to, is `CONTEXT_MISSING`: the
    orchestrator rebuilds the index or moves the file and re-extracts, with nothing re-dispatched.
    Known limits. The gate raises the cost of a no-look APPROVE; it does not prove the review's depth, and a

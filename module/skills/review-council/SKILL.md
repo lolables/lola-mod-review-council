@@ -746,7 +746,8 @@ writes `${session_dir}/verdicts/{agent-name}.json` on success.
 
 - `status: "ok"` — proceed to Step 4.
 - `status: "extract_error"` — one or more agents emitted no parseable JSON
-  block (a silent drop otherwise). Re-dispatch each listed agent ONCE per
+  block (a silent drop otherwise). Re-dispatch each listed agent ONCE (an
+  `APPROVE_COLLIDED` collision gets one more) per
   `${PHASES_DIR}/delegate.md` **Verdict Collection**, then re-run the
   script. If an agent still fails after that one attempt, log it loudly
   and surface it in the report — never a silent zero.

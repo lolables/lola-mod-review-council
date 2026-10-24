@@ -638,7 +638,7 @@ s=$(new_session)
 write_raw "$s" divisor-adversary-code 'not json at all'
 result=$(PATH="$fallback_path" bash "$SCRIPT" "$s" 2>/dev/null)
 rem=$(jq -r '.remediation' <<<"$result")
-if grep -qF 'For APPROVE_UNGROUNDED alone' <<<"$rem" && grep -qF 'file it' <<<"$rem"; then
+if grep -qF 'For APPROVE_UNGROUNDED and APPROVE_COLLIDED alone' <<<"$rem" && grep -qF 'file it' <<<"$rem"; then
 	echo "  PASS: remediation carves out APPROVE_UNGROUNDED"
 	PASS=$((PASS + 1))
 else
@@ -1314,11 +1314,41 @@ out=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_jq_str "$out" '.invalid[0].reason' "APPROVE_UNGROUNDED" "not in the file"
 rm -rf "$s"
 
-echo "Test: a line that is not where the quote is is rejected"
+echo "Test: a quote found once, outside the hunks, settles a wrong line (#113)"
 s=$(gate_session)
+approve_with "$s" '{"file":"a.go","line":13,"evidence":"l12"}'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "an off-by-one line is accepted"
+cc=$(cat "$s/verdicts/divisor-guard-code.json")
+assert_jq_str "$cc" '.context_check.line' "12" "the corrected line is recorded"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a re-run still accepts it"
+rm -rf "$s"
+
+echo "Test: a corrected multi-line quote records a line it wholly quotes"
+s=$(gate_session)
+approve_with "$s" '{"file":"a.go","line":2,"evidence":"0\nl11\nl1"}'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "accepted"
+cc=$(cat "$s/verdicts/divisor-guard-code.json")
+assert_jq_str "$cc" '.context_check.line' "11" "the partial first and last lines are skipped"
+rm -rf "$s"
+
+echo "Test: a quote found once, inside a hunk, is still rejected at a wrong line"
+s=$(gate_session)
+approve_with "$s" '{"file":"a.go","line":2,"evidence":"l6"}'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "APPROVE_UNGROUNDED" "the corrected place is in a hunk"
+assert_jq_str "$out" '.invalid[0].detail | test("inside the diff hunks")' "true" "detail names the hunk"
+rm -rf "$s"
+
+echo "Test: a quote found twice keeps the exact-line requirement"
+s=$(gate_session)
+printf 'l12\n' >>"$s/tree/a.go"
 approve_with "$s" '{"file":"a.go","line":2,"evidence":"l12"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-assert_jq_str "$out" '.invalid[0].reason' "APPROVE_UNGROUNDED" "line must fall in the matched span"
+assert_jq_str "$out" '.invalid[0].reason' "APPROVE_UNGROUNDED" "an ambiguous quote needs its line"
+assert_jq_str "$out" '.invalid[0].detail | test("not a line the quote occupies")' "true" "detail names the line"
 rm -rf "$s"
 
 echo "Test: a file outside the round is rejected"
@@ -1571,7 +1601,7 @@ for order in "divisor-sre-code divisor-guard-code" "divisor-guard-code divisor-s
 		approve_as "$s" "" "$a" '{"file":"a.go","line":12,"evidence":"l12"}'
 	done
 	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-	assert_jq_str "$out" '[.invalid[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_UNGROUNDED" "created as '$order': only the later one in sorted order is refused"
+	assert_jq_str "$out" '[.invalid[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "created as '$order': only the later one in sorted order is refused"
 	assert_jq_str "$out" '.invalid[0].detail | test("same line as \"divisor-guard-code\"")' "true" "detail names the holder, quoted"
 	[[ -f "$s/verdicts/divisor-guard-code.json" ]] && present=yes || present=no
 	assert_equals "$present" "yes" "the first quote is accepted"
@@ -1598,6 +1628,7 @@ rm -rf "$s"
 
 echo "Test: a refused quote does not reserve its line"
 s=$(gate_session)
+printf 'l12\n' >>"$s/tree/a.go"
 approve_as "$s" "" divisor-guard-code '{"file":"a.go","line":2,"evidence":"l12"}'
 approve_as "$s" "" divisor-sre-code '{"file":"a.go","line":12,"evidence":"l12"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
@@ -1612,7 +1643,7 @@ sed -i.bak '12s/.*/}/; 14s/.*/}/' "$s/tree/a.go"
 approve_as "$s" "" divisor-guard-code '{"file":"a.go","line":12,"evidence":"}"}'
 approve_as "$s" "" divisor-sre-code '{"file":"a.go","line":14,"evidence":"}"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-assert_jq_str "$out" '[.invalid[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_UNGROUNDED" "matched on text, not position"
+assert_jq_str "$out" '[.invalid[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "matched on text, not position"
 rm -rf "$s"
 
 echo "Test: a re-dispatched reviewer cannot displace an accepted quote"

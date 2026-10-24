@@ -616,7 +616,8 @@ below — never chain the next stage with `&&`.
 
 - On `status: "ok"`, proceed to Verification.
 - On `status: "extract_error"`, re-dispatch each `invalid[]` entry ONCE, keyed
-  on its **(agent, path) pair** — not on agent name alone.
+  on its **(agent, path) pair** — not on agent name alone. The one exception
+  is `APPROVE_COLLIDED`, whose re-dispatch is extra (see below).
   - The same agent name can appear multiple times in `invalid[]` with different
     `path` values, because the same agent runs once per subsystem in deep mode
     and once per round in a batched one (e.g.
@@ -644,8 +645,8 @@ below — never chain the next stage with `&&`.
     and the corrected block must carry the findings the rejected one carried.
     A recovery that returns a *different* set of findings has silently
     replaced the review, and because it overwrites `{agent}.raw.md` there is
-    nothing left to compare it against. `APPROVE_UNGROUNDED` is the one
-    exception: the rejected block had no findings, and the repair asks the
+    nothing left to compare it against. `APPROVE_UNGROUNDED` and `APPROVE_COLLIDED` are
+    the exceptions: the rejected block had no findings, and the repair asks the
     agent to look past the diff, so a defect that look turns up is filed, not
     suppressed. The remediation text says so.
   - For each entry, supply the `remediation` text verbatim, plus, when
@@ -664,6 +665,13 @@ below — never chain the next stage with `&&`.
     passed three rejected reviewers another reviewer's valid quote, and all
     three copied it. The same holds for a `SCHEMA_INVALID` entry whose defect
     is the `context_check` shape.
+  - `APPROVE_COLLIDED` is an otherwise valid quote whose line another
+    reviewer's accepted quote in the same round already cites. Reviewers that
+    read a small file independently pick the same obvious line, so this gets a
+    re-dispatch of its own, relayed exactly like `APPROVE_UNGROUNDED`, that
+    does not count against the one re-dispatch. A reviewer whose quote
+    collides or fails again after it has that one re-dispatch left; nothing
+    beyond it.
   - For `CONTEXT_MISSING` entries, dispatch nothing: the reviewer is not at
     fault. The `detail` names the cause: no usable `prompts/context.json` (run
     `rc-build-context.sh`, SKILL.md Step 2.7), a raw file in a directory no

@@ -223,7 +223,7 @@ It short-circuits with:
 { "status": "extract_error", "valid": 3,
   "invalid": [ { "agent": "...",
   "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "APPROVE_UNGROUNDED"
-            | "CONTEXT_MISSING" | "AGENT_MISMATCH" | "RESERVED_AGENT",
+            | "APPROVE_COLLIDED" | "CONTEXT_MISSING" | "AGENT_MISMATCH" | "RESERVED_AGENT",
   "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
@@ -252,10 +252,13 @@ is never extracted. Delete it and re-run the extractor — nothing is re-dispatc
 findings whose `context_check` is missing or fails (issue #101); spec
 reviewers' verdicts are never checked. It must quote, byte for byte, a
 non-blank line of one of its round's files that lies outside the diff hunks, so
-a reviewer that read only the diff cannot file it, and must not cite the same
-line text another code reviewer's accepted quote in that round already cites
-(the first raw file in sorted order keeps it; a rejected verdict reserves
-nothing). The check is waived for a
+a reviewer that read only the diff cannot file it. A quote that occurs once in
+the file is placed there whatever line it cites, and the verdict records that
+line; a quote that occurs more than once must cite a line it occupies.
+`APPROVE_COLLIDED` means the quote passed all of that but cites the same line
+text another code reviewer's accepted quote in that round already cites (the
+first raw file in sorted order keeps it; a rejected verdict reserves nothing).
+The check is waived for a
 round in which no file has such a line, and when there is no diff (`--scope
 all`). `CONTEXT_MISSING` means the extractor could not
 run that check: the session has no usable `prompts/context.json` or review
@@ -266,7 +269,7 @@ says, and re-run the extractor.
 
 The one-round re-dispatch (remediation text plus, when present, that agent's
 `invalid[].detail` — set for `SCHEMA_INVALID`, `VERDICT_INCOHERENT`,
-`APPROVE_UNGROUNDED`, `CONTEXT_MISSING`, `AGENT_MISMATCH` and
+`APPROVE_UNGROUNDED`, `APPROVE_COLLIDED`, `CONTEXT_MISSING`, `AGENT_MISMATCH` and
 `RESERVED_AGENT`, absent
 for `NO_JSON_BLOCK` — then re-run the extractor) happens in the Delegation
 phase — see
@@ -283,7 +286,7 @@ already run. Your job here is to interpret its outcome:
   now validates, but **log each still-invalid agent loudly** in `verification.txt`
   and surface it in the report — never let a dropped finding pass silently as a
   clean zero.
-- An `APPROVE_UNGROUNDED` entry that still fails is such a still-invalid agent:
+- An `APPROVE_UNGROUNDED` or `APPROVE_COLLIDED` entry that still fails is such a still-invalid agent:
   its verdict is not counted, and it is logged in `verification.txt` and
   surfaced in the local report, never the forge comment, which would tell an
   author which reviewer's approval did not count. It carries no finding, so it

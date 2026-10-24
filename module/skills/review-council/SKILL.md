@@ -727,7 +727,12 @@ Step 1's `agents` array):
   `${session_dir}/verdicts/{agent-name}.raw.md` — the orchestrator's write,
   never the reviewer's: reviewers are read-only and return their verdict
 
-Dispatch all agents in parallel for speed.
+Dispatch all agents in parallel for speed, in the foreground, so their
+replies come back as the dispatch results; never dispatch an agent to wait or
+pass time. Dispatch every reviewer yourself:
+never hand dispatch to an intermediate agent, which on most hosts cannot
+dispatch further and writes the verdicts itself (`${PHASES_DIR}/delegate.md`
+Dispatch Mechanism).
 
 **Extract and validate verdicts.** Once every returned response has its
 `.raw.md` on disk (the collection check in `${PHASES_DIR}/delegate.md`

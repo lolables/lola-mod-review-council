@@ -71,6 +71,27 @@ changeset or a round's file list in `batch-plan.json`, and dispatches every
 round in `batch-plan.json`. That holds whatever the host's dispatch mechanism
 and whatever the scope, `--scope all` included.
 
+You dispatch every reviewer yourself, and never hand dispatch to an
+intermediate agent: not a subagent, not a copy of this session, not a
+delegated or scripted multi-agent run, however many rounds `batch-plan.json`
+holds. On most hosts a subagent cannot dispatch further, so one asked to will
+play every reviewer itself and write verdicts no reviewer returned. Nothing
+downstream can catch that: you write each `.raw.md`, so extraction, the
+evidence check and the arbiter all see a well-formed verdict either way
+(#107). If the host cannot run every dispatch at once, run them in turns,
+still from here. Each `.raw.md` holds the verbatim reply of a reviewer you
+dispatched for that slot, and nothing else. The same holds for every other
+subagent this skill dispatches.
+
+Dispatch each round so the replies come back to you as the dispatches'
+results: all of the round at once, in the foreground, wherever the host lets
+you choose. Do not dispatch in the background and then wait. In particular,
+never dispatch an agent, or make any other tool call, to wait or pass time.
+Every such call is a turn that re-reads your whole context, and one eval run
+spent more on 44 of them than on its five reviewers (#107). On a host that
+only dispatches in the background, wait for its completion notice. This
+applies to every subagent this skill dispatches.
+
 ## Tool Profile
 
 Subagents never execute anything from reviewed repository or review tooling — Makefile/Taskfile targets, tests, builds, scripts, interpreter or `jq -f` run on a file they ship; temp copies included. Effect on host unknown. Whether the change works is CI's job, not review's: where forge CI data exists, SKILL.md Step 2.5 hands its results to reviewers instead. Read-only inspection commands stay allowed (`grep`, `find`, `jq` filters, `wc`, `head`, `tail`, `sed -n`, `git log`/`show`/`diff`), with no writes, temp files or redirects. Applies to every subagent this skill dispatches: reviewers, correction round, triage, arbiter (validator), Disposition, prose.

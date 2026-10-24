@@ -147,7 +147,9 @@ means of the pairs below, not different measurements:
 
 The eval harness lives in `.lola-eval/` and uses `lola-eval` with custom providers and a trajectory judge. Run
 `task lola-eval:test` to reproduce — it installs the harness into `.venv` on first use, which needs
-[`uv`](https://docs.astral.sh/uv/). Reproducing the scores also needs `promptfoo` and `bubblewrap`; see AGENTS.md.
+[`uv`](https://docs.astral.sh/uv/). Reproducing the scores also needs `promptfoo`, `bubblewrap` and the `lola` CLI,
+which installs the module into each eval cell; every `task lola-eval:*` target that runs evals checks for them
+and prints how to install any that are missing.
 
 ## Install
 

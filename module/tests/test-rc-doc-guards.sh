@@ -3052,6 +3052,41 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-188: with 30 reviewer slots to fill, an eval orchestrator handed dispatch
+# to a copy of itself. That copy could not dispatch further, so it read the
+# files and wrote all 30 .raw.md verdicts itself (#107). Every later gate
+# passed: the orchestrator writes .raw.md by design, so nothing downstream can
+# tell a reviewer's reply from one it wrote. The rule is the only defence.
+echo "Test: the orchestrator dispatches every reviewer itself and writes only replies (RC-188)"
+if grep -qF 'Dispatch every reviewer yourself' <<<"$skill_flat" &&
+	grep -qF 'never hand dispatch to an intermediate agent' <<<"$delegate_flat" &&
+	grep -qF 'a copy of this session' <<<"$delegate_flat" &&
+	grep -qF 'play every reviewer itself' <<<"$delegate_flat" &&
+	grep -qF 'reply of a reviewer you dispatched' <<<"$delegate_flat"; then
+	echo "  PASS: dispatch cannot be delegated, and every .raw.md is a dispatched reviewer's reply"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: an intermediate agent may dispatch, or write verdicts no reviewer returned"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-189: an eval orchestrator dispatched its five reviewers in the background,
+# then, being headless, kept the session alive by dispatching 44 no-op agents
+# as a timer. Each carried the whole context; together they cost more than the
+# five reviewers (#107). Foreground dispatch returns the replies as results, so
+# there is nothing to wait for.
+echo "Test: reviewers are dispatched in the foreground and nothing is dispatched to wait (RC-189)"
+if grep -qF 'in the foreground' <<<"$skill_flat" &&
+	grep -qF 'never dispatch an agent to wait or pass time' <<<"$skill_flat" &&
+	grep -qF 'all of the round at once, in the foreground' <<<"$delegate_flat" &&
+	grep -qF 'never dispatch an agent, or make any other tool call, to wait or pass time' <<<"$delegate_flat"; then
+	echo "  PASS: replies return as dispatch results, and waiting is never a dispatch"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewers may run in the background while the orchestrator busy-waits"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

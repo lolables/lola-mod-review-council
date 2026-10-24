@@ -20,7 +20,7 @@ vars:
   LOLA_EVAL:
     sh: command -v lola-eval 2>/dev/null || echo "{{.VENV_DIR}}/bin/lola-eval"
   BOOTSTRAP: "{{.ROOT_DIR}}/.taskfiles/scripts/ensure-lola-eval.sh"
-  PROVISION: "{{.ROOT_DIR}}/.lola-eval/provision.sh"
+  RESET_STARTERS: "{{.ROOT_DIR}}/.lola-eval/reset-starters.sh"
   MODULE_DIR: "{{.ROOT_DIR}}/module"
   RESULTS_DIR: "{{.ROOT_DIR}}/.lola-eval"
 
@@ -68,7 +68,7 @@ tasks:
 
   _preflight:
     internal: true
-    desc: Guard — verify eval runtime deps (promptfoo, bubblewrap) are on PATH
+    desc: Guard — verify eval runtime deps (promptfoo, bubblewrap, lola) are on PATH
     silent: true
     preconditions:
       - sh: command -v promptfoo >/dev/null 2>&1
@@ -90,6 +90,13 @@ tasks:
 
           lola-eval wraps bwrap with `setpriv --inh-caps=-all --ambient-caps=-all`
           to drop this container's ambient CAP_SYS_ADMIN automatically.
+      - sh: command -v lola >/dev/null 2>&1
+        msg: |
+          lola not found on PATH.
+
+          The harness installs review-council into every cell with
+          `lola install` (module_source in .lola-eval/config.yaml).
+          Install it from https://github.com/LobsterTrap/lola
 
   doctor:
     desc: Verify lola-eval installation and config
@@ -105,22 +112,22 @@ tasks:
     cmds:
       - bash "{{.BOOTSTRAP}}" --force "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
 
-  provision:
-    desc: Copy current module/ into all starter repos
+  # No `sources:` — a checksum skip would leave stale artifacts that an
+  # older provision.sh wrote, and the harness refuses to run over them.
+  reset-starters:
+    desc: Strip module artifacts from starters (the harness installs the module per cell)
     cmds:
-      - bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
-    sources:
-      - "{{.MODULE_DIR}}/**/*"
+      - bash "{{.RESET_STARTERS}}"
 
   test:
-    desc: Provision starters and run full eval suite
-    deps: [provision, _ensure-init, _preflight]
+    desc: Reset starters and run full eval suite
+    deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - "{{.LOLA_EVAL}} test"
 
   test-case:
     desc: Run a single eval case (set CASE=case-001-go-security)
-    deps: [provision, _ensure-init, _preflight]
+    deps: [reset-starters, _ensure-init, _preflight]
     requires:
       vars: [CASE]
     cmds:
@@ -128,7 +135,7 @@ tasks:
 
   test-quality:
     desc: Run the core review-quality cases (case-001 through case-008)
-    deps: [provision, _ensure-init, _preflight]
+    deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
         failed=0
@@ -149,7 +156,7 @@ tasks:
 
   test-routing:
     desc: Run targeted routing test cases (case-010 through case-018)
-    deps: [provision, _ensure-init, _preflight]
+    deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
         failed=0
@@ -171,7 +178,7 @@ tasks:
 
   test-recovery:
     desc: Run recovery-path test cases (case-019 through case-021)
-    deps: [provision, _ensure-init, _preflight]
+    deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
         failed=0
@@ -190,7 +197,7 @@ tasks:
 
   test-disposition:
     desc: Run disposition contract cases (case-022 through case-025, and case-027)
-    deps: [provision, _ensure-init, _preflight]
+    deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
         failed=0
@@ -233,7 +240,7 @@ tasks:
   # reads as a review-quality regression in the published tables.
   test-graph:
     desc: Run code-graph pre-pass cases (case-030 through case-032)
-    deps: [provision, _ensure-init, _preflight]
+    deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
         failed=0
@@ -287,13 +294,15 @@ tasks:
         echo "=== Comparing {{.MERGE_BASE}} (merge-base) vs {{.BRANCH}} (HEAD) ==="
         git stash --include-untracked --quiet || true
         git checkout --quiet {{.MERGE_BASE}}
-        bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+        # The merge-base provisions the way it did then: a commit before
+        # module_source needs its provision.sh to put the module in place.
+        if [ -f "{{.ROOT_DIR}}/.lola-eval/provision.sh" ]; then bash "{{.ROOT_DIR}}/.lola-eval/provision.sh" "{{.MODULE_DIR}}"; else bash "{{.ROOT_DIR}}/.lola-eval/reset-starters.sh"; fi
         {{.LOLA_EVAL}} test || true
         {{.LOLA_EVAL}} baseline update
         git checkout --quiet {{.BRANCH}}
         git stash pop --quiet || true
         trap - EXIT
-        bash "{{.PROVISION}}" "{{.MODULE_DIR}}"
+        bash "{{.RESET_STARTERS}}"
         {{.LOLA_EVAL}} test || true
         echo ""
         echo "=== Baseline Diff ==="
@@ -327,11 +336,8 @@ tasks:
     deps: [_ensure-init]
     cmds:
       - "{{.LOLA_EVAL}} clean --cache"
-      - |
-        for starter in {{.ROOT_DIR}}/.lola-eval/tests/*/starter; do
-          rm -rf "$starter/.lola" "$starter/.gitconfig"
-        done
-      - echo "Cleaned eval artifacts and provisioned starters"
+      - bash "{{.RESET_STARTERS}}"
+      - echo "Cleaned eval artifacts and reset starters"
 
   clean-all:
     desc: Remove all eval artifacts including runs.db

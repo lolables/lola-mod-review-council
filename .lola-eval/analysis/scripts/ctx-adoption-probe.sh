@@ -24,7 +24,7 @@
 # CLAUDE_CONFIG_DIR, so this script copies module/agents and module/skills
 # (recursively — module/skills/review-council/references lives under
 # skills/, not a separate top-level dir) into the clone's own .claude/, the
-# same three directories .lola-eval/provision.sh copies per starter, minus
+# same three directories the eval harness used to copy per starter, minus
 # the .lola/ and .opencode/ pieces that only matter for the lola-eval
 # harness and OpenCode, neither of which this script drives — this script
 # runs the `claude` CLI directly, once per arm.

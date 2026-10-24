@@ -32,6 +32,13 @@ unresolved; the cost result and the decision below stand as measured.
 
 ## What was measured
 
+Both live arms below ran before #109 was fixed: `ctx-adoption-probe.sh`
+copied the module's agent files without the `name:` frontmatter Claude Code
+needs to register them, so every reviewer ran as a generic agent with an
+inlined persona rather than as a registered `divisor-*` type. The probe now
+installs with `lola install` and aborts any arm whose `init` event lacks the
+module's agents. Re-run it before comparing a new result against these numbers.
+
 **Phase 1 — pre-screen (~$1.70, no live review run).** Measured the fixed
 cost of running with context-mode present: 1,481 tokens of routing-block and
 tool-schema tax per context, plus an unthrottled 4,637-byte (~1,159-token)

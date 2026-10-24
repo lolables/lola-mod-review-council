@@ -1,0 +1,19 @@
+module/tests/test-lola-eval-reset-starters.sh
+  s_9fc6f2387ba789::t_60ee0c4e6ae796 59-60,62-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4fa42913cd6f0dd5408063722bf9e7f090621705",
+  "prompts": {},
+  "sessions": {
+    "s_9fc6f2387ba789": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "daef1aba-aa35-493d-8a0a-286c4ca10245",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

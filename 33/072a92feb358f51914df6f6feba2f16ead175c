@@ -1,0 +1,32 @@
+.gitignore
+  h_4db53f42b9be42 37
+.lola-eval/analysis/scripts/ctx-adoption-probe.sh
+  h_4db53f42b9be42 27
+.lola-eval/config.yaml
+  h_4db53f42b9be42 53-66
+.lola-eval/reset-starters.sh
+  h_4db53f42b9be42 2,4-8,10-11,15,18,22-24,26-28,31-32,36
+.taskfiles/lola-eval.yml
+  h_4db53f42b9be42 23,71,93-99,115-118,120,123-124,130,138,159,181,200,243,297-299,305,339-340
+README.md
+  h_4db53f42b9be42 150-152
+module/skills/review-council/SKILL.md
+  h_4db53f42b9be42 730-735
+module/skills/review-council/phases/delegate.md
+  h_4db53f42b9be42 74-94
+module/tests/test-lola-eval-reset-starters.sh
+  h_4db53f42b9be42 1-110
+module/tests/test-rc-doc-guards.sh
+  h_4db53f42b9be42 3055-3089
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "33072a92feb358f51914df6f6feba2f16ead175c",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

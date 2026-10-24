@@ -1,0 +1,29 @@
+.taskfiles/lola-eval.yml
+  s_5b006f81a8fc67::t_f98736affa0eac 23,71,93-99,115-118,120,124,130,138,159,181,200,243,297-299,305,339-340
+module/tests/test-lola-eval-reset-starters.sh
+  s_5b006f81a8fc67::t_c79c77898c89b7 1-108
+.lola-eval/reset-starters.sh
+  s_5b006f81a8fc67::t_f98736affa0eac 1-36
+README.md
+  s_5b006f81a8fc67::t_f98736affa0eac 150-152
+.lola-eval/config.yaml
+  s_5b006f81a8fc67::t_f98736affa0eac 53-60
+.gitignore
+  s_5b006f81a8fc67::t_f98736affa0eac 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdc78a1ddf61c0cb190fdaeaeae9cacab871105e",
+  "prompts": {},
+  "sessions": {
+    "s_5b006f81a8fc67": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "08e9a279-fbdf-4901-8c20-558b432f8854",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

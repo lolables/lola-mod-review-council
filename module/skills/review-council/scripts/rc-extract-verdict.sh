@@ -297,7 +297,9 @@ source "$(dirname "$0")/lib/evidence.sh"
 # Place a verified context_check quote against its round's hunks. Prints
 # `clean` when an occurrence of <evidence> in <file> covers <line> and touches
 # no hunk of that file, `in_hunk` when every occurrence covering <line> touches
-# one, and `off_line` when none covers it.
+# one, and `off_line` when none covers it. A quote that occurs exactly once
+# names its own place, so a wrong <line> is not held against it (#113): that
+# one occurrence is placed instead, `clean` becoming `moved <first> <last>`.
 quote_span() { # file line evidence round
 	local f="$1" line="$2" ev="$3" round="$4" nl k fpath occs occ hi seen=off_line
 	# The quote spans one line per newline it holds, plus one. A single trailing
@@ -322,6 +324,10 @@ quote_span() { # file line evidence round
 			return 0
 		fi
 	done <<<"$occs"
+	if [[ "$seen" == off_line && "$occs" =~ ^[0-9]+$ ]]; then
+		seen=$(quote_span "$f" "$occs" "$ev" "$round")
+		[[ "$seen" != clean ]] || seen="moved $occs $((occs + k - 1))"
+	fi
 	echo "$seen"
 }
 
@@ -346,7 +352,8 @@ cited_line() { # path n
 
 # Decide the context check for one zero-finding APPROVE. Sets `gate_out` to
 # `ok` or `<REASON><TAB><detail>`, and on an accepted quote `gate_claim` to the
-# round and cited line text the caller then records as held. Run directly
+# round and cited line text the caller then records as held, and `gate_line`
+# to the line the caller records when the quote's own line was wrong. Run directly
 # rather than in a command substitution so that claim can reach the caller.
 # Fails closed by construction: `ok` is assigned in exactly two places, after
 # the waiver and after every check has passed; the caller presets a rejection
@@ -354,7 +361,7 @@ cited_line() { # path n
 # here neither aborts the run nor returns early: it leaves a variable empty,
 # and the next check rejects on that.
 context_gate() { # rel block
-	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder
+	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder n
 	if ! jq -e '.rounds | type == "array"' "$context_index" >/dev/null 2>&1; then
 		gate_out=$'CONTEXT_MISSING\t'"No usable prompts/context.json in this session, so a zero-finding APPROVE cannot be checked. Run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then re-run this extractor. No re-dispatch is needed."
 		return 0
@@ -414,6 +421,18 @@ context_gate() { # rel block
 		return 0
 	fi
 	span=$(quote_span "$cfile" "$cline" "$cev" "$round")
+	# A moved multi-line quote may start and end part-way through a line, so
+	# it is recorded at the first line it quotes whole, if any.
+	if [[ "$span" == moved* ]]; then
+		read -r _ cline n <<<"$span"
+		while [[ "$cline" -lt "$n" ]]; do
+			line_text=$(cited_line "$cfile" "$cline")
+			[[ -z "$line_text" || "$cev" != *"$line_text"* ]] || break
+			cline=$((cline + 1))
+		done
+		gate_line="$cline"
+		span=clean
+	fi
 	case "$span" in
 	clean)
 		# A fragment such as one letter of `package` occurs on line 1 of nearly
@@ -427,17 +446,20 @@ context_gate() { # rel block
 		# re-dispatch prompts, and all three passed. Each reviewer's quote has to
 		# come from its own reading, so within a round a cited line's text is
 		# held by the first accepted quote; text rather than position, since a
-		# copied `}` passes at any line it occurs on.
+		# copied `}` passes at any line it occurs on. Its own reason, because
+		# reviewers who read a small file independently pick the same obvious
+		# line (#113): the collision gets a re-dispatch of its own rather than
+		# spending the one a missing look costs.
 		elif [[ -n "${context_claims["$claim"]:-}" ]]; then
 			holder=$(detail_str "${context_claims["$claim"]}")
-			gate_out=$'APPROVE_UNGROUNDED\t'"context_check cites the same line as ${holder}'s in this round. Each reviewer quotes a line it chose from its own reading of the files; quote a different line."
+			gate_out=$'APPROVE_COLLIDED\t'"context_check cites the same line as ${holder}'s in this round. Each reviewer quotes a line it chose from its own reading of the files; quote a different line."
 		else
 			gate_out=ok
 			gate_claim="$claim"
 		fi
 		;;
 	off_line)
-		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.line $cline is not a line the quote occupies in $qfile. Cite the line the quote is on."
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.line $cline is not a line the quote occupies in $qfile, and the quote occurs there more than once. Cite the line the quote is on."
 		;;
 	*)
 		gate_out=$'APPROVE_UNGROUNDED\t'"context_check quotes lines inside the diff hunks of $qfile; those are visible from the diff alone. Quote a line outside every hunk; the bundle marks which files have such lines."
@@ -468,10 +490,13 @@ held_before() { # raw
 	local json prev cur
 	json="${1%.raw.md}.json"
 	[[ -f "$json" ]] || return 1
-	prev=$(jq -c '.context_check // empty' "$json" 2>/dev/null) || return 1
+	# The line is left out: the gate records a corrected one when the quote
+	# names its own place (#113), so <agent>.json may differ from the raw file
+	# there alone.
+	prev=$(jq -c '.context_check // empty | del(.line)' "$json" 2>/dev/null) || return 1
 	[[ -n "$prev" ]] || return 1
 	# shellcheck disable=SC2310 # the caller's `if` suspends set -e here anyway.
-	cur=$(extract_block "$1" | jq -c '.context_check // empty' 2>/dev/null) || return 1
+	cur=$(extract_block "$1" | jq -c '.context_check // empty | del(.line)' 2>/dev/null) || return 1
 	[[ "$cur" == "$prev" ]]
 }
 raw_files=()
@@ -615,6 +640,7 @@ for raw in "${raw_files[@]}"; do
 		gate_unevaluated=$'APPROVE_UNGROUNDED\tThe context check could not be evaluated; re-emit the verdict with a valid context_check.'
 		gate_out="$gate_unevaluated"
 		gate_claim=""
+		gate_line=""
 		# shellcheck disable=SC2310 # set -e is suspended inside on purpose.
 		context_gate "$rel" "$block" || gate_out="$gate_unevaluated"
 		if [[ "$gate_out" != "ok" ]]; then
@@ -625,6 +651,7 @@ for raw in "${raw_files[@]}"; do
 		# Nothing after the gate refuses a verdict, so the line is held from
 		# here; a refused quote never reaches this and reserves nothing.
 		[[ -z "$gate_claim" ]] || context_claims["$gate_claim"]="$agent"
+		[[ -z "$gate_line" ]] || block=$(jq -c --argjson l "$gate_line" '.context_check.line = $l' <<<"$block")
 	fi
 	echo "$block" | jq . >"$(dirname "$raw")/$agent.json"
 	valid_count=$((valid_count + 1))
@@ -711,7 +738,7 @@ diff hunks.
 Emit only the block — no prose before or after.
 Correct only the defect named above: re-emit the SAME findings, with the same
 severities and the same evidence. This is a formatting repair, not a new review.
-For APPROVE_UNGROUNDED alone, the fix is to look past the diff: add the
+For APPROVE_UNGROUNDED and APPROVE_COLLIDED alone, the fix is to look past the diff: add the
 `context_check` quote, or, if that look turns up a defect, file it and set the
 verdict to match.
 REM

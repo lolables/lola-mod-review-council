@@ -1,0 +1,35 @@
+.lola-eval/analysis/scripts/lib/live-claude.sh
+  s_5b7864c87b2890::t_5e89a40af82ce9 87-88
+  s_5b7864c87b2890::t_b376de45291471 3-4,10-11,60-86,89-97
+.lola-eval/analysis/scripts/ctx-adoption-probe.sh
+  s_5b7864c87b2890::t_a89f60aa3a66ec 20-28,140,163,168,171
+  s_5b7864c87b2890::t_9bb72d807d135e 141-142,144
+.lola-eval/analysis/context-mode-decision.md
+  s_5b7864c87b2890::t_e868f080e3ba46 35-41
+docs/dev/ab-evaluations.md
+  s_5b7864c87b2890::t_e868f080e3ba46 56-64
+.lola-eval/analysis/scripts/test-live-claude.sh
+  s_5b7864c87b2890::t_3c3d75a0a8ac64 1-9,15-31,33-38,40-45,47-52,54-58
+  s_5b7864c87b2890::t_a1a0168bd77a60 10-14,32,39,46,53
+.lola-eval/analysis/scripts/cg-adoption-probe.sh
+  s_5b7864c87b2890::t_92d266e0135e70 171-172,178-180,182,201
+  s_5b7864c87b2890::t_819f69c2013293 206,212
+.taskfiles/lola-eval.yml
+  s_5b7864c87b2890::t_9d825ab13867e1 356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cbe025a14c13d1f199a58c41974662e91816a9b3",
+  "prompts": {},
+  "sessions": {
+    "s_5b7864c87b2890": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c87cdf63-6b30-49e0-853f-b9214f9b827c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

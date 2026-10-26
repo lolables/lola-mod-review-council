@@ -1,0 +1,19 @@
+module/tests/test-rc-render-comment.sh
+  s_baf9d3b11b67f4::t_61a02216eb669e 1181-1191,1196,1207-1216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7183e9552f6fb8e49fec83a764dbbc53e68154ec",
+  "prompts": {},
+  "sessions": {
+    "s_baf9d3b11b67f4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e27fb06-710d-47bb-af8f-0848cfd285de",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

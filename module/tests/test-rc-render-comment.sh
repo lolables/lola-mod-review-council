@@ -1178,17 +1178,22 @@ echo "Test: a cut deep enough to keep the disclosure is not handed a second"
 # the body being cut. Above roughly 900 the fill reaches it, so without the
 # containment check the reader is told twice.
 #
-# 785 is the harder half of the same case and the reason the check matches the
-# disclosure's TEXT LINE: at that budget the fill stops between the disclosure
-# and the blank line under it, so the body holds a disclosure that is not the
-# reserved string. Found by rendering every limit from 1 to 1400 and counting,
-# which is too slow to keep in this suite; the limits below are the shapes that
-# scan turned up.
+# gap_limit is the harder half of the same case and the reason the check
+# matches the disclosure's TEXT LINE: at that budget the fill stops between the
+# disclosure and the blank line under it, so the body holds a disclosure that is
+# not the reserved string. Found by rendering every limit from 1 to 1400 and
+# counting, which is too slow to keep in this suite; the limits below are the
+# shapes that scan turned up. The gap is one byte wide, so any change to the
+# fixture or the header moves it. The shape check in the loop fails when it
+# has (no blank line under the first disclosure, which holds in the gap whether
+# or not the de-dup works), and the scan has to be re-run; it was 785 until the
+# fixture grew.
+gap_limit=1046
 sess=$(mktemp -d)
 make_review_session "$sess"
 make_review_session_many "$sess"
 pin_one_comment "$sess"
-for dup_limit in 785 900 1100 1239; do
+for dup_limit in "$gap_limit" 900 1100 1239; do
 	(
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 		source "$SCRIPT"
@@ -1199,6 +1204,16 @@ for dup_limit in 785 900 1100 1239; do
 	dup_marker=$(grep -c '^<!-- review-council:marker sha=' "$sess/comment-body.md" || true)
 	assert_equals "$dup_disc" "1" "limit ${dup_limit} discloses exactly once"
 	assert_equals "$dup_marker" "1" "limit ${dup_limit} carries exactly one marker"
+	if [[ "$dup_limit" == "$gap_limit" ]]; then
+		gap_next=$(grep -m1 -A1 '^_Trimmed to fit the ' "$sess/comment-body.md" | sed -n 2p)
+		if [[ -n "$gap_next" ]]; then
+			echo "  PASS: limit ${gap_limit} cuts between the disclosure and its blank line"
+			PASS=$((PASS + 1))
+		else
+			echo "  FAIL: limit ${gap_limit} no longer lands in the gap; re-run the 1..1400 scan"
+			FAIL=$((FAIL + 1))
+		fi
+	fi
 done
 rm -rf "$sess"
 

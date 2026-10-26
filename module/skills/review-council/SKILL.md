@@ -410,6 +410,7 @@ Read `${session_dir}/tracking.md` (created by rc-prepare.sh).
 Determine current state from tracking file:
 - All phases complete and verdict recorded: report existing verdict, stop.
 - Delegation or Verification in progress: resume from next incomplete phase.
+  Delegation `pending`: resume at the first round with no `complete` line.
 - Starting fresh: proceed to Step 2.1, and run Steps 2.1 through 2.7 in
   order before Step 3. Each carries its own skip condition — 2.1 and 2.4 are
   deep-mode only, 2.3 is opt-in, 2.5 needs `ci-status.txt` — but 2.2 (Council
@@ -733,6 +734,14 @@ pass time. Dispatch every reviewer yourself:
 never hand dispatch to an intermediate agent, which on most hosts cannot
 dispatch further and writes the verdicts itself (`${PHASES_DIR}/delegate.md`
 Dispatch Mechanism).
+
+**Record progress as it happens.** Before dispatching the first round, write
+`## Phase: Delegation (iteration N)` to `tracking.md` with `- Status: pending`
+and `- Rounds: {count}`, one per `rounds[]` entry in
+`${session_dir}/prompts/context.json`. When a round's replies are all on disk
+as `.raw.md`, append `- Round [{subsystem} ]batch {N}: complete ({count}
+replies)` before dispatching the next. A run that dies mid-delegation then
+names the last round it finished, instead of leaving only missing files.
 
 **Extract and validate verdicts.** Once every returned response has its
 `.raw.md` on disk (the collection check in `${PHASES_DIR}/delegate.md`
@@ -1325,6 +1334,9 @@ writes subsequent phases.
 ## Phase: Delegation (iteration {N})
 
 - Status: {pending | complete | failed}
+- Rounds: {count}
+- Round [{subsystem} ]batch {N}: complete ({count} replies)
+  (one line per round, appended as each round finishes)
 - Agents dispatched: {count}
 - Verdicts received: {count}
 - Agent failures: {list or "none"}

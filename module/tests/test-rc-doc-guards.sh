@@ -3087,6 +3087,24 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-190: a deep run finished one of four subsystems and stopped. tracking.md
+# ended at Quality Gates, because the only delegation write came after the
+# loop, so nothing named the round that died (#29). Delegation records its
+# start, and each round as it completes, so the session explains itself.
+echo "Test: delegation records its start and each completed round (RC-190)"
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+if grep -qF 'Before dispatching the first round' <<<"$skill_flat" &&
+	grep -qF 'append `- Round [{subsystem} ]batch {N}: complete' <<<"$skill_flat" &&
+	grep -qF 'before dispatching the next' <<<"$skill_flat" &&
+	grep -qF 'resume at the first round with no `complete` line' <<<"$skill_flat" &&
+	grep -qF -- '- Rounds: {count}' <<<"$skill_flat"; then
+	echo "  PASS: an abandoned delegation names the last round it finished"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: delegation writes tracking only after the loop, so a mid-loop death leaves no trace"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

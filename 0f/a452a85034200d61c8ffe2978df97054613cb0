@@ -1,5 +1,5 @@
 module/skills/review-council/VERSION
-  h_4db53f42b9be42 1
+  h_df0b3bca5e796d 1
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -7,8 +7,8 @@ module/skills/review-council/VERSION
   "base_commit_sha": "0fa452a85034200d61c8ffe2978df97054613cb0",
   "prompts": {},
   "humans": {
-    "h_4db53f42b9be42": {
-      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    "h_df0b3bca5e796d": {
+      "author": "LLM (riotbox) <llm@riotbox>"
     }
   }
 }

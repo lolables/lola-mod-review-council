@@ -1,0 +1,21 @@
+README.md
+  s_cc0bb82c8f9f3e::t_1bacef1d1d5a58 305-309
+module/skills/review-council/SKILL.md
+  s_cc0bb82c8f9f3e::t_2281635988f6ea 253-259,265,301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0abfe6a3c1453921e13a5bdc818d4ff1d3e09e1a",
+  "prompts": {},
+  "sessions": {
+    "s_cc0bb82c8f9f3e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1fd34c0e-2cd9-4eae-bdac-10f10ebcd461",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

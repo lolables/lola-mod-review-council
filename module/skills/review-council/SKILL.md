@@ -250,11 +250,19 @@ Before calling script, interpret user input and resolve to explicit
 CLI flags. Script accepts only structured flags — does NOT parse raw
 user input.
 
+**What "User says" means.** The arguments this skill was invoked with. When
+there are none — typically an agent invoking the review mid-session — it is
+the request that led to the review, which may sit earlier in the conversation
+("review the parser change we just made"). Resolve that request's target
+before the first `rc-prepare.sh` call. The *(empty)* row applies only when
+neither names a target.
+
 **Decision table:**
 
 | User says                        | Flags                                                                                              |
 |----------------------------------|----------------------------------------------------------------------------------------------------|
 | *(empty)*                        | *(no flags — defaults apply)*                                                                      |
+| *(empty)*, conversation names X  | the row for X (e.g. `src/auth.go` → `--scope paths --scope-value "src/auth.go"`)                   |
 | `code`                           | `--mode code`                                                                                      |
 | `specs`                          | `--mode specs`                                                                                     |
 | `42`                             | `--scope pr --scope-value 42`                                                                      |
@@ -290,7 +298,7 @@ user input.
 4. **Defaults**: scope unclear, omit `--scope` (code defaults to `changed`, specs to `all`). Mode unclear, omit `--mode` (auto-detect).
 5. **Fallback**: input unclear on scope or mode, pass what you can, let defaults apply. Unrecognized text becomes `--review-instructions`.
 6. **Effort** words: `quick` becomes `--effort quick`, `deep` becomes `--effort deep`. Neither present, omit `--effort` (defaults to `standard`). Effort words can appear anywhere alongside scope and mode tokens.
-7. **No preemptive optimization**: First rc-prepare.sh call MUST use exactly flags from this table. Do not anticipate empty scope and skip to broader scope. Recovery table in Step 1 handles empty results — let it work.
+7. **No preemptive optimization**: First rc-prepare.sh call MUST use exactly flags from this table, applied to the input resolved above — never run the defaults first and narrow afterwards. Do not anticipate empty scope and skip to broader scope. Recovery table in Step 1 handles empty results — let it work.
 8. **Posting** is opt-in and PR-only. Phrases like "post the result",
    "comment on the PR", "post the review" map to `--post-comment`. "Post
    without asking" / "auto-send" map to `--post-auto-send`. If the user asks

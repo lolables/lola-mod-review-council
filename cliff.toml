@@ -27,11 +27,18 @@ body = """
 {% else %}\
     ## [unreleased]
 {% endif %}\
+{# The first release lists features only: fixes, refactors, tests and tooling \
+   for code that never shipped change nothing for a reader, and with no prior \
+   release there is nothing to break. The group name must match the `^feat` \
+   entry in commit_parsers. #}\
+{% if not previous.version %}\
+    {% set commits = commits | filter(attribute="group", value="<!-- 0 -->🚀 Features") %}\
+{% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | striptags | trim | upper_first }}
     {% for commit in commits %}
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
-            {% if commit.breaking %}[**breaking**] {% endif %}\
+            {% if commit.breaking and previous.version %}[**breaking**] {% endif %}\
             {{ commit.message | upper_first }}\
     {% endfor %}
 {% endfor %}
@@ -70,7 +77,11 @@ require_conventional = false
 # Split commits on newlines, treating each line as an individual commit.
 split_commits = false
 # An array of regex based parsers to modify commit messages prior to further processing.
-commit_preprocessors = []
+commit_preprocessors = [
+    # The project's own name says nothing as a scope; drop it so the entry
+    # reads like the unscoped ones.
+    { pattern = '^(\w+)\(review-council\)', replace = "${1}" },
+]
 # Prevent commits that are breaking from being excluded by commit parsers.
 protect_breaking_commits = false
 # An array of regex based parsers for extracting data from the commit message.

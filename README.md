@@ -302,6 +302,11 @@ findings are checked against that directory, so a target reached through `..`,
 an absolute path, or a symlink leading elsewhere is refused rather than
 reviewed and then silently emptied. `cd` to a directory that contains it.
 
+An agent starting the review mid-session should pass the target as the skill's
+arguments, as above. Without arguments, the council takes its target from the
+request in the conversation, and falls back to the defaults only when that
+request names none.
+
 ### Effort tiers
 
 An **effort tier** sets how much work a review is allowed to do. Say the word

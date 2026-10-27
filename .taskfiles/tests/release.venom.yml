@@ -769,6 +769,23 @@ testcases:
           - result.systemout ShouldNotContainSubstring "Stop dropping arguments"
           - result.systemout ShouldNotContainSubstring "Seed the scratch checkout"
 
+  # Task merges an included file's top-level env: into every task in the
+  # project. lola-eval.yml once set GIT_CONFIG_GLOBAL=/dev/null and a
+  # "Lola Eval" identity that way, and release:bump committed and tagged
+  # v0.1.0 as that identity with the operator's git config ignored.
+  - name: no Taskfile sets a top-level env that would leak into release:bump
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          cd "{{.root}}"
+          leaks="$(grep -l '^env:' Taskfile.yml .taskfiles/*.yml || true)"
+          printf 'LEAKS=%s\n' "${leaks:-none}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "LEAKS=none"
+
   - name: task release:bump is wired to the script
     steps:
       - type: exec

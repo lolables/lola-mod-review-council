@@ -1,0 +1,20 @@
+module/tests/test-rc-render-comment.sh
+  s_90a1e327ee4296::t_fac75c3e48ad7b 1202
+  s_90a1e327ee4296::t_b662df0af32761 1190-1191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4020ff5a592c897009925405db789ce094a6f4b3",
+  "prompts": {},
+  "sessions": {
+    "s_90a1e327ee4296": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5b3bca99-40cb-49e9-bf9b-e4ce29aaf4b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

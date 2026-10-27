@@ -1,0 +1,24 @@
+.taskfiles/tests/release.venom.yml
+  s_0839b2b66b0826::t_7928bfe8d561f5 772-788
+.taskfiles/scripts/eval-env.sh
+  s_0839b2b66b0826::t_249abd6bccd1e1 1-24
+.taskfiles/lola-eval.yml
+  s_0839b2b66b0826::t_439c1f65607896 54,92,113,121,260,266,272,311,317,331,339
+  s_0839b2b66b0826::t_b6bf89fb5a1b46 25-27,45,100,107,128,150,173,193,237,284,325,332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db0a81626b442f20a72bb1f08cc3412e1c859b34",
+  "prompts": {},
+  "sessions": {
+    "s_0839b2b66b0826": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bbeb6218-c5e3-4ffd-8a1f-0ecc2b6212a0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

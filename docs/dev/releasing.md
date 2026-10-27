@@ -136,8 +136,16 @@ A commit whose body mentions "security" and that no earlier rule matched goes
 under Security; any other conventional commit lands in Other.
 
 `chore(release)`, `chore(deps…)`, `chore(pr)` and `chore(pull)` commits are
-skipped. A commit's subject becomes its changelog line, so write subjects for a
-reader of the release notes. The configuration is `cliff.toml`.
+skipped. The `review-council` scope is dropped, so `feat(review-council): …`
+reads like an unscoped entry. A commit's subject becomes its changelog line, so
+write subjects for a reader of the release notes. The configuration is
+`cliff.toml`.
+
+The first release (no earlier release tag) lists Features only, with no
+`[**breaking**]` markers: fixes and tooling for code that never shipped change
+nothing for a reader, and there is no earlier release to break. A first release
+with no `feat` commit therefore has an empty section, and `task release:bump`
+refuses it as having nothing releasable.
 
 ## Tests
 

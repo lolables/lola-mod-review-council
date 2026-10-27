@@ -22,23 +22,10 @@ vars:
   BOOTSTRAP: "{{.ROOT_DIR}}/.taskfiles/scripts/ensure-lola-eval.sh"
   RESET_STARTERS: "{{.ROOT_DIR}}/.lola-eval/reset-starters.sh"
   MODULE_DIR: "{{.ROOT_DIR}}/module"
+  # Sourced by every eval command, never set as a top-level env: here — Task
+  # leaks an included file's env into every task (see the script header).
+  EVAL_ENV: "{{.ROOT_DIR}}/.taskfiles/scripts/eval-env.sh"
   RESULTS_DIR: "{{.ROOT_DIR}}/.lola-eval"
-
-# Applied to every task in this file. XDG_CACHE_HOME must be set so the eval
-# provider and reset.sh resolve the same cache root — when unset, reset.sh
-# derives it from an overridden sandbox HOME and aborts with exit 2. Git vars
-# isolate the eval's git operations from the caller's global/system config.
-env:
-  XDG_CACHE_HOME:
-    sh: echo "${XDG_CACHE_HOME:-$HOME/.cache}"
-  XDG_STATE_HOME:
-    sh: echo "${XDG_STATE_HOME:-$HOME/.local/state}"
-  GIT_CONFIG_GLOBAL: /dev/null
-  GIT_CONFIG_SYSTEM: /dev/null
-  GIT_AUTHOR_NAME: Lola Eval
-  GIT_AUTHOR_EMAIL: lola-eval@invalid
-  GIT_COMMITTER_NAME: Lola Eval
-  GIT_COMMITTER_EMAIL: lola-eval@invalid
 
 tasks:
   default:
@@ -55,7 +42,7 @@ tasks:
     internal: true
     desc: Install the harness into .venv when it is missing or does not match the spec
     cmds:
-      - bash "{{.BOOTSTRAP}}" "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
+      - . "{{.EVAL_ENV}}" && bash "{{.BOOTSTRAP}}" "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
 
   _ensure-init:
     internal: true
@@ -64,7 +51,7 @@ tasks:
     status:
       - test -f "{{.RESULTS_DIR}}/config.yaml"
     cmds:
-      - "{{.LOLA_EVAL}} init"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} init
 
   _preflight:
     internal: true
@@ -102,7 +89,7 @@ tasks:
     desc: Verify lola-eval installation and config
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} doctor"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} doctor
 
   # The escape hatch for a floating LOLA_EVAL_SPEC. Bootstrapping records the
   # spec string, and a branch name does not change when the branch moves, so
@@ -110,20 +97,20 @@ tasks:
   update:
     desc: Reinstall the harness from the current tip of LOLA_EVAL_SPEC
     cmds:
-      - bash "{{.BOOTSTRAP}}" --force "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
+      - . "{{.EVAL_ENV}}" && bash "{{.BOOTSTRAP}}" --force "{{.LOLA_EVAL}}" "{{.VENV_DIR}}" "{{.LOLA_EVAL_SPEC}}"
 
   # No `sources:` — a checksum skip would leave stale artifacts that an
   # older provision.sh wrote, and the harness refuses to run over them.
   reset-starters:
     desc: Strip module artifacts from starters (the harness installs the module per cell)
     cmds:
-      - bash "{{.RESET_STARTERS}}"
+      - . "{{.EVAL_ENV}}" && bash "{{.RESET_STARTERS}}"
 
   test:
     desc: Reset starters and run full eval suite
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
-      - "{{.LOLA_EVAL}} test"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} test
 
   test-case:
     desc: Run a single eval case (set CASE=case-001-go-security)
@@ -131,13 +118,14 @@ tasks:
     requires:
       vars: [CASE]
     cmds:
-      - "{{.LOLA_EVAL}} test --case {{.CASE}}"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} test --case {{.CASE}}
 
   test-quality:
     desc: Run the core review-quality cases (case-001 through case-008)
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
+        . "{{.EVAL_ENV}}"
         failed=0
         for case in case-001-go-security case-002-ts-architecture \
                     case-003-py-mixed case-004-go-clean \
@@ -159,6 +147,7 @@ tasks:
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
+        . "{{.EVAL_ENV}}"
         failed=0
         for case in case-010-route-head case-011-route-range \
                     case-012-route-dir case-013-route-mode \
@@ -181,6 +170,7 @@ tasks:
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
+        . "{{.EVAL_ENV}}"
         failed=0
         for case in case-019-recovery-changed case-020-recovery-range \
                     case-021-recovery-all; do
@@ -200,6 +190,7 @@ tasks:
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
+        . "{{.EVAL_ENV}}"
         failed=0
         for case in case-022-disposition-injection case-023-disposition-false-fix \
                     case-024-disposition-true-fix case-025-disposition-scoping-hint \
@@ -243,6 +234,7 @@ tasks:
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
+        . "{{.EVAL_ENV}}"
         failed=0
         for case in case-030-graph-caller-breakage \
                     case-031-graph-untested-change \
@@ -265,19 +257,19 @@ tasks:
     desc: Promote last-run results to baseline.json
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} baseline update"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} baseline update
 
   baseline-diff:
     desc: Compare current baseline against last run
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} baseline diff"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} baseline diff
 
   report:
     desc: Generate HTML report from latest run
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} report"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} report
 
   compare-commits:
     desc: Compare eval results at merge-base vs HEAD
@@ -289,6 +281,7 @@ tasks:
         sh: git merge-base main HEAD
     cmds:
       - |
+        . "{{.EVAL_ENV}}"
         set -e
         trap 'echo "Error during compare-commits, restoring branch..."; git checkout --quiet {{.BRANCH}} 2>/dev/null; git stash pop --quiet 2>/dev/null || true' EXIT
         echo "=== Comparing {{.MERGE_BASE}} (merge-base) vs {{.BRANCH}} (HEAD) ==="
@@ -315,13 +308,13 @@ tasks:
     desc: Show score drift over time per cell
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} drift"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} drift
 
   graph:
     desc: ANSI time-series chart (set CELL for specific cell)
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} graph {{if .CELL}}--cell {{.CELL}}{{end}}"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} graph {{if .CELL}}--cell {{.CELL}}{{end}}
 
   snapshot:
     desc: Capture eval results with git provenance to ledger.jsonl
@@ -329,21 +322,21 @@ tasks:
     env:
       LOLA_EVAL: "{{.LOLA_EVAL}}"
     cmds:
-      - bash "{{.RESULTS_DIR}}/snapshot.sh" "{{.MODULE_DIR}}" "{{.RESULTS_DIR}}"
+      - . "{{.EVAL_ENV}}" && bash "{{.RESULTS_DIR}}/snapshot.sh" "{{.MODULE_DIR}}" "{{.RESULTS_DIR}}"
 
   clean:
     desc: Remove ephemeral eval artifacts
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} clean --cache"
-      - bash "{{.RESET_STARTERS}}"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} clean --cache
+      - . "{{.EVAL_ENV}}" && bash "{{.RESET_STARTERS}}"
       - echo "Cleaned eval artifacts and reset starters"
 
   clean-all:
     desc: Remove all eval artifacts including runs.db
     deps: [_ensure-init]
     cmds:
-      - "{{.LOLA_EVAL}} clean --cache --state"
+      - . "{{.EVAL_ENV}}" && {{.LOLA_EVAL}} clean --cache --state
       - task: clean
 
   ctx-prescreen:

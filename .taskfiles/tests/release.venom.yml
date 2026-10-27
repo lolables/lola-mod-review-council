@@ -24,6 +24,7 @@ testcases:
           init_release_repo "{{.root}}" 0.0.0
           commit_in "${REPO_DIR}" "feat(cli): add a first command"
           commit_in "${REPO_DIR}" "fix(cli): correct the exit code"
+          commit_in "${REPO_DIR}" "feat(review-council)!: add a second command"
           run_bump "0.1.0"
           printf 'VERSION=%s\n' "$(cat "${REPO_DIR}/VERSION")"
           printf 'TAGS=%s\n' "$(git -C "${REPO_DIR}" tag --list 'v*' | tr '\n' ' ')"
@@ -60,6 +61,15 @@ testcases:
           - result.systemout ShouldContainSubstring "## [0.1.0]"
           - result.systemout ShouldContainSubstring "Add a first command"
           - result.systemout ShouldNotContainSubstring "## [unreleased]"
+          # The first release lists features only: fixing code that never
+          # shipped is not a change to anyone, and with no prior release
+          # there is nothing to break.
+          - result.systemout ShouldNotContainSubstring "Bug Fixes"
+          - result.systemout ShouldNotContainSubstring "Correct the exit code"
+          - result.systemout ShouldNotContainSubstring "breaking"
+          # The project's own name is dropped as a scope.
+          - result.systemout ShouldContainSubstring "- Add a second command"
+          - result.systemout ShouldNotContainSubstring "review-council)*"
 
   - name: a breaking change suggests a minor bump under 0.x and Enter accepts it
     steps:
@@ -358,6 +368,7 @@ testcases:
           commit_in "${REPO_DIR}" "feat(cli): add a subcommand"
           commit_in "${REPO_DIR}" "fix(cli): stop dropping arguments"
           commit_in "${REPO_DIR}" "build(task): give lint and fmt one definition"
+          commit_in "${REPO_DIR}" "fix(review-council)!: reject an empty scope"
           git -C "${REPO_DIR}" checkout -q -b side
           commit_in "${REPO_DIR}" "docs: describe the release flow"
           git -C "${REPO_DIR}" checkout -q main
@@ -373,6 +384,7 @@ testcases:
           - result.systemout ShouldContainSubstring "Miscellaneous Tasks"
           - result.systemout ShouldContainSubstring "Add a subcommand"
           - result.systemout ShouldContainSubstring "Give lint and fmt one definition"
+          - result.systemout ShouldContainSubstring "- [**breaking**] Reject an empty scope"
           - result.systemout ShouldNotContainSubstring "Merge pull request"
           - result.systemout ShouldNotContainSubstring "Other"
 
@@ -756,6 +768,23 @@ testcases:
           - result.systemout ShouldContainSubstring "Add a subcommand"
           - result.systemout ShouldNotContainSubstring "Stop dropping arguments"
           - result.systemout ShouldNotContainSubstring "Seed the scratch checkout"
+
+  # Task merges an included file's top-level env: into every task in the
+  # project. lola-eval.yml once set GIT_CONFIG_GLOBAL=/dev/null and a
+  # "Lola Eval" identity that way, and release:bump committed and tagged
+  # v0.1.0 as that identity with the operator's git config ignored.
+  - name: no Taskfile sets a top-level env that would leak into release:bump
+    steps:
+      - type: exec
+        script: |
+          #!/bin/bash
+          set -euo pipefail
+          cd "{{.root}}"
+          leaks="$(grep -l '^env:' Taskfile.yml .taskfiles/*.yml || true)"
+          printf 'LEAKS=%s\n' "${leaks:-none}"
+        assertions:
+          - result.code ShouldEqual 0
+          - result.systemout ShouldContainSubstring "LEAKS=none"
 
   - name: task release:bump is wired to the script
     steps:

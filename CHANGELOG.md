@@ -5,7 +5,7 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org); do not edit it by hand — run
 `task release:bump` instead.
 
-## [unreleased]
+## [0.1.0] - 2026-10-27
 
 ### 🚀 Features
 

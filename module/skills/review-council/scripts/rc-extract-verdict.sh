@@ -79,7 +79,8 @@ _has_validator() {
 		return
 	}
 	_HAS_VALIDATOR=0
-	if command -v jsonschema >/dev/null 2>&1; then
+	_JSONSCHEMA_BIN=$(command -v jsonschema 2>/dev/null) || _JSONSCHEMA_BIN=""
+	if [[ -n "$_JSONSCHEMA_BIN" ]]; then
 		local probe
 		probe=$(mktemp)
 		printf '%s' '{"agent":"probe","files_read":[],"verdict":"APPROVE","findings":[]}' >"$probe"
@@ -108,7 +109,11 @@ validate() { # json_string
 		return "$rc"
 	fi
 	if [[ "$_warned_no_validator" -eq 0 ]]; then
-		echo "rc-warning: 'jsonschema' validator not found or incompatible; using minimal jq check. Install sourcemeta/jsonschema for full schema validation." >&2
+		if [[ -n "${_JSONSCHEMA_BIN:-}" ]]; then
+			echo "rc-warning: '$_JSONSCHEMA_BIN' is not sourcemeta/jsonschema (it failed 'jsonschema validate <schema> <instance>' on a known-valid verdict; the Python jsonschema package installs a same-named CLI that does this); using minimal jq check. Put sourcemeta/jsonschema ahead of it on PATH for full schema validation." >&2
+		else
+			echo "rc-warning: no 'jsonschema' on PATH; using minimal jq check. Install sourcemeta/jsonschema for full schema validation." >&2
+		fi
 		_warned_no_validator=1
 	fi
 	# Missing required keys are caught by the type assertions: an absent key

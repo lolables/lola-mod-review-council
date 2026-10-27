@@ -1084,14 +1084,29 @@ s=$(new_session)
 write_raw "$s" divisor-guard-code "$sv_block"
 write_waived_context "$s"
 warn=$(PATH="$sv_nojs" bash "$SCRIPT" "$s" 2>&1 >/dev/null)
-if grep -qF "rc-warning: 'jsonschema' validator not found" <<<"$warn"; then
-	echo "  PASS: the fallback still warns on stderr"
-	PASS=$((PASS + 1))
-else
-	echo "  FAIL: the stderr warning is gone"
-	FAIL=$((FAIL + 1))
-fi
+assert_match_count "$warn" 1 "the fallback warns once on stderr" -F "rc-warning:"
+assert_match_count "$warn" 1 "a missing binary is reported as missing" \
+	-F "no 'jsonschema' on PATH"
 rm -rf "$s"
+
+# The Python `jsonschema` package installs a same-named CLI with no `validate`
+# subcommand. Reporting that as "not found" sent users chasing an install they
+# already had; the warning must name the binary it rejected and say why.
+echo "Test: an incompatible jsonschema is named, not reported missing"
+sv_wrong=$(mktemp -d)
+printf '#!/bin/sh\nexit 2\n' >"$sv_wrong/jsonschema"
+chmod +x "$sv_wrong/jsonschema"
+s=$(new_session)
+write_raw "$s" divisor-guard-code "$sv_block"
+write_waived_context "$s"
+warn=$(PATH="$sv_wrong:$sv_nojs" bash "$SCRIPT" "$s" 2>&1 >/dev/null)
+assert_match_count "$warn" 1 "the warning names the rejected binary" \
+	-F "$sv_wrong/jsonschema"
+assert_match_count "$warn" 1 "the warning says it is not sourcemeta's" \
+	-F "is not sourcemeta/jsonschema"
+assert_match_count "$warn" 0 "the warning does not claim it is missing" \
+	-F "no 'jsonschema' on PATH"
+rm -rf "$s" "$sv_wrong"
 rm -rf "$sv_mask" "$sv_fake"
 
 # --- impact -------------------------------------------------------------------

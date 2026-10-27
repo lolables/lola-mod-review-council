@@ -1187,7 +1187,8 @@ echo "Test: a cut deep enough to keep the disclosure is not handed a second"
 # fixture or the header moves it. The shape check in the loop fails when it
 # has (no blank line under the first disclosure, which holds in the gap whether
 # or not the de-dup works), and the scan has to be re-run; it was 785 until the
-# fixture grew.
+# fixture grew. The header carries the Council version, which every release
+# rewrites, so the version is pinned to the string 1046 was scanned against.
 gap_limit=1046
 sess=$(mktemp -d)
 make_review_session "$sess"
@@ -1198,6 +1199,7 @@ for dup_limit in "$gap_limit" 900 1100 1239; do
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 		source "$SCRIPT"
 		eval "rc_comment_limit() { printf '%s' '$dup_limit'; }"
+		rc_council_version() { printf '%s' 'unreleased, before the first release'; }
 		rc_render_comment_body "$sess" "$sess/comment-body.md"
 	)
 	dup_disc=$(grep -c '^_Trimmed to fit the ' "$sess/comment-body.md" || true)

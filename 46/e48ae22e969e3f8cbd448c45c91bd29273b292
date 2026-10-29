@@ -1,0 +1,29 @@
+module/tests/test-rc-apply-severity-override.sh
+  s_4f6902834bb9bd::t_3a272f46d4ee10 1-221
+module/skills/review-council/scripts/rc-apply-severity-override.sh
+  s_4f6902834bb9bd::t_2b6375f921a6a9 1-104
+module/tests/test-rc-state-vocab.sh
+  s_4f6902834bb9bd::t_5ac4b689615b45 56-58
+module/skills/review-council/scripts/jq/severity-override.jq
+  s_4f6902834bb9bd::t_018167768710d6 1-59
+.taskfiles/scripts/mutate-check.sh
+  s_4f6902834bb9bd::t_5ac4b689615b45 1867-1880
+module/tests/test-rc-idempotency.sh
+  s_4f6902834bb9bd::t_5ac4b689615b45 224-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46e48ae22e969e3f8cbd448c45c91bd29273b292",
+  "prompts": {},
+  "sessions": {
+    "s_4f6902834bb9bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36023be5-90b1-481d-8039-590827b36d9e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

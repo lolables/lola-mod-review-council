@@ -1,0 +1,19 @@
+module/tests/test-rc-prepare-config-source.sh
+  s_4f6902834bb9bd::t_faaf03335e7077 875-877,890,903
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d86da9d252669cfa9ca5a3cdfb7619fe7aa1e61",
+  "prompts": {},
+  "sessions": {
+    "s_4f6902834bb9bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36023be5-90b1-481d-8039-590827b36d9e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

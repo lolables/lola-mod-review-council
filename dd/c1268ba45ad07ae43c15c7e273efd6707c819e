@@ -1,0 +1,21 @@
+module/tests/test-rc-check-disposition.sh
+  s_38c559d88eebf7::t_ae83a674bdaf0d 516-517,526,529-530
+module/tests/test-rc-extract-verdict.sh
+  s_38c559d88eebf7::t_acd8283d8e6b4f 1619-1620,1661,1673,1685
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ddc1268ba45ad07ae43c15c7e273efd6707c819e",
+  "prompts": {},
+  "sessions": {
+    "s_38c559d88eebf7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e4fb4278-30af-4377-93ab-9e365f7f56b4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

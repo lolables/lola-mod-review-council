@@ -1,0 +1,89 @@
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 145
+  s_4f6902834bb9bd::t_239ea8012811d5 182-188
+.taskfiles/scripts/mutate-check.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 1846-1852
+  s_4f6902834bb9bd::t_0340c5bd3b6cb8 1860-1866
+  s_4f6902834bb9bd::t_239ea8012811d5 1881-1887
+  s_4f6902834bb9bd::t_5ac4b689615b45 1867-1880
+module/skills/review-council/SKILL.md
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 1267
+  s_4f6902834bb9bd::t_239ea8012811d5 1288-1289
+  s_4f6902834bb9bd::t_160c65ab174e53 224
+  s_4f6902834bb9bd::t_f3315a4050d5b7 232-235
+  s_4f6902834bb9bd::t_203bb784f6a38f 1455-1460,1462-1466
+  s_4f6902834bb9bd::t_27cc6b36889daf 1419
+  s_4f6902834bb9bd::t_01969f683ee185 949-950
+  s_4f6902834bb9bd::t_d2d9a3d9046d1e 932-938
+module/tests/test-rc-prepare-config-source.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 830-874,878-889,891-902,904-954
+  s_4f6902834bb9bd::t_faaf03335e7077 875-877,890,903
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 294-303,312,328-334,336-340
+  s_4f6902834bb9bd::t_239ea8012811d5 451-496
+module/tests/test-rc-cost-estimate.sh
+  s_4f6902834bb9bd::t_f0629f30b019fc 7,18-19,600-613
+  s_4f6902834bb9bd::t_a7dc903a10cdf5 614
+module/skills/review-council/scripts/rc-cost-estimate.sh
+  s_4f6902834bb9bd::t_0340c5bd3b6cb8 129-131,139
+module/tests/test-rc-build-context.sh
+  s_4f6902834bb9bd::t_f0629f30b019fc 7,23-26,57-82
+  s_4f6902834bb9bd::t_6494263ae5cdb1 83
+module/skills/review-council/scripts/rc-build-context.sh
+  s_4f6902834bb9bd::t_0340c5bd3b6cb8 53-62,102,105,114
+module/skills/review-council/phases/verify.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 575-577
+  s_4f6902834bb9bd::t_e390c5073e6d27 692-712,714-719
+module/skills/review-council/references/reviewer-protocol.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 72-74
+  s_4f6902834bb9bd::t_16ba34cf258303 81-82
+module/agents/divisor-testing-spec.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 35
+module/tests/test-rc-doc-guards.sh
+  s_4f6902834bb9bd::t_16ba34cf258303 3108-3116,3121,3126,3131,3136-3151
+  s_4f6902834bb9bd::t_719f7ebed490a7 3152-3172
+module/skills/review-council/phases/delegate.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 533-541,544
+module/agents/divisor-sre-spec.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 35
+module/agents/divisor-guard-spec.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 35
+module/skills/review-council/phases/report.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 448,450-453
+module/agents/divisor-adversary-spec.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 46
+module/agents/divisor-curator-spec.md
+  s_4f6902834bb9bd::t_5420e6abd3fe5c 35
+module/tests/test-rc-prepare.sh
+  s_4f6902834bb9bd::t_239ea8012811d5 783-841
+module/tests/test-rc-apply-severity-override.sh
+  s_4f6902834bb9bd::t_3a272f46d4ee10 1-170,178-228
+module/skills/review-council/scripts/rc-apply-severity-override.sh
+  s_4f6902834bb9bd::t_2b6375f921a6a9 1-104
+module/tests/test-rc-state-vocab.sh
+  s_4f6902834bb9bd::t_5ac4b689615b45 56-58
+module/skills/review-council/scripts/jq/severity-override.jq
+  s_4f6902834bb9bd::t_018167768710d6 1-59
+module/tests/test-rc-idempotency.sh
+  s_4f6902834bb9bd::t_5ac4b689615b45 224-242
+module/skills/review-council/references/pipeline-states.md
+  s_4f6902834bb9bd::t_32829e15e06238 17,19-22
+docs/dev/pipeline.md
+  s_4f6902834bb9bd::t_75649c44f456d3 202-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3482ade3077cb233b15518210741ef5d0bc1827d",
+  "prompts": {},
+  "sessions": {
+    "s_4f6902834bb9bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36023be5-90b1-481d-8039-590827b36d9e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

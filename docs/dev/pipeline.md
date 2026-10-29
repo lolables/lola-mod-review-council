@@ -23,7 +23,7 @@ conditional:
 | **Reviewer Context**  | `rc-build-context.sh`                                              | Build the shared prompt preamble and each round's file bundle |
 | **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict; gate bare APPROVEs |
-| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `rc-recompute-verdicts.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate; per-agent verdicts derived last |
+| **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `rc-apply-severity-override.sh` + `rc-recompute-verdicts.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate; per-agent verdicts derived last |
 | **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
 | **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
@@ -199,11 +199,14 @@ flowchart TD
    validation gate in one reply; `rc-apply-validation.sh` applies it by finding id. Calibration lowers to MEDIUM a
    HIGH or CRITICAL whose `impact` names no affected party and mechanism, and a Guard scope-creep HIGH that adds no
    trust surface, commits no contract others build on, and is mentioned in the PR/MR description (or was reviewed
-   without one). Criteria live in `references/severity.md`. Last, `rc-recompute-verdicts.sh` derives each agent's
-   verdict in `findings.json` `.verdicts` from the findings left and the verdict it filed (`verdicts-map.json`), by
-   the rules in `scripts/jq/recompute-verdicts.jq`: a verified HIGH or CRITICAL forces REQUEST CHANGES, an agent
-   holding no finding is APPROVE, anything else keeps its filed verdict. Both per-agent tables print that map, which
-   used to be hand-edited from prose.
+   without one). Criteria live in the run's severity pack (`references/severity.md` unless a project or user pack
+   replaces it). Then `rc-apply-severity-override.sh` bounds each configured persona's findings by the project's
+   `Severity override` (`scripts/jq/severity-override.jq`), recording each move in `provenance.calibrated_from`; it
+   runs at every effort, so the configuration outranks the arbiter. Last, `rc-recompute-verdicts.sh` derives each
+   agent's verdict in `findings.json` `.verdicts` from the findings left and the verdict it filed
+   (`verdicts-map.json`), by the rules in `scripts/jq/recompute-verdicts.jq`: a verified HIGH or CRITICAL forces
+   REQUEST CHANGES, an agent holding no finding is APPROVE, anything else keeps its filed verdict. Both per-agent
+   tables print that map, which used to be hand-edited from prose.
 12. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
@@ -256,6 +259,7 @@ flowchart TD
   vcor["Verify: rc-apply-corrections.sh"]
   vcon["Verify: rc-consolidate.sh"]
   vval["Verify: rc-apply-validation.sh"]
+  vovr["Verify: rc-apply-severity-override.sh"]
   vrec["Verify: rc-recompute-verdicts.sh"]
   vorc["Verify: orchestrator write-up"]
   dsp["Disposition subagent"]
@@ -299,6 +303,8 @@ flowchart TD
   vcon -->|"merged back in place"| find
   find --> vval
   vval -->|"outcomes applied in place"| find
+  find --> vovr
+  vovr -->|"severity bounded in place"| find
   vmap --> vrec
   find --> vrec
   vrec -->|"verdicts derived in place"| find
@@ -322,7 +328,7 @@ flowchart TD
   classDef sysD fill:#2d747e,color:#ffffff,stroke:#7c8ba1
   classDef sysE fill:#4d68c4,color:#ffffff,stroke:#7c8ba1
   class prep,del sysA
-  class vevi,vcor,vcon,vval,vrec,vorc,dsp,vdck sysC
+  class vevi,vcor,vcon,vval,vovr,vrec,vorc,dsp,vdck sysC
   class rrep sysD
   class extr,raw,vjson,vmap,find,vtxt,clus,valj,corj,dtxt,snap,vsnap,dchk,meta1,learn sysE
 ```
@@ -372,7 +378,7 @@ is added too — untrusted replies posted since that marker, on GitHub and GitLa
 
 Severity is decided by one actor after intake. `agents/review-council-arbiter.md` is dispatched once per review, at
 `phases/verify.md` Step 4, over the findings that survived evidence checking, correction, stripping and consolidation.
-It calibrates each finding against `references/severity.md` and validates what the evidence check cannot, in one JSON
+It calibrates each finding against the run's severity pack (`review-config/severity.md`; the shipped `references/severity.md` unless a project or user pack replaces it) and validates what the evidence check cannot, in one JSON
 reply that `rc-apply-validation.sh` applies by finding id. Calibration used to be orchestrator judgement in a separate
 step, and the validator could also change severity, so two actors set severity and neither could run on a different
 model from the rest of the pipeline.

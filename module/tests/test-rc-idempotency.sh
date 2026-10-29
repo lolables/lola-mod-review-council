@@ -221,6 +221,25 @@ assert_idempotent "rc-recompute-verdicts.sh" "$s/verdicts" \
 	bash "$SCRIPTS/rc-recompute-verdicts.sh" "$s"
 rm -rf "$s"
 
+# --- rc-apply-severity-override.sh ------------------------------------------
+echo "Test 11: rc-apply-severity-override.sh is idempotent over a cap and a floor"
+# A second run finds every severity within its bound: nothing moves, nothing is
+# appended to calibrated_from, and findings.json is not rewritten.
+s=$(new_session)
+printf '## Phase: Preparation\n\n- Severity override: guard<=LOW, sre>=HIGH\n\n' >"$s/tracking.md"
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"id":"F1","agent":"divisor-guard-code","severity":"HIGH","file":"a.go","line":1,"evidence":"x","description":"d",
+  "recommendation":"r","impact":"i","verdict":"REQUEST CHANGES","status":"verified","provenance":{}},
+ {"id":"F2","agent":"divisor-sre-code","severity":"LOW","file":"b.go","line":1,"evidence":"y","description":"d",
+  "recommendation":"r","verdict":"APPROVE","status":"verified","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{}}
+FJ
+bash "$SCRIPTS/rc-apply-severity-override.sh" "$s" >/dev/null
+assert_idempotent "rc-apply-severity-override.sh" "$s/verdicts/findings.json" \
+	bash "$SCRIPTS/rc-apply-severity-override.sh" "$s"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -448,6 +448,52 @@ if [[ -n "$pin_personas" ]]; then
 fi
 [[ -n "$pin_personas" ]] || pin_personas="none"
 
+# --- Severity override ---
+#
+# `persona OP LEVEL` terms, comma-separated: `<=` caps a persona's findings at
+# LEVEL, `>=` floors them, `=` sets them. rc-apply-severity-override.sh applies
+# them after verification, reading the normalised line written here, the one
+# place the block is parsed. Each term stands alone: a bad one is recorded with
+# its reason and dropped and the others still apply, the same "report, never
+# guess" rule the switches above follow. An empty term (a stray comma) carries
+# no intent and is skipped.
+severity_override=""
+severity_override_rejected=()
+declare -A severity_override_seen=()
+so_term_re='^([A-Za-z]+)[[:space:]]*(<=|>=|=)[[:space:]]*([A-Za-z]+)$'
+so_value=$(rc_config_value "Severity override")
+so_value=$(rc_single_line "$so_value")
+so_terms=()
+[[ -z "$so_value" ]] || IFS=',' read -r -a so_terms <<<"$so_value"
+for so_term in ${so_terms[@]+"${so_terms[@]}"}; do
+	so_term="${so_term#"${so_term%%[![:space:]]*}"}"
+	so_term="${so_term%"${so_term##*[![:space:]]}"}"
+	[[ -n "$so_term" ]] || continue
+	so_reason=""
+	if [[ ! "$so_term" =~ $so_term_re ]]; then
+		so_reason="malformed term"
+	else
+		so_persona="${BASH_REMATCH[1]}"
+		so_op="${BASH_REMATCH[2]}"
+		so_level="${BASH_REMATCH[3]^^}"
+		if [[ ! "$so_persona" =~ ^(adversary|curator|guard|sre|testing)$ ]]; then
+			so_reason="unknown persona"
+		elif [[ ! "$so_level" =~ ^(CRITICAL|HIGH|MEDIUM|LOW)$ ]]; then
+			so_reason="unknown level"
+		elif [[ -n "${severity_override_seen[$so_persona]:-}" ]]; then
+			so_reason="persona already set"
+		fi
+	fi
+	if [[ -n "$so_reason" ]]; then
+		severity_override_rejected+=("${so_term} (${so_reason})")
+		echo "rc-prepare: Severity override term '${so_term}' rejected (${so_reason})" >&2
+	else
+		severity_override_seen["$so_persona"]=1
+		severity_override+="${severity_override:+, }${so_persona}${so_op}${so_level}"
+	fi
+done
+[[ -n "$severity_override" ]] || severity_override="none"
+
 # ============================================================================
 # Changes to review configuration
 # ============================================================================

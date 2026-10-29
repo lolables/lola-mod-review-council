@@ -179,6 +179,13 @@ fi
 	echo "- Persona selection: ${persona_selection}"
 	echo "- Pin personas: ${pin_personas}"
 	echo "- Subsystem triage: ${subsystem_triage}"
+	# Carried for rc-apply-severity-override.sh, same route as the keys
+	# above. A rejected term gets its own key, which rc_parse_kv cannot
+	# confuse with this one: each match needs the colon right after the name.
+	echo "- Severity override: ${severity_override}"
+	for so_rejected in ${severity_override_rejected[@]+"${severity_override_rejected[@]}"}; do
+		echo "- Severity override rejected: ${so_rejected}"
+	done
 	# Batching budgets, carried here for rc-plan-batches.sh — same route, same
 	# reason. Always written, even unconfigured: the planner distinguishes a
 	# session that chose the default from one prepared before the keys existed

@@ -780,6 +780,65 @@ assert_track "$session_dir" "Subsystem triage" "on" \
 	"a malformed env value falls through to the configured value"
 discard_fixture "$tmpdir"
 
+# Severity override (#121): `persona OP LEVEL` terms, each validated alone so a
+# typo in one does not discard the rest. Normalised for the script that applies
+# them; every rejection is recorded with its reason and reported on stderr.
+echo "Test: Severity override terms are normalised"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Severity override: guard <= low,sre>=High , testing=MEDIUM\n' >"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Severity override" "guard<=LOW, sre>=HIGH, testing=MEDIUM" \
+	"whitespace dropped and levels upper-cased"
+tracking_text=$(<"$session_dir/tracking.md")
+assert_match_count "$tracking_text" "0" "no term is rejected" -F "Severity override rejected:"
+discard_fixture "$tmpdir"
+
+echo "Test: each bad Severity override term is rejected by reason; the valid ones stand"
+tmpdir=$(mktemp -d)
+err_file=$(mktemp)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Severity override: guard<=LOW, wizard<=LOW, sre>=SEVERE, adversary HIGH, guard>=HIGH, curator=low\n' >"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>"$err_file")
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Severity override" "guard<=LOW, curator=LOW" "the valid terms survive"
+tracking_text=$(<"$session_dir/tracking.md")
+assert_match_count "$tracking_text" "1" "unknown persona" -xF -- "- Severity override rejected: wizard<=LOW (unknown persona)"
+assert_match_count "$tracking_text" "1" "unknown level" -xF -- "- Severity override rejected: sre>=SEVERE (unknown level)"
+assert_match_count "$tracking_text" "1" "malformed term" -xF -- "- Severity override rejected: adversary HIGH (malformed term)"
+assert_match_count "$tracking_text" "1" "persona already set" -xF -- "- Severity override rejected: guard>=HIGH (persona already set)"
+assert_match_count "$tracking_text" "4" "exactly four rejections" -F "Severity override rejected:"
+err_text=$(<"$err_file")
+assert_match_count "$err_text" "4" "each rejection is reported on stderr" -F "rc-prepare: Severity override term"
+discard_fixture "$tmpdir"
+rm -f "$err_file"
+
+echo "Test: with no valid term, the override is none and the rejection is still recorded"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Severity override: guard=URGENT\n' >"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Severity override" "none" "nothing valid means none"
+assert_track "$session_dir" "Severity override rejected" "guard=URGENT (unknown level)" "the rejection is recorded"
+discard_fixture "$tmpdir"
+
+echo "Test: an unconfigured Severity override is none"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Severity override" "none" "no key means none"
+discard_fixture "$tmpdir"
+
 # The orchestrator's shell state does not survive between commands, so the
 # skill's ${SCRIPTS_DIR}-style notation must be filled in with real paths on
 # every call. Prepare hands them back as absolute, symlink-resolved values to

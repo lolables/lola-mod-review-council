@@ -689,6 +689,34 @@ Skip validation gate if:
 
 ---
 
+## Step 4b — Severity Override (configuration)
+
+Runs at every effort, `quick` included: Step 4's effort gate does not apply.
+Run it once findings are final (after Step 4, or after Step 3 where Step 4 is
+skipped) and before Step 5:
+
+```
+bash ${SCRIPTS_DIR}/rc-apply-severity-override.sh ${session_dir}
+```
+
+It applies tracking.md `Severity override:` (the project's configuration, read
+from the base revision) to verified findings: `<=` caps a persona's findings
+at a level, `>=` floors them, `=` sets them. A term matches the finding's own
+`agent`, `-code` and `-spec` alike. Credits in `provenance.consolidated_from`
+and script findings (`provenance.validator.result: "SCRIPT"`) are never
+changed. The configuration bounds the arbiter's calibration, so it wins.
+
+- `ok` — each `changes` entry `{id, agent, from, to, term}` was also appended
+  to that finding's `provenance.calibrated_from`, with reason
+  `config: Severity override <term>`. Log it under Step 5's SEVERITY
+  CALIBRATION like any other `calibrated_from` entry. Continue.
+- `nothing_to_do` — no override is configured (or no session/`findings.json`). Continue.
+- `validation_error` — nothing was applied. Stop and report the message verbatim.
+
+Never change a finding's severity by hand to honour the configuration.
+
+---
+
 ## Step 5 — Write Verification Summary
 
 Write combined verification, correction, and validation results to `${session_dir}/verdicts/_meta/verification.txt`.

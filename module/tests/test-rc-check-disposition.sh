@@ -513,7 +513,8 @@ refused_map "map holds a verdict outside the enum" bad_value
 echo "Test 20: a snapshot .verdicts that is missing or not an object is corrected (RC-165)"
 # snapshot_ok does not require .verdicts and the recompute reads a missing or
 # non-object map as empty, so a hand edit that broke it before the snapshot is
-# corrected like any other; counting upgrades against it must not crash.
+# corrected like any other; counting upgrades against it must not crash. A
+# crash has to fail the assertions below, not abort the suite under set -e.
 # broken_verdicts <label> <jq-edit>
 broken_verdicts() {
 	local s
@@ -522,11 +523,11 @@ broken_verdicts() {
 	mv "$s/edited.json" "$s/verdicts/findings.json"
 	snapshot "$s"
 	edit "$s" 'resolve("F2") | resolve("F3")'
-	result=$(bash "$SCRIPT" "$s")
+	result=$(bash "$SCRIPT" "$s") || true
 	assert_accepted "$s" "$1"
 	assert_jq_str "$result" '.verdicts_upgraded' '0' "$1: nothing in the snapshot to upgrade"
-	assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-guard-code"]' 'APPROVE' "$1: guard derived APPROVE"
-	assert_jq "$s/verdicts/findings.json" '.verdicts["divisor-adversary-code"]' 'REQUEST CHANGES' \
+	assert_jq "$s/verdicts/findings.json" '(.verdicts | objects)["divisor-guard-code"]' 'APPROVE' "$1: guard derived APPROVE"
+	assert_jq "$s/verdicts/findings.json" '(.verdicts | objects)["divisor-adversary-code"]' 'REQUEST CHANGES' \
 		"$1: adversary derived REQUEST CHANGES"
 	rm -rf "$s"
 }

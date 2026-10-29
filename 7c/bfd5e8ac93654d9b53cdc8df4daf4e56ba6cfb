@@ -1,0 +1,28 @@
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 145
+.taskfiles/scripts/mutate-check.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 1846-1852
+module/skills/review-council/SKILL.md
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 1256
+module/tests/test-rc-prepare-config-source.sh
+  s_4f6902834bb9bd::t_6ee2d9d846aa81 888,901
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 830-887,889-900,902-952
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_4f6902834bb9bd::t_5ce491fcd4fad0 294-318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7cbfd5e8ac93654d9b53cdc8df4daf4e56ba6cfb",
+  "prompts": {},
+  "sessions": {
+    "s_4f6902834bb9bd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36023be5-90b1-481d-8039-590827b36d9e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

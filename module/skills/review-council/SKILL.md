@@ -1253,6 +1253,7 @@ writes subsequent phases.
 - Constitution: {none | none (refused: reason) | session copy (explicit: configured path)}
 - Config source: {sha (how) | working tree (no git repository) | none (reason)}
 - Project packs: {dir (count) | none}
+- Severity pack: {project | user | module}
 - Docs repo: {owner/repo | none}
 - Knowledge tool: {name | none}
 - Config changed by changeset: {none | paths, TAB-separated}

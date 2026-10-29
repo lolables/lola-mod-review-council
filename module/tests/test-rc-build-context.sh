@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"
 BUILD="$SCRIPT_DIR/../skills/review-council/scripts/rc-build-context.sh"
+SEVERITY="$SCRIPT_DIR/../skills/review-council/references/severity.md"
 
 # Issue #101: reviewers skipped the documents their agent files told them to
 # read, and rarely opened the files under review. This script delivers both:
@@ -19,6 +20,10 @@ ctx_session() { # language framework file...
 	shift 2
 	s=$(mktemp -d)
 	mkdir -p "$s/tree"
+	# Preparation always writes the run's severity pack; the shipped one stands
+	# in for it here.
+	mkdir -p "$s/review-config"
+	cp "$SEVERITY" "$s/review-config/severity.md"
 	printf -- '- Review root: %s\n' "$s/tree" >"$s/session.txt"
 	printf '## Phase: Preparation\n\n- Language: %s\n- Framework: %s\n\n' "$lang" "$fw" >"$s/tracking.md"
 	: >"$s/diff.patch"
@@ -47,6 +52,33 @@ assert_equals "$order" "${sev_first}|## Calibration Notes|## Output Format|" "fi
 # placeholder in a copied section would reach every reviewer as literal text.
 # shellcheck disable=SC2016 # the literal two characters, not an expansion.
 assert_match_count "$(<"$p")" "0" "no unexpanded placeholder" -F '${'
+rm -rf "$s"
+
+echo "Test: the preamble carries the run's severity pack, not the shipped one (#121)"
+s=$(ctx_session go gin a.go)
+printf 'package a\n' >"$s/tree/a.go"
+printf -- '---\npack_id: severity\n---\n# Project Severity\n\nPROJECT-SEVERITY-SENTINEL\n' >"$s/review-config/severity.md"
+bash "$BUILD" "$s" >/dev/null
+preamble_text=$(<"$s/prompts/preamble.md")
+assert_match_count "$preamble_text" "1" "the session copy's text is in the preamble" -xF "PROJECT-SEVERITY-SENTINEL"
+assert_match_count "$preamble_text" "0" "the shipped pack's text is not" -xF "# Severity Convention Pack"
+assert_match_count "$preamble_text" "0" "the session copy's front matter is stripped too" -F "pack_id:"
+rm -rf "$s"
+
+echo "Test: a session without its severity pack is an error, not a fallback (#121)"
+s=$(ctx_session go none a.go)
+printf 'package a\n' >"$s/tree/a.go"
+rm -f "$s/review-config/severity.md"
+status=0
+out=$(bash "$BUILD" "$s" 2>/dev/null) || status=$?
+assert_equals "$status" "1" "the build exits non-zero"
+assert_json_field "$out" "status" "error" "status is error"
+assert_jq_str "$out" '.message | test("review-config/severity.md")' "true" "the message names the missing file"
+if [[ ! -e "$s/prompts/preamble.md" ]]; then
+	assert_equals "absent" "absent" "no preamble is written from another pack"
+else
+	assert_equals "present" "absent" "no preamble is written from another pack"
+fi
 rm -rf "$s"
 
 echo "Test: React brings its Severity Calibration section as well as its Calibration Notes"

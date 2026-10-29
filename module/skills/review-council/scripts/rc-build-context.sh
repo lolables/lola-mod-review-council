@@ -50,6 +50,16 @@ fi
 # shellcheck source=module/skills/review-council/scripts/lib/evidence.sh
 source "$(dirname "$0")/lib/evidence.sh"
 
+# The run's severity pack. Preparation resolved project, user or module and
+# copied the winner here (#121), so every reviewer and the arbiter read one
+# text. It is always written; a missing copy means preparation did not finish,
+# and falling back to the shipped pack would silently drop the project's.
+severity_file="$session_dir/review-config/severity.md"
+if [[ ! -f "$severity_file" ]]; then
+	json_output "error" "review-config/severity.md is missing: re-run preparation (rc-prepare.sh writes it)."
+	exit 1
+fi
+
 # Print `## <heading>` and its body from <file>, up to the next `## ` heading.
 # Fails, naming the file and heading, when the heading is absent.
 md_section() { # file heading
@@ -89,10 +99,10 @@ prompts_tmp=$(mktemp -d "$session_dir/.prompts.XXXXXX")
 # staging directory behind. rc_trap_errors uses ERR, so this EXIT trap is separate.
 trap 'rm -rf "$prompts_tmp"' EXIT
 preamble="$prompts_tmp/preamble.md"
-# Drop severity.md's YAML front matter (line 1 `---` through the next `---`):
+# Drop the severity pack's YAML front matter (line 1 `---` through the next `---`):
 # pack_id/version is bookkeeping, and in markdown the key lines plus the closing
 # fence render as a heading in the middle of the prompt.
-severity_text=$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$refs_dir/severity.md")
+severity_text=$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$severity_file")
 output_format=$(md_section "$refs_dir/reviewer-protocol.md" "Output Format")
 {
 	echo "# Review context"
@@ -101,7 +111,7 @@ output_format=$(md_section "$refs_dir/reviewer-protocol.md" "Output Format")
 	echo ""
 	echo "---"
 	echo ""
-	echo "**From \`references/severity.md\`:**"
+	echo "**From the run's severity pack (\`severity.md\`):**"
 	echo ""
 	printf '%s\n' "$severity_text"
 	for pack in ${packs[@]+"${packs[@]}"}; do

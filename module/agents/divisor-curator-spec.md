@@ -32,7 +32,7 @@ Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project overview, behavioral constraints, recent changes, project structure
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
+3. The severity pack on the `Severity pack:` line of your delegation prompt for severity definitions (`${REFERENCES_DIR}/severity.md` when the prompt names none)
 4. Content convention pack (if present in pack resolution chain) — skip content quality checks if not loaded
 5. `README.md` — project description and installation steps
 

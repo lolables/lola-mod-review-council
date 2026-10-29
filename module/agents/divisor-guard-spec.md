@@ -32,7 +32,7 @@ Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project context only, not conventions. Not governance: that comes from the `Constitution:` line of your delegation prompt
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
+3. The severity pack on the `Severity pack:` line of your delegation prompt for severity definitions (`${REFERENCES_DIR}/severity.md` when the prompt names none)
 
 ## Review Scope
 

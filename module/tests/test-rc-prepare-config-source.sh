@@ -827,6 +827,176 @@ else
 fi
 rm -rf "$work" "$work.err" "$bindir"
 
+# --- Severity pack resolution (#121) ---
+#
+# A project or user severity.md used to reach no consumer: every reader opened
+# the shipped copy. Preparation now resolves one — project, then user, then
+# module — into review-config/severity.md. Each candidate carries a sentinel so
+# the session copy names its source by content, not by the tracking line alone.
+
+# A repo whose base may commit a project severity pack, with a feature branch
+# on top. <with-project> is yes or no.
+make_severity_repo() { # dir with-project
+	[[ -n "$1" && "$1" == "${TMPDIR:-/tmp}"/* ]] || {
+		echo "make_severity_repo: refusing non-scratch dir '$1'" >&2
+		exit 1
+	}
+	(
+		cd "$1" || exit 1
+		git_init_sandbox
+		git checkout -q -b main
+		echo "package main" >a.go
+		git add a.go
+		if [[ "$2" == yes ]]; then
+			mkdir -p .review-council/packs
+			printf '# Severity\n\nPROJECT-SEVERITY-SENTINEL\n' >.review-council/packs/severity.md
+			git add .review-council
+		fi
+		git commit -qm init
+		git checkout -q -b feature
+		echo "package main // edited" >a.go
+		git commit -qam edit
+	)
+}
+
+# A user config home holding a severity pack with the user sentinel.
+make_user_pack() { # xdg_dir
+	mkdir -p "$1/review-council/packs"
+	printf '# Severity\n\nUSER-SEVERITY-SENTINEL\n' >"$1/review-council/packs/severity.md"
+}
+
+prepare_xdg() { # xdg_dir dir args...
+	local xdg="$1" dir="$2"
+	shift 2
+	(cd "$dir" && XDG_CONFIG_HOME="$xdg" AGENTS_DIR="$AGENTS" bash "$SCRIPT" "$@" 2>/dev/null)
+}
+
+MODULE_SEVERITY="$SCRIPT_DIR/../skills/review-council/references/severity.md"
+# The shipped pack's title, not its first line: that is the front-matter fence
+# `---`, which a pack copied from it would share.
+module_title=$(grep -m1 '^# ' "$MODULE_SEVERITY")
+
+echo "Test 35: a project severity pack beats the user's and the module's"
+work=$(mktemp -d)
+xdg=$(mktemp -d)
+make_severity_repo "$work" yes
+make_user_pack "$xdg"
+result=$(prepare_xdg "$xdg" "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "project" "tracking.md names the project pack"
+copy=$(cat "$sess/review-config/severity.md")
+assert_match_count "$copy" "1" "the session copy is the project's" -xF "PROJECT-SEVERITY-SENTINEL"
+assert_match_count "$copy" "0" "the user's is not used" -xF "USER-SEVERITY-SENTINEL"
+assert_match_count "$copy" "0" "the module's is not used" -xF -e "$module_title"
+rm -rf "$work" "$xdg"
+
+echo "Test 36: with no project pack, the user's beats the module's"
+work=$(mktemp -d)
+xdg=$(mktemp -d)
+make_severity_repo "$work" no
+make_user_pack "$xdg"
+result=$(prepare_xdg "$xdg" "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "user" "tracking.md names the user pack"
+copy=$(cat "$sess/review-config/severity.md")
+assert_match_count "$copy" "1" "the session copy is the user's" -xF "USER-SEVERITY-SENTINEL"
+assert_match_count "$copy" "0" "the module's is not used" -xF -e "$module_title"
+rm -rf "$work" "$xdg"
+
+echo "Test 37: with neither, the session copy is the shipped pack"
+work=$(mktemp -d)
+xdg=$(mktemp -d)
+make_severity_repo "$work" no
+result=$(prepare_xdg "$xdg" "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "module" "tracking.md names the module pack"
+if cmp -s "$MODULE_SEVERITY" "$sess/review-config/severity.md"; then
+	assert_equals "same" "same" "the session copy is byte-identical to the shipped pack"
+else
+	assert_equals "different" "same" "the session copy is byte-identical to the shipped pack"
+fi
+rm -rf "$work" "$xdg"
+
+echo "Test 38: a user severity pack that is a symlink is skipped, and said so"
+work=$(mktemp -d)
+xdg=$(mktemp -d)
+make_severity_repo "$work" no
+mkdir -p "$xdg/review-council/packs"
+printf '# Severity\n\nUSER-SEVERITY-SENTINEL\n' >"$xdg/target.md"
+ln -s "$xdg/target.md" "$xdg/review-council/packs/severity.md"
+err_file="$xdg/stderr.txt"
+result=$(cd "$work" && XDG_CONFIG_HOME="$xdg" AGENTS_DIR="$AGENTS" bash "$SCRIPT" --scope changed --mode code 2>"$err_file")
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "module" "the symlinked user pack is not obeyed"
+copy=$(cat "$sess/review-config/severity.md")
+assert_match_count "$copy" "0" "its target's text does not reach the session" -xF "USER-SEVERITY-SENTINEL"
+err_text=$(<"$err_file")
+assert_match_count "$err_text" "1" "stderr says the user pack was skipped" \
+	-F "rc-prepare: user severity pack '$xdg/review-council/packs/severity.md' skipped: not a regular file"
+rm -rf "$work" "$xdg"
+
+echo "Test 39: a severity pack the change adds is not obeyed, and is listed"
+work=$(mktemp -d)
+xdg=$(mktemp -d)
+make_severity_repo "$work" no
+mkdir -p "$work/.review-council/packs"
+printf '# Severity\n\nEVERYTHING IS LOW\n' >"$work/.review-council/packs/severity.md"
+git -C "$work" add .review-council
+git -C "$work" commit -qm "loosen severity"
+result=$(prepare_xdg "$xdg" "$work" --scope changed --mode code)
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "module" "the change's own pack is not obeyed"
+copy=$(cat "$sess/review-config/severity.md")
+assert_match_count "$copy" "0" "its text does not reach the session" -xF "EVERYTHING IS LOW"
+listed=$(sed -n 's/^- Config changed by changeset: //p' "$sess/tracking.md")
+assert_match_count "$listed" "1" "the change's severity pack is listed" -F ".review-council/packs/severity.md"
+rm -rf "$work" "$xdg"
+
+echo "Test 40: a relative XDG_CONFIG_HOME is ignored, so the change cannot supply the user pack"
+work=$(mktemp -d)
+home=$(mktemp -d)
+make_severity_repo "$work" no
+mkdir -p "$work/cfg/review-council/packs"
+printf '# Severity\n\nCHANGE-SEVERITY-SENTINEL\n' >"$work/cfg/review-council/packs/severity.md"
+git -C "$work" add cfg
+git -C "$work" commit -qm "add a pack where a relative config home points"
+err_file="$home/stderr.txt"
+result=$(cd "$work" && HOME="$home" XDG_CONFIG_HOME="cfg" AGENTS_DIR="$AGENTS" bash "$SCRIPT" --scope changed --mode code 2>"$err_file")
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "module" "the pack under the relative path is not obeyed"
+copy=$(cat "$sess/review-config/severity.md")
+assert_match_count "$copy" "0" "its text does not reach the session" -xF "CHANGE-SEVERITY-SENTINEL"
+err_text=$(<"$err_file")
+assert_match_count "$err_text" "1" "stderr names the ignored value" \
+	-F "rc-prepare: XDG_CONFIG_HOME 'cfg' is not absolute; ignored for the user severity pack"
+rm -rf "$work" "$home"
+
+echo "Test 41: with XDG_CONFIG_HOME unset, the user pack is read from \$HOME/.config"
+work=$(mktemp -d)
+home=$(mktemp -d)
+make_severity_repo "$work" no
+make_user_pack "$home/.config"
+result=$(cd "$work" && env -u XDG_CONFIG_HOME HOME="$home" AGENTS_DIR="$AGENTS" bash "$SCRIPT" --scope changed --mode code 2>/dev/null)
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "user" "tracking.md names the user pack"
+copy=$(cat "$sess/review-config/severity.md")
+assert_match_count "$copy" "1" "the session copy is the user's" -xF "USER-SEVERITY-SENTINEL"
+rm -rf "$work" "$home"
+
+echo "Test 42: a user severity pack that is a directory is skipped, and said so"
+work=$(mktemp -d)
+xdg=$(mktemp -d)
+make_severity_repo "$work" no
+mkdir -p "$xdg/review-council/packs/severity.md"
+err_file="$xdg/stderr.txt"
+result=$(cd "$work" && XDG_CONFIG_HOME="$xdg" AGENTS_DIR="$AGENTS" bash "$SCRIPT" --scope changed --mode code 2>"$err_file")
+sess=$(session_of "$result")
+assert_track "$sess" "Severity pack" "module" "the directory is not obeyed"
+err_text=$(<"$err_file")
+assert_match_count "$err_text" "1" "stderr says the user pack was skipped" \
+	-F "rc-prepare: user severity pack '$xdg/review-council/packs/severity.md' skipped: not a regular file"
+rm -rf "$work" "$xdg"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

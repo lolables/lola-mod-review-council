@@ -32,7 +32,7 @@ Before reviewing, read:
 
 1. Project context document (AGENTS.md, CLAUDE.md, or equivalent) — project overview, active technologies, build & test commands, workflow
 2. `${REFERENCES_DIR}/reviewer-protocol.md` for shared review procedures
-3. `${REFERENCES_DIR}/severity.md` for severity definitions
+3. The severity pack on the `Severity pack:` line of your delegation prompt for severity definitions (`${REFERENCES_DIR}/severity.md` when the prompt names none)
 4. Release pipeline configs if they exist (e.g., `.goreleaser.yaml`, `.github/workflows/`, `Makefile`, CI configs)
 5. Dependency manifests if they exist (e.g., `go.mod`, `package.json`, `requirements.txt`, `Cargo.toml`)
 

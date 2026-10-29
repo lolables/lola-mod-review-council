@@ -291,6 +291,53 @@ else
 	project_packs="none"
 fi
 
+# --- Severity pack ---
+#
+# The one severity.md the run obeys, resolved here so every reader gets the
+# same text: reviewers through the preamble (code) or the `Severity pack:`
+# line of their prompt (spec), the arbiter, and the cost estimate. First found
+# wins. The project's was copied from the base revision by the loop above, so
+# a change cannot supply its own. The user's is the operator's file, outside
+# any change, and is read from disk; a symlink there is refused, as a symlinked
+# pack is at a revision, because following one reads a file nobody placed as
+# configuration. The shipped pack is the fallback.
+#
+# The user's config home must be an absolute path. rc-prepare runs with its
+# cwd in the reviewed tree, so a relative XDG_CONFIG_HOME (say `cfg`) would
+# resolve to a file the change itself can commit and have obeyed as the
+# operator's. The XDG Base Directory spec says to ignore relative values, so
+# one is ignored with a note, and HOME is tried next under the same rule. With
+# neither absolute, severity_user stays empty: the tests below are false for an
+# empty path, so no user pack is looked for.
+severity_pack="module"
+severity_user=""
+config_home=""
+if [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then
+	config_home="$XDG_CONFIG_HOME"
+else
+	if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+		echo "rc-prepare: XDG_CONFIG_HOME '${XDG_CONFIG_HOME}' is not absolute; ignored for the user severity pack" >&2
+	fi
+	if [[ "${HOME:-}" == /* ]]; then
+		config_home="${HOME}/.config"
+	fi
+fi
+if [[ -n "$config_home" ]]; then
+	severity_user="${config_home}/review-council/packs/severity.md"
+fi
+if [[ -f "${config_dir}/packs/severity.md" ]]; then
+	severity_pack="project"
+	cp -- "${config_dir}/packs/severity.md" "${config_dir}/severity.md"
+elif [[ -f "$severity_user" && ! -L "$severity_user" ]]; then
+	severity_pack="user"
+	cp -- "$severity_user" "${config_dir}/severity.md"
+else
+	if [[ -n "$severity_user" ]] && [[ -e "$severity_user" || -L "$severity_user" ]]; then
+		echo "rc-prepare: user severity pack '${severity_user}' skipped: not a regular file" >&2
+	fi
+	cp -- "${RC_LIB_DIR}/../../references/severity.md" "${config_dir}/severity.md"
+fi
+
 # --- Integrations the orchestrator and reviewers act on ---
 #
 # Carried through tracking.md so no reviewer reads them out of a context file

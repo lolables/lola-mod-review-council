@@ -243,10 +243,11 @@ is sourced.
 ## Where test state goes
 
 Every task that runs a suite goes through `.taskfiles/scripts/with-scratch.sh`,
-which creates a scratch directory, points `TMPDIR` and `XDG_CACHE_HOME` inside
-it, and deletes it when the run returns — including when the run fails.
+which creates a scratch directory, points `TMPDIR`, `XDG_CACHE_HOME` and
+`XDG_CONFIG_HOME` inside it, and deletes it when the run returns — including when
+the run fails.
 
-Both variables matter, for different reasons:
+Each variable matters, for a different reason:
 
 - **`XDG_CACHE_HOME`** is the one that bites. Most suites invoke
   `rc-prepare.sh`, which writes a session under
@@ -254,6 +255,10 @@ Both variables matter, for different reasons:
   themselves; the rest inherited the operator's own cache, so one `task test`
   left 44 review sessions there, shaped exactly like the real ones. Over time
   20,021 of them accumulated.
+- **`XDG_CONFIG_HOME`** keeps the operator's own configuration out of the run.
+  `rc-prepare.sh` reads a user severity pack from
+  `$XDG_CONFIG_HOME/review-council/packs/severity.md`, so without it every
+  suite reviews under whatever pack the person running the tests has installed.
 - **`TMPDIR`** covers the interrupted run. The suites do remove their own
   `mktemp -d` directories — 349 `rm -rf` calls — but none of that cleanup is on a
   `trap`, so a run that is killed abandons whatever it had open.

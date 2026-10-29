@@ -142,6 +142,7 @@ fi
 	echo "- Constitution: ${constitution} ${constitution_source:+(${constitution_source})}"
 	echo "- Config source: ${config_source}"
 	echo "- Project packs: ${project_packs}"
+	echo "- Severity pack: ${severity_pack}"
 	echo "- Docs repo: ${docs_repo}"
 	echo "- Knowledge tool: ${knowledge_tool}"
 	echo "- Config changed by changeset: ${config_changed_line}"

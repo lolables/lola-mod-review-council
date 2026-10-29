@@ -1843,6 +1843,27 @@ check_mutation "RC-181 a bare path is resolved for review root ." \
 	's/echo "\.\/\$1"/echo "$1"/' \
 	test-rc-build-context.sh
 
+# #121: a user severity pack is the operator's file read from disk. Following a
+# symlink there reads a file nobody placed as configuration.
+check_mutation "RC-191 a symlinked user severity pack is obeyed" \
+	lib/prepare-config.sh \
+	's/^\([[:space:]]*\)elif \[\[ -f "\$severity_user" && ! -L "\$severity_user" \]\]; then$/\1elif [[ -f "$severity_user" ]]; then/' \
+	test-rc-prepare-config-source.sh
+
+# #121: the user pack's config home must be absolute. A relative XDG_CONFIG_HOME
+# resolves inside the reviewed tree, where the change can commit the "user" pack.
+check_mutation "RC-198 a relative XDG_CONFIG_HOME is accepted for the user severity pack" \
+	lib/prepare-config.sh \
+	's/^\([[:space:]]*\)if \[\[ "\${XDG_CONFIG_HOME:-}" == \/\* \]\]; then$/\1if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then/' \
+	test-rc-prepare-config-source.sh
+
+# #121: the preamble reads the run's severity pack. Reading the shipped one
+# silently drops a project or user override for every code reviewer.
+check_mutation "RC-192 the preamble reads the shipped severity pack" \
+	rc-build-context.sh \
+	's/^severity_file="\$session_dir\/review-config\/severity\.md"$/severity_file="$refs_dir\/severity.md"/' \
+	test-rc-build-context.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

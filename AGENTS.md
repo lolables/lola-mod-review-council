@@ -8,10 +8,30 @@ host-agnostic.
 
 ## Commands
 
-- `task test` runs unit suites only; `task check` (lint + full matrix) before commit.
+- `task test` runs unit suites only; `task check` is lint + the full matrix.
 - Lint with `task lint`, never bare `shellcheck` — it misses what the gate rejects.
+- `RC-NNN` guard IDs are one namespace across `module/tests/` and
+  `.taskfiles/scripts/mutate-check.sh`. Take the next free one from
+  `grep -rhoE 'RC-[0-9]{3}' module .taskfiles | sort -u | tail -1`, never
+  from one directory alone.
 - `task lola-eval:update` before eval runs: the harness floats on upstream
   `main`, but an existing `.venv` stays on the commit it first installed.
+
+## Testing: token-conservative by default
+
+- Default to the lightest check that proves the change: `bash -n`, a jq
+  smoke run, or one test file, filtered to failures:
+  `bash .taskfiles/scripts/with-scratch.sh bash module/tests/<file>.sh 2>&1 | grep -E '^ *FAIL|^Results:' | head -20`.
+  Never run a test file bare: mock clones land in the real `~/.cache`.
+- Never paste a suite's full output into context, and don't re-run a green
+  file to double-check.
+- Heavy runs need explicit user approval first: `task check`, `task lint`,
+  `task test` / `test:all` / `test:mutate` / `test:e2e`, more than one test
+  file at a time, and any `lola-eval` or live review run. Otherwise, write the
+  tests and hand the user the commands.
+- Never let a test depend on `find`/glob/readdir order. Local filesystems
+  here return creation order, so it passes locally; CI (ext4, APFS) does not.
+- Before a live review run, read "Live trials" in `docs/dev/testing.md`.
 
 ## Files that change together
 
@@ -51,6 +71,17 @@ filler, keep fragments; preserve technical terms, code, paths and
 output-template strings verbatim. Match it when editing. Do NOT compress
 script-emitted report content, `CHANGELOG.md`, `README.md`, this file, or
 anything in code fences/backticks.
+
+`SKILL.md` and `phases/*.md` are loaded whole by the host: never split them or
+move content out to a linked file, even when a docs audit flags them. That
+applies to `README.md` and `docs/` only.
+
+## Forge output
+
+Anything posted to a forge (PR/MR comments) must not reveal the run's security
+posture: sandboxing, which guards ran, where enforcement falls back to prose.
+That goes to `tracking.md`, `report.md` or stderr. Verdict and coverage
+disclosures (skipped reviewers, trimmed comments, validation mode) stay public.
 
 ## Personas
 

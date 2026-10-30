@@ -351,7 +351,8 @@ Dispatch on `status`:
 - `validation_error`, verdicts cannot be derived — `verdicts/verdicts-map.json`
   was missing, unreadable or malformed when snapshot was taken; `findings.json`
   unchanged, nothing recorded. Re-run Verification (`rc-verify-evidence.sh`
-  writes the map), then Step 4.5 in order.
+  writes the map), then `rc-apply-severity-override.sh` (a rebuilt
+  `findings.json` has lost the applied override), then Step 4.5 in order.
 - `validation_error` with `violations` — all or nothing: script
   restored the snapshot: every finding stays as verified, no disposition
   result stands. Never re-apply edits by hand. Record violations verbatim in
@@ -359,7 +360,8 @@ Dispatch on `status`:
   restored file) before rendering.
 - `validation_error`, no snapshot — `findings.json` may hold unchecked
   edits; never snapshot it now. Re-run Verification (`rc-verify-evidence.sh`)
-  to rebuild it from reviewer verdicts, then Step 4.5 in order: snapshot
+  to rebuild it from reviewer verdicts, then `rc-apply-severity-override.sh`
+  (the rebuild drops the applied override), then Step 4.5 in order: snapshot
   before dispatch, then check.
 - `nothing_to_do` (session dir missing) — stop, report.
 - `skip` — no `sha256sum`/`shasum`; install, run check again.

@@ -46,7 +46,11 @@ trap 'rm -rf "$scratch"' EXIT
 # looking at leftover state during a hung run can tell the two apart.
 export TMPDIR="$scratch/tmp"
 export XDG_CACHE_HOME="$scratch/cache"
-mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
+# rc-prepare also reads the operator's severity pack from XDG_CONFIG_HOME, so an
+# unredirected run would copy the real ~/.config/review-council/packs/severity.md
+# into every session and make the suites depend on the machine they run on.
+export XDG_CONFIG_HOME="$scratch/config"
+mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
 
 # TMPDIR alone carries that redirection on GNU/coreutils hosts but not on macOS.
 # Apple's mktemp(1) resolves the -t directory from

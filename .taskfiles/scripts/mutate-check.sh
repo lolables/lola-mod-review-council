@@ -1843,6 +1843,48 @@ check_mutation "RC-181 a bare path is resolved for review root ." \
 	's/echo "\.\/\$1"/echo "$1"/' \
 	test-rc-build-context.sh
 
+# #121: a user severity pack is the operator's file read from disk. Following a
+# symlink there reads a file nobody placed as configuration.
+check_mutation "RC-191 a symlinked user severity pack is obeyed" \
+	lib/prepare-config.sh \
+	's/^\([[:space:]]*\)elif \[\[ -f "\$severity_user" && ! -L "\$severity_user" \]\]; then$/\1elif [[ -f "$severity_user" ]]; then/' \
+	test-rc-prepare-config-source.sh
+
+# #121: the user pack's config home must be absolute. A relative XDG_CONFIG_HOME
+# resolves inside the reviewed tree, where the change can commit the "user" pack.
+check_mutation "RC-198 a relative XDG_CONFIG_HOME is accepted for the user severity pack" \
+	lib/prepare-config.sh \
+	's/^\([[:space:]]*\)if \[\[ "\${XDG_CONFIG_HOME:-}" == \/\* \]\]; then$/\1if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then/' \
+	test-rc-prepare-config-source.sh
+
+# #121: the preamble reads the run's severity pack. Reading the shipped one
+# silently drops a project or user override for every code reviewer.
+check_mutation "RC-192 the preamble reads the shipped severity pack" \
+	rc-build-context.sh \
+	's/^severity_file="\$session_dir\/review-config\/severity\.md"$/severity_file="$refs_dir\/severity.md"/' \
+	test-rc-build-context.sh
+
+# #121: a script finding's severity is computed from the diff; the SCRIPT mark,
+# not the agent name, is what protects it from the override.
+check_mutation "RC-193 the Severity override re-levels a script finding" \
+	jq/severity-override.jq \
+	's/select((\$f\.provenance\.validator\.result? \/\/ null) != "SCRIPT")/select(true)/' \
+	test-rc-apply-severity-override.sh
+
+# #121: a cap only ever lowers. Turned into a floor, `guard<=LOW` would leave
+# every Guard HIGH blocking while reading as though it had been applied.
+check_mutation "RC-194 a Severity override cap raises instead of lowering" \
+	jq/severity-override.jq \
+	's/if \$t\.op == "<=" then (if \$have > \$want/if $t.op == "<=" then (if $have < $want/' \
+	test-rc-apply-severity-override.sh
+
+# #121: one term per persona. A second term would be applied after the first
+# and silently decide which bound the persona ends with.
+check_mutation "RC-195 a second Severity override term for one persona is accepted" \
+	lib/prepare-config.sh \
+	's/^\([[:space:]]*\)elif \[\[ -n "\${severity_override_seen\[\$so_persona\]:-}" \]\]; then$/\1elif false; then/' \
+	test-rc-prepare.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

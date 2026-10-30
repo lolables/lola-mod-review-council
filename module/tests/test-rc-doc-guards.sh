@@ -3105,6 +3105,71 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-196: issue #121. A project or user severity.md reached no consumer: the
+# arbiter and spec reviewers read the shipped copy. Every consumer now takes
+# the session copy preparation resolved, and the protocol stops a reviewer
+# loading a second severity.md from the packs directories.
+echo "Test: every severity consumer reads the run's severity pack (RC-196)"
+rc196=0
+# shellcheck disable=SC2016 # literal markdown and template text, not expansions.
+{
+	grep -qF 'severity pack definitions, `${session_dir}/review-config/severity.md`, verbatim' "$VERIFY_MD" ||
+		{
+			echo "  FAIL: the arbiter is not sent the session copy"
+			rc196=1
+		}
+	grep -qF '> Severity pack: ${session_dir}/review-config/severity.md' "$DELEGATE_MD" ||
+		{
+			echo "  FAIL: spec delegation prompts do not name the session copy"
+			rc196=1
+		}
+	grep -qF 'always load the severity pack on the `Severity pack:` line of this prompt' <<<"$delegate_flat" ||
+		{
+			echo "  FAIL: the spec pack-loading instruction still names the shipped pack"
+			rc196=1
+		}
+	grep -qF 'skip `severity.md`' "$PROTOCOL_MD" ||
+		{
+			echo "  FAIL: reviewer-protocol.md does not skip severity.md among extra packs"
+			rc196=1
+		}
+}
+for f in "$AGENTS"/divisor-*-spec.md; do
+	rc196_name=$(basename "$f")
+	# shellcheck disable=SC2016 # literal markdown.
+	if ! grep -qF 'the `Severity pack:` line of your delegation prompt' "$f"; then
+		echo "  FAIL: ${rc196_name} does not read the Severity pack line"
+		rc196=1
+	fi
+done
+if [[ $rc196 -eq 0 ]]; then
+	echo "  PASS: arbiter, spec prompts, spec personas and the protocol use the run's pack"
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-197: issue #121. The override must run before verdicts are recomputed and
+# decided, at every effort, or a configured cap never reaches the verdict. Both
+# the phase doc and SKILL.md must run it, in that order.
+echo "Test: the Severity override runs before verdicts are recomputed, at every effort (RC-197)"
+# shellcheck disable=SC2016 # awk program and literal markdown, not expansions.
+rc197_order='/rc-apply-severity-override\.sh \$\{session_dir\}/ && !o { o = NR }
+	/rc-recompute-verdicts\.sh \$\{session_dir\}/ && !r { r = NR }
+	END { print (o && r && o < r) ? "ok" : "bad" }'
+rc197_verify=$(awk "$rc197_order" "$VERIFY_MD")
+rc197_skill=$(awk "$rc197_order" "$SKILL_MD")
+# shellcheck disable=SC2016 # literal markdown.
+if [[ "$rc197_verify" == ok && "$rc197_skill" == ok ]] &&
+	grep -qF 'then `rc-apply-severity-override.sh`, then `rc-recompute-verdicts.sh`' <<<"$skill_flat" &&
+	grep -qF 'Runs at every effort, `quick` included' <<<"$verify_flat"; then
+	echo "  PASS: verify.md and SKILL.md apply the override before recomputing, quick included"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the Severity override is missing, out of order, or skipped at quick effort ($rc197_verify/$rc197_skill)"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

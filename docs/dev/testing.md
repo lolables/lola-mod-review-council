@@ -243,10 +243,11 @@ is sourced.
 ## Where test state goes
 
 Every task that runs a suite goes through `.taskfiles/scripts/with-scratch.sh`,
-which creates a scratch directory, points `TMPDIR` and `XDG_CACHE_HOME` inside
-it, and deletes it when the run returns — including when the run fails.
+which creates a scratch directory, points `TMPDIR`, `XDG_CACHE_HOME` and
+`XDG_CONFIG_HOME` inside it, and deletes it when the run returns — including when
+the run fails.
 
-Both variables matter, for different reasons:
+Each variable matters, for a different reason:
 
 - **`XDG_CACHE_HOME`** is the one that bites. Most suites invoke
   `rc-prepare.sh`, which writes a session under
@@ -254,6 +255,10 @@ Both variables matter, for different reasons:
   themselves; the rest inherited the operator's own cache, so one `task test`
   left 44 review sessions there, shaped exactly like the real ones. Over time
   20,021 of them accumulated.
+- **`XDG_CONFIG_HOME`** keeps the operator's own configuration out of the run.
+  `rc-prepare.sh` reads a user severity pack from
+  `$XDG_CONFIG_HOME/review-council/packs/severity.md`, so without it every
+  suite reviews under whatever pack the person running the tests has installed.
 - **`TMPDIR`** covers the interrupted run. The suites do remove their own
   `mktemp -d` directories — 349 `rm -rf` calls — but none of that cleanup is on a
   `trap`, so a run that is killed abandons whatever it had open.
@@ -307,6 +312,44 @@ scratch root per run, cleanup on both the passing and failing path, and the
 command's exit status propagated rather than swallowed. It runs one case against
 a stub `mktemp` with BSD semantics, so the Linux leg of CI asserts the macOS
 behaviour too rather than leaving it to the one platform that used to break.
+
+## Live trials
+
+A live trial runs the real skill, through a real agent CLI, against a scratch
+repository. It costs money and takes your approval first (see `AGENTS.md`). Run
+it isolated, so that neither your installed copy nor your configuration leaks in:
+
+1. **Fake home.** Create `$H` with `.claude/`, `.config/` and `.cache/`, and copy
+   only your credentials file into `$H/.claude/`.
+2. **Install the branch the way users do.**
+   `HOME=$H lola mod add <worktree>/module -n review-council`, then
+   `HOME=$H lola install review-council -a claude-code -s user -f`, run from
+   `$H`. Confirm with `diff -rq <worktree>/module/skills/review-council
+   $H/.claude/skills/review-council`. Never hand-copy agent files: the host can
+   silently drop agent types that lack lola's frontmatter.
+3. **Target repository outside `/workspace`.** Inside it, project memory and
+   instructions change what the orchestrator does. The repository needs a local
+   `main` (or `master`); without one, preparation skips even explicit ranges.
+   Commit with `GIT_CONFIG_GLOBAL=/dev/null` and a throwaway identity.
+4. **Run headless.** Call the CLI binary directly, not a wrapper script that
+   sources files from `$HOME`, with `HOME`, `CLAUDE_CONFIG_DIR`,
+   `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` all pointing into `$H`. Pass
+   `-p "/review-council ... Do not post anything anywhere."`, `--model sonnet`,
+   `--strict-mcp-config`, `--max-budget-usd <cap>` and `--output-format
+   stream-json --verbose`. `--verbose` is required with stream-json. The text
+   format prints nothing until the run ends.
+5. **Check discovery first.** The stream's first line, the `init` event, lists the
+   registered skills and agents. If `review-council` and the ten `divisor-*`
+   agents are not there, stop.
+6. **Read results from the session**, not the transcript: under
+   `$H/.cache/review-council/<repo>/<session>/`, read `tracking.md`,
+   `verdict.txt`, `verdicts/findings.json` and `verdicts/_meta/verification.txt`.
+   Extract the fields you need with `jq`/`grep`.
+
+Cost with Sonnet: a one-file change at standard effort with five reviewers was
+$1.81 (2026-10-29). Budget about $8 for a four-to-six-file change, and $50 or
+more for a branch that deep mode splits into subsystems. A cap that is too tight
+ends the run with `error_max_budget_usd`, or quietly skips the validation gate.
 
 ## Requirements
 

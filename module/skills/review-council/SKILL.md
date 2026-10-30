@@ -221,7 +221,7 @@ stateDiagram-v2
     Extract --> Extract: nothing_to_do (write held responses)
     Extract --> [*]: nothing_to_do, none held (stop)
     Extract --> Verify: ok
-    Verify --> Recompute: effort=quick
+    Verify --> Override: effort=quick
     Verify --> Render: nothing_to_do (no findings file)
     Verify --> Correction: correctable>0
     Verify --> Consolidate: correctable=0
@@ -229,8 +229,10 @@ stateDiagram-v2
     Correction --> Consolidate
     Consolidate --> [*]: consolidate_error (stop)
     Consolidate --> Validate: verified>0 & not all LOW (arbiter calibrates + validates)
-    Consolidate --> Recompute: nothing to validate
-    Validate --> Recompute
+    Consolidate --> Override: nothing to validate
+    Validate --> Override
+    Override --> Recompute: ok or nothing_to_do
+    Override --> [*]: validation_error (stop)
     Recompute --> [*]: validation_error (stop or re-verify)
     Recompute --> Render: quick or no conversation
     Recompute --> Disposition: conversation
@@ -927,6 +929,13 @@ procedures. Run these in this order:
     otherwise stop and report the message verbatim.
   - On `nothing_to_do` (session directory or `findings.json` missing), stop
     and report.
+- **Apply the Severity override (verify.md Step 4b) — SCRIPT-OWNED, every
+  effort.** Run `bash ${SCRIPTS_DIR}/rc-apply-severity-override.sh ${session_dir}`
+  just before recomputing verdicts. It caps, floors or sets each configured
+  persona's verified findings per tracking.md `Severity override:`. On `ok`,
+  log each `changes` entry under SEVERITY CALIBRATION in `verification.txt`;
+  on `nothing_to_do`, continue; on `validation_error`, stop and report the
+  message verbatim.
 - **Recompute per-agent verdicts (verify.md Step 6) — SCRIPT-OWNED, every
   effort.** Run `bash ${SCRIPTS_DIR}/rc-recompute-verdicts.sh ${session_dir}`
   last. It derives `findings.json` `.verdicts` from findings left and verdicts
@@ -937,7 +946,8 @@ procedures. Run these in this order:
 **Effort-conditional behavior:**
 - **quick**: Skip correction round, cross-agent consolidation, arbiter
   (severity calibration and validation gate). Run only `rc-verify-evidence.sh`
-  (mechanical evidence check), then `rc-recompute-verdicts.sh`.
+  (mechanical evidence check), then `rc-apply-severity-override.sh`, then
+  `rc-recompute-verdicts.sh`.
   Proceed directly to Step 5, skipping Step 4.5 (Disposition) — its own
   gate also excludes `quick`, so this is a shortcut, not a divergence.
 - **standard**: Full verification as above.
@@ -1013,7 +1023,8 @@ After the subagent returns:
   every finding stays verified; record the violations, run the check again,
   never re-apply the edits by hand. On `validation_error` with no snapshot,
   `findings.json` may hold unchecked edits: never snapshot it then; re-run
-  `rc-verify-evidence.sh`, then Step 4.5 in order (snapshot before dispatch).
+  `rc-verify-evidence.sh`, then `rc-apply-severity-override.sh` (the rebuild drops the
+  applied override), then Step 4.5 in order (snapshot before dispatch).
 - Write `${session_dir}/verdicts/_meta/disposition.txt` as the audit trail
   (`disposition.md` Step 5).
 
@@ -1253,6 +1264,7 @@ writes subsequent phases.
 - Constitution: {none | none (refused: reason) | session copy (explicit: configured path)}
 - Config source: {sha (how) | working tree (no git repository) | none (reason)}
 - Project packs: {dir (count) | none}
+- Severity pack: {project | user | module}
 - Docs repo: {owner/repo | none}
 - Knowledge tool: {name | none}
 - Config changed by changeset: {none | paths, TAB-separated}
@@ -1273,6 +1285,8 @@ writes subsequent phases.
 - Persona selection: {on | off}
 - Pin personas: {none | comma-separated persona names}
 - Subsystem triage: {on | off}
+- Severity override: {none | normalised terms, e.g. guard<=LOW, sre>=HIGH}
+- Severity override rejected: {term (reason)} — one line per rejected term, absent when none
 - Changeset size: {count} files
 
 ## Phase: Decomposition (deep mode only)
@@ -1402,6 +1416,7 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Subsystem triage: off
 - Batch bytes: 131072
 - Batch size: 50
+- Severity override: guard<=LOW
 ```
 
 All extension points optional, degrade gracefully when omitted.
@@ -1436,6 +1451,18 @@ are refused, and tracking.md records `none (refused: <reason>)`. When the
 change modifies any of these files, even outside the reviewed changeset (spec
 mode), `Config changed by changeset:` lists them and the report says the change's
 version was not obeyed.
+
+**Severity tuning.** `Severity override` takes comma-separated
+`persona OP LEVEL` terms (`adversary`, `curator`, `guard`, `sre`, `testing`;
+`<=` cap, `>=` floor, `=` set; `CRITICAL`/`HIGH`/`MEDIUM`/`LOW`), one per
+persona. `rc-prepare.sh` normalises them into tracking.md and records each
+rejected term with its reason; `rc-apply-severity-override.sh` applies them
+(verify.md Step 4b). A `severity.md` in `.review-council/packs/` (base
+revision) or `$XDG_CONFIG_HOME/review-council/packs/` (default `~/.config/review-council/packs/`) replaces the shipped
+severity pack for the whole run; `rc-prepare.sh` resolves it once into
+`${session_dir}/review-config/severity.md` and tracking.md `Severity pack:`
+names the source. The pack shapes how severity is assigned; the override
+bounds the result and wins.
 
 `Persona selection` and `Subsystem triage` each resolve across four layers, in
 order: the CLI flag (`--persona-selection` / `--no-persona-selection`,

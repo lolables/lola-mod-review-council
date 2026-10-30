@@ -291,6 +291,53 @@ else
 	project_packs="none"
 fi
 
+# --- Severity pack ---
+#
+# The one severity.md the run obeys, resolved here so every reader gets the
+# same text: reviewers through the preamble (code) or the `Severity pack:`
+# line of their prompt (spec), the arbiter, and the cost estimate. First found
+# wins. The project's was copied from the base revision by the loop above, so
+# a change cannot supply its own. The user's is the operator's file, outside
+# any change, and is read from disk; a symlink there is refused, as a symlinked
+# pack is at a revision, because following one reads a file nobody placed as
+# configuration. The shipped pack is the fallback.
+#
+# The user's config home must be an absolute path. rc-prepare runs with its
+# cwd in the reviewed tree, so a relative XDG_CONFIG_HOME (say `cfg`) would
+# resolve to a file the change itself can commit and have obeyed as the
+# operator's. The XDG Base Directory spec says to ignore relative values, so
+# one is ignored with a note, and HOME is tried next under the same rule. With
+# neither absolute, severity_user stays empty: the tests below are false for an
+# empty path, so no user pack is looked for.
+severity_pack="module"
+severity_user=""
+config_home=""
+if [[ "${XDG_CONFIG_HOME:-}" == /* ]]; then
+	config_home="$XDG_CONFIG_HOME"
+else
+	if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+		echo "rc-prepare: XDG_CONFIG_HOME '${XDG_CONFIG_HOME}' is not absolute; ignored for the user severity pack" >&2
+	fi
+	if [[ "${HOME:-}" == /* ]]; then
+		config_home="${HOME}/.config"
+	fi
+fi
+if [[ -n "$config_home" ]]; then
+	severity_user="${config_home}/review-council/packs/severity.md"
+fi
+if [[ -f "${config_dir}/packs/severity.md" ]]; then
+	severity_pack="project"
+	cp -- "${config_dir}/packs/severity.md" "${config_dir}/severity.md"
+elif [[ -f "$severity_user" && ! -L "$severity_user" ]]; then
+	severity_pack="user"
+	cp -- "$severity_user" "${config_dir}/severity.md"
+else
+	if [[ -n "$severity_user" ]] && [[ -e "$severity_user" || -L "$severity_user" ]]; then
+		echo "rc-prepare: user severity pack '${severity_user}' skipped: not a regular file" >&2
+	fi
+	cp -- "${RC_LIB_DIR}/../../references/severity.md" "${config_dir}/severity.md"
+fi
+
 # --- Integrations the orchestrator and reviewers act on ---
 #
 # Carried through tracking.md so no reviewer reads them out of a context file
@@ -400,6 +447,52 @@ if [[ -n "$pin_personas" ]]; then
 		grep -E '^[a-z][a-z0-9-]*$' | paste -sd ',' - || true)
 fi
 [[ -n "$pin_personas" ]] || pin_personas="none"
+
+# --- Severity override ---
+#
+# `persona OP LEVEL` terms, comma-separated: `<=` caps a persona's findings at
+# LEVEL, `>=` floors them, `=` sets them. rc-apply-severity-override.sh applies
+# them after verification, reading the normalised line written here, the one
+# place the block is parsed. Each term stands alone: a bad one is recorded with
+# its reason and dropped and the others still apply, the same "report, never
+# guess" rule the switches above follow. An empty term (a stray comma) carries
+# no intent and is skipped.
+severity_override=""
+severity_override_rejected=()
+declare -A severity_override_seen=()
+so_term_re='^([A-Za-z]+)[[:space:]]*(<=|>=|=)[[:space:]]*([A-Za-z]+)$'
+so_value=$(rc_config_value "Severity override")
+so_value=$(rc_single_line "$so_value")
+so_terms=()
+[[ -z "$so_value" ]] || IFS=',' read -r -a so_terms <<<"$so_value"
+for so_term in ${so_terms[@]+"${so_terms[@]}"}; do
+	so_term="${so_term#"${so_term%%[![:space:]]*}"}"
+	so_term="${so_term%"${so_term##*[![:space:]]}"}"
+	[[ -n "$so_term" ]] || continue
+	so_reason=""
+	if [[ ! "$so_term" =~ $so_term_re ]]; then
+		so_reason="malformed term"
+	else
+		so_persona="${BASH_REMATCH[1]}"
+		so_op="${BASH_REMATCH[2]}"
+		so_level="${BASH_REMATCH[3]^^}"
+		if [[ ! "$so_persona" =~ ^(adversary|curator|guard|sre|testing)$ ]]; then
+			so_reason="unknown persona"
+		elif [[ ! "$so_level" =~ ^(CRITICAL|HIGH|MEDIUM|LOW)$ ]]; then
+			so_reason="unknown level"
+		elif [[ -n "${severity_override_seen[$so_persona]:-}" ]]; then
+			so_reason="persona already set"
+		fi
+	fi
+	if [[ -n "$so_reason" ]]; then
+		severity_override_rejected+=("${so_term} (${so_reason})")
+		echo "rc-prepare: Severity override term '${so_term}' rejected (${so_reason})" >&2
+	else
+		severity_override_seen["$so_persona"]=1
+		severity_override+="${severity_override:+, }${so_persona}${so_op}${so_level}"
+	fi
+done
+[[ -n "$severity_override" ]] || severity_override="none"
 
 # ============================================================================
 # Changes to review configuration

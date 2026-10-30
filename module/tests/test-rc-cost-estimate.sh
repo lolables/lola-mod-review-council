@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ESTIMATE="$SCRIPT_DIR/../skills/review-council/scripts/rc-cost-estimate.sh"
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"
+SEVERITY="$SCRIPT_DIR/../skills/review-council/references/severity.md"
 
 # Build a session with <effort>, <persona count> agents and, for each remaining
 # argument, that many changeset files. Prints the session path; the caller owns
@@ -14,6 +15,8 @@ mk_session() { # effort personas [subsystem_file_counts...]
 	shift 2
 	local s agents=() i count n=0
 	s=$(new_session)
+	mkdir -p "$s/review-config"
+	cp "$SEVERITY" "$s/review-config/severity.md"
 	for ((i = 1; i <= personas; i++)); do agents+=("divisor-p${i}-code"); done
 	printf '%s\n' "${agents[@]}" | jq -R . | jq -s '{mode:"code",suffix:"code",agents:.,absent:[]}' \
 		>"$s/session-manifest.json"
@@ -593,6 +596,21 @@ else
 	FAIL=$((FAIL + 1))
 fi
 discard_fixture "$s"
+
+echo "Test: the estimate sizes the run's severity pack, not the shipped one (#121)"
+small=$(mk_session deep 5)
+big=$(mk_session deep 5)
+head -c 40000 /dev/zero | tr '\0' 'x' >>"$big/review-config/severity.md"
+bash "$ESTIMATE" "$small" >/dev/null
+bash "$ESTIMATE" "$big" >/dev/null
+small_tokens=$(jq -r '.input_tokens_first_pass' "$small/cost-estimate.json")
+big_tokens=$(jq -r '.input_tokens_first_pass' "$big/cost-estimate.json")
+if ((big_tokens > small_tokens)); then
+	assert_equals "larger" "larger" "a larger session pack raises the estimate"
+else
+	assert_equals "not larger ($small_tokens -> $big_tokens)" "larger" "a larger session pack raises the estimate"
+fi
+discard_fixture "$small" "$big"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

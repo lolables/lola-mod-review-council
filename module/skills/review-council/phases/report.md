@@ -445,9 +445,12 @@ silent:
 
 Determine the council verdict from the **verified** finding set, in both review
 modes. Severity decides it, because severity is where this module already
-defines what blocks: `${REFERENCES_DIR}/severity.md` calls CRITICAL "MUST NOT
+defines what blocks: the shipped severity pack calls CRITICAL "MUST NOT
 merge" and HIGH "Blocks review", while MEDIUM "does not block merge" and LOW is
-"Non-blocking".
+"Non-blocking". A project or user pack may redefine the levels (tracking.md
+`Severity pack:`), and a `Severity override` may move a persona's findings
+across the line (verify.md Step 4b); the rule below reads each finding's
+severity as it stands after both.
 
 - **REQUEST CHANGES** — one or more verified CRITICAL or HIGH findings remain.
 - **APPROVE WITH ADVISORIES** — verified findings remain, but none is CRITICAL

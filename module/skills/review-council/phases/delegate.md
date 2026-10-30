@@ -530,9 +530,18 @@ For each discovered agent, add focus area from Persona Roles table (Spec Review 
 
 **Project packs and Constitution**: include the `Project packs:` and `Constitution:` lines in every spec delegation prompt, exactly as specified under "Project packs and Constitution" in Code Review Delegation above.
 
+**Severity pack**: include this line in every spec delegation prompt. Spec
+reviewers get no Review context section, so this is how they learn which
+severity definitions the run uses:
+
+> Severity pack: ${session_dir}/review-config/severity.md
+
+Write the path out in full. It is the session copy preparation resolved;
+tracking.md `Severity pack:` records its source.
+
 **Convention pack loading**: include in every delegation prompt:
 
-> Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load `${REFERENCES_DIR}/severity.md`, then the language pack (`lang-{language}.md`) or `base.md` if none exists, then the framework pack (`fw-{framework}.md`) if one exists.
+> Convention packs are at `${REFERENCES_DIR}`. Load packs per the rules in `${REFERENCES_DIR}/reviewer-protocol.md`: always load the severity pack on the `Severity pack:` line of this prompt, then the language pack (`lang-{language}.md`) or `base.md` if none exists, then the framework pack (`fw-{framework}.md`) if one exists.
 
 Instruct agents to review listed spec artifacts (not code), plus project context documents (context only, not conventions or governance). Governance comes from the `Constitution:` line of the prompt only. Include prior run context if available.
 

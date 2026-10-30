@@ -1616,8 +1616,8 @@ for order in "divisor-sre-code divisor-guard-code" "divisor-guard-code divisor-s
 		approve_as "$s" "" "$a" '{"file":"a.go","line":12,"evidence":"l12"}'
 	done
 	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-	assert_jq_str "$out" '[.invalid[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "created as '$order': only the later one in sorted order is refused"
-	assert_jq_str "$out" '.invalid[0].detail | test("same line as \"divisor-guard-code\"")' "true" "detail names the holder, quoted"
+	assert_jq_str "$out" '[(.invalid // [])[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "created as '$order': only the later one in sorted order is refused"
+	assert_jq_str "$out" '((.invalid // [])[0].detail // "") | test("same line as \"divisor-guard-code\"")' "true" "detail names the holder, quoted"
 	[[ -f "$s/verdicts/divisor-guard-code.json" ]] && present=yes || present=no
 	assert_equals "$present" "yes" "the first quote is accepted"
 	rm -rf "$s"
@@ -1658,7 +1658,7 @@ sed -i.bak '12s/.*/}/; 14s/.*/}/' "$s/tree/a.go"
 approve_as "$s" "" divisor-guard-code '{"file":"a.go","line":12,"evidence":"}"}'
 approve_as "$s" "" divisor-sre-code '{"file":"a.go","line":14,"evidence":"}"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-assert_jq_str "$out" '[.invalid[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "matched on text, not position"
+assert_jq_str "$out" '[(.invalid // [])[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "matched on text, not position"
 rm -rf "$s"
 
 echo "Test: a re-dispatched reviewer cannot displace an accepted quote"
@@ -1670,7 +1670,7 @@ out=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_jq_str "$out" '.status' "ok" "run 1: the guard is accepted"
 approve_as "$s" "" divisor-curator-code '{"file":"a.go","line":12,"evidence":"l12"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-assert_jq_str "$out" '[.invalid[].agent] | join(",")' "divisor-curator-code" "run 2: the newcomer is refused, not the holder"
+assert_jq_str "$out" '[(.invalid // [])[].agent] | join(",")' "divisor-curator-code" "run 2: the newcomer is refused, not the holder"
 [[ -f "$s/verdicts/divisor-guard-code.json" ]] && present=yes || present=no
 assert_equals "$present" "yes" "run 2: the holder's verdict stands"
 rm -rf "$s"
@@ -1682,7 +1682,7 @@ bash "$SCRIPT" "$s" >/dev/null 2>&1
 approve_as "$s" "" divisor-guard-code '{"file":"a.go","line":13,"evidence":"l13"}'
 approve_as "$s" "" divisor-curator-code '{"file":"a.go","line":13,"evidence":"l13"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
-assert_jq_str "$out" '[.invalid[].agent] | join(",")' "divisor-guard-code" "sorted order decides between two new quotes"
+assert_jq_str "$out" '[(.invalid // [])[].agent] | join(",")' "divisor-guard-code" "sorted order decides between two new quotes"
 rm -rf "$s"
 
 echo "Test: a refused verdict's earlier json is removed"

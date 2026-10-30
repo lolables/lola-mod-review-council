@@ -555,6 +555,10 @@ Packs are resolved in priority order (later wins):
 To override a shipped pack, create a file with the same name at a higher priority level. To add a new pack, drop a new
 `.md` file into either location.
 
+`severity.md` is resolved once per run: the project's, else the user's, else the shipped one, and every reviewer and
+the arbiter use that one. To make a reviewer advisory or always blocking without rewriting the definitions, use the
+`Severity override` setting instead. See [Tuning severity for your project](docs/tuning-severity.md).
+
 ## Extension Points
 
 Configure optional integrations by adding a "Review Council Configuration" section to your project's AGENTS.md or
@@ -574,6 +578,7 @@ CLAUDE.md:
 - Persona selection: on
 - Pin personas: adversary, guard
 - Subsystem triage: on
+- Severity override: guard<=LOW
 ```
 
 | Extension Point | Purpose                              | Default                  |
@@ -589,6 +594,10 @@ CLAUDE.md:
 | Persona selection | Whether change shape may narrow the council | `on`             |
 | Pin personas    | Personas that are never dropped      | none                     |
 | Subsystem triage | Whether a triage pass may narrow deep-mode subsystem councils | `off` |
+| Severity override | Cap (`<=`), floor (`>=`) or set (`=`) a reviewer's finding severity, e.g. `guard<=LOW, sre>=HIGH` | none |
+
+`Severity override` is applied by script after review, so it outranks a `severity.md` pack: the pack shapes how
+reviewers rate, the setting bounds the result. See [Tuning severity for your project](docs/tuning-severity.md).
 
 All extension points are optional. The review council works without any of them — agents gracefully skip checks that
 require unconfigured extensions.

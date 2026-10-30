@@ -167,6 +167,15 @@ the headline the defect needs rather than trimming to a budget. Omit it and the
 first sentence of `description` is used instead, which is why that sentence
 should stand on its own.
 
+`description` should be about 1,200 characters. Count before you emit it.
+
+- Say what is wrong and why it matters, ONCE. Do not restate `evidence`, quote
+  the code again, or narrate the search you ran beyond one sentence.
+- Move the fix, the alternatives and the reasoning behind them into
+  `recommendation`, which is where a reader looks for the action.
+- If the defect cannot be explained within the budget, it is probably two
+  findings. Split it.
+
 - `verdict` MUST be `APPROVE` or `REQUEST CHANGES` — see "## Verdict" in reviewer-protocol.md.
   `APPROVE WITH ADVISORIES` is a council-level aggregate the orchestrator
   derives from multiple reviewer verdicts (see `report.md`); no individual

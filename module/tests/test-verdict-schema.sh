@@ -204,6 +204,12 @@ echo "Test: title is an optional finding property with no length bound"
 title_prop=$(jq -c '.properties.findings.items.properties.title' "$SCHEMA")
 assert_equals "$title_prop" '{"type":"string","minLength":1}' \
 	"title is an unbounded non-empty string"
+# `description` is likewise unbounded in the schema: reviewer-protocol.md gives
+# a ~1,200 character budget as guidance only, because a hard bound would reject
+# the whole verdict over prose length, the failure the title bound caused.
+description_prop=$(jq -c '.properties.findings.items.properties.description' "$SCHEMA")
+assert_equals "$description_prop" '{"type":"string","minLength":1}' \
+	"description is an unbounded non-empty string"
 required=$(jq -c '.properties.findings.items.required' "$SCHEMA")
 if grep -qF '"title"' <<<"$required"; then
 	echo "  FAIL: title is required — every existing reviewer would break"

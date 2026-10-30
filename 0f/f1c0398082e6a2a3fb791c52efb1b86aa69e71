@@ -1,0 +1,21 @@
+module/tests/test-verdict-schema.sh
+  s_1350b571926d4a::t_08fee9af412a83 207-212
+module/skills/review-council/references/reviewer-protocol.md
+  s_1350b571926d4a::t_08fee9af412a83 170-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ff1c0398082e6a2a3fb791c52efb1b86aa69e71",
+  "prompts": {},
+  "sessions": {
+    "s_1350b571926d4a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "19233711-0b63-4a4d-a03c-97d1c8f6ea27",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

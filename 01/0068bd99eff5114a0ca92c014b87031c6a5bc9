@@ -1,0 +1,19 @@
+module/tests/test-rc-build-context.sh
+  s_d571855af6092c::t_84c15e834f46b3 138-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "010068bd99eff5114a0ca92c014b87031c6a5bc9",
+  "prompts": {},
+  "sessions": {
+    "s_d571855af6092c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7347c84-3b19-456f-903c-3feb2bb0734e",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

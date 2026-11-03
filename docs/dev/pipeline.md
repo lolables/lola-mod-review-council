@@ -159,7 +159,8 @@ flowchart TD
    changeset that needed no split is distinguishable from a step that was skipped. See "Batching" in the README
 8. **Reviewer context** — build what every code reviewer is handed rather than told to open, because reviewers
    skipped the documents their agent files listed (issue #101). `rc-build-context.sh` writes, under `prompts/`:
-   `preamble.md` (the severity definitions, the selected packs' calibration notes and the verdict output format,
+   `preamble.md` (the severity definitions, the selected packs' calibration notes, the protocol's evidence, standards
+   and engineering discipline and the verdict output format,
    pasted byte-identical at the top of every code-review prompt); one `[<subsystem>/]batch{N}-context.md` bundle per
    round, holding the line-numbered text of that round's changed files up to a per-file cap (`RC_CONTEXT_FILE_BYTES`)
    and the batch byte budget, with every file left out listed under "Read directly" and its reason; and

@@ -1,0 +1,47 @@
+task_version: "2"
+description: |
+  Producer of newly restricted input (issue: reviewers do not trace emitters).
+  The feature branch of a Go job runner hardens Validate in gate.go to refuse
+  any `$` or backtick, instead of only command substitution, and adds tests
+  for the new denials. The change looks complete and `go test` passes. But
+  `Spec` in internal/newjob/spec.go (run by `gate new`), untouched and outside every diff hunk, still renders
+  the starter spec with the step `archive "$OUT_DIR/result.json"`, so every job
+  created from `gate new` now fails Run at its archive step.
+
+  Spec has no call edge to Validate: it builds a string, and LoadSpec and
+  Run read that string at runtime. Searching for Validate's callers finds
+  runner.go, which shows nothing about what the specs contain. The defect is
+  reachable only by asking what emits commands that the new rule rejects,
+  for example by searching the repo for `archive` or `$OUT_DIR`.
+
+  The repo is padded to ~38 files (twelve bookkeeping packages, docs) so that
+  a grep for `archive` or `$OUT_DIR` returns unrelated hits: at ten files
+  reviewers read everything and found the producer without any rule telling
+  them to look.
+
+  Calibration decoy: Validate's `strings.ContainsAny(cmd, "$`")` refuses every
+  `$`, including `\$` and `${...}`, so claiming either form bypasses the check
+  is a false positive.
+
+  Provenance: fullsend-ai/fullsend#8852, where a new checkBash denial broke the
+  `fullsend agent new` template's `fullsend-check-output "$FULLSEND_OUTPUT_DIR/..."`
+  step and three scoped Sonnet runs never searched for the emitter. At a module
+  commit without the producer-search rule a score below pass_threshold is the
+  expected baseline. Do not "fix" a low baseline score by moving internal/newjob/spec.go
+  into the diff.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-033-go-producer-contract/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

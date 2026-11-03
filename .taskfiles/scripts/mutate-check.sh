@@ -1864,6 +1864,14 @@ check_mutation "RC-192 the preamble reads the shipped severity pack" \
 	's/^severity_file="\$session_dir\/review-config\/severity\.md"$/severity_file="$refs_dir\/severity.md"/' \
 	test-rc-build-context.sh
 
+# #101: the protocol is read by almost no reviewer, so Evidence Discipline,
+# Standards Anchors and Engineering Discipline reach them only through the
+# preamble. Copying Output Format alone silently drops those rules again.
+check_mutation "RC-199 the preamble copies only the protocol's Output Format" \
+	rc-build-context.sh \
+	's/^protocol_headings=(.*)$/protocol_headings=("Output Format")/' \
+	test-rc-build-context.sh
+
 # #121: a script finding's severity is computed from the diff; the SCRIPT mark,
 # not the agent name, is what protects it from the override.
 check_mutation "RC-193 the Severity override re-levels a script finding" \

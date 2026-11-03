@@ -34,7 +34,7 @@ ctx_session() { # language framework file...
 	printf '%s' "$s"
 }
 
-echo "Test: the preamble carries severity, the selected packs' calibration and the output format"
+echo "Test: the preamble carries severity, the selected packs' calibration, the review discipline and the output format"
 s=$(ctx_session go gin a.go)
 printf 'package a\n' >"$s/tree/a.go"
 bash "$BUILD" "$s" >/dev/null
@@ -44,10 +44,17 @@ assert_match_count "$(<"$p")" "1" "severity.md body is included" -xF "$sev_first
 assert_match_count "$(<"$p")" "0" "severity.md front matter is stripped" -F "pack_id:"
 assert_match_count "$(<"$p")" "1" "the Go pack's Calibration Notes are included" -xF "## Calibration Notes"
 assert_match_count "$(<"$p")" "1" "the protocol's Output Format is included" -xF "## Output Format"
+# #101 reached Output Format only. The protocol is otherwise read by almost no
+# reviewer (0 of 30 in measured runs), so the rules that live nowhere else
+# travel in the preamble too.
+for heading in "Evidence Discipline" "Standards Anchors" "Engineering Discipline"; do
+	assert_match_count "$(<"$p")" "1" "the protocol's $heading is included" -xF "## $heading"
+done
+assert_match_count "$(<"$p")" "0" "sections reviewers do not need are left out" -xF "## Pack Loading Rules"
 # fw-gin.md does not exist, so no framework pack is added.
 assert_match_count "$(<"$p")" "0" "a framework without a pack adds nothing" -F "fw-gin.md"
-order=$(grep -n -xF -e "$sev_first" -e "## Calibration Notes" -e "## Output Format" "$p" | cut -d: -f2- | tr '\n' '|')
-assert_equals "$order" "${sev_first}|## Calibration Notes|## Output Format|" "fixed order: severity, packs, output format"
+order=$(grep -n -xF -e "$sev_first" -e "## Calibration Notes" -e "## Evidence Discipline" -e "## Standards Anchors" -e "## Engineering Discipline" -e "## Output Format" "$p" | cut -d: -f2- | tr '\n' '|')
+assert_equals "$order" "${sev_first}|## Calibration Notes|## Evidence Discipline|## Standards Anchors|## Engineering Discipline|## Output Format|" "fixed order: severity, packs, discipline, output format"
 # The preamble is pasted verbatim with nothing substituted, so a `${...}`
 # placeholder in a copied section would reach every reviewer as literal text.
 # shellcheck disable=SC2016 # the literal two characters, not an expansion.
@@ -127,6 +134,24 @@ out=$(bash "$fake/review-council/scripts/rc-build-context.sh" "$s" 2>&1) || rc=$
 assert_equals "$rc" "1" "exits non-zero"
 assert_match_count "$out" "1" "names the file and heading" -F "lang-go.md has no '## Calibration Notes' section"
 rm -rf "$s" "$fake"
+
+echo "Test: a protocol missing a section the preamble copies stops the build"
+# The preamble carries four protocol sections; a rename in any of them must fail
+# the build rather than ship a preamble without the rule.
+for heading in "Evidence Discipline" "Standards Anchors" "Engineering Discipline" "Output Format"; do
+	fake=$(mktemp -d)
+	cp -R "$SCRIPT_DIR/../skills/review-council" "$fake/review-council"
+	protocol="$fake/review-council/references/reviewer-protocol.md"
+	sed "/^## $heading\$/d" "$protocol" >"$fake/protocol.md"
+	mv "$fake/protocol.md" "$protocol"
+	s=$(ctx_session go go-module a.go)
+	printf 'package a\n' >"$s/tree/a.go"
+	rc=0
+	out=$(bash "$fake/review-council/scripts/rc-build-context.sh" "$s" 2>&1) || rc=$?
+	assert_equals "$rc" "1" "$heading: exits non-zero"
+	assert_match_count "$out" "1" "$heading: names the file and heading" -F "reviewer-protocol.md has no '## $heading' section"
+	rm -rf "$s" "$fake"
+done
 
 # Append a diff section for <path> whose new side is lines <start>..<end>.
 add_hunk() { # session path start end

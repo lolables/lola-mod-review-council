@@ -103,11 +103,21 @@ preamble="$prompts_tmp/preamble.md"
 # pack_id/version is bookkeeping, and in markdown the key lines plus the closing
 # fence render as a heading in the middle of the prompt.
 severity_text=$(awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$severity_file")
-output_format=$(md_section "$refs_dir/reviewer-protocol.md" "Output Format")
+# The protocol's other sections reach reviewers only if they open the file, and
+# none did in 30 measured runs, so the ones that live nowhere else are copied in
+# with Output Format. Pack Loading Rules, Severity Self-Check, Proportionality
+# and Verdict are reached through the packs, the persona files and the
+# delegation prompt, and stay out.
+protocol_headings=("Evidence Discipline" "Standards Anchors" "Engineering Discipline" "Output Format")
+protocol_text=""
+for heading in "${protocol_headings[@]}"; do
+	section=$(md_section "$refs_dir/reviewer-protocol.md" "$heading")
+	protocol_text+="${protocol_text:+$'\n\n'}${section}"
+done
 {
 	echo "# Review context"
 	echo ""
-	echo "This section is part of your instructions, identical for every reviewer in this run. It holds the severity definitions, the calibration notes of the convention packs selected for this change, and the verdict output format. You do not need to open these files."
+	echo "This section is part of your instructions, identical for every reviewer in this run. It holds the severity definitions, the calibration notes of the convention packs selected for this change, the review discipline, and the verdict output format. You do not need to open these files."
 	echo ""
 	echo "---"
 	echo ""
@@ -134,7 +144,7 @@ output_format=$(md_section "$refs_dir/reviewer-protocol.md" "Output Format")
 	echo ""
 	echo "**From \`references/reviewer-protocol.md\`:**"
 	echo ""
-	printf '%s\n' "$output_format"
+	printf '%s\n' "$protocol_text"
 } >"$preamble"
 
 # ============================================================================

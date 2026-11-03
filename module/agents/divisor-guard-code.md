@@ -119,6 +119,7 @@ the finding rather than asserting an absence you had no document to check.
   - Constitution changes: do downstream configurations remain aligned?
   - Shared contracts, schemas, or interfaces: do existing consumers remain valid?
   - Shared tooling, templates, or commands: do dependent artifacts need updating?
+  - A new denial, validation, allowlist or enforcement rule: search the repo for what emits the input it restricts (templates, scaffolds, generators, fixtures, docs, other components' instructions) and read each one. A producer often builds that input as a string and never calls the rule, so searching for the rule's callers is not enough. A producer the rule now rejects is a contract break: anchor the finding to the new rule and name the producer's path and quoted line in `description`. No producer found, or every producer still passes, is not a finding.
 - Apply project-specific neighborhood checks from convention pack.
 - Does change introduce contradictions with existing docs or user-facing interfaces?
 - Existing workflows preserved without regression?

@@ -1,0 +1,98 @@
+.lola-eval/tests/case-033-go-producer-contract/prompt.md
+  h_4db53f42b9be42 1-7
+.lola-eval/tests/case-033-go-producer-contract/rubric.md
+  h_4db53f42b9be42 1-118
+.lola-eval/tests/case-033-go-producer-contract/scaffold.sh
+  h_4db53f42b9be42 1-102
+.lola-eval/tests/case-033-go-producer-contract/starter/README.md
+  h_4db53f42b9be42 1-11
+.lola-eval/tests/case-033-go-producer-contract/starter/cmd/gate/main.go
+  h_4db53f42b9be42 1-43
+.lola-eval/tests/case-033-go-producer-contract/starter/docs/allowlist.md
+  h_4db53f42b9be42 1-4
+.lola-eval/tests/case-033-go-producer-contract/starter/docs/operations.md
+  h_4db53f42b9be42 1-5
+.lola-eval/tests/case-033-go-producer-contract/starter/docs/overview.md
+  h_4db53f42b9be42 1-6
+.lola-eval/tests/case-033-go-producer-contract/starter/gate.go
+  h_4db53f42b9be42 1-30
+.lola-eval/tests/case-033-go-producer-contract/starter/gate_test.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/go.mod
+  h_4db53f42b9be42 1-3
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/archive/archive.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/archive/archive_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/audit/audit.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/audit/audit_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/cache/cache.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/cache/cache_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/envx/envx.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/envx/envx_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/envx/expand.go
+  h_4db53f42b9be42 1-9
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/envx/expand_test.go
+  h_4db53f42b9be42 1-10
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/lint/lint.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/lint/lint_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/metrics/metrics.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/metrics/metrics_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/newjob/spec.go
+  h_4db53f42b9be42 1-20
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/newjob/spec_test.go
+  h_4db53f42b9be42 1-17
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/notify/notify.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/notify/notify_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/report/report.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/report/report_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/retry/retry.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/retry/retry_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/schedule/schedule.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/schedule/schedule_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/store/store.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/store/store_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/tenant/tenant.go
+  h_4db53f42b9be42 1-28
+.lola-eval/tests/case-033-go-producer-contract/starter/internal/tenant/tenant_test.go
+  h_4db53f42b9be42 1-18
+.lola-eval/tests/case-033-go-producer-contract/starter/runner.go
+  h_4db53f42b9be42 1-46
+.lola-eval/tests/case-033-go-producer-contract/starter/runner_test.go
+  h_4db53f42b9be42 1-30
+.lola-eval/tests/case-033-go-producer-contract/task.yaml
+  h_4db53f42b9be42 1-47
+module/agents/divisor-guard-code.md
+  h_4db53f42b9be42 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b51865df6a3914ba2265e42c8f4d35c324d352ea",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

@@ -216,7 +216,7 @@ no_temp_files() {
 }
 
 # Assert note <id> was retired: the obsolete banner as its first line, linking
-# the new verdict, then a blank line, then the original body intact.
+# the new verdict, then the original body intact inside a <details> block.
 assert_retired() { # state id original label
 	local body first
 	note_body "$1" "$2"
@@ -224,7 +224,7 @@ assert_retired() { # state id original label
 	first=$(head -n 1 "$1/note.$2")
 	if jq -en --arg b "$first" --arg re "$BANNER_RE" '$b | test($re)' >/dev/null &&
 		[[ "$first" == *"/-/merge_requests/7#note_"* ]] &&
-		[[ "$body" == "$first"$'\n\n'"$3" ]]; then
+		[[ "$body" == "$first"$'\n\n<details>\n<summary>Superseded review</summary>\n\n'"$3"$'\n\n</details>' ]]; then
 		echo "  PASS: $4"
 		PASS=$((PASS + 1))
 	else

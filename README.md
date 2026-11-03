@@ -430,7 +430,8 @@ GitHub is supported via `gh` and GitLab via `glab` (merge request notes, on
 gitlab.com or any self-hosted host `glab` is logged in to). When the CLI is
 absent or the forge is neither, the comment body is rendered to a file and you
 post it manually — nothing is sent silently. GitLab cannot hide a note, so a
-superseded GitLab verdict keeps an "Obsolete" banner but stays expanded.
+superseded GitLab verdict keeps an "Obsolete" banner and folds the rest of the
+note into a collapsed `<details>` block.
 
 On a re-review, that same marker also tells Prepare where the council's prior
 verdict landed: it fetches PR conversation replies posted since then so the

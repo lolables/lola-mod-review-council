@@ -658,8 +658,9 @@ Reviewers skip documents they are only told to open (issue #101), so this step
 builds what Step 3 hands them instead, from `batch-plan.json` as it stands:
 
 - `${session_dir}/prompts/preamble.md` — severity definitions, the selected
-  packs' calibration notes and the verdict output format. Pasted verbatim at
-  the top of every code-review prompt.
+  packs' calibration notes, the protocol's evidence, standards and engineering
+  discipline, and the verdict output format. Pasted verbatim at the top of
+  every code-review prompt.
 - `${session_dir}/prompts/[<subsystem>/]batch{N}-context.md` — one bundle per
   round holding the line-numbered text of that round's changed files, up to a
   per-file and a per-bundle size cap. Files left out are listed under its

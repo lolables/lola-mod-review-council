@@ -165,8 +165,9 @@ agents.
 `${session_dir}/prompts/preamble.md` (SKILL.md Step 2.7), pasted verbatim
 before any persona-specific text. Edit nothing in it, and do not paraphrase or
 abridge it. It carries the severity definitions, the selected packs'
-calibration notes and the verdict output format, which reviewers skipped when
-they were only told to open the files (issue #101). It is byte-identical
+calibration notes, the protocol's evidence, standards and engineering discipline
+and the verdict output format, which reviewers skipped when they were only told
+to open the files (issue #101). It is byte-identical
 across personas and rounds, so a host that caches prompt prefixes reuses it
 for every dispatch (#30); persona-specific text placed before it would break
 that prefix. That includes a persona file inlined on the fallback dispatch path

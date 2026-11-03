@@ -18,7 +18,8 @@ rc_require_timeout # this script makes forge calls; fail before any side effect
 # same statuses and payloads; the reasoning behind each policy lives there and
 # is not repeated here. What differs is GitLab's: notes instead of issue
 # comments, a numeric author id instead of a login, a paginated listing, and no
-# "minimize" — a retired note keeps its obsolete banner and stays expanded.
+# "minimize" — a retired note keeps its obsolete banner and folds its original
+# body into a <details> block instead.
 #
 # Merge request presence is guaranteed by the router; this script reads it for
 # the API. Posting needs the user's recorded `Post intent: yes` in session.txt
@@ -295,10 +296,12 @@ fi
 sha_key="${RC_HEAD_SHA:-unknown}"
 total="$RC_COMMENT_PARTS"
 
-# Mark a note obsolete. Banner first, original body below, the banner line
-# byte-identical to GitHub's: the batch status scripts read exactly that first
-# line as "collapsed". GitLab has no way to hide a note, and deleting one would
-# take a maintainer's reply context with it, so the banner is the whole of it.
+# Mark a note obsolete. Banner first, original body below inside a <details>
+# block, the banner line byte-identical to GitHub's: the batch status scripts
+# read exactly that first line as "collapsed". GitLab has no way to hide a note,
+# and deleting one would take a maintainer's reply context with it, so the
+# banner stays visible and <details> folds the rest. The blank lines around the
+# body are required: without them GitLab does not render the markdown inside.
 #
 # A note counts as already retired only when its FIRST line, carriage returns
 # dropped, is that banner — the test scripts/lib/forge-gitlab.sh applies, with
@@ -319,7 +322,11 @@ gl_retire() { # id current_url
 	{
 		echo "> **Obsolete.** Superseded by the [current Review Council verdict](${url}) for commit \`${RC_SHORT_SHA}\`. <!-- review-council:obsolete -->"
 		echo ""
+		echo "<details>"
+		echo "<summary>Superseded review</summary>"
+		echo ""
 		printf '%s' "$old_body"
+		printf '\n\n</details>\n'
 	} >"$supersede_file"
 	gl_update "$id" "$supersede_file"
 }

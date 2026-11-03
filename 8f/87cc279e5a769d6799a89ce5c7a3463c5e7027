@@ -1,0 +1,19 @@
+module/agents/divisor-guard-code.md
+  s_879caca7efa72e::t_3b05450f46eb73 122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8f87cc279e5a769d6799a89ce5c7a3463c5e7027",
+  "prompts": {},
+  "sessions": {
+    "s_879caca7efa72e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4b95047-b178-42d2-9e47-fe75d7ef463f",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

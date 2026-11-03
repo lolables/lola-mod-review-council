@@ -1,0 +1,23 @@
+module/skills/review-council/scripts/rc-post-comment-gitlab.sh
+  s_f8d82cce338968::t_fdb17835e498db 21-22,299-304,325-327,329
+module/tests/test-rc-post-comment-gitlab.sh
+  s_f8d82cce338968::t_fdb17835e498db 219,227
+README.md
+  s_f8d82cce338968::t_fdb17835e498db 433-434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d47eae58dc6b165bf1a211ee03f0c4b6cc8cd349",
+  "prompts": {},
+  "sessions": {
+    "s_f8d82cce338968": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d27f6053-77b9-4220-8873-38e41fcfb555",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

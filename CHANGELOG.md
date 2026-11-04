@@ -5,6 +5,31 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org); do not edit it by hand — run
 `task release:bump` instead.
 
+## [0.2.0] - 2026-11-04
+
+### 🚀 Features
+
+- *(prepare)* Resolve the severity pack once per run
+- *(verify)* Apply a configured Severity override
+- *(guard)* Trace producers of newly restricted input
+- *(gitlab)* Fold retired verdict body into <details> block
+
+### 🐛 Bug Fixes
+
+- *(skill)* Resolve an argless review's target from the conversation
+- *(extract)* Say which jsonschema was rejected and why
+- *(context)* Copy the protocol's discipline sections into the preamble
+
+### 📚 Documentation
+
+- Add a guide to tuning severity per project
+- *(agents)* Make token-conservative testing the default
+- *(protocol)* Budget reviewer description at ~1,200 characters
+
+### 🧪 Testing
+
+- *(mutate)* Make RC-165 and RC-185 mutants fail, not abort
+
 ## [0.1.0] - 2026-10-27
 
 ### 🚀 Features

@@ -1,0 +1,18 @@
+CHANGELOG.md
+  h_4db53f42b9be42 8-32
+VERSION
+  h_4db53f42b9be42 1
+module/skills/review-council/VERSION
+  h_4db53f42b9be42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1447f2b5c58dfe91c100099de942507de9b7b525",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

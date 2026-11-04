@@ -1,0 +1,14 @@
+module/skills/review-council/VERSION
+  h_4db53f42b9be42 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea262708e196c04b519f404d30624f0eb463bf0d",
+  "prompts": {},
+  "humans": {
+    "h_4db53f42b9be42": {
+      "author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

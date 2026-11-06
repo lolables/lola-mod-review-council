@@ -67,9 +67,10 @@
 # opencode selects the command with --command and hands the message to it as
 # $ARGUMENTS. Everything after the command name is identical between them.
 #
-# claude is preferred when both are installed. --cli <claude|opencode> picks one
-# explicitly, and fails if that one is not on PATH rather than falling back —
-# the two hosts do not cost the same or reach the same models.
+# With both installed, --cli <claude|opencode> is required: the script refuses
+# to guess, because EXTRA_AGENT_ARGS carries host-specific flags. --cli fails
+# if the named CLI is not on PATH rather than falling back — the two hosts do
+# not cost the same or reach the same models.
 #
 # The auto-send directive and the effort word are natural-language tokens
 # interpreted by the review-council command itself (run at the chosen depth,
@@ -279,12 +280,16 @@
 #                       the API spend of each individual PR review. opencode
 #                       has no equivalent flag, so asking for a cap on an
 #                       opencode run is an error rather than an uncapped batch.
-#   EXTRA_CLAUDE_ARGS   Extra whitespace-separated args appended to every
-#                       claude invocation (e.g. "--model opus"). Naming an
-#                       --output-format here replaces the streaming default
-#                       described under Watching a run, and with it the
-#                       progress rendering that reads those events.
-#   EXTRA_OPENCODE_ARGS The same, for opencode (e.g. "--model anthropic/opus").
+#   EXTRA_AGENT_ARGS    Extra whitespace-separated args appended to every
+#                       invocation of the selected CLI (e.g. "--model opus"
+#                       for claude, "--model anthropic/opus" for opencode).
+#                       Flags are host-specific, so pin the host with --cli in
+#                       CI: if the one installed CLI changes, auto-detection
+#                       follows it. Under claude, naming an --output-format
+#                       here replaces the streaming default described under
+#                       Watching a run, and with it the progress rendering
+#                       that reads those events. The retired EXTRA_CLAUDE_ARGS
+#                       and EXTRA_OPENCODE_ARGS are rejected, not aliased.
 #   DEEP_FILES          changedFiles at or above this force deep effort (default 10).
 #   QUICK_FILES         bot PRs at or below this many files get quick effort (default 2).
 #   SECURITY_PATHS      Extended-regex; any changed path matching it (case-
@@ -373,7 +378,7 @@ RUN=0
 FORCE=0
 YES=0 # consent to the forge edits given up front, so --run does not prompt
 FORCE_EFFORT=""
-FORCE_CLI=""      # --cli; empty => detect, preferring claude
+FORCE_CLI=""      # --cli; empty => detect, failing if both are installed
 IGNORE_APPROVED=0 # --ignore-approved; read by classify_prs
 LOG_DIR="./.review-council-logs"
 
@@ -550,22 +555,44 @@ require_commands "$FORGE_CLI"
 # shellcheck source=scripts/lib/forge-github.sh
 source "$LIB_DIR/forge-${FORGE}.sh"
 
+# The per-host passthroughs were merged into EXTRA_AGENT_ARGS. Ignoring a
+# leftover one would drop flags such as --model unnoticed in an unattended run.
+for legacy_var in EXTRA_CLAUDE_ARGS EXTRA_OPENCODE_ARGS; do
+	if [[ -n "${!legacy_var:-}" ]]; then
+		echo "${legacy_var} is no longer supported; use EXTRA_AGENT_ARGS." >&2
+		exit 2
+	fi
+done
+
 # Pick the agent CLI that will run the council. --cli is a demand, not a
 # preference: falling back to the other host would silently change which models
-# review the code and what the batch costs.
+# review the code and what the batch costs. Without it, the choice must be
+# unambiguous, since EXTRA_AGENT_ARGS flags only suit one host.
 if [[ -n "$FORCE_CLI" ]]; then
 	command -v "$FORCE_CLI" >/dev/null 2>&1 || {
 		echo "--cli ${FORCE_CLI} was requested but ${FORCE_CLI} is not on PATH." >&2
 		exit 1
 	}
 	AGENT_CLI="$FORCE_CLI"
-elif command -v claude >/dev/null 2>&1; then
-	AGENT_CLI="claude"
-elif command -v opencode >/dev/null 2>&1; then
-	AGENT_CLI="opencode"
 else
-	echo "No agent CLI found: install claude or opencode, or pass --cli." >&2
-	exit 1
+	found_clis=()
+	for candidate in claude opencode; do
+		if command -v "$candidate" >/dev/null 2>&1; then
+			found_clis+=("$candidate")
+		fi
+	done
+	case "${#found_clis[@]}" in
+	0)
+		echo "No agent CLI found: install claude or opencode, or pass --cli." >&2
+		exit 1
+		;;
+	1) AGENT_CLI="${found_clis[0]}" ;;
+	*)
+		echo "Found more than one agent CLI on PATH: ${found_clis[*]}." >&2
+		echo "Pass --cli <${found_clis[*]// /|}> to choose; EXTRA_AGENT_ARGS flags are host-specific." >&2
+		exit 2
+		;;
+	esac
 fi
 
 # How the chosen CLI is told to stop asking. Named in the confirmation prompt,
@@ -838,12 +865,6 @@ for pr in "${QUEUE[@]}"; do
 	render=(cat)
 	if [[ "$AGENT_CLI" = "opencode" ]]; then
 		cmd=(opencode run --command review-council --auto "$council_args")
-		if [[ -n "${EXTRA_OPENCODE_ARGS:-}" ]]; then
-			# Intentional word-splitting so EXTRA_OPENCODE_ARGS="--model x/y"
-			# expands into separate arguments.
-			# shellcheck disable=SC2206
-			cmd+=(${EXTRA_OPENCODE_ARGS})
-		fi
 	else
 		cmd=(claude -p "/review-council ${council_args}" --permission-mode bypassPermissions)
 		# A council review runs for tens of minutes with nothing to show for it:
@@ -853,22 +874,22 @@ for pr in "${QUEUE[@]}"; do
 		# structured events instead — the log keeps them verbatim for a later
 		# pass, and PROGRESS_FILTER renders them a line at a time for the
 		# terminal. --verbose is not decoration: --print rejects stream-json
-		# without it. An operator who names a format in EXTRA_CLAUDE_ARGS gets
+		# without it. An operator who names a format in EXTRA_AGENT_ARGS gets
 		# that one alone rather than two --output-format flags whose winner is
 		# decided by claude's argument parser.
-		if [[ "${EXTRA_CLAUDE_ARGS:-}" != *--output-format* ]]; then
+		if [[ "${EXTRA_AGENT_ARGS:-}" != *--output-format* ]]; then
 			cmd+=(--output-format stream-json --verbose)
 			render=(jq -Rr --unbuffered "$PROGRESS_FILTER")
 		fi
 		if [[ -n "${MAX_BUDGET_USD:-}" ]]; then
 			cmd+=(--max-budget-usd "$MAX_BUDGET_USD")
 		fi
-		if [[ -n "${EXTRA_CLAUDE_ARGS:-}" ]]; then
-			# Intentional word-splitting so EXTRA_CLAUDE_ARGS="--model opus"
-			# expands into separate arguments.
-			# shellcheck disable=SC2206
-			cmd+=(${EXTRA_CLAUDE_ARGS})
-		fi
+	fi
+	if [[ -n "${EXTRA_AGENT_ARGS:-}" ]]; then
+		# Intentional word-splitting so EXTRA_AGENT_ARGS="--model opus"
+		# expands into separate arguments.
+		# shellcheck disable=SC2206
+		cmd+=(${EXTRA_AGENT_ARGS})
 	fi
 	# The council's own glab calls default to glab's default host, so it is
 	# pointed at the host forge_auth_check has just verified rather than

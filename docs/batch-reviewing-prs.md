@@ -165,8 +165,14 @@ and they are costed like anything else: `quick` only when the PR touches at most
 | `IGNORE_EMAILS`   | Dependabot + Renovate | **replaces** the ignored-author list; empty means ignore nobody |
 | `REREVIEW_PER_HOUR` | unset | default for `--requests-per-hour`; unset or empty means no cap, and a non-numeric value exits 2 rather than reading as unlimited |
 | `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
-| `EXTRA_CLAUDE_ARGS` | unset | appended to every `claude` invocation, e.g. `--model opus` |
-| `EXTRA_OPENCODE_ARGS` | unset | appended to every `opencode` invocation                |
+| `EXTRA_AGENT_ARGS` | unset | appended to every invocation of the selected CLI, e.g. `--model opus` (claude) or `--model anthropic/opus` (opencode) |
+
+`EXTRA_AGENT_ARGS` replaces `EXTRA_CLAUDE_ARGS` and `EXTRA_OPENCODE_ARGS`. Either
+old name, if set and non-empty, exits 2 naming the replacement; it is not
+aliased, because an ignored passthrough could silently drop `--model`. Flags
+are host-specific, so in CI pin the host with `--cli`: with a single CLI
+installed, auto-detection follows whichever it is, and the flags would reach a
+host they were not written for.
 
 `opencode run` has no budget flag to translate `MAX_BUDGET_USD` into, so setting
 both it and an opencode run is an error. Ignoring the cap would run the whole
@@ -366,9 +372,10 @@ its review decision says.
 
 ## Which CLI runs the council
 
-`claude` is preferred when both are installed; otherwise whichever is on `PATH`
-is used, and `--cli claude|opencode` picks one explicitly. A `--cli` that is not
-installed is an error rather than a silent fallback — the two hosts do not reach
+When exactly one of `claude` and `opencode` is on `PATH` it is used. When both
+are, the script exits 2 naming them and asks for `--cli claude|opencode`, before
+any forge call: `EXTRA_AGENT_ARGS` is host-specific, so the host must be
+unambiguous. A `--cli` that is not installed is an error rather than a silent fallback — the two hosts do not reach
 the same models or cost the same. Each host is told which command the arguments
 belong to by the route it provides — `claude` expands a leading `/review-council`
 inside the prompt it is given, `opencode` selects the command with `--command`
@@ -458,7 +465,7 @@ verify — and that PR is reported as `exited 0 but posted no new or edited
 verdict`, or as `could not read the comments to confirm a verdict was posted`
 when the second read fails.
 
-Set `EXTRA_CLAUDE_ARGS="--output-format json"` to choose a different format;
+Under claude, set `EXTRA_AGENT_ARGS="--output-format json"` to choose a different format;
 that replaces the streaming default and the progress rendering along with it.
 
 ## GitLab merge requests

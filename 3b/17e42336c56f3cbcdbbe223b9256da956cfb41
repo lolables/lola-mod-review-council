@@ -1,0 +1,20 @@
+module/agents/divisor-guard-code.md
+  s_fc82f17778510f::t_55709637c2f9f3 123
+  s_fc82f17778510f::t_da8929c951fcce 164,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3b17e42336c56f3cbcdbbe223b9256da956cfb41",
+  "prompts": {},
+  "sessions": {
+    "s_fc82f17778510f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5afdc989-98a3-4523-ba00-74f4277c28d7",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

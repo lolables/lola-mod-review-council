@@ -1,0 +1,94 @@
+.lola-eval/tests/case-034-shadow-constants/task.yaml
+  s_fc82f17778510f::t_797db96fdf6229 1-39
+.lola-eval/tests/case-034-shadow-constants/rubric.md
+  s_fc82f17778510f::t_797db96fdf6229 1-109
+  s_fc82f17778510f::t_c9336fd441aa0a 110
+.lola-eval/tests/case-034-shadow-constants/starter/internal/report/report_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/schedule/schedule.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/schedule/schedule_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/docs/changelog.md
+  s_fc82f17778510f::t_628d283c6e2432 1-3
+.lola-eval/tests/case-034-shadow-constants/starter/go.mod
+  s_fc82f17778510f::t_628d283c6e2432 1-3
+.lola-eval/tests/case-034-shadow-constants/starter/internal/tenant/tenant_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/metrics/metrics_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/audit/audit.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/docs/operations.md
+  s_fc82f17778510f::t_628d283c6e2432 1-3
+.lola-eval/tests/case-034-shadow-constants/starter/internal/cache/cache_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/metrics/metrics.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/notify/notify.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/store/store_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/pins/pins_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-28
+.lola-eval/tests/case-034-shadow-constants/starter/internal/envx/envx_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/archive/archive_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/README.md
+  s_fc82f17778510f::t_628d283c6e2432 1-13
+.lola-eval/tests/case-034-shadow-constants/scaffold.sh
+  s_fc82f17778510f::t_797db96fdf6229 1-97
+.lola-eval/tests/case-034-shadow-constants/starter/docs/overview.md
+  s_fc82f17778510f::t_628d283c6e2432 1-3
+.lola-eval/tests/case-034-shadow-constants/starter/internal/tenant/tenant.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/pins/pins.go
+  s_fc82f17778510f::t_628d283c6e2432 1-34
+.lola-eval/tests/case-034-shadow-constants/starter/internal/lint/lint_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/retry/retry.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/retry/retry_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/cache/cache.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/report/report.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/lint/lint.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/internal/archive/archive.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/cmd/pinbox/main.go
+  s_fc82f17778510f::t_628d283c6e2432 1-18
+.lola-eval/tests/case-034-shadow-constants/starter/internal/notify/notify_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/store/store.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/prompt.md
+  s_fc82f17778510f::t_797db96fdf6229 1-7
+.lola-eval/tests/case-034-shadow-constants/starter/internal/audit/audit_test.go
+  s_fc82f17778510f::t_628d283c6e2432 1-9
+.lola-eval/tests/case-034-shadow-constants/starter/internal/envx/envx.go
+  s_fc82f17778510f::t_628d283c6e2432 1-8
+.lola-eval/tests/case-034-shadow-constants/starter/pins/fixtures.lock
+  s_fc82f17778510f::t_562c6fe9df48ab 1-2
+.lola-eval/tests/case-034-shadow-constants/starter/pins/tools.lock
+  s_fc82f17778510f::t_68095889a273a4 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a01bf9222bdd442fadfa3a374d8da29dcd510930",
+  "prompts": {},
+  "sessions": {
+    "s_fc82f17778510f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5afdc989-98a3-4523-ba00-74f4277c28d7",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

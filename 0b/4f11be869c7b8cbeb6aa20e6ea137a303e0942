@@ -1,0 +1,20 @@
+module/agents/divisor-curator-code.md
+  s_fc82f17778510f::t_92cbeb608bf8d8 278
+  s_fc82f17778510f::t_aada2d232a28ee 185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "0b4f11be869c7b8cbeb6aa20e6ea137a303e0942",
+  "prompts": {},
+  "sessions": {
+    "s_fc82f17778510f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5afdc989-98a3-4523-ba00-74f4277c28d7",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

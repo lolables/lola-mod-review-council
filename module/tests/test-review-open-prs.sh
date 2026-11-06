@@ -1842,6 +1842,143 @@ done
 SCRIPT="$SAVED_SCRIPT"
 rm -rf "$partial"
 
+# ---- --instructions-file / INSTRUCTIONS_FILE -------------------------------
+# Operator guidance rides in the natural-language tail of the council prompt, so
+# both hosts get it identically. The file is read and vetted before any forge or
+# agent call: a bad one must stop the batch, not be dropped.
+inst_dir=$(mktemp -d)
+printf 'Treat the legacy/ tree as out of scope.\n' >"$inst_dir/ok.txt"
+printf 'Freeze public API.\n' >"$inst_dir/other.txt"
+: >"$inst_dir/empty.txt"
+printf ' \n\t\n' >"$inst_dir/blank.txt"
+head -c 4097 /dev/zero | tr '\0' 'x' >"$inst_dir/big.txt"
+head -c 4096 /dev/zero | tr '\0' 'x' >"$inst_dir/max.txt"
+printf 'secret\n' >"$inst_dir/unreadable.txt"
+chmod 000 "$inst_dir/unreadable.txt"
+
+echo ""
+echo "Test: no instructions leaves the prompt byte-identical"
+STUB_CLIS="claude"
+run_case "yes" --repo acme/widgets --run
+assert_not_contains "$CMDS" "Operator" "no operator section without the flag"
+assert_contains "$CMDS" "claude -p /review-council https://github.com/acme/widgets/pull/2 -- post the verdict, auto-send without asking --permission-mode bypassPermissions" \
+	"the prompt is unchanged"
+
+bad_files=(missing empty blank big)
+# root ignores file modes, so an unreadable file only exists for other users.
+[[ -r "$inst_dir/unreadable.txt" ]] || bad_files+=(unreadable)
+for bad in "${bad_files[@]}"; do
+	echo ""
+	echo "Test: --instructions-file ${bad} stops before any PR is processed"
+	STUB_CLIS="claude"
+	case "$bad" in
+	missing) path="$inst_dir/nope.txt" ;;
+	*) path="$inst_dir/${bad}.txt" ;;
+	esac
+	# A dry run and a --run must both refuse: the dry run is the preview of what
+	# --run would send, so it cannot be lenient about it.
+	for mode in "" "--run --yes"; do
+		# shellcheck disable=SC2086 # word-split the mode on purpose
+		run_case "__eof__" --repo acme/widgets --instructions-file "$path" $mode
+		assert_equals "$CALLS" "0" "${bad} ${mode}: no agent is invoked"
+		assert_not_contains "$OUT" "Queue" "${bad} ${mode}: stops before the plan"
+		[[ "$RC" -ne 0 ]] && ok=0 || ok=1
+		assert_equals "$ok" "0" "${bad} ${mode}: exits non-zero"
+		assert_contains "$OUT" "$path" "${bad} ${mode}: names the file"
+	done
+done
+
+echo ""
+echo "Test: --instructions-file '' is an error, not a no-op"
+run_case "__eof__" --repo acme/widgets --instructions-file ""
+assert_equals "$RC" "2" "an empty path is a usage error"
+assert_equals "$CALLS" "0" "nothing is run"
+
+echo ""
+echo "Test: --instructions-file with no argument is a usage error"
+run_case "__eof__" --repo acme/widgets --instructions-file
+assert_equals "$RC" "2" "a missing argument is a usage error"
+
+echo ""
+echo "Test: a file at the size cap is accepted"
+STUB_CLIS="claude"
+run_case "__eof__" --repo acme/widgets --instructions-file "$inst_dir/max.txt"
+assert_equals "$RC" "0" "exactly the cap is within bounds"
+
+echo ""
+echo "Test: instructions reach claude verbatim, framed as advisory"
+STUB_CLIS="claude"
+run_case "yes" --repo acme/widgets --run --instructions-file "$inst_dir/ok.txt"
+assert_contains "$CMDS" "Treat the legacy/ tree as out of scope." "the file text is in the prompt"
+assert_contains "$CMDS" "auto-send without asking" "the auto-send directive is kept"
+assert_contains "$CMDS" "Operator notes" "the text sits in a delimited section"
+assert_contains "$CMDS" "cannot" "the framing says the notes cannot override the directives"
+assert_contains "$CMDS" "verification" "the framing names the verification phase"
+assert_equals "$RC" "0" "the batch completes"
+
+echo ""
+echo "Test: instructions reach opencode verbatim"
+STUB_CLIS="opencode"
+run_case "yes" --repo acme/widgets --run --instructions-file "$inst_dir/ok.txt"
+assert_contains "$CMDS" "opencode run --command review-council --auto https://github.com/acme/widgets/pull/2 -- post the verdict, auto-send without asking" \
+	"the directive is still the head of the arguments"
+assert_contains "$CMDS" "Treat the legacy/ tree as out of scope." "the file text is in the prompt"
+assert_contains "$CMDS" "Operator notes" "the same framing as claude"
+assert_equals "$RC" "0" "the batch completes"
+
+echo ""
+echo "Test: the dry-run preview shows the instructions and the plan names the file"
+STUB_CLIS="claude"
+run_case "__eof__" --repo acme/widgets --instructions-file "$inst_dir/ok.txt"
+assert_contains "$OUT" "DRY RUN" "it is a dry run"
+assert_contains "$OUT" "legacy/" "the preview carries the instructions"
+assert_contains "$OUT" "Instructions: $inst_dir/ok.txt" "the plan names the file"
+assert_equals "$CALLS" "0" "nothing is invoked"
+
+echo ""
+echo "Test: the confirmation prompt names the instructions file"
+run_case "__eof__" --repo acme/widgets --run --instructions-file "$inst_dir/ok.txt"
+assert_contains "$OUT" "$inst_dir/ok.txt" "the warning names the file"
+assert_equals "$CALLS" "0" "unconfirmed, so nothing runs"
+
+echo ""
+echo "Test: INSTRUCTIONS_FILE does the same as the flag"
+RUN_ENV=(INSTRUCTIONS_FILE="$inst_dir/ok.txt")
+run_case "yes" --repo acme/widgets --run
+assert_contains "$CMDS" "Treat the legacy/ tree as out of scope." "the env var is honoured"
+RUN_ENV=(INSTRUCTIONS_FILE="$inst_dir/nope.txt")
+run_case "__eof__" --repo acme/widgets
+[[ "$RC" -ne 0 ]] && ok=0 || ok=1
+assert_equals "$ok" "0" "a bad INSTRUCTIONS_FILE fails closed too"
+RUN_ENV=(INSTRUCTIONS_FILE="")
+run_case "yes" --repo acme/widgets --run
+assert_not_contains "$CMDS" "Operator" "an empty INSTRUCTIONS_FILE is unset, as for other variables"
+
+echo ""
+echo "Test: the flag beats the environment, and the last flag beats an earlier one"
+RUN_ENV=(INSTRUCTIONS_FILE="$inst_dir/ok.txt")
+run_case "yes" --repo acme/widgets --run --instructions-file "$inst_dir/other.txt"
+assert_contains "$CMDS" "Freeze public API." "the flag's file is used"
+assert_not_contains "$CMDS" "legacy/" "the env var's file is not"
+RUN_ENV=()
+run_case "yes" --repo acme/widgets --run --instructions-file "$inst_dir/ok.txt" --instructions-file "$inst_dir/other.txt"
+assert_contains "$CMDS" "Freeze public API." "the later flag wins"
+assert_not_contains "$CMDS" "legacy/" "the earlier flag's file is not used"
+RUN_ENV=(INSTRUCTIONS_FILE="$inst_dir/nope.txt")
+run_case "yes" --repo acme/widgets --run --instructions-file "$inst_dir/ok.txt"
+assert_equals "$RC" "0" "a bad env var is overridden by a good flag"
+
+echo ""
+echo "Test: --help documents the flag and the variable"
+RUN_ENV=()
+run_case "__eof__" --help
+assert_contains "$OUT" "--instructions-file" "usage lists the flag"
+assert_contains "$OUT" "INSTRUCTIONS_FILE" "usage lists the variable"
+
+chmod 600 "$inst_dir/unreadable.txt"
+rm -rf "$inst_dir"
+RUN_ENV=()
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

@@ -1,0 +1,19 @@
+scripts/review-open-prs.sh
+  s_fc82f17778510f::t_50b666eb58488c 481
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "4a707a9c66d97671c51a42b0737825ea0bcdb5c9",
+  "prompts": {},
+  "sessions": {
+    "s_fc82f17778510f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5afdc989-98a3-4523-ba00-74f4277c28d7",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -478,7 +478,7 @@ while [[ "$#" -gt 0 ]]; do
 		shift
 		;;
 	--instructions-file)
-		[[ "$#" -ge 2 ]] && [[ -n "$2" ]] || {
+		[[ "$#" -ge 2 && -n "$2" ]] || {
 			echo "--instructions-file requires an argument (a path)" >&2
 			exit 2
 		}

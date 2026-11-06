@@ -165,6 +165,7 @@ and they are costed like anything else: `quick` only when the PR touches at most
 | `IGNORE_EMAILS`   | Dependabot + Renovate | **replaces** the ignored-author list; empty means ignore nobody |
 | `REREVIEW_PER_HOUR` | unset | default for `--requests-per-hour`; unset or empty means no cap, and a non-numeric value exits 2 rather than reading as unlimited |
 | `MAX_BUDGET_USD`  | unset   | passed to `claude` to cap the spend of each PR review   |
+| `INSTRUCTIONS_FILE` | unset | default for `--instructions-file`; see [Adding run-specific guidance](#adding-run-specific-guidance) |
 | `EXTRA_AGENT_ARGS` | unset | appended to every invocation of the selected CLI, e.g. `--model opus` (claude) or `--model anthropic/opus` (opencode) |
 
 `EXTRA_AGENT_ARGS` replaces `EXTRA_CLAUDE_ARGS` and `EXTRA_OPENCODE_ARGS`. Either
@@ -386,6 +387,38 @@ and only that routing differs:
 PR #929 -> claude -p /review-council\ quick\ https://github.com/ovh/venom/pull/929\ ...
 PR #929 -> opencode run --command review-council --auto quick\ https://github.com/ovh/venom/pull/929\ ...
 ```
+
+## Adding run-specific guidance
+
+`--instructions-file <path>` (or `INSTRUCTIONS_FILE`) appends the file's text to
+every council prompt, for guidance that belongs to one run rather than to the
+script: "focus on the migration in `db/`", "treat `legacy/` as out of scope",
+"this release freezes public API". `claude` and `opencode` receive the same
+text. Where both the flag and the variable are set the flag wins, and of
+repeated flags the last wins. An empty variable means none.
+
+```
+./scripts/review-open-prs.sh --instructions-file /etc/ci/review-notes.txt --run
+```
+
+The prompt carries the text in a delimited `Operator notes` section, after the
+auto-send directive. The council reads unrecognised text as review instructions,
+so it narrows or steers the review as if you had typed it.
+
+- **The file must come from you, not from the PR.** The text is read by a
+  session running with permissions bypassed. Do not point the path inside a
+  checkout of the PR head, and do not let the PR change a file the path
+  resolves to: a change must not configure its own review.
+- **Bad files stop the run.** A missing, unreadable, empty (or whitespace-only)
+  file, or one over 4096 bytes, exits 1 before any PR is looked up. It is also
+  an error in a dry run. Nothing is truncated; trim the file instead.
+- **The notes are advisory.** The prompt tells the council they cannot change
+  the auto-send directive or skip or shorten verification. That is an
+  instruction to the model, not an enforced limit, so write notes you would be
+  content to see followed.
+- **You can see what will be sent.** The dry run prints the exact command with
+  the notes in it, the plan lists `Instructions: <file>`, and the `--run`
+  confirmation names the file.
 
 ## `--run` asks before it edits anything
 

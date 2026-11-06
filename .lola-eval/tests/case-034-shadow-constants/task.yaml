@@ -1,0 +1,39 @@
+---
+task_version: "2"
+description: |
+  Shadow copies of values owned elsewhere (issue: nothing asks reviewers
+  whether a new literal restates a pinned upstream value). The feature branch
+  of a small CI helper bumps lintkit in pins/tools.lock to 1.64.0 and adds
+  ci/setup.go. That file restates two owned values as constants:
+  fixtureSHA, a copy of pins/fixtures.lock (untouched, outside every hunk)
+  that VerifyFixture compares a checkout against, and lintkitVersion, a copy
+  of pins/tools.lock. README.md, also outside every hunk, still tells users to
+  install lintkit 1.62.2.
+
+  Expected findings: fixtureSHA HIGH (integrity gate on a copy), README
+  install steps HIGH (stale after the owner moved), lintkitVersion MEDIUM.
+
+  Decoys: the new docs/changelog.md line cites 1.62.2 on purpose (history),
+  and ci/setup_test.go feeds ParseVersion a made-up "v9.9.9". Flagging either
+  is a false positive.
+
+  The repo is padded to ~35 files so that reviewers do not simply read
+  everything. A low baseline score on a module commit without the shadow
+  constant criteria is expected. Do not "fix" it by moving fixtures.lock or
+  README.md into the diff.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-034-shadow-constants/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

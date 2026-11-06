@@ -182,6 +182,7 @@ Check documentation in changeset follows established project conventions:
 - **Doc directory organization**: Are new documentation files placed in correct directories following project's established layout?
 - **Inline documentation format**: Do new or modified inline docs (code comments, docstrings, JSDoc, GoDoc) follow project's established format conventions?
 - **Cross-reference consistency**: Do documentation references (links between docs, references to commands or APIs) point to correct, existing targets?
+- **Owned values**: Does a doc line the changeset adds, or leaves stale by changing the owner, restate a value owned by a pinned upstream or reviewed identity source (a tool version, a model id, a pinned SHA or digest, a hand-kept agent or skill inventory or count)? Read the owner and quote both lines (doc path:line and owner path:line); with no locatable owner there is no finding. Recommend linking to the owner, generating the text from it, or dropping the number. Do not report a historical record that cites an old value on purpose (a changelog entry) or the owner itself. A stale value in install steps a user would copy takes the existing install-steps severity row. Literals in code, configuration and tests belong to Guard.
 
 **Scope boundary**: Check documentation follows established conventions. Do NOT evaluate code quality, architectural patterns, or structural coherence — those belong to Guard.
 
@@ -274,6 +275,7 @@ Where `<TYPE>` is one of: `docs` (missing/outdated documentation), `blog` (blog 
 | Documentation cross-references broken by changeset                             | MEDIUM   |
 | User-facing change with documentation issue filed but project docs not updated | MEDIUM   |
 | Documentation convention violation (format, directory, structure)              | MEDIUM   |
+| Doc restates an owned value (version, model id, digest, agent inventory)       | MEDIUM   |
 | Significant capability without blog issue filed                                | LOW      |
 | New workflow without tutorial issue filed                                      | LOW      |
 | Minor documentation improvement opportunity                                    | LOW      |

@@ -120,6 +120,7 @@ the finding rather than asserting an absence you had no document to check.
   - Shared contracts, schemas, or interfaces: do existing consumers remain valid?
   - Shared tooling, templates, or commands: do dependent artifacts need updating?
   - A new denial, validation, allowlist or enforcement rule: search the repo for what emits the input it restricts (templates, scaffolds, generators, fixtures, docs, other components' instructions) and read each one. A producer often builds that input as a string and never calls the rule, so searching for the rule's callers is not enough. A producer the rule now rejects is a contract break: anchor the finding to the new rule and name the producer's path and quoted line in `description`. No producer found, or every producer still passes, is not a finding.
+  - A new literal in code, configuration, tests or fixtures that restates a value owned by a pinned upstream or reviewed identity source (a fixture SHA or digest, a tool version, a model id, an agent or skill inventory): read the owner and quote both lines. The copy is a second source of truth that drifts when the owner changes. Report it only when the owner can be located; a literal with no owner is just a constant. Do not report the owner itself, a test that pins a value on purpose to catch drift, a made-up value a test feeds a parser (`9.9.9`), or a pre-existing copy the same diff updates in lockstep with its owner. Recommend deriving the value from the owner, or a test asserting the two agree. Literals in documentation belong to the Curator.
 - Apply project-specific neighborhood checks from convention pack.
 - Does change introduce contradictions with existing docs or user-facing interfaces?
 - Existing workflows preserved without regression?
@@ -160,7 +161,9 @@ When a spec, design doc, or PR description cites an external standard (OSPS Base
 | Acceptance criterion from spec with no implementation                             | HIGH     |
 | Cross-component contract break without consumer updates                           | HIGH     |
 | Established structural pattern broken without documented reason                   | HIGH     |
+| Owned-value copy that an integrity or allowlist check compares against            | HIGH     |
 | Duplicated business logic across modules (maintenance waste)                      | MEDIUM   |
+| Owned-value copy kept in code, config or tests (version, model id, inventory)     | MEDIUM   |
 | Scope creep with maintenance cost only (gold plating)                             | MEDIUM   |
 | Stale cross-reference or metadata inconsistency                                   | MEDIUM   |
 | Trivial code duplication within single module                                     | LOW      |

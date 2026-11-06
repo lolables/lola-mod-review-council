@@ -20,9 +20,9 @@ source "$SCRIPT_DIR/helpers.sh"
 	exit 1
 }
 
-# Which agent CLIs the next run_case should find on PATH. Both by default, so
-# the detection tests set it and every other test exercises the normal machine.
-STUB_CLIS="claude opencode"
+# Which agent CLIs the next run_case should find on PATH. Only claude by default,
+# since several CLIs without --cli is an error; detection tests set it.
+STUB_CLIS="claude"
 
 # Build a temp bin dir whose gh answers every query the driver makes offline,
 # and whose agent CLIs record their argv instead of spending real money.
@@ -492,7 +492,7 @@ assert_contains "$OUT" "--cli" "usage lists --cli"
 # as prose, which fails late and expensively, so the exact argv is asserted.
 echo ""
 echo "Test: claude wins when both CLIs are installed"
-STUB_CLIS="claude opencode"
+STUB_CLIS="claude"
 run_case "yes" --repo acme/widgets --run
 assert_contains "$CMDS" "claude -p /review-council https://github.com/acme/widgets/pull/2 -- post the verdict, auto-send without asking --permission-mode bypassPermissions" \
 	"claude is invoked with the slash command inside the prompt"
@@ -512,8 +512,17 @@ echo ""
 echo "Test: --cli picks the host when both are installed"
 STUB_CLIS="claude opencode"
 run_case "yes" --repo acme/widgets --run --cli opencode
-assert_contains "$CMDS" "opencode run --command review-council --auto" "--cli opencode overrides the default"
+assert_contains "$CMDS" "opencode run --command review-council --auto" "--cli opencode picks opencode"
 assert_equals "$RC" "0" "the batch completes"
+
+echo ""
+echo "Test: several CLIs installed and no --cli fails closed"
+STUB_CLIS="claude opencode"
+run_case "yes" --repo acme/widgets --run
+assert_contains "$OUT" "claude opencode" "the error names both CLIs found"
+assert_contains "$OUT" "--cli" "the error names the flag that resolves it"
+assert_equals "$CALLS" "0" "no agent is invoked"
+assert_equals "$RC" "2" "the run fails"
 
 echo ""
 echo "Test: a CLI that is asked for but absent is an error, not a fallback"
@@ -540,7 +549,7 @@ printf '0.2.0\n' >"$vhome/.claude/skills/review-council/VERSION"
 printf '0.1.0+dev\n' >"$vhome/.config/opencode/skills/review-council/VERSION"
 RUN_ENV=(HOME="$vhome" CLAUDE_CONFIG_DIR= XDG_CONFIG_HOME=)
 STUB_CLIS="claude opencode"
-run_case "__eof__" --repo acme/widgets
+run_case "__eof__" --repo acme/widgets --cli claude
 assert_contains "$OUT" "Council version: v0.2.0 (user: $vhome/.claude/skills/review-council)" \
 	"a dry run names claude's installed council"
 assert_not_contains "$OUT" "opencode/skills" "the other host's install is not named"
@@ -548,7 +557,7 @@ run_case "__eof__" --repo acme/widgets --cli opencode
 assert_contains "$OUT" "Council version: unreleased, after v0.1.0 (user: $vhome/.config/opencode/skills/review-council)" \
 	"--cli opencode names opencode's installed council"
 rm -f "$vhome/.claude/skills/review-council/VERSION"
-run_case "yes" --repo acme/widgets --run
+run_case "yes" --repo acme/widgets --run --cli claude
 assert_contains "$OUT" "Council version: unknown (no VERSION stamp: installed before versions were stamped)" \
 	"a --run plan flags an install that predates version stamps"
 RUN_ENV=()
@@ -568,7 +577,7 @@ assert_equals "$RC" "1" "the run fails"
 # setting that says the opposite, so the mismatch stops the run instead.
 echo ""
 echo "Test: MAX_BUDGET_USD caps each claude review"
-STUB_CLIS="claude opencode"
+STUB_CLIS="claude"
 RUN_ENV=(MAX_BUDGET_USD=5)
 run_case "yes" --repo acme/widgets --run
 RUN_ENV=()
@@ -586,17 +595,33 @@ assert_equals "$CALLS" "0" "no PR is reviewed uncapped"
 assert_equals "$RC" "2" "the run fails"
 
 echo ""
-echo "Test: each CLI has its own extra-args knob"
+echo "Test: EXTRA_AGENT_ARGS reaches whichever CLI was selected"
 STUB_CLIS="claude opencode"
-RUN_ENV=(EXTRA_CLAUDE_ARGS=--model=opus EXTRA_OPENCODE_ARGS=--model=zen)
-run_case "yes" --repo acme/widgets --run
-assert_contains "$CMDS" "--model=opus" "EXTRA_CLAUDE_ARGS reaches claude"
-assert_not_contains "$CMDS" "--model=zen" "EXTRA_OPENCODE_ARGS does not leak into claude"
+RUN_ENV=(EXTRA_AGENT_ARGS=--model=x)
+run_case "yes" --repo acme/widgets --run --cli claude
+assert_contains "$CMDS" "claude -p" "claude was the host"
+assert_contains "$CMDS" "--model=x" "EXTRA_AGENT_ARGS reaches claude"
+run_case "yes" --repo acme/widgets --run --cli opencode
+assert_contains "$CMDS" "opencode run" "opencode was the host"
+assert_contains "$CMDS" "--model=x" "EXTRA_AGENT_ARGS reaches opencode"
 STUB_CLIS="opencode"
 run_case "yes" --repo acme/widgets --run
 RUN_ENV=()
-assert_contains "$CMDS" "--model=zen" "EXTRA_OPENCODE_ARGS reaches opencode"
-assert_not_contains "$CMDS" "--model=opus" "EXTRA_CLAUDE_ARGS does not leak into opencode"
+assert_contains "$CMDS" "opencode run" "the single installed CLI is auto-detected"
+assert_contains "$CMDS" "--model=x" "EXTRA_AGENT_ARGS reaches the auto-detected CLI"
+
+echo ""
+echo "Test: the retired per-host variables are errors, not aliases"
+STUB_CLIS="claude"
+for legacy in EXTRA_CLAUDE_ARGS EXTRA_OPENCODE_ARGS; do
+	RUN_ENV=("$legacy=--model=x")
+	run_case "yes" --repo acme/widgets --run
+	assert_contains "$OUT" "$legacy" "the error names $legacy"
+	assert_contains "$OUT" "EXTRA_AGENT_ARGS" "the error names the replacement for $legacy"
+	assert_equals "$CALLS" "0" "nothing runs with $legacy set"
+	assert_equals "$RC" "2" "$legacy fails the run"
+done
+RUN_ENV=()
 
 # A council review runs for tens of minutes. Under claude's default text output
 # a `-p` run emits nothing at all until the final message, so the tee'd log is
@@ -604,7 +629,7 @@ assert_not_contains "$CMDS" "--model=opus" "EXTRA_CLAUDE_ARGS does not leak into
 # wedge. Streaming structured events is therefore the default, not a knob.
 echo ""
 echo "Test: claude streams structured events so a run can be watched"
-STUB_CLIS="claude opencode"
+STUB_CLIS="claude"
 run_case "yes" --repo acme/widgets --run
 assert_contains "$CMDS" "--output-format stream-json" "claude emits an event per step"
 assert_contains "$CMDS" "--verbose" "stream-json under --print is rejected without it"
@@ -619,11 +644,11 @@ assert_not_contains "$CMDS" "--output-format" "claude's streaming flags do not l
 # last-wins parsing rather than by the operator who asked for one.
 echo ""
 echo "Test: an operator-chosen output format replaces the streaming default"
-STUB_CLIS="claude opencode"
-RUN_ENV=(EXTRA_CLAUDE_ARGS="--output-format json")
+STUB_CLIS="claude"
+RUN_ENV=(EXTRA_AGENT_ARGS="--output-format json")
 run_case "yes" --repo acme/widgets --run
 RUN_ENV=()
-assert_contains "$CMDS" "--output-format json" "EXTRA_CLAUDE_ARGS picks the format"
+assert_contains "$CMDS" "--output-format json" "EXTRA_AGENT_ARGS picks the format"
 assert_not_contains "$CMDS" "stream-json" "the default is dropped rather than duplicated"
 
 # The events are for the log; the terminal gets one line per step made out of
@@ -631,7 +656,7 @@ assert_not_contains "$CMDS" "stream-json" "the default is dropped rather than du
 # the rendering is pinned rather than left to be discovered mid-run.
 echo ""
 echo "Test: streamed events are rendered as progress, not raw JSON"
-STUB_CLIS="claude opencode"
+STUB_CLIS="claude"
 RUN_ENV=(MOCK_CLI_STDOUT='{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Task","input":{"subagent_type":"divisor-adversary-code","description":"Review auth"}}]}}
 {"type":"result","subtype":"success","total_cost_usd":8.23456,"num_turns":57}')
 run_case "yes" --repo acme/widgets --run
@@ -1354,7 +1379,7 @@ STUB_CLIS="opencode"
 RUN_ENV=(MOCK_CLI_RC=3)
 run_case "__eof__" --repo acme/widgets --run --yes
 RUN_ENV=()
-STUB_CLIS="claude opencode"
+STUB_CLIS="claude"
 assert_contains "$OUT" "PR #2: opencode exited 3" "the failure names opencode"
 assert_not_contains "$OUT" "claude exited" "and does not blame claude"
 assert_equals "$RC" "1" "a batch with a failed review exits 1"

@@ -1,0 +1,39 @@
+module/skills/review-council/SKILL.md
+  s_7048181bb924e2::t_96f746e370d09f 667-668
+module/skills/review-council/references/reviewer-protocol.md
+  s_7048181bb924e2::t_1e10cf8eb14c53 132-135
+module/tests/test-rc-doc-guards.sh
+  s_7048181bb924e2::t_36c49aed78480b 3029-3041
+module/skills/review-council/scripts/rc-build-context.sh
+  s_7048181bb924e2::t_f15f7454ab9513 180-185,189
+  s_7048181bb924e2::t_f54184b5e96f39 294-296,301,334
+  s_7048181bb924e2::t_7cd51da1609b2a 271-272,279
+  s_7048181bb924e2::t_7deb835d14f1aa 266-267,269-270,273-278
+module/tests/test-rc-build-context.sh
+  s_7048181bb924e2::t_6097c961a35ccb 276
+  s_7048181bb924e2::t_3ae980bd24f786 253
+  s_7048181bb924e2::t_1705ed490d70cc 266-267
+  s_7048181bb924e2::t_697ab088e24252 236-252,254-265,268-269
+docs/dev/pipeline.md
+  s_7048181bb924e2::t_96f746e370d09f 166-168
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7048181bb924e2::t_7991437a109e64 470,742
+module/skills/review-council/phases/delegate.md
+  s_7048181bb924e2::t_7991437a109e64 386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "20b8d4c0d38bb2f3e80cf603575bff45cb7945b8",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

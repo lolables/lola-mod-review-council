@@ -1,0 +1,31 @@
+module/tests/test-rc-extract-verdict.sh
+  s_7048181bb924e2::t_12a2e30407049c 1878-1901,1903-1925,1927-1935
+  s_7048181bb924e2::t_e58a8c8d5fd5b5 1902,1926
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7048181bb924e2::t_db0f34ede754b5 564-577,580-584,592,596-598,621,636-641,646-654,660
+  s_7048181bb924e2::t_d60ddec8e13aed 593-595
+module/skills/review-council/phases/delegate.md
+  s_7048181bb924e2::t_4094b60216d0fb 520-521,561-564,589-592
+module/skills/review-council/phases/verify.md
+  s_7048181bb924e2::t_49d5ec429db649 283-285
+  s_7048181bb924e2::t_4094b60216d0fb 306-316
+docs/dev/pipeline.md
+  s_7048181bb924e2::t_ab114085d62237 216-217
+  s_7048181bb924e2::t_49d5ec429db649 215,218-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b38444162c12442b79829975750c10737560081e",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

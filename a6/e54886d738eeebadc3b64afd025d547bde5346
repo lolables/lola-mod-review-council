@@ -1,0 +1,34 @@
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7048181bb924e2::t_0605cb03558264 467-502
+  s_7048181bb924e2::t_d5d67f359d6ea8 24,26-29
+  s_7048181bb924e2::t_442facdb117132 334-336
+  s_7048181bb924e2::t_d2e881684979f4 362-365
+  s_7048181bb924e2::t_a3c40c412a1d8d 263-265
+  s_7048181bb924e2::t_c4d3ce5bb08d42 568-586,591-597,615-669,671-707
+  s_7048181bb924e2::t_cff0830298cff0 260-262,267
+  s_7048181bb924e2::t_9d6543a3942d02 408-414,416,421-426,431-435
+  s_7048181bb924e2::t_f056ef943cc7a0 70-71
+  s_7048181bb924e2::t_5a7601dcc9d016 166-167,170-172,182-190,436
+  s_7048181bb924e2::t_62b9ce342d9161 303,306,311,313,319,321
+  s_7048181bb924e2::t_a168d18079569d 191
+  s_7048181bb924e2::t_ffd54549e47816 437
+module/tests/test-rc-assemble-prompts.sh
+  s_7048181bb924e2::t_beb45902c164f9 670-693,696-725,730-731,734-813,816-898
+  s_7048181bb924e2::t_a3c40c412a1d8d 694-695,726-729,732-733,814-815
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a6e54886d738eeebadc3b64afd025d547bde5346",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_7048181bb924e2::t_52afc5bf5aca76 137-141
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7048181bb924e2::t_c39898131e3c6a 434-435
+  s_7048181bb924e2::t_22b8fff21ad359 110,113,175-185,187,190-191,193-215,217-225,227-228,231-232,275-279,282-287,295-299,314-317
+  s_7048181bb924e2::t_e6468cff889ebf 379-397,433,436-437,461-466
+docs/dev/pipeline.md
+  s_7048181bb924e2::t_8a430be7b4beba 194-198
+module/tests/test-rc-prepare-mode-scope.sh
+  s_7048181bb924e2::t_8fd6e46753cd07 214-215
+  s_7048181bb924e2::t_d7453d90a8822e 156-158,161
+module/tests/test-rc-assemble-prompts.sh
+  s_7048181bb924e2::t_6972322c4093cf 77,272-275,381-570
+  s_7048181bb924e2::t_4c2b2035ba7168 34,68-76
+  s_7048181bb924e2::t_94edba388c6ad3 317-326,329-335,338-339
+  s_7048181bb924e2::t_73b7ee73457ae7 78,571
+module/skills/review-council/scripts/rc-lib.sh
+  s_7048181bb924e2::t_5507e9107a5e66 451-457,468-488,493-496,502,505
+module/tests/test-rc-doc-guards.sh
+  s_7048181bb924e2::t_2c6127682733ac 3269,3277
+module/skills/review-council/SKILL.md
+  s_7048181bb924e2::t_3cbc6905d0452f 1261
+module/tests/test-rc-lib.sh
+  s_7048181bb924e2::t_8a813d8ec36b4d 283-284
+  s_7048181bb924e2::t_637f6f747475d3 247-282,285-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "dac88e3862936bac6786b4df949ec7b4877d20a9",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

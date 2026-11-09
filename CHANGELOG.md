@@ -5,6 +5,23 @@ generated from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org); do not edit it by hand — run
 `task release:bump` instead.
 
+## [0.3.0] - 2026-11-09
+
+### 🚀 Features
+
+- *(review-open-prs)* [**breaking**] Merge agent passthrough into EXTRA_AGENT_ARGS
+- *(review-open-prs)* Accept operator instructions from a file
+- *(guard)* Flag shadow copies of owned values
+- *(sre)* Flag upstream-owned values compiled into code
+
+### 🐛 Bug Fixes
+
+- *(arbiter)* Keep HIGH on upstream-owned values the code marks volatile
+
+### 🧪 Testing
+
+- *(eval)* Default case-035 lookup to httpsPort when host has no port
+
 ## [0.2.0] - 2026-11-04
 
 ### 🚀 Features

@@ -1,0 +1,22 @@
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7048181bb924e2::t_5777656f8b560b 424,697,701-727
+  s_7048181bb924e2::t_e4662a375cd2af 728
+module/tests/test-rc-assemble-prompts.sh
+  s_7048181bb924e2::t_c9e7ee5de9fa35 899-925
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "af8ed9f2160a768296aed73ad33b1d92ddd751ed",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

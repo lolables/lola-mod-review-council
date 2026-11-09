@@ -100,6 +100,7 @@ Before finalizing, review every finding against red flags and rationalization ta
 - Is configuration layering defined (defaults < config file < env vars < CLI flags)?
 - Are breaking configuration changes handled with migration or deprecation paths?
 - Are secrets and sensitive configuration handled separately from general config?
+- Does the spec specify values owned by an upstream service (API hosts, endpoints, header names, auth schemes, model IDs, provider tables) as constants, or leave their home unstated so the implementer compiles them in? The upstream changes them on its own schedule. The spec must place them in a human-editable config file that users can find and override at runtime: shipped defaults, overridden by a file on the platform's standard search path (XDG Base Directory on Linux: `$XDG_CONFIG_HOME/<app>/`, then each entry of `$XDG_CONFIG_DIRS`), with an env var or flag naming another file. Exempt: values fixed by a standard (`Authorization`, port 443) and values the project owns.
 
 ### 4. Dependency Risk Assessment
 
@@ -142,6 +143,8 @@ When spec introduces generated artifacts (protobuf stubs, OpenAPI clients, compi
 | Failure modes unspecified for critical component                      | HIGH     |
 | Breaking configuration change with no migration path                  | HIGH     |
 | Single point of failure with no fallback behavior                     | HIGH     |
+| Upstream-owned values on a primary path specified as compiled-in      | HIGH     |
+| Upstream-owned values with no config file location specified          | MEDIUM   |
 | Generated asset lifecycle unspecified (commit vs build, regeneration) | MEDIUM   |
 | Performance requirements unquantified ("must be fast")                | MEDIUM   |
 | Configuration parameters missing defaults or validation rules         | MEDIUM   |

@@ -49,6 +49,7 @@ b. Apply calibration rules below. Each downgrade is a **CORRECTED** outcome with
 
 - **CRITICAL assigned, but harm is theoretical** (requires unlikely conditions, compromised upstream, or hypothetical attack vector): downgrade to **HIGH**.
 - **HIGH assigned, but risk requires unlikely conditions** (compromised upstream, specific attacker capability, or misconfiguration not present in current code): downgrade to **MEDIUM**.
+- **Upstream-owned value compiled in with no runtime override** (an API host, header, auth scheme or model ID): the upstream changing a value it owns is a routine event, not an unlikely condition. When the code records that the value is volatile (a "verified on" date, a cited vendor doc, a version note), the finding rests on the repository, not on outside state. Neither the rule above nor the unverifiable-claim rule below applies; keep the persona's severity row.
 - **CRITICAL/HIGH assigned to style, documentation, or convention issue**: downgrade to level matching severity pack examples for that persona and issue type.
 - **Standard language semantics flagged as a defect**: not a severity question — retracted under Validation, "Common false positive patterns".
 - **HIGH/CRITICAL assigned to a test coverage preference** (table-driven tests, additional edge cases, assertion depth) when comprehensive test suite already exists and all methods are exercised: real but non-blocking — downgrade to **LOW**.

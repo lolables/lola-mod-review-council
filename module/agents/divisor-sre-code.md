@@ -82,6 +82,7 @@ Before finalizing, review every finding against red flags and rationalization ta
 
 - New files written with appropriate permissions (0o644 for files, 0o755 for directories)?
 - Hardcoded paths, hostnames, or environment-specific values that should be parameterized?
+- Values owned by an upstream service compiled into code: API hosts, endpoints, header names, auth schemes, model IDs, rate limits, provider or registry tables. The upstream changes them on its own schedule, and users then need a rebuild to keep working. They belong in a human-editable config file that users can find and override at runtime: shipped defaults, overridden by a file on the platform's standard search path (XDG Base Directory on Linux: `$XDG_CONFIG_HOME/<app>/`, then each entry of `$XDG_CONFIG_DIRS`), with an env var or flag naming another file. When the project already has a config layer, the fix is to move the values into it, not to add a second mechanism. Signs that a value is upstream-owned: a comment citing a vendor doc URL, a "verified on <date>" or "checked against <tool> <version>" note, or a table with one row per third-party provider. A per-field escape hatch (one base-URL env var) does not cover the rest of the row. Exempt: values fixed by a standard (`Authorization`, port 443, IANA media types), values the project owns, and test inputs. A restated copy of a value whose owner is elsewhere in the repo belongs to Guard; report only the owner here.
 - Assumptions about user's shell, PATH, or installed tools that should be documented?
 
 ### 2. Efficiency and Performance
@@ -161,6 +162,8 @@ When project has generated assets (lockfiles, compiled outputs, bundled artifact
 | Missing CI job for critical-path local automation (test suite, release build) | HIGH     |
 | Dependency with incompatible license in non-copyleft project                  | HIGH     |
 | Generated asset out of sync with source (lockfile drift, stale protobuf)      | HIGH     |
+| Upstream-owned value on a primary path, compiled in with no runtime override  | HIGH     |
+| Upstream-owned value with only env/flag override, or on a secondary path      | MEDIUM   |
 | Floating dependency version (no pin)                                          | MEDIUM   |
 | O(n^2) loop on data that scales with user input                               | MEDIUM   |
 | CI workflow duplicating local task runner logic                               | MEDIUM   |
@@ -202,6 +205,7 @@ All mean: go back to Phase 1 and re-read files.
 | "Generated files don't need to be checked in"  | Project checks them in means they are part of build contract. Stale generated files cause build failures, test flakes, runtime bugs hard to diagnose.               |
 | "Error messages are an implementation detail"  | Error messages are primary debugging interface for users and operators. Non-actionable errors ("error: operation failed") waste support time.                       |
 | "We'll add migration support later"            | Users on old format discover breaking change when workflow breaks. Migration paths cost less to build alongside change than to retrofit.                            |
+| "Each row cites its source and was verified"   | A "verified on" date shows the value can change. The citation helps maintainers; a user hit by the upstream change still has no fix short of a rebuild.             |
 
 ## Output
 

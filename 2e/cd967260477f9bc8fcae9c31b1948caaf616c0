@@ -1,0 +1,29 @@
+module/skills/review-council/phases/verify.md
+  s_7048181bb924e2::t_53e093966084f7 325-329
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7048181bb924e2::t_8cfc94719958b6 172,674-676
+module/tests/test-rc-doc-guards.sh
+  s_7048181bb924e2::t_8cfc94719958b6 3272,3280
+module/skills/review-council/phases/delegate.md
+  s_7048181bb924e2::t_53e093966084f7 376-383,429,538-540,586-589
+module/tests/test-rc-assemble-prompts.sh
+  s_7048181bb924e2::t_967b93659d45f8 124,712-714
+module/skills/review-council/references/dispatch-prompt.md
+  s_7048181bb924e2::t_8cfc94719958b6 222-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2ecd967260477f9bc8fcae9c31b1948caaf616c0",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

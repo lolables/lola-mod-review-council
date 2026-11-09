@@ -1,0 +1,41 @@
+---
+task_version: "2"
+description: |
+  Upstream-owned values compiled into code (issue: the SRE reviewer only
+  asked about "environment-specific" values, so a hard-coded vendor table of
+  API hosts, header names and auth prefixes passed review). The starter of a
+  small Go key relay already loads config.json from $KEYRELAY_CONFIG or the
+  XDG config search path (internal/config, outside every hunk). The feature
+  branch adds internal/inject/providers.go, a per-vendor table each row of
+  which cites a vendor doc and a "checked live" date, and applies it to every
+  relayed request; and internal/doctor/doctor.go, whose statusURL names a
+  vendor status endpoint read only by `keyrelay doctor`. Neither goes
+  through the existing config layer.
+
+  Expected findings: Providers HIGH (primary path, no runtime override),
+  statusURL MEDIUM (secondary path).
+
+  Decoys: httpsPort = 443 is fixed by a standard, Placeholder is a value the
+  project owns, and api.example.invalid in inject_test.go is a made-up test
+  input. Flagging any of them is a false positive.
+
+  The repo is padded to ~35 files so that reviewers do not simply read
+  everything. A low baseline score on a module commit without the
+  upstream-owned value criteria is expected. Do not "fix" it by moving
+  internal/config into the diff.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-035-upstream-owned-config/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

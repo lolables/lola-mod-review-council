@@ -2194,6 +2194,32 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+echo "Test: calibration keeps severity on upstream-owned values (RC-200)"
+# On case-035 the arbiter cut the Operator's HIGH on a compiled-in vendor table
+# to MEDIUM under "risk requires unlikely conditions": an upstream changing a
+# value it owns is routine, not unlikely. Only the gated live eval exercises
+# this rule, so a rewording would otherwise pass `task test`. The condition is
+# pinned with it: without "the code records that the value is volatile" the
+# rule becomes a blanket keep-HIGH that also overrides the unverifiable-claim
+# downgrade RC-058 pins.
+rc200_cal=$(sed -n '/^## Calibration$/,/^## Validation$/p' "$ARBITER_MD" | tr '\n' ' ' | tr -s ' ')
+if grep -qiE 'upstream-owned value' <<<"$rc200_cal"; then
+	echo "  PASS: calibration exempts upstream-owned values from the unlikely-conditions downgrade (RC-200)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: calibration has no rule for upstream-owned values (RC-200)"
+	echo "        the arbiter then downgrades a compiled-in vendor value as an unlikely condition"
+	FAIL=$((FAIL + 1))
+fi
+if grep -qiE 'code records that the value is volatile' <<<"$rc200_cal"; then
+	echo "  PASS: the exemption requires the code to record the value as volatile (RC-200)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the upstream-owned exemption has lost its volatility condition (RC-200)"
+	echo "        it would then keep HIGH on outside-world claims RC-058 downgrades"
+	FAIL=$((FAIL + 1))
+fi
+
 # RC-062: a run stopped with every reviewer's verdict in hand. The orchestrator
 # asked read-only reviewers to write their own .raw.md files, wrote none itself,
 # then chained extraction into verification with `&&` — and every stage exits 0

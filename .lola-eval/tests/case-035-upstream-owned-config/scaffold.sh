@@ -66,10 +66,14 @@ const Placeholder = "keyrelay-placeholder"
 
 const httpsPort = 443
 
-// Lookup returns the provider whose API lives at hostport, if any.
+// Lookup returns the provider whose API lives at hostport, if any. A host
+// with no port is on httpsPort, as in a URL without one.
 func Lookup(hostport string) (Provider, bool) {
 	host, port, err := net.SplitHostPort(hostport)
-	if err != nil || port != strconv.Itoa(httpsPort) {
+	if err != nil {
+		host, port = hostport, strconv.Itoa(httpsPort)
+	}
+	if port != strconv.Itoa(httpsPort) {
 		return Provider{}, false
 	}
 	for _, p := range Providers {
@@ -106,7 +110,7 @@ import (
 
 func TestRelaySetsVendorHeader(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-real")
-	req, _ := http.NewRequest(http.MethodPost, "https://api.openai.com:443/v1/responses", nil)
+	req, _ := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/responses", nil)
 	req.Header.Set("authorization", "Bearer "+Placeholder)
 	if !Relay(req) {
 		t.Fatal("known vendor not relayed")
@@ -120,6 +124,12 @@ func TestRelayIgnoresUnknownHost(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "https://api.example.invalid:443/", nil)
 	if Relay(req) {
 		t.Fatal("unknown host relayed")
+	}
+}
+
+func TestLookupDefaultsToHTTPSPort(t *testing.T) {
+	if _, ok := Lookup("api.groq.com"); !ok {
+		t.Fatal("host without a port not matched")
 	}
 }
 

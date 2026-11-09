@@ -1,0 +1,25 @@
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7048181bb924e2::t_df9a87d1efa77b 56-59,580-601,615-618,620-625,627,738-741,811-812,832
+  s_7048181bb924e2::t_1794f8f337cf88 683-688,722-723,726,732-737
+  s_7048181bb924e2::t_13ab638462ecfa 619,724-725
+module/tests/test-rc-extract-verdict.sh
+  s_7048181bb924e2::t_92f60c9a22a2e2 1893-1894
+  s_7048181bb924e2::t_659c6a147ffd23 1856-1865
+  s_7048181bb924e2::t_4a082128bae18e 1854-1855,1866-1892,1895-1912
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "26c0708ae4d8362b418332ed331f1f60606721e2",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

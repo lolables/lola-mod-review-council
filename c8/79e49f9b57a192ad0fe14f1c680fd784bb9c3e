@@ -1,0 +1,109 @@
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/audit/audit_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/lint/lint_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/cache/cache_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/rubric.md
+  s_22d65a925bd98a::t_284b44f455c07c 1-116
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/metrics/metrics_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/report/report.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+module/agents/divisor-sre-code.md
+  s_22d65a925bd98a::t_db82241e8d3c11 165
+  s_22d65a925bd98a::t_5813cd9f6c9ecc 166,208
+  s_22d65a925bd98a::t_7ee48627b1e0ad 85
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/envx/envx_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/schedule/schedule_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/docs/changelog.md
+  s_22d65a925bd98a::t_32f3624a385e47 1-3
+.lola-eval/tests/case-035-upstream-owned-config/starter/README.md
+  s_22d65a925bd98a::t_32f3624a385e47 1-15
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/store/store.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/notify/notify_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/retry/retry_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/store/store_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/archive/archive_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/notify/notify.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/metrics/metrics.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/cache/cache.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/lint/lint.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/scaffold.sh
+  s_22d65a925bd98a::t_43c2e2cd24a236 1-19,21-200,204-213
+  s_22d65a925bd98a::t_7bc540d7c4180c 20,201-203
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/envx/envx.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/audit/audit.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/config/config.go
+  s_22d65a925bd98a::t_7cc9fd83aa4245 1-75
+.lola-eval/tests/case-035-upstream-owned-config/starter/cmd/keyrelay/main.go
+  s_22d65a925bd98a::t_c3cd3f09f7877a 1-18
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/retry/retry.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/task.yaml
+  s_22d65a925bd98a::t_ee7a9157555efc 1-41
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/report/report_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/tenant/tenant.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/prompt.md
+  s_22d65a925bd98a::t_c21f583e7e9431 1-6
+module/agents/divisor-sre-spec.md
+  s_22d65a925bd98a::t_efeb12444b6828 146-147
+  s_22d65a925bd98a::t_a383c16b2ad5bc 103
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/config/config_test.go
+  s_22d65a925bd98a::t_72f43755a6cae9 1-56
+.lola-eval/tests/case-035-upstream-owned-config/starter/docs/overview.md
+  s_22d65a925bd98a::t_32f3624a385e47 1-3
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/schedule/schedule.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/go.mod
+  s_22d65a925bd98a::t_32f3624a385e47 1-3
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/archive/archive.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-8
+.lola-eval/tests/case-035-upstream-owned-config/starter/internal/tenant/tenant_test.go
+  s_22d65a925bd98a::t_78a0ae9ac882d7 1-9
+module/agents/review-council-arbiter.md
+  s_22d65a925bd98a::t_269d348e9dd497 52
+module/skills/review-council/references/severity.md
+  s_22d65a925bd98a::t_8382bcd767aa8d 37-42
+module/tests/test-rc-doc-guards.sh
+  s_816e815ca2ded1::t_9194874f22afb5 2197-2222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c879e49f9b57a192ad0fe14f1c680fd784bb9c3e",
+  "prompts": {},
+  "sessions": {
+    "s_22d65a925bd98a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1e322882-a8ec-4bdf-8fe7-77fbe2cc5f15",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_816e815ca2ded1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "841b6ee3-638f-41a3-b43c-ff4bc8cda8ba",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

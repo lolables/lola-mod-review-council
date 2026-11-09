@@ -1,0 +1,19 @@
+.lola-eval/tests/case-035-upstream-owned-config/scaffold.sh
+  s_a7f798d5271534::t_6ae898def75bb1 69-70,73-76,113,130-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16b25f559186dd6f9eded472c277f1c26189bd5c",
+  "prompts": {},
+  "sessions": {
+    "s_a7f798d5271534": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b864a43-4a1c-45bf-89c9-2513add522af",
+        "model": "unknown"
+      },
+      "human_author": "Trevor Vaughan <peiriannydd@gmail.com>"
+    }
+  }
+}

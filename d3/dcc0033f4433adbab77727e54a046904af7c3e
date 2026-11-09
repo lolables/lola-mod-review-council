@@ -1,0 +1,19 @@
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7048181bb924e2::t_2a6d598f20f49d 369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d3dcc0033f4433adbab77727e54a046904af7c3e",
+  "prompts": {},
+  "sessions": {
+    "s_7048181bb924e2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7afe016f-643c-4eb4-a102-a58a6bc5cba3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

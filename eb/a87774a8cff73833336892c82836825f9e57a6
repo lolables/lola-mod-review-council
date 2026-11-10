@@ -1,0 +1,19 @@
+module/tests/test-rc-extract-verdict.sh
+  s_4cbd68c5010880::t_57d2713f4bef81 1306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "eba87774a8cff73833336892c82836825f9e57a6",
+  "prompts": {},
+  "sessions": {
+    "s_4cbd68c5010880": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "56d96a44-3835-41fd-ba94-72c551d67ab5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

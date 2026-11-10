@@ -3445,6 +3445,27 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-213: a reply still invalid after the one re-dispatch used to be dropped
+# whole, findings and all (#577 lost a MEDIUM security finding to one stray
+# key). The salvage run that follows the re-dispatch round must be named where
+# the orchestrator runs the extractor, and delegate.md must say what each of
+# its two lists means and that both are logged.
+echo "Test: the docs route a still-invalid entry through --salvage (RC-213)"
+rc213_missing=""
+for rc213_doc in "$SKILL_MD" "$DELEGATE_MD" "$VERIFY_MD" "$SCRIPT_DIR/../skills/review-council-debug/SKILL.md"; do
+	grep -qF -- '--salvage' "$rc213_doc" || rc213_missing+=" $(basename "$(dirname "$rc213_doc")")/$(basename "$rc213_doc")"
+done
+for rc213_term in 'salvaged[]' 'unverified[]' 'verdicts/_meta/salvage.json' 'verdicts/_meta/unverified/' 'verification.txt'; do
+	grep -qF -- "$rc213_term" "$DELEGATE_MD" || rc213_missing+=" delegate.md:$rc213_term"
+done
+if [[ -z "$rc213_missing" ]]; then
+	echo "  PASS: every extractor call site names --salvage, and delegate.md defines both lists"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: salvage run undocumented in:$rc213_missing"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

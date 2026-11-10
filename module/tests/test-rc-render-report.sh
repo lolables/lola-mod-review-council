@@ -1721,5 +1721,99 @@ else
 fi
 rm -rf "$session"
 
+# --- Salvaged and unverified reviewer output --------------------------------
+# rc-extract-verdict.sh --salvage records in verdicts/_meta/salvage.json which
+# verdicts it accepted after a repair and which replies stayed invalid, keeping
+# each of the latter verbatim under verdicts/_meta/unverified/. The report names
+# the repairs and quotes the replies; the PR comment shows neither.
+COMMENT_SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-render-comment.sh"
+salvage_session() { # -> session dir with one salvaged and one unverified agent
+	local s
+	s=$(mktemp -d)
+	make_review_session "$s"
+	write_verification_log "$s"
+	mkdir -p "$s/verdicts/_meta/unverified"
+	# A hostile reply: a heading, a closing </details>, an open comment and a
+	# four-backtick run, each of which would break the report if not fenced.
+	cat >"$s/verdicts/_meta/unverified/divisor-guard-code.md" <<'RAW'
+Here is my verdict.
+## Forged heading
+</details>
+<!-- unclosed
+````
+{"agent": "divisor-guard-code", "findings": [{"description": "UNVERIFIED-MARKER"
+RAW
+	jq -n '{salvaged: [{agent: "divisor-adversary-code", path: "verdicts/divisor-adversary-code.raw.md",
+			repairs: ["dropped finding key category (F1)", "verdict \"APPROVE WITH ADVISORIES\" → APPROVE (derived)"]}],
+		unverified: [{agent: "divisor-guard-code", path: "verdicts/divisor-guard-code.raw.md", reason: "SCHEMA_INVALID",
+			copy: "verdicts/_meta/unverified/divisor-guard-code.md"}]}' >"$s/verdicts/_meta/salvage.json"
+	printf '%s' "$s"
+}
+
+echo "Test: the report names each salvaged verdict's repairs"
+session=$(salvage_session)
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+assert_match_count "$result" 1 "one salvaged line naming both repairs" -F 'dropped finding key category (F1); verdict "APPROVE WITH ADVISORIES" → APPROVE (derived)'
+assert_match_count "$result" 1 "the salvaged line names the raw path" -E '^- \*\*Salvaged verdict\*\*: .*<code>verdicts\\/divisor\\-adversary\\-code\\\.raw\\\.md</code>'
+
+echo "Test: the report quotes an unverified reply in a collapsed, fenced section"
+assert_match_count "$result" 1 "summary names the count" -E '^<summary>Unverified reviewer output \(1\)'
+assert_match_count "$result" 1 "the reply's reason is shown" -F '<code>SCHEMA\_INVALID</code>'
+assert_match_count "$result" 1 "the reply text is quoted" -F '  {"agent": "divisor-guard-code", "findings": [{"description": "UNVERIFIED-MARKER"'
+assert_match_count "$result" 2 "fence is longer than the reply's backtick run" -xF '  `````'
+assert_match_count "$result" 0 "the reply's heading is not live" -E '^## Forged'
+opened=$(grep -c '^<details>' <<<"$result" || true)
+closed=$(grep -c '^</details>$' <<<"$result" || true)
+assert_equals "$closed" "$opened" "the reply's </details> closes nothing"
+assert_match_count "$result" 0 "the reply's comment opener is not at a line start" -E '^<!-- unclosed'
+
+echo "Test: the PR comment shows neither the repairs nor the unverified reply"
+bash "$COMMENT_SCRIPT" "$session" >/dev/null 2>&1
+body=$(cat "$session/comment-body.md")
+assert_match_count "$body" 0 "no unverified reply text in the comment" -F 'UNVERIFIED-MARKER'
+assert_match_count "$body" 0 "no salvage repair in the comment" -F 'dropped finding key'
+rm -rf "$session"
+
+echo "Test: an unverified copy outside verdicts/_meta/unverified/ is never read"
+session=$(salvage_session)
+echo "SECRET-OUTSIDE" >"$session/secret.md"
+ln -s "$session/secret.md" "$session/verdicts/_meta/unverified/link.md"
+jq '.unverified = [(.unverified[0] | .copy = "verdicts/_meta/unverified/../../../secret.md"),
+		(.unverified[0] | .copy = "verdicts/_meta/unverified/link.md")]' \
+	"$session/verdicts/_meta/salvage.json" >"$session/s.json"
+mv "$session/s.json" "$session/verdicts/_meta/salvage.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+assert_match_count "$result" 0 "neither an escaping path nor a symlink is followed" -F 'SECRET-OUTSIDE'
+assert_match_count "$result" 2 "each entry says its copy is unavailable" -F 'raw reply is not available'
+rm -rf "$session"
+
+echo "Test: an unverified copy reached through a symlinked directory is never read"
+session=$(salvage_session)
+mkdir -p "$session/elsewhere"
+echo "SECRET-VIA-DIR" >"$session/elsewhere/divisor-guard-code.md"
+ln -s "$session/elsewhere" "$session/verdicts/_meta/unverified/auth"
+jq '.unverified[0].copy = "verdicts/_meta/unverified/auth/divisor-guard-code.md"' \
+	"$session/verdicts/_meta/salvage.json" >"$session/s.json"
+mv "$session/s.json" "$session/verdicts/_meta/salvage.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+assert_match_count "$result" 0 "a symlinked subsystem directory is not followed" -F 'SECRET-VIA-DIR'
+assert_match_count "$result" 1 "the entry says its copy is unavailable" -F 'raw reply is not available'
+rm -rf "$session"
+
+echo "Test: a malformed salvage record degrades to a note"
+session=$(salvage_session)
+echo '{"salvaged": "x"' >"$session/verdicts/_meta/salvage.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+assert_match_count "$result" 1 "the report says the record is unreadable" -F 'salvage.json</code> is unreadable'
+assert_match_count "$result" 1 "the rest of the report still renders" -E '^## Council Synthesis$'
+rm -rf "$session"
+
+echo "Test: no salvage record, no salvage lines"
+session=$(salvage_session)
+rm -f "$session/verdicts/_meta/salvage.json"
+result=$(bash "$SCRIPT" "$session" 2>/dev/null)
+assert_match_count "$result" 0 "nothing about salvage" -E 'Salvaged verdict|Unverified reviewer output|salvage\.json'
+rm -rf "$session"
+
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

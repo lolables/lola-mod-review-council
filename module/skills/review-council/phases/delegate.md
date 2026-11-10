@@ -592,8 +592,41 @@ below — never chain the next stage with `&&`.
     block at all. Instruct it to re-emit only the JSON block, then re-run the
     extractor. When receipts are checked the entry carries a `detail` naming the
     prompt file whose last line holds the receipt; relay it verbatim.
-  - If an entry still fails, log it loudly in `verification.txt` (including
-    its `path`) and surface it in the report — never a silent zero.
+  - If an entry still fails after the one re-dispatch round (and an
+    `APPROVE_COLLIDED` entry's extra one), re-dispatch nothing more: run
+    `scripts/rc-extract-verdict.sh ${session_dir} --salvage`, never before the
+    re-dispatch round has ended. It normalises a block whose every defect is repairable and
+    then holds it to every check above, so it never bypasses one. The
+    repairable defects are: an unknown top-level key whose value is not an
+    object or array (dropped; one that is could hold findings, so the reply
+    stays rejected); an unknown key in a finding (dropped, and appended to that
+    finding's `description` as `[Unrecognised fields: key=value]`); a `verdict`
+    that is not `APPROVE` or `REQUEST CHANGES`, when a finding is CRITICAL or
+    HIGH (it becomes `REQUEST CHANGES`) or there are no findings (it becomes
+    `APPROVE`), never over MEDIUM or LOW findings alone; an `APPROVE` over a
+    CRITICAL or HIGH finding (it becomes `REQUEST CHANGES`); and a missing
+    `files_read` (set to `[]`). Anything else stays rejected.
+    - `salvaged[]` lists `{agent, path, repairs}` for each verdict accepted
+      after a repair. It is a verdict like any other from here on: its findings
+      go through evidence verification and the arbiter unchanged.
+    - `unverified[]` lists `{agent, path, reason, copy}` for each entry still
+      rejected (every `invalid[]` entry but `RESERVED_AGENT`). It stays a
+      missing verdict; its raw reply is kept verbatim at `copy`, under
+      `verdicts/_meta/unverified/`, and the local report quotes it.
+    - The extractor records both in `verdicts/_meta/salvage.json`, which the
+      report renderer reads. Never copy either into a report section yourself.
+    - Log every `salvaged[]` entry with its `repairs`, and every `unverified[]`
+      entry with its `path` and `reason`, loudly in `verification.txt` — never
+      a silent zero.
+    - An `unverified[]` reason that is the orchestrator's to fix
+      (`CONTEXT_MISSING`, `DISPATCH_UNINDEXED`, `RECEIPT_MISFILED`, or an
+      `AGENT_MISMATCH` you caused) still costs no re-dispatch: fix it as its
+      `detail` says and re-run with `--salvage`.
+    - Keep `--salvage` on every re-run of the extractor until this
+      iteration's Verdict Collection ends. A run without it removes the
+      salvage record and also revokes every salvaged verdict, which is then
+      rejected again and missing. An iteration re-entry (Step 5) starts a new
+      collection, so its first extraction runs without the flag.
   - A `VERDICT_INCOHERENT` entry is logged either way, pass or fail — see
     `phases/verify.md` — "Step 0 — Format Gate": the re-dispatch overwrites
     `{agent}.raw.md`, so an agent that resolves the gate by withdrawing its

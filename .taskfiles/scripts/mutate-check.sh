@@ -1901,6 +1901,14 @@ check_mutation "RC-204 a verdict missing its dispatch's receipt is accepted" \
 	's/^\([[:space:]]*\)if \[\[ "\$got_receipt" != "\$want_receipt" \]\]; then$/\1if false; then/' \
 	test-rc-extract-verdict.sh
 
+# --salvage only repairs a listed set of defects; the repaired block must
+# still pass full validation. Skipping it for a repaired block accepts a
+# finding with no evidence because it also carried a stray key.
+check_mutation "RC-212 a salvaged block skips validation" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if ! validate "\$block"; then$/\1if [[ "\$repairs" == "[]" ]] \&\& ! validate "\$block"; then/' \
+	test-rc-extract-verdict.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

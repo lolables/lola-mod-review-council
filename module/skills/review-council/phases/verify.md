@@ -324,10 +324,16 @@ already run. Your job here is to interpret its outcome:
 - Every agent now shows `status: "ok"` (a clean reviewer with no findings is
   still `ok` with an empty `findings` array): proceed to Step 1 using the
   validated `verdicts/{agent}.json` files.
-- An agent still fails after the one re-dispatch attempt: proceed with whatever
-  now validates, but **log each still-invalid agent loudly** in `verification.txt`
-  and surface it in the report — never let a dropped finding pass silently as a
-  clean zero.
+- An agent still fails after the one re-dispatch attempt: the extractor has
+  then been re-run with `--salvage` (`phases/delegate.md` — "Verdict
+  Collection"). Proceed with whatever now validates, salvaged verdicts
+  included: each `salvaged[]` entry is a verdict like any other, and its
+  findings are checked in Step 1 exactly as the rest are. Every `unverified[]`
+  entry is a still-invalid agent: **log each one loudly** in `verification.txt`
+  with its `path` and `reason`, and log each `salvaged[]` entry with its
+  `repairs` — never let a dropped finding pass silently as a clean zero. The
+  local report renders both from `verdicts/_meta/salvage.json`, quoting each
+  unverified raw reply; the forge comment shows neither.
 - An `APPROVE_UNGROUNDED` or `APPROVE_COLLIDED` entry that still fails is such a still-invalid agent:
   its verdict is not counted, and it is logged in `verification.txt` and
   surfaced in the local report, never the forge comment, which would tell an

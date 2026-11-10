@@ -64,7 +64,11 @@ Scripts referenced:
 - `${SCRIPTS_DIR}/rc-prepare.sh` -- session preparation
 - `${SCRIPTS_DIR}/rc-extract-verdict.sh` -- extracts + schema-validates each
   agent's fenced JSON block from `verdicts/<agent>.raw.md`, writing
-  `verdicts/<agent>.json`
+  `verdicts/<agent>.json`; with `--salvage` (every run after the one
+  re-dispatch round, within that Verdict Collection) it also repairs the
+  format defects delegate.md's Verdict Collection lists as repairable, and
+  adds `salvaged` and `unverified`
+  to its output and to `verdicts/_meta/salvage.json`
 - `${SCRIPTS_DIR}/rc-verify-evidence.sh` -- evidence validation, writes
   `verdicts/findings.json`
 - `${SCRIPTS_DIR}/rc-render-report.sh` -- report rendering
@@ -422,7 +426,8 @@ For each script output, assess:
 **Message Clarity**
 
 Not every payload carries `message`. `rc-extract-verdict.sh` emits
-`{status, valid, invalid, remediation}` on `extract_error` -- there is
+`{status, valid, invalid, remediation}` on `extract_error` (plus
+`salvaged` and `unverified` under `--salvage`) -- there is
 no `message` field, and the guidance lives in `remediation` plus the
 per-agent `reason` inside `invalid`. Judge that payload on those fields;
 a missing `message` there is the script's shape, not a defect.

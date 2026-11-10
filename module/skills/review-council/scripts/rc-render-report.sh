@@ -423,6 +423,77 @@ fi
 
 echo ""
 
+# Salvaged and unverified reviewer output (rc-extract-verdict.sh --salvage).
+# A salvaged verdict sits in the table above and its repairs are named here, so
+# a reader knows its block was normalised rather than filed as written. An
+# unverified reply counts as a missing verdict; its raw text is quoted so a
+# maintainer can still read the review it held. Local report only: the PR
+# comment names neither (phases/verify.md, Step 0).
+#
+# Every field is reviewer-written or read from disk: repairs carry reviewer key
+# names and values, so they pass through rc_md_title; paths and reasons are
+# printed as rc_md_code elements; the reply is fenced by evidence_block, whose
+# fence outgrows any backtick run inside. A copy is read only from a regular
+# file, not a symlink, whose directory resolves (`pwd -P`) to the session's own
+# verdicts/_meta/unverified/ or below it, so neither an edited record nor a
+# symlinked directory anywhere on the way can quote a file from elsewhere.
+salvage_file="$session_dir/verdicts/_meta/salvage.json"
+if [[ -f "$salvage_file" ]]; then
+	if ! jq -e '(.salvaged | type == "array" and all(.[]; type == "object" and (.repairs | type) == "array"))
+		and (.unverified | type == "array" and all(.[]; type == "object"))' "$salvage_file" >/dev/null 2>&1; then
+		echo "- **Salvage record**: <code>verdicts/_meta/salvage.json</code> is unreadable, so salvaged and unverified reviewer output cannot be listed."
+		echo ""
+	else
+		salvaged_n=$(jq '.salvaged | length' "$salvage_file")
+		for ((i = 0; i < salvaged_n; i++)); do
+			s_agent=$(jq -r --argjson i "$i" '.salvaged[$i].agent | tostring' "$salvage_file")
+			s_line=$(jq -r -L "$RC_JQ_DIR" --argjson i "$i" 'include "md-neutralise";
+				.salvaged[$i] | "(\(.path | tostring | rc_md_code)) — accepted after repair: \([.repairs[] | tostring | rc_md_title] | join("; "))"' "$salvage_file")
+			s_persona=$(persona_label "$s_agent")
+			echo "- **Salvaged verdict**: $s_persona $s_line"
+		done
+		[[ "$salvaged_n" -eq 0 ]] || echo ""
+		unverified_n=$(jq '.unverified | length' "$salvage_file")
+		if [[ "$unverified_n" -gt 0 ]]; then
+			# The root as it must resolve: the session's own path, physical, with
+			# no link anywhere below it. Empty when it does not exist, which no
+			# resolved directory equals.
+			unverified_root=""
+			session_phys=$(cd "$session_dir" 2>/dev/null && pwd -P) || session_phys=""
+			if [[ -n "$session_phys" ]]; then
+				unverified_root=$(cd "$session_dir/verdicts/_meta/unverified" 2>/dev/null && pwd -P) || unverified_root=""
+				[[ "$unverified_root" == "$session_phys/verdicts/_meta/unverified" ]] || unverified_root=""
+			fi
+			echo "<details>"
+			echo "<summary>Unverified reviewer output (${unverified_n}): replies still invalid after salvage, counted as missing verdicts</summary>"
+			echo ""
+			for ((i = 0; i < unverified_n; i++)); do
+				u_agent=$(jq -r --argjson i "$i" '.unverified[$i].agent | tostring' "$salvage_file")
+				u_copy=$(jq -r --argjson i "$i" '.unverified[$i].copy | tostring' "$salvage_file")
+				u_line=$(jq -r -L "$RC_JQ_DIR" --argjson i "$i" 'include "md-neutralise";
+					.unverified[$i] | "(\(.path | tostring | rc_md_code)), rejected as \(.reason | tostring | rc_md_code)"' "$salvage_file")
+				u_persona=$(persona_label "$u_agent")
+				echo "- **$u_persona** $u_line:"
+				echo ""
+				u_dir=""
+				if [[ -n "$unverified_root" && "$u_copy" == verdicts/_meta/unverified/* && "/$u_copy/" != */../* ]]; then
+					u_dir=$(cd "$(dirname "$session_dir/$u_copy")" 2>/dev/null && pwd -P) || u_dir=""
+				fi
+				if [[ -n "$u_dir" && ("$u_dir" == "$unverified_root" || "$u_dir" == "$unverified_root"/*) &&
+					! -L "$session_dir/$u_copy" && -f "$session_dir/$u_copy" ]]; then
+					u_raw=$(cat "$session_dir/$u_copy")
+					evidence_block "$u_raw"
+				else
+					echo "  _The raw reply is not available under <code>verdicts/_meta/unverified/</code>._"
+				fi
+				echo ""
+			done
+			echo "</details>"
+			echo ""
+		fi
+	fi
+fi
+
 # The findings-context slot: sections that qualify the findings above without
 # being findings themselves, so the reader has them before reaching the
 # verdict. Each is anchored here because the EXECUTION-CONTRACT lets the

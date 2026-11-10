@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/rc-lib.sh"
 rc_trap_errors
 
-# rc-extract-verdict.sh <session_dir>
+# rc-extract-verdict.sh <session_dir> [--salvage]
 # For each verdicts/<agent>.raw.md (raw agent output), extract the fenced ```json
 # block, validate it structurally, then enforce the one invariant the schema
 # cannot express: a verdict of APPROVE may not be filed over a CRITICAL or HIGH
@@ -13,8 +13,34 @@ rc_trap_errors
 # summary naming the validation mode it ran (`schema_validation`), which is also
 # kept, worst-of, in verdicts/_meta/schema-validation.txt.
 # Invalid/missing/incoherent blocks are reported for one re-dispatch.
+#
+# --salvage is for the extraction run after that one re-dispatch round, and
+# only that run: the reply a reviewer has now is the last it will give. A block
+# whose every defect is one the pipeline can repair without guessing (see
+# RC_SALVAGE_JQ) is normalised, then held to every check below like any other,
+# and accepted only if it passes them all. Every entry still rejected keeps its
+# raw reply in verdicts/_meta/unverified/, which the local report quotes. Both
+# lists are in the output and in verdicts/_meta/salvage.json. A run without the
+# flag removes both, so they always describe the json files on disk.
 
-session_dir="${1:-}"
+session_dir=""
+salvage="no"
+for arg in "$@"; do
+	case "$arg" in
+	--salvage) salvage="yes" ;;
+	-*)
+		json_output "validation_error" "Unknown option: $arg. The only option is --salvage."
+		exit 0
+		;;
+	*)
+		if [[ -n "$session_dir" ]]; then
+			json_output "validation_error" "Unexpected argument: $arg. Usage: rc-extract-verdict.sh <session_dir> [--salvage]"
+			exit 0
+		fi
+		session_dir="$arg"
+		;;
+	esac
+done
 [[ -n "$session_dir" && -d "$session_dir" ]] || {
 	json_output "skip" "Session directory not found."
 	exit 0
@@ -66,6 +92,75 @@ readonly RC_REQUIRED_FINDING_KEYS='["severity","file","evidence","description","
 # fallback mirrors it in a single clause and the drift test pins this list to
 # the schema's enum. Same one-line rule as above.
 readonly RC_IMPACT_SEVERITIES='["CRITICAL","HIGH"]'
+
+# Whether a verdict block holds a finding that blocks: the per-reviewer half of
+# the severity rule (severity.md: CRITICAL and HIGH block). The coherence check
+# below refuses an APPROVE over one, and --salvage derives a verdict from it,
+# so the two can never disagree. --salvage derives only what the pipeline
+# itself would: jq/recompute-verdicts.jq forces REQUEST CHANGES over a
+# CRITICAL or HIGH (HIGH_OR_CRITICAL) and APPROVE over no findings
+# (NO_FINDINGS), and below HIGH keeps the verdict the reviewer filed
+# (DECLARED), which an invalid verdict does not state.
+# shellcheck disable=SC2016 # a jq definition; nothing here is a shell expansion.
+readonly RC_BLOCKS_JQ='def rc_blocks: any(.findings | arrays | .[]; type == "object" and (.severity == "CRITICAL" or .severity == "HIGH"));'
+
+# The --salvage normaliser, over one parsed block: {b: <block>, r: [<repair>]}.
+# It repairs exactly these defects and nothing else, so a block with any other
+# defect still fails validate() afterwards and is rejected as before:
+#   - a key outside RC_TOP_KEYS whose value is a scalar is dropped, and its name
+#     recorded. One holding an object or array is left in place: it may carry
+#     findings (`more_findings`, `advisories`), and dropping it would turn a
+#     reply that lost its findings into a clean verdict;
+#   - a key outside RC_FINDING_KEYS is dropped from that finding, and the pair
+#     is appended to its description, which must already be a non-empty string
+#     (otherwise the finding is left as it is, unknown key and all). At most
+#     10 pairs are appended, each value capped at 200 characters and the whole
+#     appendix at 1000; a repair says when either cap cut something;
+#   - a verdict outside the enum becomes REQUEST CHANGES when a finding is
+#     CRITICAL or HIGH and APPROVE when there are no findings; over MEDIUM or
+#     LOW findings alone it is left, and the block stays rejected;
+#   - an APPROVE over a CRITICAL or HIGH becomes REQUEST CHANGES;
+#   - a missing files_read becomes [].
+# shellcheck disable=SC2016 # a jq program; its $names are jq's.
+readonly RC_SALVAGE_JQ='
+	def shown: (if type == "string" then . else tojson end)
+		| if length > 200 then .[0:200] + "..." else . end;
+	def nonempty_string: type == "string" and length > 0;
+	def scalar: type != "object" and type != "array";
+	if type != "object" then error("not an object") else . end
+	| {b: ., r: []}
+	| . as $s | [($s.b | keys) - $topkeys | .[] | select($s.b[.] | scalar)] as $xtop
+	| .b |= delpaths([$xtop[] | [.]])
+	| .r += [$xtop[] | "dropped top-level key \(shown)"]
+	| if (.b.findings | type) == "array" then
+		reduce range(0; .b.findings | length) as $i (.;
+			.b.findings[$i] as $f
+			| if ($f | type) == "object" and ($f.description | nonempty_string) then
+				(($f | keys) - $fkeys) as $x
+				| if ($x | length) > 0 then
+					([$x[0:10][] as $k | "\($k | shown)=\($f[$k] | shown)"] | join(", ")) as $pairs
+					| ($pairs | if length > 1000 then .[0:1000] + "..." else . end) as $kept
+					| .b.findings[$i] = ($f | delpaths([$x[] | [.]])
+						| .description += " [Unrecognised fields: \($kept)]")
+					| .r += [$x[] | "dropped finding key \(shown) (F\($i + 1))"]
+					| if ($x | length) > 10 or ($pairs | length) > 1000 then
+						.r += ["description appendix truncated (F\($i + 1)): kept \([($x | length), 10] | min) of \($x | length) fields, \([($pairs | length), 1000] | min) of \($pairs | length) characters"]
+					else . end
+				else . end
+			else . end)
+	else . end
+	| if .b | has("files_read") then . else .b.files_read = [] | .r += ["files_read missing → []"] end
+	| if (.b.verdict == "APPROVE" or .b.verdict == "REQUEST CHANGES") | not then
+		(if .b | rc_blocks then "REQUEST CHANGES"
+		 elif (.b.findings | type) == "array" and (.b.findings | length) == 0 then "APPROVE"
+		 else null end) as $d
+		| if $d == null then .
+		  else .r += ["verdict \(if .b | has("verdict") then .b.verdict | tojson | shown else "missing" end) → \($d) (derived)"]
+			| .b.verdict = $d end
+	  elif .b.verdict == "APPROVE" and (.b | rc_blocks) then
+		.r += ["verdict \"APPROVE\" → REQUEST CHANGES (derived)"] | .b.verdict = "REQUEST CHANGES"
+	  else . end
+'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -500,6 +595,9 @@ fi
 
 invalid_json="[]"
 valid_count=0
+# {agent, path, repairs} for every block --salvage repaired and the checks
+# then accepted.
+salvaged_json="[]"
 # {role, model} for every valid verdict that names its own model, applied to
 # models.json once the loop is done.
 model_reports="[]"
@@ -583,6 +681,21 @@ for raw in "${raw_files[@]}"; do
 			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
 		fi
 		continue
+	fi
+	# Normalise before validating, so the repaired block meets every check below
+	# exactly as a block that needed no repair would. Fails closed: if the
+	# normaliser errors (the block is not an object), the block is judged as it
+	# was written and rejected as before.
+	repairs="[]"
+	if [[ "$salvage" == "yes" ]]; then
+		if salvage_out=$(jq -c --argjson topkeys "$RC_TOP_KEYS" --argjson fkeys "$RC_FINDING_KEYS" \
+			"$RC_BLOCKS_JQ$RC_SALVAGE_JQ" <<<"$block" 2>/dev/null) &&
+			salvage_block=$(jq -c '.b' <<<"$salvage_out") &&
+			salvage_repairs=$(jq -c '.r' <<<"$salvage_out") &&
+			[[ "$salvage_repairs" != "[]" ]]; then
+			block="$salvage_block"
+			repairs="$salvage_repairs"
+		fi
 	fi
 	validated_any=1
 	# shellcheck disable=SC2310 # validate() is documented as requiring an
@@ -678,9 +791,8 @@ for raw in "${raw_files[@]}"; do
 	# rather than `== "yes"`. Do not "simplify" it to `== "yes"` — that turns
 	# every unexpected output into an acceptance. Rejecting costs one
 	# re-dispatch; accepting ships the mislabelled verdict.
-	verdict_mismatch=$(printf '%s' "$block" | jq -r '
-		if .verdict == "APPROVE"
-			and (.findings | map(.severity) | any(. == "CRITICAL" or . == "HIGH"))
+	verdict_mismatch=$(printf '%s' "$block" | jq -r "$RC_BLOCKS_JQ"'
+		if .verdict == "APPROVE" and rc_blocks
 		then "yes" else "no" end
 	' 2>/dev/null) || verdict_mismatch="yes"
 	if [[ "$verdict_mismatch" != "no" ]]; then
@@ -775,6 +887,10 @@ for raw in "${raw_files[@]}"; do
 	fi
 	echo "$block" | jq . >"$(dirname "$raw")/$agent.json"
 	valid_count=$((valid_count + 1))
+	if [[ "$repairs" != "[]" ]]; then
+		salvaged_json=$(jq -c --arg a "$agent" --arg p "$rel" --argjson r "$repairs" \
+			'. + [{agent:$a, path:$p, repairs:$r}]' <<<"$salvaged_json")
+	fi
 	# A reviewer's `model` is its own claim about itself, kept exactly as given:
 	# the renderers allow-list it at display time, and a value trimmed here
 	# could pass that check while differing from what the reviewer said.
@@ -835,6 +951,39 @@ if [[ "$validated_any" -eq 1 ]]; then
 	fi
 fi
 
+# The salvage record. A run without --salvage removes it, since the json files
+# it described may have been revoked since. With --salvage every entry still
+# rejected keeps its reply verbatim under _meta/unverified/, at its path below
+# verdicts/ with .raw.md replaced by .md, so two subsystems' copies of one agent
+# never collide. _meta is never searched for raw files above, so a copy is never
+# extracted. RESERVED_AGENT is no reviewer's reply and is not kept.
+unverified_json="[]"
+rm -rf "$vdir/_meta/unverified"
+rm -f "$vdir/_meta/salvage.json"
+if [[ "$salvage" == "yes" ]]; then
+	# One entry at a time by index: a path is a filename, and no line or field
+	# separator is one a filename cannot contain.
+	u_count=$(jq 'length' <<<"$invalid_json")
+	for ((u_i = 0; u_i < u_count; u_i++)); do
+		u_reason=$(jq -r --argjson i "$u_i" '.[$i].reason' <<<"$invalid_json")
+		[[ "$u_reason" != "RESERVED_AGENT" ]] || continue
+		u_agent=$(jq -r --argjson i "$u_i" '.[$i].agent' <<<"$invalid_json")
+		u_path=$(jq -r --argjson i "$u_i" '.[$i].path' <<<"$invalid_json")
+		u_copy="verdicts/_meta/unverified/${u_path#verdicts/}"
+		u_copy="${u_copy%.raw.md}.md"
+		mkdir -p "$(dirname "$session_dir/$u_copy")"
+		cp -- "$session_dir/$u_path" "$session_dir/$u_copy"
+		unverified_json=$(jq -c --arg a "$u_agent" --arg p "$u_path" --arg why "$u_reason" --arg c "$u_copy" \
+			'. + [{agent:$a, path:$p, reason:$why, copy:$c}]' <<<"$unverified_json")
+	done
+	mkdir -p "$vdir/_meta"
+	salvage_tmp=$(mktemp "$vdir/_meta/.salvage.XXXXXX")
+	jq -n --argjson s "$salvaged_json" --argjson u "$unverified_json" '{salvaged:$s, unverified:$u}' >"$salvage_tmp"
+	mv -f "$salvage_tmp" "$vdir/_meta/salvage.json"
+fi
+salvage_fields=$(jq -nc --arg on "$salvage" --argjson s "$salvaged_json" --argjson u "$unverified_json" \
+	'if $on == "yes" then {salvaged:$s, unverified:$u} else {} end')
+
 invalid_count=$(echo "$invalid_json" | jq 'length')
 if [[ "$invalid_count" -gt 0 ]]; then
 	read -r -d '' remediation <<'REM' || true
@@ -868,9 +1017,9 @@ For APPROVE_UNGROUNDED and APPROVE_COLLIDED alone, the fix is to look past the d
 verdict to match.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \
-		--arg sv "$schema_validation" --arg rc "$receipts" \
+		--arg sv "$schema_validation" --arg rc "$receipts" --argjson salv "$salvage_fields" \
 		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem, receipts:$rc}
-		 + (if $sv == "" then {} else {schema_validation:$sv} end)'
+		 + (if $sv == "" then {} else {schema_validation:$sv} end) + $salv'
 	exit 0
 fi
 
@@ -888,6 +1037,7 @@ fi
 	json_output "nothing_to_do" "No verdict blocks found: no .raw.md file exists under verdicts/. Reviewers return their verdicts; the orchestrator writes each one verbatim to its .raw.md path. If those responses are still held, write them and re-run extraction instead of re-dispatching." "$extra"
 	exit 0
 }
-payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" --arg rc "$receipts" '{valid:$v, schema_validation:$sv, receipts:$rc}')
+payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" --arg rc "$receipts" --argjson salv "$salvage_fields" \
+	'{valid:$v, schema_validation:$sv, receipts:$rc} + $salv')
 json_output "ok" "Extracted $valid_count verdict block(s)." "$payload"
 exit 0

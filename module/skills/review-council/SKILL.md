@@ -832,8 +832,11 @@ writes `${session_dir}/verdicts/{agent-name}.json` on success.
   block (a silent drop otherwise). Re-dispatch each listed agent ONCE (an
   `APPROVE_COLLIDED` collision gets one more) per
   `${PHASES_DIR}/delegate.md` **Verdict Collection**, then re-run the
-  script. If an agent still fails after that one attempt, log it loudly
-  and surface it in the report — never a silent zero.
+  script. If an agent still fails after that one attempt, re-run it as
+  `bash ${SCRIPTS_DIR}/rc-extract-verdict.sh ${session_dir} --salvage`, and
+  keep the flag on every later re-run in this Verdict Collection. It accepts a block whose only defects are repairable and lists the rest
+  as `unverified`. Log both lists loudly in `verification.txt` (see
+  **Verdict Collection**) — never a silent zero.
 - `status: "nothing_to_do"` — no `.raw.md` exists session-wide (a
   delegation failure, not a per-agent "no findings" signal). If you hold
   reviewer responses, write them verbatim to their paths and re-run the

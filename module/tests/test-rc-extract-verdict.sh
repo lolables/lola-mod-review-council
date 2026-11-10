@@ -2000,6 +2000,222 @@ out=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "an odd prompt path only changes the detail text"
 rm -rf "$s"
 
+# --- Salvage (--salvage) ------------------------------------------------------
+# After the one re-dispatch round the orchestrator re-runs the extractor with
+# --salvage. A block whose only defects are in the repairable set (unknown keys,
+# a verdict outside the enum or incoherent with its severities, a missing
+# files_read) is normalised and accepted; anything else stays rejected, and its
+# raw reply is kept under verdicts/_meta/unverified/. Live, an adversary reply
+# lost a MEDIUM security finding to one stray `category` key.
+
+# salvage_raw <session> <rel-path> <json>: write <json> as a reviewer's fenced block.
+salvage_raw() {
+	mkdir -p "$(dirname "$1/$2")"
+	# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+	printf 'Review done.\n```json\n%s\n```\n' "$3" >"$1/$2"
+}
+# salvage_finding <severity> [extra-members]: one finding as compact JSON.
+salvage_finding() {
+	jq -nc --arg s "$1" --argjson x "{${2:-}}" '{severity: $s, file: "ca.go", line: 7, evidence: "os.WriteFile(key)", description: "migrate --force replaces an encrypted CA key with plaintext.", recommendation: "Refuse to overwrite an encrypted key."} + (if $s == "HIGH" or $s == "CRITICAL" then {impact: "Operators lose key encryption."} else {} end) + $x'
+}
+ADV=divisor-adversary-code
+ADV_RAW="verdicts/$ADV.raw.md"
+
+echo "Test: the #577 shape (APPROVE, a MEDIUM carrying \`category\`) is SCHEMA_INVALID without --salvage"
+s=$(mk)
+f=$(salvage_finding MEDIUM '"category":"fail-open-default"')
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[\"ca.go\"],\"verdict\":\"APPROVE\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "a stray finding key is rejected by default"
+assert_jq_str "$out" 'has("salvaged") or has("unverified")' "false" "no salvage keys without the flag"
+got=$([[ -e "$s/verdicts/_meta/salvage.json" ]] && echo yes || echo no)
+assert_equals "$got" "no" "no salvage record without the flag"
+echo "Test: with --salvage the same block is accepted, the key folded into its description"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "salvaged block accepted"
+assert_jq_str "$out" '.valid' "1" "salvaged block counts as valid"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0] | has("category")' "false" "unknown key removed from the finding"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0].description' "migrate --force replaces an encrypted CA key with plaintext. [Unrecognised fields: category=fail-open-default]" "key and value appended to the description"
+assert_jq "$s/verdicts/$ADV.json" '.verdict' "APPROVE" "a coherent verdict is kept"
+assert_jq_str "$out" '.salvaged | length' "1" "one salvaged entry"
+assert_jq_str "$out" '.salvaged[0] | "\(.agent) \(.path)"' "$ADV $ADV_RAW" "salvaged entry names agent and path"
+assert_jq_str "$out" '.salvaged[0].repairs | join("|")' "dropped finding key category (F1)" "the repair is named"
+assert_jq_str "$out" '.unverified' "[]" "nothing unverified"
+assert_jq "$s/verdicts/_meta/salvage.json" '.salvaged[0].repairs[0]' "dropped finding key category (F1)" "salvage.json records the repair"
+assert_jq "$s/verdicts/_meta/salvage.json" '.unverified' "[]" "salvage.json records no unverified reply"
+rm -rf "$s"
+
+echo "Test: --salvage replaces a verdict outside the enum over a HIGH with REQUEST CHANGES"
+s=$(mk)
+f=$(salvage_finding HIGH)
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE WITH ADVISORIES\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "accepted"
+assert_jq "$s/verdicts/$ADV.json" '.verdict' "REQUEST CHANGES" "verdict derived as REQUEST CHANGES"
+assert_jq_str "$out" '.salvaged[0].repairs | join("|")' "verdict \"APPROVE WITH ADVISORIES\" → REQUEST CHANGES (derived)" "the repair names old and new verdict"
+rm -rf "$s"
+
+echo "Test: --salvage raises an APPROVE over a HIGH to REQUEST CHANGES and keeps the HIGH"
+s=$(mk)
+f=$(salvage_finding HIGH)
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "VERDICT_INCOHERENT" "incoherent without the flag"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq "$s/verdicts/$ADV.json" '"\(.verdict) \(.findings[0].severity)"' "REQUEST CHANGES HIGH" "verdict raised, finding kept"
+assert_jq_str "$out" '.salvaged[0].repairs | join("|")' "verdict \"APPROVE\" → REQUEST CHANGES (derived)" "the repair is named"
+rm -rf "$s"
+
+echo "Test: --salvage drops an unknown top-level key and fills a missing files_read"
+s=$(mk)
+f=$(salvage_finding LOW)
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"summary\":\"fine\",\"verdict\":\"APPROVE\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "accepted"
+assert_jq "$s/verdicts/$ADV.json" 'has("summary")' "false" "summary dropped"
+assert_jq "$s/verdicts/$ADV.json" '.files_read' "[]" "files_read set to []"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0].description' "migrate --force replaces an encrypted CA key with plaintext." "a top-level key is not folded into a finding"
+assert_jq_str "$out" '.salvaged[0].repairs | join("|")' "dropped top-level key summary|files_read missing → []" "both repairs named"
+rm -rf "$s"
+
+echo "Test: --salvage repairs two defects at once, rendering non-string and long values"
+s=$(mk)
+long=$(printf 'x%.0s' {1..250})
+capped=$(printf 'x%.0s' {1..200})
+low=$(salvage_finding LOW)
+f=$(salvage_finding MEDIUM "\"tags\":[\"a\",1],\"note\":\"$long\"")
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"summary\":3,\"findings\":[$low,$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "accepted"
+assert_jq "$s/verdicts/$ADV.json" '.findings[1].description' "migrate --force replaces an encrypted CA key with plaintext. [Unrecognised fields: note=$capped..., tags=[\"a\",1]]" "values rendered: long one capped, array as JSON"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0].description' "migrate --force replaces an encrypted CA key with plaintext." "a clean finding is untouched"
+assert_jq_str "$out" '.salvaged[0].repairs | join("|")' "dropped top-level key summary|dropped finding key note (F2)|dropped finding key tags (F2)" "every repair named, finding numbered from 1"
+rm -rf "$s"
+
+echo "Test: --salvage does not guess a verdict over MEDIUM or LOW findings alone"
+s=$(mk)
+f=$(salvage_finding MEDIUM)
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"REQUEST_CHANGES\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '"\(.invalid[0].reason) \(.unverified[0].reason) \(.salvaged)"' "SCHEMA_INVALID SCHEMA_INVALID []" "invalid verdict with only a MEDIUM is not salvaged"
+rm -rf "$s"
+
+echo "Test: --salvage derives APPROVE for an invalid verdict over no findings"
+s=$(mk)
+salvage_raw "$s" "verdicts/divisor-adversary-spec.raw.md" '{"agent":"divisor-adversary-spec","files_read":[],"verdict":"LGTM","findings":[]}'
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "accepted"
+assert_jq "$s/verdicts/divisor-adversary-spec.json" '.verdict' "APPROVE" "verdict derived as APPROVE"
+assert_jq_str "$out" '.salvaged[0].repairs | join("|")' 'verdict "LGTM" → APPROVE (derived)' "the repair is named"
+rm -rf "$s"
+
+echo "Test: --salvage never drops a top-level key holding an array or object"
+for extra in '"more_findings":[{"severity":"HIGH","file":"ca.go","evidence":"x","description":"d","recommendation":"r","impact":"i"}]' '"advisories":{"note":"n"}'; do
+	s=$(mk)
+	salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"REQUEST CHANGES\",\"findings\":[],$extra}"
+	out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+	assert_jq_str "$out" '"\(.invalid[0].reason) \(.unverified[0].reason) \(.salvaged)"' "SCHEMA_INVALID SCHEMA_INVALID []" "${extra%%:*} keeps the reply rejected"
+	got=$([[ -e "$s/verdicts/$ADV.json" ]] && echo yes || echo no)
+	assert_equals "$got" "no" "${extra%%:*}: no verdict json, still a missing verdict"
+	rm -rf "$s"
+done
+
+echo "Test: --salvage caps the folded fields at 10 keys and 1000 characters, and says so"
+s=$(mk)
+v=$(printf 'v%.0s' {1..150})
+many=$(jq -nr --arg v "$v" '[range(1; 13) | {key: "k\(. + 10)", value: $v}] | from_entries | tostring | .[1:-1]')
+f=$(salvage_finding MEDIUM "$many")
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "accepted"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0] | keys | map(select(startswith("k"))) | length' "0" "every unknown key removed"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0].description | capture("\\[Unrecognised fields: (?<a>.*)\\]$").a | length' "1003" "appendix capped at 1000 characters plus the marker"
+assert_jq "$s/verdicts/$ADV.json" '.findings[0].description | test("k21=") or test("k22=")' "false" "keys past the tenth are not folded"
+assert_jq_str "$out" '.salvaged[0].repairs | map(select(startswith("description appendix truncated"))) | join("|")' "description appendix truncated (F1): kept 10 of 12 fields, 1000 of 1558 characters" "truncation is named"
+rm -rf "$s"
+
+echo "Test: --salvage leaves a valid block alone"
+s=$(mk)
+low=$(salvage_finding LOW)
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"REQUEST CHANGES\",\"findings\":[$low]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '"\(.status) \(.salvaged) \(.unverified)"' "ok [] []" "valid block: accepted, not listed as salvaged"
+rm -rf "$s"
+
+echo "Test: --salvage keeps rejecting a finding missing evidence, and keeps the raw reply (RC-212)"
+s=$(mk)
+f=$(salvage_finding MEDIUM '"category":"x"' | jq -c 'del(.evidence)')
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '.status' "extract_error" "still rejected"
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "reason unchanged"
+got=$([[ -e "$s/verdicts/$ADV.json" ]] && echo yes || echo no)
+assert_equals "$got" "no" "no verdict json: still a missing verdict"
+assert_jq_str "$out" '.salvaged' "[]" "nothing salvaged"
+assert_jq_str "$out" '.unverified[0] | "\(.agent) \(.path) \(.reason) \(.copy)"' "$ADV $ADV_RAW SCHEMA_INVALID verdicts/_meta/unverified/$ADV.md" "listed as unverified"
+got=$(cmp -s "$s/$ADV_RAW" "$s/verdicts/_meta/unverified/$ADV.md" && echo same || echo differs)
+assert_equals "$got" "same" "raw reply copied verbatim"
+assert_jq "$s/verdicts/_meta/salvage.json" '.unverified[0].reason' "SCHEMA_INVALID" "salvage.json lists it"
+rm -rf "$s"
+
+echo "Test: --salvage never fills an empty description with the folded keys"
+s=$(mk)
+f=$(salvage_finding MEDIUM '"category":"x"' | jq -c '.description = ""')
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '"\(.invalid[0].reason) \(.unverified | length)"' "SCHEMA_INVALID 1" "an empty description stays a defect"
+rm -rf "$s"
+
+echo "Test: --salvage lists a reply with no JSON block, or unparseable JSON, as unverified"
+s=$(mk)
+echo "I looked. REQUEST CHANGES." >"$s/verdicts/divisor-guard-code.raw.md"
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n{"agent": "divisor-sre-code", "findings": [\n```\n' >"$s/verdicts/divisor-sre-code.raw.md"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '[.unverified[] | "\(.agent):\(.reason)"] | join(" ")' "divisor-guard-code:NO_JSON_BLOCK divisor-sre-code:NO_JSON_BLOCK" "both unverified"
+got=$(cmp -s "$s/verdicts/divisor-sre-code.raw.md" "$s/verdicts/_meta/unverified/divisor-sre-code.md" && echo same || echo differs)
+assert_equals "$got" "same" "unparseable reply copied verbatim"
+rm -rf "$s"
+
+echo "Test: --salvage does not repair a wrong receipt, even beside a repairable key"
+idx=$(jq -nc --arg raw "$ADV_RAW" --arg r "$RCPT_GOOD" '{dispatches: [{agent: "divisor-adversary-code", raw: $raw, prompt: "prompts/dispatch/a.md", receipt: $r}]}')
+s=$(receipt_session "$ADV_RAW" "$idx")
+f=$(salvage_finding MEDIUM '"category":"x"')
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"receipt\":\"$RCPT_OTHER\",\"findings\":[$f]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '"\(.invalid[0].reason) \(.unverified[0].reason) \(.salvaged)"' "RECEIPT_MISSING RECEIPT_MISSING []" "receipt defect is not salvaged"
+got=$([[ -e "$s/verdicts/$ADV.json" ]] && echo yes || echo no)
+assert_equals "$got" "no" "no verdict json"
+rm -rf "$s"
+
+echo "Test: a normalised zero-finding APPROVE still meets the context gate"
+s=$(mk)
+salvage_raw "$s" "$ADV_RAW" "{\"agent\":\"$ADV\",\"files_read\":[],\"verdict\":\"APPROVE\",\"summary\":\"clean\",\"findings\":[]}"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '"\(.invalid[0].reason) \(.unverified[0].reason) \(.salvaged)"' "CONTEXT_MISSING CONTEXT_MISSING []" "repair does not bypass the gate"
+rm -rf "$s"
+
+echo "Test: an unverified deep-mode reply keeps its subsystem in the copy's path"
+s=$(mk)
+echo "no block" >"$s/verdicts/x.raw.md"
+mkdir -p "$s/verdicts/auth"
+echo "no block" >"$s/verdicts/auth/x.raw.md"
+out=$(bash "$SCRIPT" "$s" --salvage 2>/dev/null)
+assert_jq_str "$out" '[.unverified[].copy] | join(" ")' "verdicts/_meta/unverified/auth/x.md verdicts/_meta/unverified/x.md" "one copy per path, no collision"
+got=$([[ -f "$s/verdicts/_meta/unverified/auth/x.md" ]] && echo yes || echo no)
+assert_equals "$got" "yes" "nested copy written"
+echo "Test: a run without --salvage clears the previous run's salvage record"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+got=$([[ -e "$s/verdicts/_meta/salvage.json" || -e "$s/verdicts/_meta/unverified" ]] && echo stale || echo cleared)
+assert_equals "$got" "cleared" "salvage.json and unverified/ removed"
+rm -rf "$s"
+
+echo "Test: an unknown option is refused"
+s=$(mk)
+out=$(bash "$SCRIPT" "$s" --salvge 2>/dev/null)
+assert_jq_str "$out" '.status' "validation_error" "typo of --salvage refused"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

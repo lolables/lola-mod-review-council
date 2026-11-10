@@ -196,7 +196,15 @@ flowchart TD
    fenced ` ```json ` verdict block — no markdown prose.
 10. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
    `verdict-schema.json`. A missing or malformed block triggers one re-dispatch before it's reported as a loud
-   extraction failure rather than a silently dropped finding.
+   extraction failure rather than a silently dropped finding. After that round the orchestrator runs the extractor
+   once more with `--salvage`, so a reply that lost its review to a stray key (openvox-ca#577 lost a MEDIUM security
+   finding that way) is still counted: an unknown top-level key with a scalar value is dropped (an object or array
+   could hold findings, so it keeps the reply rejected), a finding's unknown keys are appended to its `description`
+   (at most 10 fields and 1000 characters), a verdict outside the enum becomes REQUEST CHANGES over a CRITICAL/HIGH
+   and APPROVE over no findings (never derived over MEDIUM/LOW alone, where the pipeline keeps the declared verdict),
+   an APPROVE over a CRITICAL/HIGH becomes REQUEST CHANGES, and a missing `files_read` becomes `[]`. The repaired block then meets every check unrepaired blocks meet (RC-212 guards that);
+   any other defect is still a rejection, and its raw reply is kept under `verdicts/_meta/unverified/` for the local
+   report, which quotes it. The PR comment shows neither.
    A code reviewer's (`divisor-*-code`) schema-valid APPROVE with no findings must also carry `context_check`: a
    verbatim quote of a whole, non-blank line of one of its round's files that lies outside the diff hunks, matched
    with the evidence matcher against the round and hunks in `prompts/context.json`, and not the line text another
@@ -400,7 +408,10 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   debugging only, and neither the renderers nor `rc-decide-verdict.sh` read it
 - `verdicts/_meta/` — phase state, kept out of `verdicts/` so nothing here is ever globbed as a reviewer verdict:
   the verification log (`verification.txt`), the consolidation manifest (`clusters.json`), the validator's saved reply (`validation.json`), the
-  verdict-format check the extractor ran (`schema-validation.txt`: `full` or `minimal`, the worst of every extraction), and, on a re-review,
+  verdict-format check the extractor ran (`schema-validation.txt`: `full` or `minimal`, the worst of every extraction), the
+  salvage record (`salvage.json`: the verdicts `rc-extract-verdict.sh --salvage` accepted after a repair, and the replies it
+  still rejected) with each rejected reply copied verbatim under `unverified/` (path below `verdicts/`, `.raw.md` -> `.md`;
+  the extractor never searches `_meta/`, and a run without `--salvage` removes both), and, on a re-review,
   `disposition.txt` (the untrusted-conversation triage audit trail), `findings.pre-disposition.json` (the snapshot
   Disposition's edits are checked against), `verdicts-map.pre-disposition.json` (the filed verdicts the check
   derives `.verdicts` from, copied with that snapshot) and `disposition-check.json` (the check's result and the SHA-256 of the

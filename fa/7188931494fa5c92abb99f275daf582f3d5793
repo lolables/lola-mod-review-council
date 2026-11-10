@@ -1,0 +1,19 @@
+module/tests/test-rc-assemble-prompts.sh
+  s_9e091809cf44ce::t_32595dc7f67bfe 138,290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fa7188931494fa5c92abb99f275daf582f3d5793",
+  "prompts": {},
+  "sessions": {
+    "s_9e091809cf44ce": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "572b4ac3-21f3-4434-9b0d-d6d3d48f1aff",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

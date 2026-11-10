@@ -664,7 +664,8 @@ builds what Step 3 hands them instead, from `batch-plan.json` as it stands:
 - `${session_dir}/prompts/[<subsystem>/]batch{N}-context.md` — one bundle per
   round holding the line-numbered text of that round's changed files, up to a
   per-file and a per-bundle size cap. Files left out are listed under its
-  "Read directly" heading with the reason. Handed to each reviewer by path.
+  "Read directly" heading with the reason. Each file names its lines inside
+  diff hunks. Handed to each reviewer by path.
 - `${session_dir}/prompts/context.json` — the round index
   `rc-extract-verdict.sh` uses to check a zero-finding APPROVE's
   `context_check`.

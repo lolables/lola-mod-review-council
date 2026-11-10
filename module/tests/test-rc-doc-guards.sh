@@ -3026,6 +3026,19 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-201: "outside the diff hunks" alone read as "a line the diff did not
+# change"; half the 2026-11-09 first-try rejections quoted an unchanged context
+# line inside a hunk. The preamble must say context lines are part of a hunk.
+echo "Test: the Output Format section defines a hunk as including its context lines (RC-201)"
+# shellcheck disable=SC2016 # literal markdown, not an expansion.
+if grep -qF 'A diff hunk is every line its `@@` header covers: the changed lines and the unchanged context lines around them.' <<<"$of"; then
+	echo "  PASS: reviewers learn that context lines are inside a hunk"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewers would quote unchanged context lines inside a hunk"
+	FAIL=$((FAIL + 1))
+fi
+
 # RC-182: Step 2.7 builds context.json, without which every code reviewer's
 # bare APPROVE fails closed as CONTEXT_MISSING, and the bundles of changed-file
 # text. A fresh start that stops the pre-delegation run at 2.5 skips it, and an

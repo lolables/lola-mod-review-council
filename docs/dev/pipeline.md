@@ -163,7 +163,9 @@ flowchart TD
    and engineering discipline and the verdict output format,
    pasted byte-identical at the top of every code-review prompt); one `[<subsystem>/]batch{N}-context.md` bundle per
    round, holding the line-numbered text of that round's changed files up to a per-file cap (`RC_CONTEXT_FILE_BYTES`)
-   and the batch byte budget, with every file left out listed under "Read directly" and its reason; and
+   and the batch byte budget, with every file left out listed under "Read directly" and its reason, and every file
+   whose lines can be quoted (inlined or over cap) labelled with its merged hunk ranges, so a reviewer choosing a
+   `context_check` line can see that unchanged context lines are inside a hunk too; and
    `context.json`, the round index the extractor checks against. Each round's files carry their new-side hunk ranges,
    parsed by the same `rc_diff_index` the batch planner uses, so the two never disagree about the diff. Files are
    read through the evidence matcher's root containment, so a path escaping the review root is never inlined

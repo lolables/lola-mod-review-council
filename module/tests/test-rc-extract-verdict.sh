@@ -1301,6 +1301,22 @@ assert_jq_str "$out" '.invalid[0].reason' "APPROVE_UNGROUNDED" "in-hunk quote re
 assert_jq_str "$out" '.invalid[0].detail | test("inside the diff hunks")' "true" "detail names the condition"
 rm -rf "$s"
 
+echo "Test: an in-hunk rejection names the file's hunk lines"
+s=$(gate_session)
+sed 's/"hunks":\[\[5,8\]\]/"ranges":"lines 5–8","hunks":[[5,8]]/' "$s/prompts/context.json" >"$s/c" && mv "$s/c" "$s/prompts/context.json"
+approve_with "$s" '{"file":"a.go","line":6,"evidence":"l6"}'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].detail | contains("Lines inside hunks in \"a.go\": lines 5–8.")' "true" "detail carries the ranges"
+rm -rf "$s"
+
+echo "Test: an in-hunk rejection from a session without ranges has no hunk-lines sentence"
+s=$(gate_session)
+approve_with "$s" '{"file":"a.go","line":6,"evidence":"l6"}'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].detail | contains("Lines inside hunks")' "false" "no ranges, no sentence"
+assert_jq_str "$out" '.invalid[0].detail | test("inside the diff hunks")' "true" "old detail kept"
+rm -rf "$s"
+
 echo "Test: a multi-line quote that reaches into a hunk is rejected"
 s=$(gate_session)
 approve_with "$s" '{"file":"a.go","line":3,"evidence":"l3\nl4\nl5"}'

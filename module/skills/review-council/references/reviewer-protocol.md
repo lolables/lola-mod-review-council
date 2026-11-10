@@ -129,7 +129,10 @@ Five rules govern the block, and they apply before you copy the shape below:
   object, never a string:
   `{"file": "<path>", "line": <n>, "evidence": "<the whole line, verbatim>"}`,
   quoting, byte for byte, a line of one of your round's files that lies outside
-  the diff hunks, with `line` the line the quote sits on. Quote the whole of
+  the diff hunks, with `line` the line the quote sits on. A diff hunk is
+  every line its `@@` header covers: the changed lines and the unchanged
+  context lines around them. Your round's bundle lists each file's lines
+  inside hunks; a line the diff did not change can still be one. Quote the whole of
   that line, not a fragment of it, and pick a non-blank one. Choose the line
   from your own reading: a quote of the same line another reviewer in your
   round already used is rejected. It shows the review looked past the diff;

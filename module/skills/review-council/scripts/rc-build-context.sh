@@ -177,16 +177,16 @@ code_span() { # text
 	printf '%s%s%s%s%s' "$tick" "$pad" "$text" "$pad" "$tick"
 }
 
-# True when some line 1..<lines> of a file is covered by none of <hunks_json>.
-# Interval arithmetic rather than enumerating lines: over-cap files take this
-# path too, and a 100k-line file would otherwise cost a 100k-element array.
-has_outside_line() { # lines hunks_json
-	jq -en --argjson n "$1" --argjson h "$2" '
+# Print <hunks_json> clipped to lines 1..<lines> of a file, sorted, and merged
+# where ranges overlap or touch. Interval arithmetic rather than enumerating
+# lines: over-cap files take this path too, and a 100k-line file would
+# otherwise cost a 100k-element array.
+merged_hunks() { # lines hunks_json
+	jq -cn --argjson n "$1" --argjson h "$2" '
 		[$h[] | [([.[0], 1] | max), ([.[1], $n] | min)] | select(.[0] <= .[1])] | sort
 		| reduce .[] as $r ([];
 			if length > 0 and $r[0] <= .[-1][1] + 1
-			then .[-1][1] = ([.[-1][1], $r[1]] | max) else . + [$r] end)
-		| (map(.[1] - .[0] + 1) | add // 0) < $n' >/dev/null
+			then .[-1][1] = ([.[-1][1], $r[1]] | max) else . + [$r] end)'
 }
 
 # Print why <fpath> cannot be inlined, or nothing when it can. Order matters: a
@@ -263,12 +263,20 @@ while IFS= read -r entry; do
 		hunks=$(jq -c --arg p "$f" '.[$p] // []' <<<"$hunk_index")
 		reason=$(skip_reason "$fpath")
 		outside=false
-		if [[ -z "$reason" || "$reason" == "over cap" ]]; then
+		ranges=""
+		if [[ "$diff_empty" -eq 0 ]] && [[ -z "$reason" || "$reason" == "over cap" ]]; then
 			lines=$(LC_ALL=C awk 'END { print NR }' "$fpath")
-			# shellcheck disable=SC2310 # has_outside_line is a predicate.
-			if [[ "$diff_empty" -eq 0 ]] && has_outside_line "$lines" "$hunks"; then
-				outside=true
-			fi
+			# `ranges` is what the bundle shows the reviewer: without it, a
+			# quote of an unchanged context line looks outside the diff.
+			merged=$(merged_hunks "$lines" "$hunks")
+			row=$(jq -rn --argjson n "$lines" --argjson m "$merged" '
+				($m | map(.[1] - .[0] + 1) | add // 0) as $covered
+				| [$covered < $n,
+					if $covered == 0 then "none"
+					elif $covered >= $n then "the whole file"
+					else "lines " + ($m | map(if .[0] == .[1] then "\(.[0])" else "\(.[0])–\(.[1])" end) | join(", "))
+					end] | @tsv')
+			IFS=$'\t' read -r outside ranges <<<"$row"
 		fi
 		if [[ -z "$reason" ]]; then
 			size=$(wc -c <"$fpath")
@@ -283,19 +291,22 @@ while IFS= read -r entry; do
 				fence='```'
 				while [[ "$numbered" == *"$fence"* ]]; do fence+='`'; done
 				heading=$(code_span "$f")
-				inlined_body+=$'\n'"### ${heading}"$'\n\n'"${fence}"$'\n'"${numbered}"$'\n'"${fence}"$'\n'
+				inlined_body+=$'\n'"### ${heading}"$'\n\n'
+				[[ -z "$ranges" ]] || inlined_body+="Inside diff hunks: ${ranges}"$'\n\n'
+				inlined_body+="${fence}"$'\n'"${numbered}"$'\n'"${fence}"$'\n'
 			fi
 		fi
 		span=$(code_span "$f")
 		if [[ -n "$reason" ]]; then
-			left_out+="- ${span} — ${reason}"$'\n'
+			left_out+="- ${span} — ${reason}${ranges:+; inside diff hunks: ${ranges}}"$'\n'
 		fi
 		if [[ "$outside" == "false" ]]; then
 			no_outside+="- ${span}"$'\n'
 		fi
-		files_json=$(jq -c --arg p "$f" --arg r "$reason" --argjson h "$hunks" --argjson o "$outside" \
+		files_json=$(jq -c --arg p "$f" --arg r "$reason" --arg rg "$ranges" --argjson h "$hunks" --argjson o "$outside" \
 			'. + [{path: $p, inlined: ($r == ""), hunks: $h, outside: $o}
-			      + (if $r == "" then {} else {reason: $r} end)]' <<<"$files_json")
+			      + (if $r == "" then {} else {reason: $r} end)
+			      + (if $rg == "" then {} else {ranges: $rg} end)]' <<<"$files_json")
 	done <<<"$file_list"
 
 	gate=waived
@@ -321,7 +332,7 @@ while IFS= read -r entry; do
 		echo "## Context check"
 		echo ""
 		if [[ "$gate" == "required" ]]; then
-			echo "An APPROVE with no findings must carry \`context_check\`: a verbatim quote from a line of one of this round's files that lies outside the diff hunks (see Output Format)."
+			echo "An APPROVE with no findings must carry \`context_check\`: a verbatim quote from a line of one of this round's files that lies outside the diff hunks (see Output Format). A diff hunk is every line its \`@@\` header covers: the changed lines and the unchanged context lines around them. Each file above, and each under Read directly, lists the lines inside its hunks."
 			if [[ -n "$no_outside" ]]; then
 				echo "These files have no such line, so quote from another:"
 				echo ""

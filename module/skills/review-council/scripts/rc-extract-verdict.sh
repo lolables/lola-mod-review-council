@@ -366,7 +366,7 @@ cited_line() { # path n
 # here neither aborts the run nor returns early: it leaves a variable empty,
 # and the next check rejects on that.
 context_gate() { # rel block
-	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder n
+	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder n hunk_ranges
 	if ! jq -e '.rounds | type == "array"' "$context_index" >/dev/null 2>&1; then
 		gate_out=$'CONTEXT_MISSING\t'"No usable prompts/context.json in this session, so a zero-finding APPROVE cannot be checked. Run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then re-run this extractor. No re-dispatch is needed."
 		return 0
@@ -467,7 +467,10 @@ context_gate() { # rel block
 		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.line $cline is not a line the quote occupies in $qfile, and the quote occurs there more than once. Cite the line the quote is on."
 		;;
 	*)
-		gate_out=$'APPROVE_UNGROUNDED\t'"context_check quotes lines inside the diff hunks of $qfile; those are visible from the diff alone. Quote a line outside every hunk; the bundle marks which files have such lines."
+		# Naming the lines lets the one retry land outside them instead of
+		# guessing again. Sessions from before the bundle recorded ranges omit it.
+		hunk_ranges=$(jq -r --arg f "$cfile" 'first(.files[] | select(.path == $f) | .ranges) // empty' <<<"$round")
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check quotes lines inside the diff hunks of $qfile; those are visible from the diff alone. A hunk includes its unchanged context lines. Quote a line outside every hunk; the bundle lists each file's lines inside hunks.${hunk_ranges:+ Lines inside hunks in $qfile: $hunk_ranges.}"
 		;;
 	esac
 }
@@ -739,7 +742,7 @@ looks. Put anything you would have added into `description`. Optional keys are
 and LOW. Every other key above is required.
 `context_check` is required on a code reviewer's APPROVE with no findings,
 unless your round's bundle says it is not required: quote a line outside the
-diff hunks.
+diff hunks, which include their unchanged context lines.
 Emit only the block — no prose before or after.
 Correct only the defect named above: re-emit the SAME findings, with the same
 severities and the same evidence. This is a formatting repair, not a new review.

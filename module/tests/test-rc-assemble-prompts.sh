@@ -135,7 +135,7 @@ bash "$ASSEMBLE" "$s" >/dev/null
 pre="$s/prompts/preamble.md"
 pre_bytes=$(wc -c <"$pre")
 for agent in divisor-guard-code divisor-curator-code; do
-	cmp -s -n "$pre_bytes" "$pre" "$s/prompts/dispatch/$agent.md" && same=yes || same=no
+	head -c "$pre_bytes" "$s/prompts/dispatch/$agent.md" | cmp -s "$pre" - && same=yes || same=no
 	assert_equals "$same" "yes" "$agent prompt starts with preamble.md"
 done
 rm -rf "$s"
@@ -287,7 +287,7 @@ assert_jq_str "$out" '.status' "ok" "status ok"
 f="$s/prompts/dispatch/divisor-guard-code.md"
 pre="$s/prompts/preamble.md"
 pre_bytes=$(wc -c <"$pre")
-cmp -s -n "$pre_bytes" "$pre" "$f" && same=yes || same=no
+head -c "$pre_bytes" "$f" | cmp -s "$pre" - && same=yes || same=no
 assert_equals "$same" "yes" "the preamble is still first"
 persona_at=$(grep -n -m1 -xF "PERSONA-GUARD-SENTINEL" "$f" | cut -d: -f1)
 review_at=$(grep -n -m1 -xF "# Your review" "$f" | cut -d: -f1)

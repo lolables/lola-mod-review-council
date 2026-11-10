@@ -103,7 +103,7 @@ else — no prose before or after it. The orchestrator extracts this block and
 validates it against the verdict schema (`verdict-schema.json`). A response the
 validator rejects is re-dispatched once; do not add commentary outside the block.
 
-Five rules govern the block, and they apply before you copy the shape below:
+Six rules govern the block, and they apply before you copy the shape below:
 
 - **The key set is closed.** The schema sets `"additionalProperties": false` at
   both the top level and inside each finding, so any other key is rejected and
@@ -111,7 +111,8 @@ Five rules govern the block, and they apply before you copy the shape below:
   `category` or `references` key is the most common way to lose a review. There
   is no key for extra context: put it in `description`.
 - **Required vs optional.** `agent`, `files_read`, `verdict` and `findings` are
-  all required; `model` and `context_check` are the optional top-level keys.
+  all required; `model` and `context_check` are the optional top-level keys, and
+  so is `receipt`, which is required whenever your prompt names one (below).
   Inside a finding, `severity`, `file`, `evidence`, `description` and
   `recommendation` are required; `line`, `title` and `constraint` are optional,
   and so is `impact` below HIGH.
@@ -140,6 +141,12 @@ Five rules govern the block, and they apply before you copy the shape below:
   waived — no such line exists, or there is no diff (`--scope all`); then leave
   it out. A verdict with findings never needs it, and spec reviewers never
   file it.
+- **`receipt` is required on every verdict when your prompt names one.** A prompt
+  file that ends with a `## Receipt` section names a token of the form
+  `rcpt-` plus 16 hex digits. Copy it exactly from the prompt's last line into the
+  top-level `receipt` field. It shows you read the prompt to its end; a verdict
+  without it, or with another prompt's, is returned to you. If your prompt names no
+  receipt, leave the field out.
 
 ```json
 {

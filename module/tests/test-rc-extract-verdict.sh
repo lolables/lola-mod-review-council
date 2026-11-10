@@ -1476,6 +1476,8 @@ approve_with "$s" '{"file":"a.go","line":12,"evidence":"l12"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_jq_str "$out" '.invalid[0].reason' "CONTEXT_MISSING" "a skipped Step 2.7 cannot switch the gate off"
 assert_jq_str "$out" '.invalid[0].detail | test("rc-build-context.sh")' "true" "detail names the fix"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "detail re-renders the prompts keeping their receipts" -F "Step 2.8) with --keep-receipts"
 rm -rf "$s"
 
 echo "Test: a session without a Review root fails closed as CONTEXT_MISSING"
@@ -1743,6 +1745,261 @@ bash "$SCRIPT" "$s" >/dev/null 2>&1 || true
 [[ -e "$s/gate-firings.jsonl" ]] && present=yes || present=no
 assert_equals "$present" "no" "that log preserves CRITICAL/HIGH claims only"
 rm -rf "$s"
+# --- Read receipt ----------------------------------------------------------
+# rc-assemble-prompts.sh indexes each dispatch in dispatch.json at the session
+# root with the receipt its prompt file ends with. The extractor holds a verdict to it.
+RCPT_GOOD="rcpt-0123456789abcdef"
+RCPT_OTHER="rcpt-fedcba9876543210"
+
+# receipt_session <raw-rel-path> [index-json]: a session whose index plans one
+# dispatch for divisor-guard-code at <raw-rel-path>. With a second argument the
+# index is that text instead.
+receipt_session() {
+	local s idx
+	s=$(mk)
+	mkdir -p "$s/prompts"
+	idx="${2:-$(jq -nc --arg raw "$1" --arg r "$RCPT_GOOD" \
+		'{dispatches: [{agent: "divisor-guard-code", raw: $raw, prompt: "prompts/dispatch/divisor-guard-code.md", receipt: $r}]}')}"
+	printf '%s\n' "$idx" >"$s/dispatch.json"
+	printf '%s' "$s"
+}
+# receipt_verdict <session> <raw-rel-path> [extra-json-members]: a bare
+# REQUEST CHANGES verdict (no context gate) with the given members appended.
+receipt_verdict() {
+	mkdir -p "$(dirname "$1/$2")"
+	# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+	printf '```json\n{"agent":"divisor-guard-code","files_read":[],"verdict":"REQUEST CHANGES","findings":[{"severity":"LOW","file":"a.go","line":1,"evidence":"x","description":"d","recommendation":"r"}]%s}\n```\n' "${3:+,$3}" >"$1/$2"
+}
+
+echo "Test: a matching receipt is accepted and the run reports receipts checked (a)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "matching receipt accepted"
+assert_jq_str "$out" '.receipts' "checked" "output says the check ran"
+rm -rf "$s"
+
+echo "Test: a verdict with no receipt is RECEIPT_MISSING and the detail hides the token (b, RC-204)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "extract_error" "missing receipt rejected"
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "reason names the receipt"
+assert_jq_str "$out" '.receipts' "checked" "extract_error output carries receipts too"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "detail names the prompt file" -F "prompts/dispatch/divisor-guard-code.md"
+assert_match_count "$out" 0 "the expected token is never printed" -F "$RCPT_GOOD"
+remediation=$(jq -r '.remediation' <<<"$out")
+assert_match_count "$remediation" 1 "remediation calls it a re-read" -F "RECEIPT_MISSING alone, the fix is a re-read"
+[[ ! -e "$s/verdicts/divisor-guard-code.json" ]] && gone=yes || gone=no
+assert_equals "$gone" "yes" "no verdict json is written for a rejected receipt"
+rm -rf "$s"
+
+echo "Test: a wrong receipt is RECEIPT_MISSING (c)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_OTHER\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "another dispatch's receipt rejected"
+rm -rf "$s"
+
+echo "Test: the key set stays closed beside a valid receipt (d)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\",\"extra\":1"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "unknown key still rejected"
+rm -rf "$s"
+
+echo "Test: a raw file the index does not plan is DISPATCH_UNINDEXED (e)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+receipt_verdict "$s" verdicts/stray/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "DISPATCH_UNINDEXED" "unplanned path rejected"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "no re-dispatch is asked for" -F "No re-dispatch is needed"
+assert_match_count "$detail" 1 "a changed plan is re-rendered keeping receipts" -F "Step 2.8) with --keep-receipts"
+assert_match_count "$detail" 1 "the index is named at the session root" -F "not a planned dispatch path in dispatch.json"
+rm -rf "$s"
+
+echo "Test: no index means no receipt check and receipts unchecked (f)"
+s=$(mk)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a session predating the index still extracts"
+assert_jq_str "$out" '.receipts' "unchecked" "the skipped check is reported"
+rm -rf "$s"
+
+echo "Test: batched and deep raw paths resolve against the index (g)"
+for raw in verdicts/batch1/divisor-guard-code.raw.md verdicts/auth/divisor-guard-code.raw.md; do
+	s=$(receipt_session "$raw")
+	receipt_verdict "$s" "$raw" "\"receipt\":\"$RCPT_GOOD\""
+	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.status' "ok" "$raw matched by its session-relative path"
+	receipt_verdict "$s" "$raw" ""
+	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "$raw is held to its receipt"
+	rm -rf "$s"
+done
+
+echo "Test: a receipt off the pattern is SCHEMA_INVALID on either validation path (h)"
+rcpt_nojs_mask=$(mktemp -d)
+rcpt_nojs=$(path_without_command jsonschema "$rcpt_nojs_mask")
+for bad in rcpt-XYZ "rcpt-0123456789ABCDEF" "rcpt-0123456789abcdef0" $'rcpt-0123456789abcdef\n'; do
+	s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+	member=$(jq -nr --arg r "$bad" '"\"receipt\":" + ($r | tojson)')
+	receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "$member"
+	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "$(printf '%q' "$bad") rejected"
+	out=$(PATH="$rcpt_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "$(printf '%q' "$bad") rejected without the validator"
+	rm -rf "$s"
+done
+rm -rf "$rcpt_nojs_mask"
+
+echo "Test: a response filed under another agent's name is AGENT_MISMATCH, not a missed receipt"
+idx='{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/divisor-guard-code.raw.md","prompt":"prompts/dispatch/divisor-guard-code.md","receipt":"rcpt-0123456789abcdef"},{"agent":"divisor-sre-code","raw":"verdicts/divisor-sre-code.raw.md","prompt":"prompts/dispatch/divisor-sre-code.md","receipt":"rcpt-fedcba9876543210"}]}'
+s=$(receipt_session verdicts/divisor-guard-code.raw.md "$idx")
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_OTHER\""
+sed 's/"agent":"divisor-guard-code"/"agent":"divisor-sre-code"/' "$s/verdicts/divisor-guard-code.raw.md" >"$s/c" && mv "$s/c" "$s/verdicts/divisor-guard-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "AGENT_MISMATCH" "the misfiling is named before the receipt is judged"
+rm -rf "$s"
+
+echo "Test: the same agent's other batch filed here is RECEIPT_MISFILED and names where it belongs"
+idx='{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/batch1/divisor-guard-code.raw.md","prompt":"prompts/dispatch/batch1/divisor-guard-code.md","receipt":"rcpt-0123456789abcdef"},{"agent":"divisor-guard-code","raw":"verdicts/batch2/divisor-guard-code.raw.md","prompt":"prompts/dispatch/batch2/divisor-guard-code.md","receipt":"rcpt-fedcba9876543210"}]}'
+s=$(receipt_session verdicts/batch1/divisor-guard-code.raw.md "$idx")
+receipt_verdict "$s" verdicts/batch2/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISFILED" "another dispatch's receipt marks a misfiling"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "detail names the path the response belongs to" -F "verdicts/batch1/divisor-guard-code.raw.md"
+assert_match_count "$detail" 1 "no re-dispatch is asked for" -F "No re-dispatch is needed"
+rm -rf "$s"
+
+echo "Test: a misfile onto a path that already holds its own receipted verdict is RECEIPT_MISSING"
+# A reviewer that read a sibling dispatch's prompt returns that dispatch's
+# receipt. Moving its reply onto the sibling's path would overwrite a valid
+# verdict, so the misfiling is named only when that path is free to take it.
+idx='{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/batch1/divisor-guard-code.raw.md","prompt":"prompts/dispatch/batch1/divisor-guard-code.md","receipt":"rcpt-0123456789abcdef"},{"agent":"divisor-guard-code","raw":"verdicts/batch2/divisor-guard-code.raw.md","prompt":"prompts/dispatch/batch2/divisor-guard-code.md","receipt":"rcpt-fedcba9876543210"}]}'
+s=$(receipt_session verdicts/batch1/divisor-guard-code.raw.md "$idx")
+receipt_verdict "$s" verdicts/batch1/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\""
+receipt_verdict "$s" verdicts/batch2/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid | length' "1" "only the copy is refused"
+assert_jq_str "$out" '.invalid[0].path' "verdicts/batch2/divisor-guard-code.raw.md" "the refused file is the one without its own receipt"
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "it owes its own receipt, not a move"
+assert_jq_str "$out" '.valid' "1" "the verdict already on the target path stands"
+receipt_verdict "$s" verdicts/batch1/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_OTHER\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '[.invalid[].reason] | join(",")' "RECEIPT_MISFILED,RECEIPT_MISFILED" "two swapped replies are each misfiled"
+rm -rf "$s"
+
+echo "Test: a schema-invalid verdict also missing its receipt is told both"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md '"extra":1'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "the format defect is the reason"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail adds the receipt re-read" -F "prompts/dispatch/divisor-guard-code.md\" to its last line"
+assert_match_count "$out" 0 "the expected token is never printed" -F "$RCPT_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\",\"extra\":1"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 0 "a correct receipt adds nothing" -F "to its last line"
+rm -rf "$s"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+mkdir -p "$s/verdicts"
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n["not", "an", "object"]\n```\n' >"$s/verdicts/divisor-guard-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "a non-object block is schema-invalid"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "and still told to copy the receipt" -F "to its last line"
+rm -rf "$s"
+
+echo "Test: a reply with no JSON block is told to re-read its prompt when receipts are checked"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+mkdir -p "$s/verdicts"
+printf 'I reviewed it and it looks fine.\n' >"$s/verdicts/divisor-guard-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "NO_JSON_BLOCK" "no block is still NO_JSON_BLOCK"
+detail=$(jq -r '.invalid[0].detail // ""' <<<"$out")
+assert_match_count "$detail" 1 "the detail names the prompt to re-read" -F "prompts/dispatch/divisor-guard-code.md\" to its last line"
+assert_match_count "$out" 0 "the expected token is never printed" -F "$RCPT_GOOD"
+rm -rf "$s"
+s=$(mk)
+mkdir -p "$s/verdicts"
+printf 'I reviewed it and it looks fine.\n' >"$s/verdicts/divisor-guard-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0] | has("detail")' "false" "without an index there is no detail"
+rm -rf "$s"
+
+echo "Test: one re-dispatch carries a missing receipt and a missing context_check together"
+s=$(gate_session)
+printf '%s\n' '{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/divisor-guard-code.raw.md","prompt":"prompts/dispatch/divisor-guard-code.md","receipt":"rcpt-0123456789abcdef"}]}' >"$s/dispatch.json"
+approve_with "$s" ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "the receipt is reported"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail also carries the context-check requirement" -F "must carry \`context_check\`"
+assert_match_count "$detail" 1 "the detail still names the prompt file" -F "prompts/dispatch/divisor-guard-code.md"
+remediation=$(jq -r '.remediation' <<<"$out")
+assert_match_count "$remediation" 1 "the remediation permits the other fix" -F "fix that in the same re-emit"
+approve_with "$s" '{"file":"a.go","line":12,"evidence":"l12"}'
+sed 's/"findings":\[\]/"findings":[],"receipt":"rcpt-0123456789abcdef"/' "$s/verdicts/divisor-guard-code.raw.md" >"$s/c" && mv "$s/c" "$s/verdicts/divisor-guard-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "the one re-emit with both fixes is accepted"
+rm -rf "$s"
+
+echo "Test: a receipt failure beside a verdict/severity mismatch carries both"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+body=$(incoherent_block divisor-guard-code)
+write_raw "$s" divisor-guard-code "$body"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "the receipt is reported"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail also carries the mismatch" -F "Verdict/severity mismatch"
+rm -rf "$s"
+
+echo "Test: a refused receipt reserves no context_check line"
+s=$(gate_session)
+printf '%s\n' '{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/divisor-guard-code.raw.md","prompt":"p.md","receipt":"rcpt-0123456789abcdef"},{"agent":"divisor-sre-code","raw":"verdicts/divisor-sre-code.raw.md","prompt":"q.md","receipt":"rcpt-fedcba9876543210"}]}' >"$s/dispatch.json"
+approve_with "$s" '{"file":"a.go","line":12,"evidence":"l12"}'
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n{"agent":"divisor-sre-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"receipt":"rcpt-fedcba9876543210","context_check":{"file":"a.go","line":12,"evidence":"l12"}}\n```\n' >"$s/verdicts/divisor-sre-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid | length' "1" "only the reviewer owing a receipt is refused"
+assert_jq_str "$out" '.invalid[0].agent' "divisor-guard-code" "the refused reviewer is named"
+assert_jq_str "$out" '.valid' "1" "the other reviewer's identical quote was not displaced"
+rm -rf "$s"
+
+echo "Test: an index that cannot be used fails closed, never as absent"
+for idx in 'not json' '{"dispatches":"x"}' '{"dispatches":[{"agent":"a","raw":"verdicts/divisor-guard-code.raw.md","prompt":"p.md","receipt":"rcpt-short"}]}'; do
+	s=$(receipt_session verdicts/divisor-guard-code.raw.md "$idx")
+	receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\""
+	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.invalid[0].reason' "DISPATCH_UNINDEXED" "bad index '$idx' rejects the verdict"
+	assert_jq_str "$out" '.receipts' "checked" "bad index '$idx' is not reported as unchecked"
+	detail=$(jq -r '.invalid[0].detail' <<<"$out")
+	assert_match_count "$detail" 1 "bad index '$idx': fresh receipts mean re-dispatching every reviewer" -F "re-dispatch every reviewer"
+	rm -rf "$s"
+done
+
+echo "Test: an index left only under prompts/ is not read"
+s=$(mk)
+mkdir -p "$s/prompts"
+printf '%s\n' '{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/divisor-guard-code.raw.md","prompt":"p.md","receipt":"rcpt-0123456789abcdef"}]}' >"$s/prompts/dispatch.json"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.receipts' "unchecked" "the index is read from the session root only"
+rm -rf "$s"
+
+echo "Test: an index path is data, never opened"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md '{"dispatches":[{"agent":"divisor-guard-code","raw":"verdicts/divisor-guard-code.raw.md","prompt":"../../etc/passwd","receipt":"rcpt-0123456789abcdef"}]}')
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "an odd prompt path only changes the detail text"
+rm -rf "$s"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

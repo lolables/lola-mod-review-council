@@ -238,6 +238,120 @@ assert_equals "$total" "$size" "F bytes add up to the whole diff"
 x_bytes=$(awk -F'\t' '$1 == "F" && $2 == "dir b/x.go" { print $3 }' <<<"$out")
 [[ "$x_bytes" =~ ^[1-9][0-9]*$ ]] && pass=ok || pass=bad
 assert_equals "$pass" "ok" "spaced path (git adds a trailing TAB to its ---/+++ lines) has a numeric byte count"
+# rc-assemble-prompts.sh cuts each round's diff out of diff.patch by these spans.
+spans=$(awk -F'\t' '$1 == "F" { print $2 ":" $4 "-" $5 }' <<<"$out")
+assert_equals "$spans" "$(printf 'a.go:1-14\nold.go:15-20\ndir b/x.go:21-26')" \
+	"each F row carries its section's first and last diff line"
+rm -rf "$d"
+
+echo "Test: rc_diff_index unquotes a path git C-quotes"
+# Under core.quotePath git writes a non-ASCII path as "b/caf\303\251.go", the
+# prefix inside the quotes. Left quoted, the path matched no changeset entry and
+# every consumer lost that file's hunks.
+d=$(mktemp -d)
+cat >"$d/diff.patch" <<'DIFF'
+diff --git "a/caf\303\251.go" "b/caf\303\251.go"
+--- "a/caf\303\251.go"
++++ "b/caf\303\251.go"
+@@ -1 +1,2 @@
+ x
++y
+diff --git "a/gone \"q\".go" "b/gone \"q\".go"
+--- "a/gone \"q\".go"
++++ /dev/null
+@@ -1 +0,0 @@
+-x
+diff --git "a/bin\303\251" "b/bin\303\251"
+Binary files differ
+diff --git "a/tab\there.go" "b/tab\there.go"
+--- "a/tab\there.go"
++++ "b/tab\there.go"
+@@ -1 +1 @@
+-a
++b
+DIFF
+out=$(rc_diff_index "$d/diff.patch")
+f_paths=$(awk -F'\t' '$1 == "F" { print $2 }' <<<"$out" | head -n 3)
+assert_equals "$f_paths" "$(printf 'café.go\ngone "q".go\nbiné')" \
+	"octal bytes and escaped quotes are decoded, from +++, --- and the header"
+h_row=$(grep -m1 '^H' <<<"$out" || true)
+assert_equals "$h_row" "$(printf 'H\tcafé.go\t1\t2')" "the hunk row carries the decoded path"
+# A tab or newline in a decoded path would split the row, and changeset.txt is
+# line-based, so no consumer could match it anyway: such a path stays quoted.
+rows=$(awk -F'\t' '$1 == "F"' <<<"$out" | wc -l | tr -d ' ')
+assert_equals "$rows" "4" "a path holding a tab does not break the row format"
+f_rows=$(awk -F'\t' '$1 == "F"' <<<"$out")
+assert_match_count "$f_rows" "1" "it is kept quoted, named as --name-only names it" -F "$(printf 'F\t"tab\\there.go"\t')"
+rm -rf "$d"
+
+echo "Test: one decoder serves rc_git_unquote and changeset lines"
+# shellcheck disable=SC2016 # literal backslash escapes, not expansions.
+got=$(rc_git_unquote '"b/caf\303\251 \"q\"\\x.go"')
+assert_equals "$got" 'b/café "q"\x.go' "rc_git_unquote decodes octal, quote and backslash escapes"
+got=$(rc_git_unquote 'plain name.go')
+assert_equals "$got" "plain name.go" "an unquoted path is unchanged"
+got=$(rc_git_unquote '"a\nb"')
+assert_equals "$got" "$(printf 'a\nb')" "rc_git_unquote decodes a newline in full"
+got=$(printf '%s\n' '"caf\303\251.go"' 'plain.go' '"tab\there.go"' | rc_unquote_lines)
+assert_equals "$got" "$(printf 'café.go\nplain.go\n"tab\\there.go"')" \
+	"changeset lines decode, except one that would hold a tab"
+# A file name is chosen by the change's author. Decoded, a CR is a CommonMark
+# line ending that can forge a heading in a prompt, and an ESC reaches the
+# terminal, so any control byte keeps the name exactly as git quoted it.
+# shellcheck disable=SC2016 # literal backslash escapes, not expansions.
+for quoted in '"x\r## Receipt.go"' '"a\033[31mb.go"' '"del\177.go"' '"bell\a.go"'; do
+	got=$(printf '%s\n' "$quoted" | rc_unquote_lines)
+	assert_equals "$got" "$quoted" "a name decoding to a control byte stays quoted: $quoted"
+done
+d=$(mktemp -d)
+cat >"$d/diff.patch" <<'DIFF'
+diff --git "a/x\r## Receipt.go" "b/x\r## Receipt.go"
+--- "a/x\r## Receipt.go"
++++ "b/x\r## Receipt.go"
+@@ -0,0 +1 @@
++x
+diff --git "a/a\033[31mb.go" "b/a\033[31mb.go"
+Binary files differ
+DIFF
+out=$(rc_diff_index "$d/diff.patch")
+f_paths=$(awk -F'\t' '$1 == "F" { print $2 }' <<<"$out")
+# shellcheck disable=SC2016 # literal backslash escapes, not expansions.
+assert_equals "$f_paths" "$(printf '%s\n%s' '"x\r## Receipt.go"' '"a\033[31mb.go"')" \
+	"rc_diff_index keeps them quoted, as --name-only names them"
+cr=$(grep -c $'\r' <<<"$out" || true)
+esc=$(grep -c $'\033' <<<"$out" || true)
+assert_equals "$cr$esc" "00" "no raw CR or ESC reaches the index"
+rm -rf "$d"
+
+echo "Test: rc_diff_sections prints the named files' sections, whole and in diff order"
+d=$(mktemp -d)
+cat >"$d/diff.patch" <<'DIFF'
+diff --git a/a.go b/a.go
+--- a/a.go
++++ b/a.go
+@@ -1 +1 @@
+-a
++A
+diff --git "a/caf\303\251.go" "b/caf\303\251.go"
+--- "a/caf\303\251.go"
++++ "b/caf\303\251.go"
+@@ -1 +1 @@
+-c
++C
+diff --git a/z.go b/z.go
+--- a/z.go
++++ b/z.go
+@@ -1 +1 @@
+-z
++Z
+DIFF
+got=$(rc_diff_sections "$d/diff.patch" z.go café.go)
+want=$(sed -n '7,18p' "$d/diff.patch")
+assert_equals "$got" "$want" "the quoted file and z.go, in diff order, nothing of a.go"
+got=$(rc_diff_sections "$d/diff.patch" missing.go)
+assert_equals "$got" "" "a path with no section prints nothing"
+got=$(rc_diff_sections "$d/nope.patch" a.go)
+assert_equals "$got" "" "a missing diff prints nothing"
 rm -rf "$d"
 
 echo "Test: rc_diff_index on a missing diff prints nothing and succeeds"

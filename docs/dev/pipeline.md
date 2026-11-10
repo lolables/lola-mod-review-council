@@ -21,7 +21,8 @@ conditional:
 | **Quality Gates**     | `SKILL.md` "Step 2.5: QUALITY GATES", CI data from `rc-prepare.sh` | Forge CI status checks (code review with a PR only)       |
 | **Batch Plan**        | `rc-plan-batches.sh`                                               | Split the changeset into delegation rounds by context bytes |
 | **Reviewer Context**  | `rc-build-context.sh`                                              | Build the shared prompt preamble and each round's file bundle |
-| **Delegate**          | `phases/delegate.md`                                               | Prompt construction, dispatch                             |
+| **Dispatch Prompts**  | `rc-assemble-prompts.sh`                                           | Build each reviewer's prompt file and the dispatch index  |
+| **Delegate**          | `phases/delegate.md`                                               | Dispatch by prompt path                                   |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict; gate bare APPROVEs |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `rc-apply-severity-override.sh` + `rc-recompute-verdicts.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate; per-agent verdicts derived last |
 | **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
@@ -67,7 +68,8 @@ flowchart TD
   qgrun["Quality Gates: run CI checks"]
   plan["Batch plan: split the changeset into delegation rounds on context bytes"]
   ctx["Reviewer context: preamble, one file bundle per round, round index"]
-  del["Delegate: construct prompts, dispatch agents in parallel"]
+  pr["Dispatch prompts: one prompt file per reviewer per round, dispatch index"]
+  del["Delegate: dispatch agents in parallel, each handed its prompt path"]
   ext["Extract: schema-validate each reviewer's JSON verdict, gate zero-finding APPROVEs"]
   ver["Verify: format gate, correction, strip, merge-base advisories, consolidation, arbiter (calibration + validation gate)"]
   dispgate{"Re-review conversation to triage? (not quick effort)"}
@@ -90,7 +92,8 @@ flowchart TD
   qgrun --> plan
   qg -->|no| plan
   plan --> ctx
-  ctx --> del
+  ctx --> pr
+  pr --> del
   del --> ext
   ext -->|extract_error - re-dispatch once| del
   ext -->|ok| ver
@@ -161,7 +164,7 @@ flowchart TD
    skipped the documents their agent files listed (issue #101). `rc-build-context.sh` writes, under `prompts/`:
    `preamble.md` (the severity definitions, the selected packs' calibration notes, the protocol's evidence, standards
    and engineering discipline and the verdict output format,
-   pasted byte-identical at the top of every code-review prompt); one `[<subsystem>/]batch{N}-context.md` bundle per
+   copied byte-identical to the top of every code-review prompt); one `[<subsystem>/]batch{N}-context.md` bundle per
    round, holding the line-numbered text of that round's changed files up to a per-file cap (`RC_CONTEXT_FILE_BYTES`)
    and the batch byte budget, with every file left out listed under "Read directly" and its reason, and every file
    whose lines can be quoted (inlined or over cap) labelled with its merged hunk ranges, so a reviewer choosing a
@@ -169,7 +172,26 @@ flowchart TD
    `context.json`, the round index the extractor checks against. Each round's files carry their new-side hunk ranges,
    parsed by the same `rc_diff_index` the batch planner uses, so the two never disagree about the diff. Files are
    read through the evidence matcher's root containment, so a path escaping the review root is never inlined
-9. **Delegate** — construct prompts with the preamble, changeset, diff, the round's bundle path and prior run context; dispatch agents in parallel with model
+   **8a. Dispatch prompts** — render each reviewer's whole prompt to a file, so the orchestrator hands a path and
+   never retypes content: on openvox-ca#570 a hand-copied ~60 KB prompt garbled four diff hunks and the run was
+   discarded. `rc-assemble-prompts.sh` runs after `rc-build-context.sh` and reads what it wrote, plus
+   `references/dispatch-prompt.md`, which holds the prose of every prompt section (a guard keeps its section names
+   in step with the script). It writes `prompts/dispatch/[<verdict_dir>/]<agent>.md` per reviewer per round and the
+   index `dispatch.json` at the session root (`agent`, `raw`, `prompt`, `receipt` per dispatch; `raw` and `prompt`
+   relative to the session directory). A code prompt holds the preamble,
+   the persona file under `--inline-persona`, the changeset, the diff, the bundle path, the session's context
+   sections and the round's lines inside diff hunks; a spec prompt holds the artifact list and spec sections, and no
+   preamble, bundle, diff or context check. The agent's `-code` or `-spec` suffix picks which; any other suffix is an
+   error. A deep run renders each subsystem's own council, framed from `subsystems.json`, and is refused when
+   `diff.patch` has a section no round names. Prior run context comes from the previous pass's `verdicts/findings.json`
+   at iteration 2 or later. Every prompt ends with a `## Receipt` naming a token unique to the dispatch. Re-running
+   `rc-build-context.sh` deletes `prompts/dispatch/`, so this step always follows it, including on iteration re-entry.
+   The index lives outside `prompts/` so that re-run leaves it, and receipts with it, in place. Every run mints fresh
+   receipts except under `--keep-receipts`, the recovery form for after dispatch: each dispatch the existing index
+   lists keeps its receipt, so collected verdicts still match, and a malformed index is an error rather than a silent
+   reset. The receipt guards against a reviewer skimming its prompt, not against one that reads the session
+   directory, where the index and every other prompt are readable.
+9. **Delegate** — dispatch agents in parallel, each handed the path of its prompt file in a fixed wrapper, with model
    tier guidance (capable tier for Adversary/Guard, standard for others). Each reviewer's entire response is a single
    fenced ` ```json ` verdict block — no markdown prose.
 10. **Extract** — pull the fenced JSON block from each reviewer's raw output and validate it against
@@ -187,13 +209,27 @@ flowchart TD
    re-dispatch of its own; any other failure is `APPROVE_UNGROUNDED` and gets the one re-dispatch. Neither is written
    to `gate-firings.jsonl`, which keeps CRITICAL/HIGH claims and this verdict carries none. The gate is waived for a round with no line outside its hunks, and when there is no diff (`--scope all`). A
    session without a usable index, or a raw file in a directory no round writes to, is `CONTEXT_MISSING`: the
-   orchestrator rebuilds the index or moves the file and re-extracts, with nothing re-dispatched.
+   orchestrator rebuilds the index and re-renders the prompts with `--keep-receipts`, or moves the file, and
+   re-extracts, with nothing re-dispatched.
+   Once `dispatch.json` exists, each verdict must also carry the top-level `receipt` of its dispatch. A missing
+   or wrong one is `RECEIPT_MISSING` and gets one re-dispatch asking for a re-read of the prompt, not a re-review.
+   With receipts checked, a `NO_JSON_BLOCK` rejection, and a `SCHEMA_INVALID` one whose block lacks its receipt,
+   names the prompt to re-read too, so the one format repair also recovers the receipt. A
+   receipt belonging to another dispatch is `RECEIPT_MISFILED`, unless that dispatch's raw file already carries it
+   (then the reviewer read the wrong prompt, and it is `RECEIPT_MISSING`), and a raw file the index does not list (or a malformed
+   index) is `DISPATCH_UNINDEXED`; both are the orchestrator's faults, fixed by moving the file or re-running
+   Steps 2.7 and 2.8 with `--keep-receipts`, with nothing re-dispatched. Only a malformed index that cannot be
+   restored costs a re-dispatch of every reviewer, as its receipts are lost. The receipt shows the reviewer reached the end of its prompt, not that it read
+   every line. The extractor reports `receipts: "checked"` or, without an index, `"unchecked"`.
    Known limits. The gate raises the cost of a no-look APPROVE; it does not prove the review's depth, and a
    reviewer that files any finding, even a LOW, is not gated at all. #101 accepted both when it chose this gate
    (issue option (b)); inlining the files is what makes depth cheap. The one-line-per-round rule blocks one
-   reviewer's quote being copied to the others, not an orchestrator that writes a distinct quote for each. And a
-   path git C-quotes (non-ASCII under `core.quotePath`) gets no hunk data from `rc_diff_index`, so every line of
-   that file counts as outside the hunks and any verified quote from it passes.
+   reviewer's quote being copied to the others, not an orchestrator that writes a distinct quote for each. A
+   path git C-quotes (non-ASCII under `core.quotePath`) is decoded by one rule (`rc_unq_line` in `rc-lib.sh`) both
+   where preparation writes `changeset.txt` and where `rc_diff_index` reads the diff, so its hunks are found. The
+   exception is a name holding a control byte (a tab, a newline, a CR that would end a markdown line inside a
+   prompt, an ESC): it stays quoted on both sides, cannot be opened from the review root under that name, and so
+   is listed under "Read directly" as deleted.
    The schema requires `impact` (who is hurt, and how) on every HIGH and CRITICAL finding; the jq fallback mirrors
    that conditional from `RC_IMPACT_SEVERITIES`.
 11. **Verify** — verify evidence quotes exist in cited files, give agents one correction round for fixable errors,
@@ -348,7 +384,11 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
 - `batch-plan.json` and `batches.txt` — the delegation rounds and the budgets they were measured against, written on
   every run so a changeset that needed no split reads differently from a step that never ran
 - `prompts/` — what reviewers are handed: `preamble.md`, one `[<subsystem>/]batch{N}-context.md` bundle per round,
-  and `context.json`, the round index (files, hunk ranges, verdict directory, gate) `rc-extract-verdict.sh` reads
+  and `context.json`, the round index (files, hunk ranges, verdict directory, gate) `rc-extract-verdict.sh` reads;
+  `dispatch/` holds each reviewer's rendered prompt file
+- `dispatch.json` — the dispatch index `rc-assemble-prompts.sh` writes: each reviewer's prompt file and raw verdict
+  path, relative to the session directory, and its receipt, which `rc-extract-verdict.sh` checks. Kept outside
+  `prompts/`, which `rc-build-context.sh` replaces whole
 - `models.json` — model provenance for the verdict header. One `{role, requested, reported}` entry per dispatched
   reviewer: `rc-select-council.sh` seeds `requested` as `host default` and `reported` as `[]`, the orchestrator replaces
   `requested` only with a model ID it passed at dispatch, `rc-extract-verdict.sh` adds each valid verdict's optional

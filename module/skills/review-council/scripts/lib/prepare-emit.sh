@@ -134,6 +134,11 @@ fi
 	else
 		echo "- Scope value: ${input_value:-${base_branch}...HEAD}"
 	fi
+	# The path filter, from `--scope paths` or a secondary `--scope paths` on
+	# any other scope, normalised by prepare-args.sh. Scope above keeps the base
+	# scope only, so without this line rc-assemble-prompts.sh could not tell
+	# reviewers their changeset was filtered.
+	echo "- Scope dir: ${scope_dir:-none}"
 	echo "- Forge: ${forge}"
 	echo "- Tooling: ${forge_tool}"
 	echo "- PR: ${pr_number:-none}"

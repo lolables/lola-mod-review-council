@@ -1893,6 +1893,14 @@ check_mutation "RC-195 a second Severity override term for one persona is accept
 	's/^\([[:space:]]*\)elif \[\[ -n "\${severity_override_seen\[\$so_persona\]:-}" \]\]; then$/\1elif false; then/' \
 	test-rc-prepare.sh
 
+# The read receipt: a verdict must echo the receipt its dispatch's prompt ends
+# with. Comparing nothing accepts a verdict from a reviewer that never read to
+# the end of its prompt.
+check_mutation "RC-204 a verdict missing its dispatch's receipt is accepted" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if \[\[ "\$got_receipt" != "\$want_receipt" \]\]; then$/\1if false; then/' \
+	test-rc-extract-verdict.sh
+
 total=$((caught + missed + broken + applied))
 echo ""
 echo "========================================"

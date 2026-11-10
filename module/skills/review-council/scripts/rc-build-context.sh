@@ -163,20 +163,6 @@ hunk_index=$(jq -Rn 'reduce (inputs | split("\t") | select(.[0] == "H")) as $r
 diff_empty=0
 [[ -s "$session_dir/diff.patch" ]] || diff_empty=1
 
-# A code span that no backtick in <text> can close: one backtick longer than the
-# longest run in it. Padded with a space each side only where CommonMark needs
-# it, when the text starts or ends with a backtick or a space; elsewhere the
-# padding would be shown.
-code_span() { # text
-	local text="$1" tick='`' pad=""
-	while [[ "$text" == *"$tick"* ]]; do tick+='`'; done
-	case "$text" in
-	'`'* | *'`' | ' '* | *' ') pad=" " ;;
-	*) ;;
-	esac
-	printf '%s%s%s%s%s' "$tick" "$pad" "$text" "$pad" "$tick"
-}
-
 # Print <hunks_json> clipped to lines 1..<lines> of a file, sorted, and merged
 # where ranges overlap or touch. Interval arithmetic rather than enumerating
 # lines: over-cap files take this path too, and a 100k-line file would
@@ -339,9 +325,9 @@ while IFS= read -r entry; do
 				printf '%s' "$no_outside"
 			fi
 		elif [[ "$diff_empty" -ne 0 ]]; then
-			echo "This round has no diff, so context_check is not required."
+			echo "$RC_CONTEXT_WAIVED_NO_DIFF"
 		else
-			echo "No file in this round has a line outside the diff hunks, so context_check is not required."
+			echo "$RC_CONTEXT_WAIVED_INSIDE"
 		fi
 	} >"$bundle"
 

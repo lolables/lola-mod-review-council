@@ -12,6 +12,7 @@
       "enum": ["APPROVE", "REQUEST CHANGES"]
     },
     "model": { "type": "string", "minLength": 1 },
+    "receipt": { "type": "string", "pattern": "^rcpt-[0-9a-f]{16}$" },
     "context_check": {
       "type": "object",
       "required": ["file", "line", "evidence"],

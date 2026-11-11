@@ -1,0 +1,22 @@
+module/tests/test-rc-extract-verdict.sh
+  s_7825b79426aba3::t_1352989d23a923 1680,1682
+  s_7825b79426aba3::t_c326ba9270a28d 1681
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7825b79426aba3::t_1352989d23a923 560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "98a407f8bd15a3e90f8e17e56bdb7bb9400e1d8e",
+  "prompts": {},
+  "sessions": {
+    "s_7825b79426aba3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4d1130a-11a5-4601-ae9f-277ccdc9422a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1677,6 +1677,9 @@ approve_as "$s" "" divisor-guard-code '{"file":"a.go","line":12,"evidence":"}"}'
 approve_as "$s" "" divisor-sre-code '{"file":"a.go","line":14,"evidence":"}"}'
 out=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_jq_str "$out" '[(.invalid // [])[] | "\(.agent):\(.reason)"] | join(",")' "divisor-sre-code:APPROVE_COLLIDED" "matched on text, not position"
+assert_jq_str "$out" '[(.invalid // [])[] | select(.reason == "APPROVE_COLLIDED") | .detail] | .[0]' \
+	"context_check cites the same line as \"divisor-guard-code\"'s in this round. Each reviewer quotes a line it chose from its own reading of the files; quote a different line, from your listed lines when the prompt names them." \
+	"the collision detail points a reviewer back to its list"
 rm -rf "$s"
 
 echo "Test: a re-dispatched reviewer cannot displace an accepted quote"

@@ -60,23 +60,8 @@ fi
 # missing signal is a budget rather than a permission, so taking the default
 # reviews exactly what preparation collected.
 
-rc_config_int() { # key default -> positive integer
-	local key="$1" default="$2" value
-	value=$(rc_parse_kv "$tracking_file" "$key")
-	if [[ -z "$value" ]]; then
-		printf '%s' "$default"
-		return 0
-	fi
-	if [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
-		printf '%s' "$value"
-		return 0
-	fi
-	echo "rc-plan-batches: ignoring '${key}: ${value}' (expected a positive integer); using ${default}" >&2
-	printf '%s' "$default"
-}
-
-byte_budget=$(rc_config_int "Batch bytes" "$RC_DEFAULT_BATCH_BYTES")
-file_cap=$(rc_config_int "Batch size" "$RC_DEFAULT_BATCH_FILES")
+byte_budget=$(rc_config_int "$tracking_file" "Batch bytes" "$RC_DEFAULT_BATCH_BYTES" "rc-plan-batches")
+file_cap=$(rc_config_int "$tracking_file" "Batch size" "$RC_DEFAULT_BATCH_FILES" "rc-plan-batches")
 
 # ============================================================================
 # Byte attribution

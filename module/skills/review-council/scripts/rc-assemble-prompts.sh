@@ -2,6 +2,8 @@
 set -euo pipefail
 # shellcheck source=module/skills/review-council/scripts/rc-lib.sh
 source "$(dirname "$0")/rc-lib.sh"
+# shellcheck source=module/skills/review-council/scripts/lib/context-lines.sh
+source "$(dirname "$0")/lib/context-lines.sh"
 rc_trap_errors
 
 # rc-assemble-prompts.sh <session_dir> [--inline-persona] [--keep-receipts]
@@ -24,7 +26,8 @@ rc_trap_errors
 # Every prompt ends with a receipt token unique to that dispatch: the reviewer
 # copies it into its verdict, which shows it reached the end of the file.
 # Each code prompt also closes with its round's lines inside diff hunks, because
-# reviewers quoted those for context_check when the list was only in the bundle.
+# reviewers quoted those for context_check when the list was only in the bundle,
+# and names the lines its reviewer may quote instead (lib/context-lines.sh).
 # A spec reviewer (divisor-*-spec) gets the spec prompt instead: no preamble,
 # bundle, diff or context check, but its artifact list and severity pack path.
 # Deep mode renders one set per subsystem round, each with that subsystem's
@@ -144,6 +147,7 @@ constitution_raw=$(rc_parse_kv "$tracking_file" "Constitution")
 language=$(rc_parse_kv "$tracking_file" "Language")
 framework=$(rc_parse_kv "$tracking_file" "Framework")
 scope_dir=$(rc_parse_kv "$tracking_file" "Scope dir")
+context_lines=$(rc_config_int "$tracking_file" "Context check lines" "$RC_DEFAULT_CONTEXT_CHECK_LINES" "rc-assemble-prompts" "$RC_CONTEXT_CHECK_LINES_MIN")
 missing=()
 for pair in "Scope=$scope" "Tooling=$tooling" "Docs repo=$docs_repo" "Project packs=$packs_raw" \
 	"Constitution=$constitution_raw" "Language=$language" "Framework=$framework" "Scope dir=$scope_dir"; do
@@ -557,6 +561,23 @@ while IFS= read -r round; do
 		hunk_text="$RC_CONTEXT_WAIVED_INSIDE"
 	fi
 
+	# Each code reviewer's own lines for its context check. Spec reviewers never
+	# file one, so they neither get lines nor use any up. A waived round has no
+	# check to ground. The lines are a pure function of this round's data and
+	# the council's order, so a re-render, as --keep-receipts and
+	# CONTEXT_MISSING recovery do, offers the same lines.
+	declare -A agent_lines=()
+	if [[ "$gate" == "required" ]]; then
+		mapfile -t code_agents < <(grep -E -- '-code$' <<<"$council" || true)
+		if [[ "${#code_agents[@]}" -gt 0 ]]; then
+			dealt=$(deal_lines "$review_root" "$round" "$context_lines" "${code_agents[@]}")
+			while IFS=$'\t' read -r dealt_agent dealt_path dealt_line; do
+				[[ -n "$dealt_agent" ]] || continue
+				agent_lines["$dealt_agent"]+="${agent_lines[$dealt_agent]:+$'\n'}${dealt_path}"$'\t'"${dealt_line}"
+			done <<<"$dealt"
+		fi
+	fi
+
 	while IFS= read -r agent; do
 		[[ -n "$agent" ]] || continue
 		if [[ ! "$agent" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
@@ -683,6 +704,10 @@ while IFS= read -r round; do
 				echo ""
 				printf '%s\n\n' "${sec["Context check"]}"
 				printf '%s\n' "$hunk_text"
+				if [[ -n "${agent_lines[$agent]:-}" ]]; then
+					echo ""
+					context_lines_block "${agent_lines[$agent]}"
+				fi
 			else
 				# A checkout says where the artifacts are; in place, the
 				# `Review artifacts: in place` paragraph below covers it.

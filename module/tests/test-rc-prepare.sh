@@ -6,6 +6,8 @@ SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
 
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"
+# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+source "$SCRIPT_DIR/../skills/review-council/scripts/rc-lib.sh"
 
 # Commit <files> to main under <dir>'s setup_repo checkout and move the topic
 # branch on top, so the configuration is in the base revision — the only place
@@ -593,6 +595,35 @@ assert_track "$session_dir" "Batch size" "50" \
 	"a file cap below 1 falls back to the default"
 assert_track "$session_dir" "Max comments" "3" \
 	"an unconfigured max-comments takes the default of 3"
+discard_fixture "$tmpdir"
+
+echo "Test: Context check lines reaches tracking.md; a value below 2 or a typo falls back to the default"
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+printf '## Review Council Configuration\n\n- Context check lines: 4\n' >"$tmpdir/AGENTS.md"
+commit_config_to_base "$tmpdir" AGENTS.md
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Context check lines" "4" "a configured value reaches tracking.md"
+discard_fixture "$tmpdir"
+for bad in 1 0 many; do
+	tmpdir=$(mktemp -d)
+	cd "$tmpdir"
+	setup_repo "$tmpdir" >/dev/null
+	printf '## Review Council Configuration\n\n- Context check lines: %s\n' "$bad" >"$tmpdir/AGENTS.md"
+	commit_config_to_base "$tmpdir" AGENTS.md
+	result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+	session_dir=$(echo "$result" | jq -r '.session_dir')
+	assert_track "$session_dir" "Context check lines" "$RC_DEFAULT_CONTEXT_CHECK_LINES" "'$bad' falls back to the default"
+	discard_fixture "$tmpdir"
+done
+tmpdir=$(mktemp -d)
+cd "$tmpdir"
+setup_repo "$tmpdir" >/dev/null
+result=$(AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null)
+session_dir=$(echo "$result" | jq -r '.session_dir')
+assert_track "$session_dir" "Context check lines" "$RC_DEFAULT_CONTEXT_CHECK_LINES" "an unconfigured key takes the default"
 discard_fixture "$tmpdir"
 
 echo "Test: AGENTS.md wins over CLAUDE.md key by key"

@@ -43,6 +43,7 @@ ap_session() { # file...
 - Base: main
 - Language: go
 - Framework: go-module
+- Context check lines: 6
 - Review root: ${root}
 
 EOF
@@ -1008,6 +1009,157 @@ ap_build "$s"
 out=$(bash "$ASSEMBLE" "$s")
 assert_jq_str "$out" '.status' "ok" "a deep spec run is ok"
 assert_jq_str "$out" '.prompts' "3" "guide 1 + design 2 (the top-level council)"
+rm -rf "$s"
+
+# `path<TAB>line` for every line the context-check block of a prompt file offers.
+ap_offered() { # prompt-file
+	awk '
+		/^Lines to choose your/ { on = 1; next }
+		on && /^- `/ {
+			p = $0; sub(/^- `/, "", p); sub(/`: .*/, "", p)
+			l = $0; sub(/^.*`: /, "", l)
+			n = split(l, a, ", ")
+			for (i = 1; i <= n; i++) printf "%s\t%s\n", p, a[i]
+			next
+		}
+		on && !/^$/ { on = 0 }' "$1"
+}
+# How many non-blank lines a string holds.
+count_lines() { # text
+	awk 'NF { n++ } END { print n + 0 }' <<<"$1"
+}
+ap_offered_count() { # prompt-file
+	local rows
+	rows=$(ap_offered "$1")
+	count_lines "$rows"
+}
+# A session whose a.go has 100 unique 20+ byte lines, hunk 5-8, reviewed by AP_COUNCIL.
+# 100, not 30: five reviewers at six lines each need more than the 26 lines 30 leaves.
+ap_ctx_ready() {
+	s=$(ap_session a.go)
+	seq 1 100 | sed 's/^/unique fixture line /' >"$s/tree/a.go"
+	add_hunk "$s" a.go 5 8
+	ap_build "$s"
+}
+
+echo "Test: five code reviewers are offered disjoint, non-adjacent lines outside the hunks"
+AP_COUNCIL="divisor-adversary-code divisor-curator-code divisor-guard-code divisor-sre-code divisor-testing-code" ap_ctx_ready
+bash "$ASSEMBLE" "$s" >/dev/null
+all=""
+for a in adversary curator guard sre testing; do
+	got=$(ap_offered "$s/prompts/dispatch/divisor-$a-code.md")
+	offered_n=$(count_lines "$got")
+	assert_equals "$offered_n" "6" "$a is offered the default six lines"
+	all+="$got"$'\n'
+done
+all=$(sed '/^$/d' <<<"$all")
+offered_n=$(awk 'seen[$0]++ { d++ } END { print d + 0 }' <<<"$all")
+assert_equals "$offered_n" "0" "no line is offered twice"
+offered_n=$(awk -F'\t' '$2 >= 5 && $2 <= 8 { n++ } END { print n + 0 }' <<<"$all")
+assert_equals "$offered_n" "0" "none of the lines is inside the hunk 5-8"
+adj=$(for a in adversary curator guard sre testing; do
+	ap_offered "$s/prompts/dispatch/divisor-$a-code.md" | awk -F'\t' -v a="$a" '{print a "\t" $2}'
+done | awk -F'\t' '{ own[$2] = $1 } END { for (l in own) if ((l + 1) in own && own[l + 1] != own[l]) bad++; print bad + 0 }')
+assert_equals "$adj" "0" "no two reviewers hold neighbouring lines"
+rm -rf "$s"
+
+echo "Test: the same trimmed text in two files is offered to at most one reviewer"
+s=$(AP_COUNCIL="divisor-guard-code divisor-curator-code" ap_session a.go b.go)
+{
+	printf 'shared text number %s\n' 1 2 3 4 5 6
+	printf 'only in a, number %s\n' 1 2 3 4 5 6
+} >"$s/tree/a.go"
+{
+	printf 'shared text number %s\n' 1 2 3 4 5 6
+	printf 'only in b, number %s\n' 1 2 3 4 5 6
+} >"$s/tree/b.go"
+add_hunk "$s" a.go 1 1
+add_hunk "$s" b.go 1 1
+ap_build "$s"
+bash "$ASSEMBLE" "$s" >/dev/null
+offered=$(for a in guard curator; do ap_offered "$s/prompts/dispatch/divisor-$a-code.md"; done)
+shared=0
+while IFS=$'\t' read -r p l; do
+	[[ -n "$p" ]] || continue
+	text=$(sed -n "${l}p" "$s/tree/$p")
+	[[ "$text" == shared* ]] && shared=$((shared + 1))
+done <<<"$offered"
+assert_equals "$shared" "0" "a line whose text occurs twice in the round is never offered"
+rm -rf "$s"
+
+echo "Test: blank, short, long, non-ASCII, CRLF-only and NUL content is handled as the gate would"
+s=$(AP_COUNCIL="divisor-guard-code divisor-curator-code" ap_session a.go bin.dat)
+{
+	printf '}\n\n'
+	printf 'x%.0s' {1..201}
+	printf '\ncaf\xc3\xa9 is not ascii at all\n'
+	printf 'good quotable line one\r\n'
+	printf 'good quotable line two\n'
+	printf 'fi\n'
+} >"$s/tree/a.go"
+printf 'binary content line one\0 and nul\nbinary content line two\n' >"$s/tree/bin.dat"
+add_hunk "$s" a.go 1 1
+add_hunk "$s" bin.dat 1 1
+ap_build "$s"
+bash "$ASSEMBLE" "$s" >/dev/null
+offered=$(for a in guard curator; do ap_offered "$s/prompts/dispatch/divisor-$a-code.md"; done | sort -u)
+assert_equals "$offered" "$(printf 'a.go\t5\na.go\t6')" "only the two good lines, CRLF trimmed, and nothing from the NUL file, are offered"
+rm -rf "$s"
+
+echo "Test: fewer eligible lines than reviewers leaves the later reviewers with no block"
+s=$(AP_COUNCIL="divisor-adversary-code divisor-guard-code divisor-curator-code" ap_session a.go)
+printf 'first quotable line here\nsecond quotable line here\n' >"$s/tree/a.go"
+printf 'padding line that is in the hunk\n' >>"$s/tree/a.go"
+add_hunk "$s" a.go 3 3
+ap_build "$s"
+bash "$ASSEMBLE" "$s" >/dev/null
+offered_n=$(ap_offered_count "$s/prompts/dispatch/divisor-adversary-code.md")
+assert_equals "$offered_n" "2" "the first reviewer takes the lines there are"
+assert_match_count "$(<"$s/prompts/dispatch/divisor-guard-code.md")" "0" "a reviewer with no line has no block" -F "Lines to choose your"
+assert_match_count "$(<"$s/prompts/dispatch/divisor-curator-code.md")" "0" "nor does the next" -F "Lines to choose your"
+rm -rf "$s"
+
+echo "Test: spec reviewers and a waived round get no block; the code reviewer in a mixed council does"
+s=$(AP_COUNCIL="divisor-guard-code divisor-guard-spec" ap_session a.go)
+seq 1 30 | sed 's/^/unique fixture line /' >"$s/tree/a.go"
+add_hunk "$s" a.go 5 8
+ap_build "$s"
+bash "$ASSEMBLE" "$s" >/dev/null
+offered_n=$(ap_offered_count "$s/prompts/dispatch/divisor-guard-code.md")
+assert_equals "$offered_n" "6" "the code reviewer is offered the default six lines"
+assert_match_count "$(<"$s/prompts/dispatch/divisor-guard-spec.md")" "0" "a spec prompt has no block" -F "Lines to choose your"
+rm -rf "$s"
+ap_ready
+bash "$ASSEMBLE" "$s" >/dev/null
+assert_match_count "$(<"$s/prompts/dispatch/divisor-guard-code.md")" "0" "a round with no quotable line offers none" -F "Lines to choose your"
+rm -rf "$s"
+s=$(ap_session a.go)
+seq 1 30 | sed 's/^/unique fixture line /' >"$s/tree/a.go"
+ap_build "$s"
+bash "$ASSEMBLE" "$s" >/dev/null
+assert_match_count "$(<"$s/prompts/dispatch/divisor-guard-code.md")" "0" "a waived round offers none" -F "Lines to choose your"
+rm -rf "$s"
+
+echo "Test: a re-render and a --keep-receipts re-render offer the same lines"
+AP_COUNCIL="divisor-guard-code divisor-curator-code divisor-sre-code" ap_ctx_ready
+bash "$ASSEMBLE" "$s" >/dev/null
+first=$(for a in guard curator sre; do ap_offered "$s/prompts/dispatch/divisor-$a-code.md"; done)
+bash "$ASSEMBLE" "$s" --keep-receipts >/dev/null
+second=$(for a in guard curator sre; do ap_offered "$s/prompts/dispatch/divisor-$a-code.md"; done)
+assert_equals "$second" "$first" "the lines are the same after a re-render"
+rm -rf "$s"
+
+echo "Test: the key sets how many lines each reviewer gets; an unusable value is reported"
+AP_COUNCIL="divisor-guard-code divisor-curator-code" ap_ctx_ready
+ap_track "$s" "Context check lines" 3
+bash "$ASSEMBLE" "$s" >/dev/null
+offered_n=$(ap_offered_count "$s/prompts/dispatch/divisor-guard-code.md")
+assert_equals "$offered_n" "3" "a configured 3 gives three lines"
+ap_track "$s" "Context check lines" 1
+err=$(bash "$ASSEMBLE" "$s" 2>&1 >/dev/null)
+assert_match_count "$err" "1" "a value below 2 is reported" -F "ignoring 'Context check lines: 1'"
+offered_n=$(ap_offered_count "$s/prompts/dispatch/divisor-guard-code.md")
+assert_equals "$offered_n" "6" "and the default is used"
 rm -rf "$s"
 
 echo ""

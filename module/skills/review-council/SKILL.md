@@ -1489,6 +1489,7 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Subsystem triage: off
 - Batch bytes: 131072
 - Batch size: 50
+- Context check lines: 6
 - Severity override: guard<=LOW
 ```
 
@@ -1570,6 +1571,11 @@ rename-only changeset is almost no diff and a great many files a reviewer must
 still open. A value that is not a positive integer is reported on stderr and the
 default used. Every split, and every decision not to split, is recorded in
 `tracking.md` and `batch-plan.json`. See README "Batching".
+
+`Context check lines` is how many lines each code reviewer is offered for its
+context check (default 6, minimum 2); the prompt lists them per reviewer so two
+reviewers cannot quote the same line. A value that is not an integer of at least
+2 is reported on stderr and the default used.
 
 `Max comments` and `Comment limit` govern an oversized verdict. A review
 with enough findings renders a comment the forge rejects: GitHub caps an

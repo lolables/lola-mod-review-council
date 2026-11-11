@@ -167,7 +167,7 @@ Your response is one fenced ```json block and nothing else. Its `agent` field is
 
 ## Context check
 
-On an APPROVE with no findings, add `context_check` unless your round's bundle says it is not required. It is an object, never a string: `"context_check": {"file": "<path>", "line": <n>, "evidence": "<the whole line, verbatim>"}`, quoting a line outside the diff hunks that you chose from your own reading. A hunk includes the unchanged context lines its `@@` header covers; the bundle lists each file's lines inside hunks.
+On an APPROVE with no findings, add `context_check` unless your round's bundle says it is not required. It is an object, never a string: `"context_check": {"file": "<path>", "line": <n>, "evidence": "<the whole line, verbatim>"}`, quoting a line outside the diff hunks that you read yourself, chosen from the lines your prompt lists for you when it lists any. A hunk includes the unchanged context lines its `@@` header covers; the bundle lists each file's lines inside hunks.
 
 ## Grounding: code
 

@@ -310,7 +310,7 @@ Every prompt carries the `Verdict instruction` section: a verdict (**APPROVE** o
 
 **Context check**: every code review prompt carries, after the Output contract, the `Context check` section. Spec review prompts omit it: spec reviewers get no bundle and their verdicts are never context-checked.
 
-The section's placeholders stay exactly as written. The orchestrator never supplies, suggests or exemplifies a `context_check` value — no file, no line or line range, no quote, and never another reviewer's — in the dispatch wrapper or in a re-dispatch, because the quote is the reviewer's evidence that it looked, and one the orchestrator wrote proves nothing. The only range text a reviewer receives is the script-rendered list of the round's lines inside diff hunks at the end of its prompt; that list is not a suggestion of what to quote.
+The section's placeholders stay exactly as written. The orchestrator never supplies, suggests or exemplifies a `context_check` value — no file, no line or line range, no quote, and never another reviewer's — in the dispatch wrapper or in a re-dispatch, because the quote is the reviewer's evidence that it looked, and one the orchestrator wrote proves nothing. The only range text a reviewer receives is script-rendered at the end of its prompt: the round's lines inside diff hunks, and, for a code reviewer, the lines the script picked for it to choose its quote from (`Context check lines`). The orchestrator adds nothing to either list, and the reviewer still quotes a line it read itself.
 
 The persona file and `reviewer-protocol.md` carry the same contract, but a reviewer reaches the protocol only by opening it, and on observed runs six of fifteen did not: all six failed the format gate and cost a repair round.
 
@@ -535,8 +535,9 @@ below — never chain the next stage with `&&`.
     three copied it. The same holds for a `SCHEMA_INVALID` entry whose defect
     is the `context_check` shape.
   - `APPROVE_COLLIDED` is an otherwise valid quote whose line another
-    reviewer's accepted quote in the same round already cites. Reviewers that
-    read a small file independently pick the same obvious line, so this gets a
+    reviewer's accepted quote in the same round already cites. The prompt lists
+    each code reviewer its own lines, so a collision usually means the reviewer
+    quoted a line outside its list; this gets a
     re-dispatch of its own, relayed exactly like `APPROVE_UNGROUNDED`, that
     does not count against the one re-dispatch. A reviewer whose quote
     collides or fails again after it has that one re-dispatch left; nothing

@@ -382,6 +382,14 @@ batch_bytes=$(rc_config_value "Batch bytes")
 batch_size=$(rc_config_value "Batch size")
 [[ "$batch_size" =~ ^[1-9][0-9]*$ ]] || batch_size="$RC_DEFAULT_BATCH_FILES"
 
+# Lines offered to each code reviewer for its context check (#107). Resolved
+# here, like the batching budgets, so tracking.md always carries a usable value;
+# below the minimum falls back rather than clamps, for the reason `Batch size`
+# does: a typo that quietly became 2 would read as honoured.
+context_check_lines=$(rc_config_value "Context check lines")
+[[ "$context_check_lines" =~ ^[1-9][0-9]*$ && "$context_check_lines" -ge "$RC_CONTEXT_CHECK_LINES_MIN" ]] ||
+	context_check_lines="$RC_DEFAULT_CONTEXT_CHECK_LINES"
+
 # --- Council-shaping policy ---
 #
 # Read here and carried into tracking.md, because rc-select-council.sh and

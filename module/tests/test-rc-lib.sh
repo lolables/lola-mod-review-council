@@ -358,6 +358,28 @@ echo "Test: rc_diff_index on a missing diff prints nothing and succeeds"
 out=$(rc_diff_index /nonexistent/diff.patch)
 assert_equals "$out" "" "no rows"
 
+echo "Test: rc_config_int reads, defaults, and rejects values below the minimum"
+f=$(mktemp)
+printf -- '- Alpha: 7\n- Beta: 1\n- Gamma: lots\n- Delta: 0\n' >"$f"
+got=$(rc_config_int "$f" "Alpha" 3 "t")
+assert_equals "$got" "7" "a valid value is returned"
+got=$(rc_config_int "$f" "Missing" 3 "t")
+assert_equals "$got" "3" "a missing key takes the default"
+got=$(rc_config_int "$f" "Beta" 3 "t" 2 2>/dev/null)
+assert_equals "$got" "3" "a value below the minimum takes the default"
+got=$(rc_config_int "$f" "Beta" 3 "t")
+assert_equals "$got" "1" "the minimum defaults to 1"
+got=$(rc_config_int "$f" "Gamma" 3 "t" 2>/dev/null)
+assert_equals "$got" "3" "a non-numeric value takes the default"
+got=$(rc_config_int "$f" "Delta" 3 "t" 2>/dev/null)
+assert_equals "$got" "3" "zero takes the default"
+err=$(rc_config_int "$f" "Gamma" 3 "rc-demo" 2>&1 >/dev/null)
+assert_match_count "$err" "1" "the warning names the caller and the key" -F "rc-demo: ignoring 'Gamma: lots'"
+assert_equals "$RC_DEFAULT_CONTEXT_CHECK_LINES" "6" "the default context-check line count is defined"
+assert_equals "$RC_CONTEXT_CHECK_LINES_MIN" "2" "the minimum context-check line count is defined"
+assert_equals "$RC_CONTEXT_LINE_MIN_BYTES/$RC_CONTEXT_LINE_MAX_BYTES" "12/200" "the quotable line bounds are defined"
+rm -f "$f"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

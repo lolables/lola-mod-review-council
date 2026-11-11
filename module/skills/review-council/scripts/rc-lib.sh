@@ -190,6 +190,21 @@ RC_DEFAULT_BATCH_BYTES=131072
 # shellcheck disable=SC2034 # read by the scripts that source this file.
 RC_DEFAULT_BATCH_FILES=50
 
+# Context-check lines (#107): how many lines rc-assemble-prompts.sh offers each
+# code reviewer to quote for `context_check`. A reviewer left with one lost line
+# has nothing else to quote, so the key cannot go below the minimum. The byte
+# bounds say what is quotable at all: below the floor a line is `}` or `fi`,
+# which reviewers independently pick and collide on (#113); above the ceiling a
+# whole wrapped paragraph is a poor thing to quote verbatim. Not configurable.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_DEFAULT_CONTEXT_CHECK_LINES=6
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_CONTEXT_CHECK_LINES_MIN=2
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_CONTEXT_LINE_MIN_BYTES=12
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_CONTEXT_LINE_MAX_BYTES=200
+
 # rc-build-context.sh inlines a changed file into its round's bundle only up to
 # this size (#101). Beyond it the reviewer reads the file on demand, as before:
 # a generated file or a lockfile would otherwise crowd every other file out of
@@ -436,6 +451,27 @@ rc_parse_kv() {
 	grep -m1 -E "^[-[:space:]]*${key}:" "$file" 2>/dev/null |
 		sed -E "s/^[-[:space:]]*${key}:[[:space:]]*//" |
 		sed -E 's/[[:space:]]+$//' || true
+}
+
+# An integer setting from a session's tracking.md, at least <min> (default 1).
+# A missing key takes the default silently, the fail-open reading a session
+# prepared before the key existed needs; an unusable value is reported on stderr
+# under <caller>'s name and the default used. Dropped rather than clamped: a
+# typo that silently became the minimum would change what gets reviewed while
+# reading as though it had been honoured.
+rc_config_int() { # tracking_file key default caller [min]
+	local file="$1" key="$2" default="$3" caller="$4" min="${5:-1}" value
+	value=$(rc_parse_kv "$file" "$key")
+	if [[ -z "$value" ]]; then
+		printf '%s' "$default"
+		return 0
+	fi
+	if [[ "$value" =~ ^[1-9][0-9]*$ ]] && [[ "$value" -ge "$min" ]]; then
+		printf '%s' "$value"
+		return 0
+	fi
+	echo "${caller}: ignoring '${key}: ${value}' (expected an integer of at least ${min}); using ${default}" >&2
+	printf '%s' "$default"
 }
 
 # Git's C-style path quoting, undone. With core.quotePath (the default) git

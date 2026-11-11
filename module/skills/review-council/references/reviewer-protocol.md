@@ -134,9 +134,10 @@ Six rules govern the block, and they apply before you copy the shape below:
   every line its `@@` header covers: the changed lines and the unchanged
   context lines around them. Your round's bundle lists each file's lines
   inside hunks; a line the diff did not change can still be one. Quote the whole of
-  that line, not a fragment of it, and pick a non-blank one. Choose the line
-  from your own reading: a quote of the same line another reviewer in your
-  round already used is rejected. It shows the review looked past the diff;
+  that line, not a fragment of it, and pick a non-blank one. Your prompt may
+  list lines picked for you alone; choose from them, and quote a line you read
+  yourself: a quote of the same line another reviewer in your round already
+  used is rejected. It shows the review looked past the diff;
   without it the verdict is re-dispatched once. Your round's bundle says when the check is
   waived — no such line exists, or there is no diff (`--scope all`); then leave
   it out. A verdict with findings never needs it, and spec reviewers never

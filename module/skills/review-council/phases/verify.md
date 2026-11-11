@@ -223,7 +223,8 @@ It short-circuits with:
 { "status": "extract_error", "valid": 3,
   "invalid": [ { "agent": "...",
   "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "APPROVE_UNGROUNDED"
-            | "APPROVE_COLLIDED" | "CONTEXT_MISSING" | "AGENT_MISMATCH" | "RESERVED_AGENT",
+            | "APPROVE_COLLIDED" | "CONTEXT_MISSING" | "AGENT_MISMATCH" | "RESERVED_AGENT"
+            | "RECEIPT_MISSING" | "RECEIPT_MISFILED" | "DISPATCH_UNINDEXED",
   "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
@@ -263,15 +264,56 @@ round in which no file has such a line, and when there is no diff (`--scope
 all`). `CONTEXT_MISSING` means the extractor could not
 run that check: the session has no usable `prompts/context.json` or review
 root, or the raw file sits in a directory no round writes to. The fault is the
-orchestrator's, so nothing is re-dispatched: run `rc-build-context.sh` (SKILL.md
-Step 2.7) or move the file to its round's planned verdict path, as the `detail`
+orchestrator's, so nothing is re-dispatched: run SKILL.md Step 2.7 and then Step
+2.8 with `--keep-receipts` (so the verdicts already collected keep matching their
+receipts), or move the file to its round's planned verdict path, as the `detail`
 says, and re-run the extractor.
+`RECEIPT_MISSING` means `${session_dir}/dispatch.json` exists (SKILL.md Step 2.8) and the
+verdict carries no top-level `receipt`, or one other than its dispatch's. Each
+prompt file ends with a receipt, so a verdict without it came from a reviewer that
+did not read the file to its last line. The one re-dispatch asks for a re-read,
+not a re-review: same findings, same severities, plus the receipt. When the
+verdict also fails the context check or the coherence gate, the `detail` names
+those too and the same re-dispatch fixes all of them, under the rules of
+`APPROVE_UNGROUNDED` for a defect found while looking. The receipt proves the
+reviewer reached the end of the file, not that it read every line.
+`RECEIPT_MISFILED` means the block carries the receipt of a different dispatch:
+the response was written to the wrong raw path. The fault is the orchestrator's,
+so nothing is re-dispatched: the `detail` names the raw path the response belongs
+to; move the file there and re-run the extractor. When that path already holds a
+reply carrying its own receipt, the block is `RECEIPT_MISSING` instead: its
+reviewer read another dispatch's prompt. `AGENT_MISMATCH` is checked
+before receipts, so a block that names another agent never reaches this check.
+`DISPATCH_UNINDEXED` means the extractor could not match the raw file to
+`dispatch.json`: the file is not in the index, or the index is malformed.
+The fault is the orchestrator's, so nothing is re-dispatched: move the raw file to
+its planned path, or, if the plan changed, run SKILL.md Step 2.7 and then Step 2.8
+with `--keep-receipts`, as the `detail` says, and re-run the extractor. A
+malformed index is the exception: unless it can be restored, its receipts are
+lost, and the `detail` says to re-run Step 2.8 without `--keep-receipts` and
+re-dispatch every reviewer.
 
-The one-round re-dispatch (remediation text plus, when present, that agent's
-`invalid[].detail` — set for `SCHEMA_INVALID`, `VERDICT_INCOHERENT`,
-`APPROVE_UNGROUNDED`, `APPROVE_COLLIDED`, `CONTEXT_MISSING`, `AGENT_MISMATCH` and
-`RESERVED_AGENT`, absent
-for `NO_JSON_BLOCK` — then re-run the extractor) happens in the Delegation
+The extractor's output also carries `receipts`: `"checked"` when it verified
+receipts against `${session_dir}/dispatch.json`, `"unchecked"` when that file does
+not exist: Step 2.8 never ran, since no recovery step deletes it. On
+`"unchecked"`, and only then, write `Prompts not assembled (Step 2.8 skipped): receipts
+unchecked` to `verification.txt`, so the report does not read as though every
+reviewer had been shown to reach the end of its prompt. Likewise, when a fresh
+agent recovered a `RECEIPT_MISSING` verdict (the host could not resume the
+original), note in `verification.txt` that the receipt it returned does not show
+the original reviewer read the file.
+
+Every reason but `NO_JSON_BLOCK` carries an `invalid[].detail`; `NO_JSON_BLOCK`
+carries one only when receipts are checked, naming the prompt file to re-read.
+Of these, `NO_JSON_BLOCK`, `SCHEMA_INVALID`, `VERDICT_INCOHERENT`,
+`APPROVE_UNGROUNDED`, `RECEIPT_MISSING` and `AGENT_MISMATCH` (when the reviewer
+misnamed itself) trigger the one-round re-dispatch, and `APPROVE_COLLIDED` a
+re-dispatch of its own. `CONTEXT_MISSING`, `RESERVED_AGENT`, `RECEIPT_MISFILED`
+and `DISPATCH_UNINDEXED` are the orchestrator's to fix and dispatch nothing:
+their `detail` says what to move, delete or re-run. `SCHEMA_INVALID` also names
+the prompt file to re-read when the block lacks its receipt, so the one repair
+fixes both. The re-dispatch (remediation text plus that agent's `detail`, then
+re-run the extractor) happens in the Delegation
 phase — see
 `phases/delegate.md` — "Verdict Collection". In it the orchestrator relays
 `detail` and remediation verbatim and never supplies, suggests or exemplifies a
@@ -282,10 +324,16 @@ already run. Your job here is to interpret its outcome:
 - Every agent now shows `status: "ok"` (a clean reviewer with no findings is
   still `ok` with an empty `findings` array): proceed to Step 1 using the
   validated `verdicts/{agent}.json` files.
-- An agent still fails after the one re-dispatch attempt: proceed with whatever
-  now validates, but **log each still-invalid agent loudly** in `verification.txt`
-  and surface it in the report — never let a dropped finding pass silently as a
-  clean zero.
+- An agent still fails after the one re-dispatch attempt: the extractor has
+  then been re-run with `--salvage` (`phases/delegate.md` — "Verdict
+  Collection"). Proceed with whatever now validates, salvaged verdicts
+  included: each `salvaged[]` entry is a verdict like any other, and its
+  findings are checked in Step 1 exactly as the rest are. Every `unverified[]`
+  entry is a still-invalid agent: **log each one loudly** in `verification.txt`
+  with its `path` and `reason`, and log each `salvaged[]` entry with its
+  `repairs` — never let a dropped finding pass silently as a clean zero. The
+  local report renders both from `verdicts/_meta/salvage.json`, quoting each
+  unverified raw reply; the forge comment shows neither.
 - An `APPROVE_UNGROUNDED` or `APPROVE_COLLIDED` entry that still fails is such a still-invalid agent:
   its verdict is not counted, and it is logged in `verification.txt` and
   surfaced in the local report, never the forge comment, which would tell an
@@ -293,7 +341,11 @@ already run. Your job here is to interpret its outcome:
   is not written to `gate-firings.jsonl` and needs no log line when the
   re-dispatch succeeds.
 - A `VERDICT_INCOHERENT` entry gets logged **even when the re-dispatch
-  succeeds**, which no other reason requires.
+  succeeds**, which no other reason requires. So does a `RECEIPT_MISSING`
+  entry whose `detail` contains `Verdict/severity mismatch`: the verdict was
+  incoherent and also lacked its receipt, and the receipt failure is what the
+  extractor reports. Either way the extractor appends the firing to
+  `gate-firings.jsonl` at the session root.
   - The agent picks its own remedy — raise the verdict to `REQUEST CHANGES`, or
     drop the finding / lower it to MEDIUM or LOW — and the re-dispatch
     overwrites `{agent}.raw.md`, so the second branch destroys the only record

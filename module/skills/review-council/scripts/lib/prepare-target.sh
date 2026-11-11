@@ -354,7 +354,7 @@ else
 		mode_scope_explicit=true
 	elif [[ "$input_type" == "ref_range" ]]; then
 		require_resolvable_range "$input_value"
-		changeset_for_mode_detection=$(git diff --name-only "$input_value" -- 2>/dev/null || echo "")
+		changeset_for_mode_detection=$(git diff --name-only "$input_value" -- 2>/dev/null | rc_unquote_lines || echo "")
 		if [[ -n "${scope_dir:-}" ]]; then
 			changeset_for_mode_detection=$(rc_filter_to_scope "${mode_filter_paths[@]}" <<<"$changeset_for_mode_detection")
 		fi
@@ -394,8 +394,8 @@ else
 				# the changeset builder captures for it. A directory with none
 				# contributes only blank lines, which the normalisation after this
 				# chain removes.
-				changeset_for_mode_detection+=$(git diff --name-only "${base_branch}...HEAD" -- "$mode_scope_path" 2>/dev/null || echo "")$'\n'
-				changeset_for_mode_detection+=$(git diff --name-only HEAD -- "$mode_scope_path" 2>/dev/null || echo "")$'\n'
+				changeset_for_mode_detection+=$(git diff --name-only "${base_branch}...HEAD" -- "$mode_scope_path" 2>/dev/null | rc_unquote_lines || echo "")$'\n'
+				changeset_for_mode_detection+=$(git diff --name-only HEAD -- "$mode_scope_path" 2>/dev/null | rc_unquote_lines || echo "")$'\n'
 			fi
 		done
 	elif $rc_no_git; then
@@ -407,8 +407,8 @@ else
 		# The branch plus staged and unstaged work: what `--scope changed`
 		# captures. Committed-only detection sent a staged code change on a
 		# clean branch to the on-disk spec search below.
-		changeset_for_mode_detection=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")
-		changeset_for_mode_detection+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
+		changeset_for_mode_detection=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null | rc_unquote_lines || echo "")
+		changeset_for_mode_detection+=$'\n'$(git diff --name-only HEAD 2>/dev/null | rc_unquote_lines || echo "")
 	fi
 	# Blank lines are not files. Left in, a scope with no changes is not the
 	# empty string: the no-changes branch below is skipped, classification

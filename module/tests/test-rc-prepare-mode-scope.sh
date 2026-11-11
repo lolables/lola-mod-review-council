@@ -153,6 +153,9 @@ result=$(run_prepare "$work" --scope range --scope-value "HEAD~1..HEAD" --scope 
 assert_json_field "$result" "mode" "code" "filter to infra/ is code"
 assert_captured "$result" "infra/main.tf" "the filtered file is captured"
 assert_captured "$result" "docs/specs/feature.md" "the file outside the filter is not captured" absent
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+assert_track "$sess" "Scope" "range" "tracking keeps the base scope"
+assert_track "$sess" "Scope dir" "infra" "tracking records the secondary path filter"
 rm -rf "$work"
 
 echo "Test 10: a valid empty range reports no changes, not missing specs"
@@ -208,6 +211,8 @@ work=$(make_merged_repo src/app.go)
 result=$(run_prepare "$work" --scope paths --scope-value src)
 assert_json_field "$result" "mode" "code" "mode is code"
 assert_captured "$result" "src/app.go" "the staged file is captured"
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+assert_track "$sess" "Scope dir" "src" "tracking records a --scope paths filter"
 rm -rf "$work"
 
 echo "Test 14: a staged-only spec change is a spec review of it"
@@ -276,6 +281,70 @@ result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$AGENTS" \
 	bash "$SCRIPT" --scope pr --scope-value 7 --scope paths --scope-value src 2>/dev/null)
 assert_json_field "$result" "status" "empty" "a PR filtered to nothing it touched is empty"
 rm -rf "$work" "$bindir"
+
+echo "Test 16b: a PR's path filter narrows its diff too, and quoted names arrive decoded"
+# The forge diff cannot be regenerated with a pathspec the way a range's is, so
+# it kept every section and a batched review refused a diff naming files no
+# round reviews. Git C-quotes the non-ASCII name; the changeset must name the
+# file as it is on disk.
+bindir=$(mktemp -d)
+cat >"$bindir/gh" <<'GH'
+#!/usr/bin/env bash
+case "$1 $2" in
+"pr view")
+	cat <<'JSON'
+{"number":7,"title":"T","body":"","baseRefName":"main","headRefName":"feature-head","url":"https://github.com/acme/widgets/pull/7","state":"OPEN","statusCheckRollup":[]}
+JSON
+	;;
+"pr diff")
+	cat <<'DIFF'
+diff --git a/other/b.go b/other/b.go
+--- a/other/b.go
++++ b/other/b.go
+@@ -0,0 +1 @@
++package other
+diff --git "a/src/caf\303\251.go" "b/src/caf\303\251.go"
+--- "a/src/caf\303\251.go"
++++ "b/src/caf\303\251.go"
+@@ -0,0 +1 @@
++package cafe
+diff --git a/src/a.go b/src/a.go
+--- a/src/a.go
++++ b/src/a.go
+@@ -0,0 +1 @@
++package src
+DIFF
+	;;
+"api "*) echo "[]" ;;
+*) exit 0 ;;
+esac
+GH
+chmod +x "$bindir/gh"
+work=$(mktemp -d)
+setup_repo "$work"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$AGENTS" \
+	bash "$SCRIPT" --scope pr --scope-value 7 --scope paths --scope-value src 2>/dev/null)
+assert_json_field "$result" "mode" "code" "the filtered PR is a code review"
+assert_captured "$result" "src/a.go" "a filtered file is captured"
+assert_captured "$result" "src/café.go" "a C-quoted name is captured decoded"
+assert_captured "$result" "other/b.go" "the file outside the filter is not captured" absent
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+patch=$(cat "$sess/diff.patch" 2>/dev/null || true)
+assert_match_count "$patch" "0" "diff.patch drops the filtered-out file's section" -F "other/b.go"
+assert_match_count "$patch" "1" "diff.patch keeps the quoted file's section" -xF '+++ "b/src/caf\303\251.go"'
+assert_match_count "$patch" "1" "diff.patch keeps the other filtered file" -xF "+++ b/src/a.go"
+rm -rf "$work" "$bindir"
+
+echo "Test 16c: a local range names a non-ASCII file as it is on disk"
+# `git diff --name-only` C-quotes it under core.quotePath; quoted, the name
+# matched neither the review root nor the diff's decoded hunks.
+work=$(make_merged_repo src/café.go)
+result=$(run_prepare "$work" --scope range --scope-value "HEAD~1..HEAD")
+assert_captured "$result" "src/café.go" "the changeset holds the decoded name"
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+quoted=$(grep -c '"' "$sess/changeset.txt" || true)
+assert_equals "$quoted" "0" "no quoted name is left in the changeset"
+rm -rf "$work"
 
 echo "Test 17: an explicit mode is not reclassified"
 work=$(make_merged_repo docs/specs/feature.md)

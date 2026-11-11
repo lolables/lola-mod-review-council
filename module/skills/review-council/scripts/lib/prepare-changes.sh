@@ -40,8 +40,8 @@ if [[ "$mode" == "code" ]]; then
 	if [[ "$input_type" == "all" ]] || $rc_no_git; then
 		if ! $rc_no_git; then
 			# All non-ignored project files
-			all_files=$(git ls-files 2>/dev/null || echo "")
-			all_files+=$'\n'$(git ls-files --others --exclude-standard 2>/dev/null || echo "")
+			all_files=$(git ls-files 2>/dev/null | rc_unquote_lines || echo "")
+			all_files+=$'\n'$(git ls-files --others --exclude-standard 2>/dev/null | rc_unquote_lines || echo "")
 		elif [[ "$input_type" == "dir_scope" ]]; then
 			# No repository, so no changeset for a directory to filter: a named
 			# directory means every file under it, a named file means itself.
@@ -154,17 +154,19 @@ if [[ "$mode" == "code" ]]; then
 		diff_content=""
 		has_diff=false
 	elif [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
-		# Reuse cached PR diff from Section 7
+		# Reuse cached PR diff from Section 7. The file list is read with the
+		# shared diff parser, which decodes a C-quoted header and names a file
+		# exactly as rc_diff_index and every later stage key it.
+		diff_content=""
+		changeset_files=""
 		if [[ -n "${pr_diff_cache:-}" ]] && [[ -f "${pr_diff_cache:-}" ]]; then
 			diff_content=$(cat "$pr_diff_cache")
-		else
-			diff_content=""
+			changeset_files=$(rc_diff_index "$pr_diff_cache" | awk -F'\t' '$1 == "F" { print $2 }')
 		fi
-		changeset_files=$(echo "$diff_content" | grep '^diff --git' | sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
 		has_diff=true
 	elif [[ "$input_type" == "ref_range" ]]; then
 		require_resolvable_range "$input_value"
-		changeset_files=$(git diff --name-only "$input_value" -- 2>/dev/null || echo "")
+		changeset_files=$(git diff --name-only "$input_value" -- 2>/dev/null | rc_unquote_lines || echo "")
 		diff_content=$(git "${git_diff_plain[@]}" "$input_value" -- 2>/dev/null || echo "")
 		has_diff=true
 	else
@@ -177,8 +179,8 @@ if [[ "$mode" == "code" ]]; then
 			# no trailing slashes — so every use below can trust the strings.
 			IFS=',' read -ra scope_paths <<<"$scope_dir"
 
-			changeset_files=$(git diff --name-only "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
-			changeset_files+=$'\n'$(git diff --name-only HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
+			changeset_files=$(git diff --name-only "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null | rc_unquote_lines || echo "")
+			changeset_files+=$'\n'$(git diff --name-only HEAD -- "${scope_paths[@]}" 2>/dev/null | rc_unquote_lines || echo "")
 			diff_content=$(git "${git_diff_plain[@]}" "${base_branch}...HEAD" -- "${scope_paths[@]}" 2>/dev/null || echo "")
 			diff_content+=$'\n'$(git "${git_diff_plain[@]}" HEAD -- "${scope_paths[@]}" 2>/dev/null || echo "")
 
@@ -221,10 +223,10 @@ if [[ "$mode" == "code" ]]; then
 				exit 0
 			fi
 		else
-			changeset_files=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null || echo "")
+			changeset_files=$(git diff --name-only "${base_branch}...HEAD" 2>/dev/null | rc_unquote_lines || echo "")
 			# Diffing the working tree against HEAD, not the index, is what
 			# includes staged changes: plain `git diff` saw unstaged edits only.
-			changeset_files+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
+			changeset_files+=$'\n'$(git diff --name-only HEAD 2>/dev/null | rc_unquote_lines || echo "")
 			diff_content=$(git "${git_diff_plain[@]}" "${base_branch}...HEAD" 2>/dev/null || echo "")
 			diff_content+=$'\n'$(git "${git_diff_plain[@]}" HEAD 2>/dev/null || echo "")
 		fi
@@ -254,10 +256,15 @@ if [[ "$mode" == "code" ]]; then
 
 		# Filter diff too if present
 		if [[ "$has_diff" == true ]] && [[ -n "$diff_content" ]]; then
-			# Re-generate diff for filtered paths only
+			# Re-generate diff for filtered paths only. A forge's PR diff
+			# cannot be re-asked with a pathspec, so its sections are cut to
+			# the filtered changeset with the same parser that named them.
 			if [[ "$input_type" == "ref_range" ]]; then
 				IFS=',' read -ra filter_paths <<<"$scope_dir"
 				diff_content=$(git "${git_diff_plain[@]}" "$input_value" -- "${filter_paths[@]}" 2>/dev/null || echo "")
+			elif [[ -n "${pr_diff_cache:-}" ]] && [[ -f "${pr_diff_cache:-}" ]]; then
+				mapfile -t kept_files <<<"$changeset_files"
+				diff_content=$(rc_diff_sections "$pr_diff_cache" "${kept_files[@]}")
 			fi
 		fi
 	fi
@@ -335,12 +342,12 @@ else
 		# Changed spec files only
 		local_range="${input_value:-${base_branch}...HEAD}"
 		require_resolvable_range "$local_range"
-		changed=$(git diff --name-only "$local_range" -- 2>/dev/null || echo "")
+		changed=$(git diff --name-only "$local_range" -- 2>/dev/null | rc_unquote_lines || echo "")
 		diff_content=$(git "${git_diff_plain[@]}" "$local_range" -- 2>/dev/null || echo "")
 		if [[ -z "$input_value" ]]; then
 			# `--scope changed` promises staged and unstaged work too, as in
 			# code mode.
-			changed+=$'\n'$(git diff --name-only HEAD 2>/dev/null || echo "")
+			changed+=$'\n'$(git diff --name-only HEAD 2>/dev/null | rc_unquote_lines || echo "")
 			diff_content+=$'\n'$(git "${git_diff_plain[@]}" HEAD 2>/dev/null || echo "")
 		fi
 		while IFS= read -r file; do
@@ -359,7 +366,7 @@ else
 	elif [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
 		# PR-based spec review
 		if [[ -n "${pr_diff_cache:-}" ]] && [[ -f "${pr_diff_cache:-}" ]]; then
-			pr_files=$(grep '^diff --git' "$pr_diff_cache" | sed -E 's|^diff --git a/(.*) b/.*|\1|' || echo "")
+			pr_files=$(rc_diff_index "$pr_diff_cache" | awk -F'\t' '$1 == "F" { print $2 }')
 			while IFS= read -r file; do
 				[[ -z "$file" ]] && continue
 				if rc_is_spec_path "$file"; then

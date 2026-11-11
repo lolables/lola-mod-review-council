@@ -64,7 +64,11 @@ Scripts referenced:
 - `${SCRIPTS_DIR}/rc-prepare.sh` -- session preparation
 - `${SCRIPTS_DIR}/rc-extract-verdict.sh` -- extracts + schema-validates each
   agent's fenced JSON block from `verdicts/<agent>.raw.md`, writing
-  `verdicts/<agent>.json`
+  `verdicts/<agent>.json`; with `--salvage` (every run after the one
+  re-dispatch round, within that Verdict Collection) it also repairs the
+  format defects delegate.md's Verdict Collection lists as repairable, and
+  adds `salvaged` and `unverified`
+  to its output and to `verdicts/_meta/salvage.json`
 - `${SCRIPTS_DIR}/rc-verify-evidence.sh` -- evidence validation, writes
   `verdicts/findings.json`
 - `${SCRIPTS_DIR}/rc-render-report.sh` -- report rendering
@@ -224,7 +228,8 @@ Validate JSON output:
 - On `ok`, did `verdicts/<agent>.json` get written for every agent?
 - On `extract_error`, does the per-agent `reason` (`NO_JSON_BLOCK` /
   `SCHEMA_INVALID` / `VERDICT_INCOHERENT` / `APPROVE_UNGROUNDED` /
-  `APPROVE_COLLIDED` / `CONTEXT_MISSING` / `AGENT_MISMATCH` / `RESERVED_AGENT`) and `remediation`
+  `APPROVE_COLLIDED` / `CONTEXT_MISSING` / `AGENT_MISMATCH` / `RESERVED_AGENT` /
+  `RECEIPT_MISSING` / `RECEIPT_MISFILED` / `DISPATCH_UNINDEXED`) and `remediation`
   text give an LLM orchestrator enough to re-dispatch that one agent? A
   `VERDICT_INCOHERENT` block is schema-valid — it declares APPROVE over a
   CRITICAL or HIGH finding — so do not expect `jsonschema validate` to
@@ -421,7 +426,8 @@ For each script output, assess:
 **Message Clarity**
 
 Not every payload carries `message`. `rc-extract-verdict.sh` emits
-`{status, valid, invalid, remediation}` on `extract_error` -- there is
+`{status, valid, invalid, remediation}` on `extract_error` (plus
+`salvaged` and `unverified` under `--salvage`) -- there is
 no `message` field, and the guidance lives in `remediation` plus the
 per-agent `reason` inside `invalid`. Judge that payload on those fields;
 a missing `message` there is the script's shape, not a defect.
@@ -499,7 +505,20 @@ Test these scenarios for robustness:
   naming the failed condition, unless the round's gate is waived in
   `prompts/context.json`. In a session without `prompts/context.json`, expect
   `reason: "CONTEXT_MISSING"` with a `detail` that says to run
-  `rc-build-context.sh` and re-extract, not to re-dispatch.
+  `rc-build-context.sh` (Step 2.7), then `rc-assemble-prompts.sh` (Step 2.8)
+  with `--keep-receipts`, and re-extract, not to re-dispatch.
+- **Receipt**: the mock session has no `dispatch.json` at its root, so expect
+  `receipts: "unchecked"` in the output. To exercise the check, write a
+  `dispatch.json` at the session root indexing the mock agent's raw path with a receipt
+  (`rcpt-` plus 16 hex digits). A verdict with no `receipt` or the wrong one
+  expects `reason: "RECEIPT_MISSING"` (one re-dispatch; the `detail` names the
+  prompt file to re-read). A verdict carrying another dispatch's receipt
+  expects `reason: "RECEIPT_MISFILED"`, and a raw file absent from the index
+  `reason: "DISPATCH_UNINDEXED"`; both are the orchestrator's faults, so the
+  `detail` says to move the file, or to run Step 2.7 and then
+  `rc-assemble-prompts.sh` (Step 2.8) with `--keep-receipts`, not to
+  re-dispatch. A malformed `dispatch.json` is the one case whose `detail` says
+  to re-dispatch every reviewer, after re-running Step 2.8 without the flag.
 - **Misfiled verdict**: a schema-valid block whose `agent` differs from its
   filename. Expect `reason: "AGENT_MISMATCH"` with a `detail` naming both
   agents, and no `<agent>.json` written for that file.

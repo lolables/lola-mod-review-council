@@ -76,47 +76,6 @@ list_file="$session_dir/symlinks.txt"
 head_links_file="$session_dir/head-links.json"
 rm -f "$verdict_file" "$list_file"
 
-# Undo git's C-style path quoting. With core.quotePath (the default) git wraps
-# a path holding a control character, a quote, a backslash or any non-ASCII
-# byte in double quotes and escapes those bytes, octal for the non-ASCII ones;
-# the a/ b/ prefix sits inside the quotes.
-rc_git_unquote() { # text
-	local s="$1" out="" c i=0
-	if [[ ${#s} -lt 2 || "$s" != \"*\" ]]; then
-		printf '%s' "$s"
-		return 0
-	fi
-	s="${s:1:${#s}-2}"
-	while ((i < ${#s})); do
-		c="${s:i:1}"
-		# shellcheck disable=SC1003 # a lone backslash, not an escaped quote.
-		if [[ "$c" != '\' ]]; then
-			out+="$c"
-			i=$((i + 1))
-			continue
-		fi
-		c="${s:i+1:1}"
-		case "$c" in
-		[0-3])
-			printf -v c '%b' "\\0${s:i+1:3}"
-			out+="$c"
-			i=$((i + 4))
-			continue
-			;;
-		a) out+=$'\a' ;;
-		b) out+=$'\b' ;;
-		f) out+=$'\f' ;;
-		n) out+=$'\n' ;;
-		r) out+=$'\r' ;;
-		t) out+=$'\t' ;;
-		v) out+=$'\v' ;;
-		*) out+="$c" ;;
-		esac
-		i=$((i + 2))
-	done
-	printf '%s' "$out"
-}
-
 # One P<path> record per link section of the diff, each followed by one
 # T<line> record per line its hunk adds, or by a single U record when the
 # section shows no target text: git prints a target holding a NUL byte as

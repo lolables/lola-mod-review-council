@@ -233,12 +233,52 @@ assert_jq "$s/prompts/context.json" '.rounds[0].gate' "waived" "all-new file wai
 assert_match_count "$(<"$s/prompts/batch1-context.md")" "1" "the bundle says why" -F "No file in this round has a line outside the diff hunks, so context_check is not required"
 rm -rf "$s"
 
+# 2026-11-09 runs: 8 of 8 first-try context_check rejections quoted a line
+# inside a hunk, half of them unchanged context lines. The bundle numbered every
+# line but never said which were in a hunk, so each file now names its ranges.
+echo "Test: each inlined file names its diff hunk ranges, merged and sorted"
+s=$(ctx_session go go-module a.go b.go new.go)
+seq 1 20 | sed 's/^/line /' >"$s/tree/a.go"
+seq 1 5 >"$s/tree/b.go"
+seq 1 3 >"$s/tree/new.go"
+add_hunk "$s" a.go 15 15
+add_hunk "$s" a.go 5 8
+add_hunk "$s" a.go 7 10
+add_hunk "$s" new.go 1 3
+bash "$BUILD" "$s" >/dev/null
+b="$s/prompts/batch1-context.md"
+assert_match_count "$(<"$b")" "1" "a.go: overlapping hunks merged, single line unranged" -xF "Inside diff hunks: lines 5–10, 15"
+assert_match_count "$(<"$b")" "1" "b.go: a file without hunks says so" -xF "Inside diff hunks: none"
+assert_match_count "$(<"$b")" "1" "new.go: a file wholly inside hunks says so" -xF "Inside diff hunks: the whole file"
+a_at=$(grep -n -m1 -F "### \`a.go\`" "$b" | cut -d: -f1)
+r_at=$(grep -n -m1 -xF "Inside diff hunks: lines 5–10, 15" "$b" | cut -d: -f1)
+assert_equals "$((r_at - a_at))" "2" "the ranges sit directly under the file's heading"
+assert_match_count "$(<"$b")" "1" "the Context check section defines a hunk" -F "A diff hunk is every line its \`@@\` header covers: the changed lines and the unchanged context lines around them."
+assert_jq "$s/prompts/context.json" '[.rounds[0].files[] | .ranges] | join("|")' \
+	"lines 5–10, 15|none|the whole file" "context.json records each file's rendered ranges"
+rm -rf "$s"
+
+echo "Test: a file read directly names its diff hunk ranges; one that cannot be quoted does not"
+s=$(ctx_session go go-module big.go gone.go)
+seq 1 10000 >"$s/tree/big.go"
+add_hunk "$s" big.go 2 4
+add_hunk "$s" gone.go 1 2
+bash "$BUILD" "$s" >/dev/null
+b="$s/prompts/batch1-context.md"
+assert_match_count "$(<"$b")" "1" "over-cap file lists its ranges" -xF -e "- \`big.go\` — over cap; inside diff hunks: lines 2–4"
+assert_match_count "$(<"$b")" "1" "deleted file has no ranges" -xF -e "- \`gone.go\` — deleted"
+assert_jq "$s/prompts/context.json" '[.rounds[0].files[] | .ranges // "ABSENT"] | join("|")' \
+	"lines 2–4|ABSENT" "a file whose lines cannot be quoted records no ranges"
+rm -rf "$s"
+
 echo "Test: an empty diff (--scope all) waives the gate"
 s=$(ctx_session go go-module a.go)
 seq 1 3 >"$s/tree/a.go"
 bash "$BUILD" "$s" >/dev/null
 assert_jq "$s/prompts/context.json" '.rounds[0].gate' "waived" "no diff, no hunks to be outside of"
+assert_jq "$s/prompts/context.json" '.rounds[0].files[0] | has("ranges")' "false" "no diff, no ranges key"
 assert_match_count "$(<"$s/prompts/batch1-context.md")" "1" "the bundle names the missing diff" -F "This round has no diff, so context_check is not required"
+assert_match_count "$(<"$s/prompts/batch1-context.md")" "0" "no diff, no hunk ranges listed" -F "Inside diff hunks"
 rm -rf "$s"
 
 echo "Test: multi-round and deep-mode plans name bundles and verdict dirs like delegate.md"

@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(dirname "$0")/rc-lib.sh"
 rc_trap_errors
 
-# rc-extract-verdict.sh <session_dir>
+# rc-extract-verdict.sh <session_dir> [--salvage]
 # For each verdicts/<agent>.raw.md (raw agent output), extract the fenced ```json
 # block, validate it structurally, then enforce the one invariant the schema
 # cannot express: a verdict of APPROVE may not be filed over a CRITICAL or HIGH
@@ -13,8 +13,34 @@ rc_trap_errors
 # summary naming the validation mode it ran (`schema_validation`), which is also
 # kept, worst-of, in verdicts/_meta/schema-validation.txt.
 # Invalid/missing/incoherent blocks are reported for one re-dispatch.
+#
+# --salvage is for the extraction run after that one re-dispatch round, and
+# only that run: the reply a reviewer has now is the last it will give. A block
+# whose every defect is one the pipeline can repair without guessing (see
+# RC_SALVAGE_JQ) is normalised, then held to every check below like any other,
+# and accepted only if it passes them all. Every entry still rejected keeps its
+# raw reply in verdicts/_meta/unverified/, which the local report quotes. Both
+# lists are in the output and in verdicts/_meta/salvage.json. A run without the
+# flag removes both, so they always describe the json files on disk.
 
-session_dir="${1:-}"
+session_dir=""
+salvage="no"
+for arg in "$@"; do
+	case "$arg" in
+	--salvage) salvage="yes" ;;
+	-*)
+		json_output "validation_error" "Unknown option: $arg. The only option is --salvage."
+		exit 0
+		;;
+	*)
+		if [[ -n "$session_dir" ]]; then
+			json_output "validation_error" "Unexpected argument: $arg. Usage: rc-extract-verdict.sh <session_dir> [--salvage]"
+			exit 0
+		fi
+		session_dir="$arg"
+		;;
+	esac
+done
 [[ -n "$session_dir" && -d "$session_dir" ]] || {
 	json_output "skip" "Session directory not found."
 	exit 0
@@ -47,16 +73,16 @@ _warned_no_validator=0
 # here and test-rc-extract-verdict.sh diffs these two lines against the schema
 # — drift fails the suite instead of silently splitting the two validation
 # paths apart. Keep each on one line: the test extracts them with sed.
-readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model","context_check"]'
+readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model","context_check","receipt"]'
 readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation","impact"]'
 # The keys of the optional top-level `context_check` object, all required
 # inside it. Same one-line rule as above — the schema-drift test reads it.
 readonly RC_CONTEXT_CHECK_KEYS='["file","line","evidence"]'
 # The subsets of the two lists above that "required" in verdict-schema.json
-# names: what the rejection message calls a missing key. `model` and
-# `context_check` are the optional top-level keys; `line`, `title`,
-# `constraint` and `impact` are the optional finding keys. Same one-line rule
-# as above — the schema-drift test reads them.
+# names: what the rejection message calls a missing key. `model`,
+# `context_check` and `receipt` are the optional top-level keys; `line`,
+# `title`, `constraint` and `impact` are the optional finding keys. Same
+# one-line rule as above — the schema-drift test reads them.
 readonly RC_REQUIRED_TOP_KEYS='["agent","files_read","verdict","findings"]'
 readonly RC_REQUIRED_FINDING_KEYS='["severity","file","evidence","description","recommendation"]'
 # The severities on which a finding must carry `impact` — the enum in the
@@ -66,6 +92,75 @@ readonly RC_REQUIRED_FINDING_KEYS='["severity","file","evidence","description","
 # fallback mirrors it in a single clause and the drift test pins this list to
 # the schema's enum. Same one-line rule as above.
 readonly RC_IMPACT_SEVERITIES='["CRITICAL","HIGH"]'
+
+# Whether a verdict block holds a finding that blocks: the per-reviewer half of
+# the severity rule (severity.md: CRITICAL and HIGH block). The coherence check
+# below refuses an APPROVE over one, and --salvage derives a verdict from it,
+# so the two can never disagree. --salvage derives only what the pipeline
+# itself would: jq/recompute-verdicts.jq forces REQUEST CHANGES over a
+# CRITICAL or HIGH (HIGH_OR_CRITICAL) and APPROVE over no findings
+# (NO_FINDINGS), and below HIGH keeps the verdict the reviewer filed
+# (DECLARED), which an invalid verdict does not state.
+# shellcheck disable=SC2016 # a jq definition; nothing here is a shell expansion.
+readonly RC_BLOCKS_JQ='def rc_blocks: any(.findings | arrays | .[]; type == "object" and (.severity == "CRITICAL" or .severity == "HIGH"));'
+
+# The --salvage normaliser, over one parsed block: {b: <block>, r: [<repair>]}.
+# It repairs exactly these defects and nothing else, so a block with any other
+# defect still fails validate() afterwards and is rejected as before:
+#   - a key outside RC_TOP_KEYS whose value is a scalar is dropped, and its name
+#     recorded. One holding an object or array is left in place: it may carry
+#     findings (`more_findings`, `advisories`), and dropping it would turn a
+#     reply that lost its findings into a clean verdict;
+#   - a key outside RC_FINDING_KEYS is dropped from that finding, and the pair
+#     is appended to its description, which must already be a non-empty string
+#     (otherwise the finding is left as it is, unknown key and all). At most
+#     10 pairs are appended, each value capped at 200 characters and the whole
+#     appendix at 1000; a repair says when either cap cut something;
+#   - a verdict outside the enum becomes REQUEST CHANGES when a finding is
+#     CRITICAL or HIGH and APPROVE when there are no findings; over MEDIUM or
+#     LOW findings alone it is left, and the block stays rejected;
+#   - an APPROVE over a CRITICAL or HIGH becomes REQUEST CHANGES;
+#   - a missing files_read becomes [].
+# shellcheck disable=SC2016 # a jq program; its $names are jq's.
+readonly RC_SALVAGE_JQ='
+	def shown: (if type == "string" then . else tojson end)
+		| if length > 200 then .[0:200] + "..." else . end;
+	def nonempty_string: type == "string" and length > 0;
+	def scalar: type != "object" and type != "array";
+	if type != "object" then error("not an object") else . end
+	| {b: ., r: []}
+	| . as $s | [($s.b | keys) - $topkeys | .[] | select($s.b[.] | scalar)] as $xtop
+	| .b |= delpaths([$xtop[] | [.]])
+	| .r += [$xtop[] | "dropped top-level key \(shown)"]
+	| if (.b.findings | type) == "array" then
+		reduce range(0; .b.findings | length) as $i (.;
+			.b.findings[$i] as $f
+			| if ($f | type) == "object" and ($f.description | nonempty_string) then
+				(($f | keys) - $fkeys) as $x
+				| if ($x | length) > 0 then
+					([$x[0:10][] as $k | "\($k | shown)=\($f[$k] | shown)"] | join(", ")) as $pairs
+					| ($pairs | if length > 1000 then .[0:1000] + "..." else . end) as $kept
+					| .b.findings[$i] = ($f | delpaths([$x[] | [.]])
+						| .description += " [Unrecognised fields: \($kept)]")
+					| .r += [$x[] | "dropped finding key \(shown) (F\($i + 1))"]
+					| if ($x | length) > 10 or ($pairs | length) > 1000 then
+						.r += ["description appendix truncated (F\($i + 1)): kept \([($x | length), 10] | min) of \($x | length) fields, \([($pairs | length), 1000] | min) of \($pairs | length) characters"]
+					else . end
+				else . end
+			else . end)
+	else . end
+	| if .b | has("files_read") then . else .b.files_read = [] | .r += ["files_read missing → []"] end
+	| if (.b.verdict == "APPROVE" or .b.verdict == "REQUEST CHANGES") | not then
+		(if .b | rc_blocks then "REQUEST CHANGES"
+		 elif (.b.findings | type) == "array" and (.b.findings | length) == 0 then "APPROVE"
+		 else null end) as $d
+		| if $d == null then .
+		  else .r += ["verdict \(if .b | has("verdict") then .b.verdict | tojson | shown else "missing" end) → \($d) (derived)"]
+			| .b.verdict = $d end
+	  elif .b.verdict == "APPROVE" and (.b | rc_blocks) then
+		.r += ["verdict \"APPROVE\" → REQUEST CHANGES (derived)"] | .b.verdict = "REQUEST CHANGES"
+	  else . end
+'
 
 # A `jsonschema` binary on PATH is not proof it's sourcemeta/jsonschema — other
 # tools (e.g. the deprecated Python `jsonschema` package CLI) install a binary
@@ -140,6 +235,7 @@ validate() { # json_string
 			and (([keys[]] - $cckeys) | length) == 0
 			and (.file | nonempty_string) and (.evidence | nonempty_string)
 			and (.line | integerish) and .line >= 1 and .line <= 10000000)) and
+		((has("receipt") | not) or (.receipt | type == "string" and length == 21 and test("^rcpt-[0-9a-f]{16}$"))) and
 		(([keys[]] - $topkeys) | length) == 0 and
 		(all(.findings[];
 			(.severity | oneof(["CRITICAL","HIGH","MEDIUM","LOW"])) and
@@ -221,6 +317,8 @@ validate_error() { # json_string
 					then "`findings` must be an array (use [] for a clean review)" else empty end),
 				(if has("model") and ((.model | nonempty_string) | not)
 					then "`model` must be a non-empty string when present" else empty end),
+				(if has("receipt") and ((.receipt | type == "string" and length == 21 and test("^rcpt-[0-9a-f]{16}$")) | not)
+					then "`receipt` must be a string of the form rcpt- followed by 16 lowercase hex digits, copied exactly from the last line of your prompt file" else empty end),
 				(if has("context_check") then
 					if (.context_check | type) != "object" then "`context_check` must be an object"
 					else ((.context_check | keys) - $cckeys) as $cx
@@ -338,9 +436,11 @@ quote_span() { # file line evidence round
 
 # Render a reviewer-controlled string for a rejection detail: JSON-quoted, so a
 # newline in it cannot add prose of the reviewer's choosing to the message the
-# re-dispatch relays, and capped, so it cannot bury the rest of the detail.
-detail_str() { # value
-	jq -nr --arg s "$1" '$s[0:120] | tojson'
+# re-dispatch relays, and capped, so it cannot bury the rest of the detail. The
+# cap is 120 characters unless the caller passes one: a path the reviewer must
+# open has to survive whole, and an absolute session path can pass 120 alone.
+detail_str() { # value [cap]
+	jq -nr --arg s "$1" --argjson cap "${2:-120}" '$s[0:$cap] | tojson'
 }
 
 # Print the text of line <n> of changeset path <path> with surrounding
@@ -366,9 +466,9 @@ cited_line() { # path n
 # here neither aborts the run nor returns early: it leaves a variable empty,
 # and the next check rejects on that.
 context_gate() { # rel block
-	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder n
+	local rel="$1" block="$2" vd qdir round gate cc cfile qfile cline cev status span line_text claim holder n hunk_ranges
 	if ! jq -e '.rounds | type == "array"' "$context_index" >/dev/null 2>&1; then
-		gate_out=$'CONTEXT_MISSING\t'"No usable prompts/context.json in this session, so a zero-finding APPROVE cannot be checked. Run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then re-run this extractor. No re-dispatch is needed."
+		gate_out=$'CONTEXT_MISSING\t'"No usable prompts/context.json in this session, so a zero-finding APPROVE cannot be checked. Run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then rc-assemble-prompts.sh <session_dir> (SKILL.md Step 2.8) with --keep-receipts, so the collected verdicts keep matching their receipts, then re-run this extractor. No re-dispatch is needed."
 		return 0
 	fi
 	vd=$(dirname "${rel#verdicts/}")
@@ -467,13 +567,39 @@ context_gate() { # rel block
 		gate_out=$'APPROVE_UNGROUNDED\t'"context_check.line $cline is not a line the quote occupies in $qfile, and the quote occurs there more than once. Cite the line the quote is on."
 		;;
 	*)
-		gate_out=$'APPROVE_UNGROUNDED\t'"context_check quotes lines inside the diff hunks of $qfile; those are visible from the diff alone. Quote a line outside every hunk; the bundle marks which files have such lines."
+		# Naming the lines lets the one retry land outside them instead of
+		# guessing again. Sessions from before the bundle recorded ranges omit it.
+		hunk_ranges=$(jq -r --arg f "$cfile" 'first(.files[] | select(.path == $f) | .ranges) // empty' <<<"$round")
+		gate_out=$'APPROVE_UNGROUNDED\t'"context_check quotes lines inside the diff hunks of $qfile; those are visible from the diff alone. A hunk includes its unchanged context lines. Quote a line outside every hunk; the bundle lists each file's lines inside hunks.${hunk_ranges:+ Lines inside hunks in $qfile: $hunk_ranges.}"
 		;;
 	esac
 }
 
+# The read receipt. rc-assemble-prompts.sh indexes every dispatch in
+# dispatch.json at the session root, naming the receipt that dispatch's prompt file ends
+# with; a verdict that echoes it proves its reviewer reached the end of the
+# prompt. A session with no index predates that step: nothing is checked and the
+# output says so (`receipts: "unchecked"`), so the orchestrator must log the
+# skipped step. An index that exists but cannot be used fails closed: it counts
+# as present, never as absent, or damaging the file would switch the check off.
+# Index values are data: they are compared as strings against the raw file's
+# session-relative path and are never opened.
+dispatch_index="$session_dir/dispatch.json"
+receipts="unchecked"
+dispatch_fault=""
+session_abs=$(cd "$session_dir" && pwd -P)
+if [[ -e "$dispatch_index" || -L "$dispatch_index" ]]; then
+	receipts="checked"
+	if ! jq -e "$RC_DISPATCH_INDEX_OK" "$dispatch_index" >/dev/null 2>&1; then
+		dispatch_fault="dispatch.json exists but is unreadable or malformed (every dispatches[] entry needs string raw and prompt paths and an rcpt- receipt), so no verdict can be checked against its dispatch. Restore it, then re-run this extractor; no re-dispatch is needed. Its receipts cannot be recovered any other way: if it cannot be restored, run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then rc-assemble-prompts.sh <session_dir> (SKILL.md Step 2.8) without --keep-receipts, and re-dispatch every reviewer, as the new prompts carry new receipts."
+	fi
+fi
+
 invalid_json="[]"
 valid_count=0
+# {agent, path, repairs} for every block --salvage repaired and the checks
+# then accepted.
+salvaged_json="[]"
 # {role, model} for every valid verdict that names its own model, applied to
 # models.json once the loop is done.
 model_reports="[]"
@@ -535,16 +661,56 @@ for raw in "${raw_files[@]}"; do
 	# every json it finds. Only an accepted block writes it back below. After
 	# the reserved-name check, whose json is the symlink script's own.
 	rm -f "$(dirname "$raw")/$agent.json"
+	# This raw file's dispatch, when the index lists it, and the sentence that
+	# sends its reviewer back to the prompt file for the receipt. It names the
+	# file and never the token, which would let a reviewer copy it unread. Found
+	# before the format checks so a format repair also fixes a missing receipt:
+	# the one re-dispatch would otherwise be spent before the receipt is judged.
+	dispatch=""
+	receipt_reread=""
+	if [[ "$receipts" == "checked" && -z "$dispatch_fault" ]]; then
+		dispatch=$(jq -c --arg rel "$rel" 'first(.dispatches[] | select(.raw == $rel)) // empty' "$dispatch_index")
+		if [[ -n "$dispatch" ]]; then
+			prompt_path=$(jq -r '.prompt' <<<"$dispatch")
+			receipt_reread="Read $(detail_str "$session_abs/$prompt_path" 4096) to its last line and copy the receipt it names into the top-level \`receipt\` field."
+		fi
+	fi
 	block=$(extract_block "$raw")
 	if [[ -z "$block" ]] || ! echo "$block" | jq -e . >/dev/null 2>&1; then
-		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
+		if [[ -n "$receipt_reread" ]]; then
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg d "The verdict must also carry its receipt. $receipt_reread" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		else
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
+		fi
 		continue
+	fi
+	# Normalise before validating, so the repaired block meets every check below
+	# exactly as a block that needed no repair would. Fails closed: if the
+	# normaliser errors (the block is not an object), the block is judged as it
+	# was written and rejected as before.
+	repairs="[]"
+	if [[ "$salvage" == "yes" ]]; then
+		if salvage_out=$(jq -c --argjson topkeys "$RC_TOP_KEYS" --argjson fkeys "$RC_FINDING_KEYS" \
+			"$RC_BLOCKS_JQ$RC_SALVAGE_JQ" <<<"$block" 2>/dev/null) &&
+			salvage_block=$(jq -c '.b' <<<"$salvage_out") &&
+			salvage_repairs=$(jq -c '.r' <<<"$salvage_out") &&
+			[[ "$salvage_repairs" != "[]" ]]; then
+			block="$salvage_block"
+			repairs="$salvage_repairs"
+		fi
 	fi
 	validated_any=1
 	# shellcheck disable=SC2310 # validate() is documented as requiring an
 	# `if ! validate ...` caller so set -e stays suspended inside it.
 	if ! validate "$block"; then
 		detail=$(validate_error "$block")
+		if [[ -n "$dispatch" ]]; then
+			block_receipt=$(jq -r 'if type == "object" and (.receipt | type) == "string" then .receipt else "" end' <<<"$block" 2>/dev/null) || block_receipt=""
+			index_receipt=$(jq -r '.receipt' <<<"$dispatch")
+			if [[ "$block_receipt" != "$index_receipt" ]]; then
+				detail="$detail Also: your verdict carries no receipt, or the wrong one. $receipt_reread"
+			fi
+		fi
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "SCHEMA_INVALID" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
 	fi
@@ -561,6 +727,53 @@ for raw in "${raw_files[@]}"; do
 		detail="This file is ${agent}'s, but its verdict block names agent \"${claimed}\". If the orchestrator wrote another reviewer's response here, rewrite the file with ${agent}'s own response. If ${agent} misnamed itself, ask it to re-emit the same block with \"agent\": \"${agent}\"."
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "AGENT_MISMATCH" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
+	fi
+	# The read receipt, after the attribution checks above: a response the
+	# orchestrator filed under the wrong name would otherwise read as a reviewer
+	# that skipped its prompt, and spend that reviewer's one re-dispatch while its
+	# real reply sits unwritten. A missing receipt is not rejected on the spot but
+	# held in receipt_fail, so the coherence check and the context gate below still
+	# run and one re-dispatch carries every defect.
+	receipt_fail=""
+	if [[ -n "$dispatch_fault" ]]; then
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "DISPATCH_UNINDEXED" --arg d "$dispatch_fault" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		continue
+	elif [[ "$receipts" == "checked" ]]; then
+		if [[ -z "$dispatch" ]]; then
+			detail="This raw file ($(detail_str "$rel")) is not a planned dispatch path in dispatch.json. Move it to the raw path its dispatch was planned with; or, if the plan changed, run rc-build-context.sh <session_dir> (SKILL.md Step 2.7), then rc-assemble-prompts.sh <session_dir> (SKILL.md Step 2.8) with --keep-receipts, so the collected verdicts keep matching their receipts. Then re-run this extractor. No re-dispatch is needed."
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "DISPATCH_UNINDEXED" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+			continue
+		fi
+		want_receipt=$(jq -r '.receipt' <<<"$dispatch")
+		got_receipt=$(jq -r '.receipt // ""' <<<"$block")
+		if [[ "$got_receipt" != "$want_receipt" ]]; then
+			# The block's own token, found under another dispatch: the response is
+			# filed in the wrong place. Naming that place leaks nothing. Unless that
+			# place already holds a reply carrying the same token, which is then
+			# its own: this reviewer read the other dispatch's prompt, and moving
+			# its reply there would overwrite a verdict nothing is wrong with. The
+			# index path is opened only when it is one of the raw files found
+			# under verdicts/ above.
+			other_raw=""
+			if [[ -n "$got_receipt" ]]; then
+				other_raw=$(jq -r --arg rc "$got_receipt" --arg rel "$rel" 'first(.dispatches[] | select(.receipt == $rc and .raw != $rel) | .raw) // empty' "$dispatch_index")
+			fi
+			if [[ -n "$other_raw" ]]; then
+				for other_file in "${raw_files[@]}"; do
+					[[ "${other_file#"$session_dir"/}" == "$other_raw" ]] || continue
+					# shellcheck disable=SC2310 # a failed read means it holds no receipt.
+					other_has=$(extract_block "$other_file" | jq -r 'if type == "object" and (.receipt | type) == "string" then .receipt else "" end' 2>/dev/null) || other_has=""
+					[[ "$other_has" != "$got_receipt" ]] || other_raw=""
+					break
+				done
+			fi
+			if [[ -n "$other_raw" ]]; then
+				detail="This response carries the receipt of another dispatch, whose raw path is $(detail_str "$other_raw"); the orchestrator filed it in the wrong place. Move it to that path, put this dispatch's own response here, then re-run this extractor. No re-dispatch is needed."
+				invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RECEIPT_MISFILED" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+				continue
+			fi
+			receipt_fail="Your verdict carries no receipt, or the wrong one. $receipt_reread"
+		fi
 	fi
 	# verdict-schema.json constrains `verdict` and `severity` independently and
 	# never couples them, so an APPROVE filed over a CRITICAL finding validates.
@@ -580,9 +793,8 @@ for raw in "${raw_files[@]}"; do
 	# rather than `== "yes"`. Do not "simplify" it to `== "yes"` — that turns
 	# every unexpected output into an acceptance. Rejecting costs one
 	# re-dispatch; accepting ships the mislabelled verdict.
-	verdict_mismatch=$(printf '%s' "$block" | jq -r '
-		if .verdict == "APPROVE"
-			and (.findings | map(.severity) | any(. == "CRITICAL" or . == "HIGH"))
+	verdict_mismatch=$(printf '%s' "$block" | jq -r "$RC_BLOCKS_JQ"'
+		if .verdict == "APPROVE" and rc_blocks
 		then "yes" else "no" end
 	' 2>/dev/null) || verdict_mismatch="yes"
 	if [[ "$verdict_mismatch" != "no" ]]; then
@@ -615,7 +827,12 @@ for raw in "${raw_files[@]}"; do
 				| {severity, file, line, description}]}' \
 			>>"$session_dir/gate-firings.jsonl"
 		detail='Verdict/severity mismatch: verdict is "APPROVE" while findings still contain a CRITICAL or HIGH entry. A reviewer holding an unresolved CRITICAL or HIGH finding must return "REQUEST CHANGES". Either change the verdict to "REQUEST CHANGES", or — if the finding does not hold at that severity — drop it or lower its severity to MEDIUM/LOW and keep "APPROVE". Whichever you choose, say so in prose alongside the block: dropping the finding without a word erases it from the review entirely.'
-		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "VERDICT_INCOHERENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		if [[ -n "$receipt_fail" ]]; then
+			detail="$receipt_fail Also: $detail"
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RECEIPT_MISSING" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		else
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "VERDICT_INCOHERENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		fi
 		continue
 	fi
 	# Issue #101. A zero-finding APPROVE is the verdict a reviewer that read only
@@ -649,17 +866,33 @@ for raw in "${raw_files[@]}"; do
 		# shellcheck disable=SC2310 # set -e is suspended inside on purpose.
 		context_gate "$rel" "$block" || gate_out="$gate_unevaluated"
 		if [[ "$gate_out" != "ok" ]]; then
+			# CONTEXT_MISSING is the orchestrator's to fix and costs no re-dispatch, so it
+			# is never folded into a reviewer's.
+			if [[ -n "$receipt_fail" && "${gate_out%%$'\t'*}" != "CONTEXT_MISSING" ]]; then
+				gate_out=$'RECEIPT_MISSING\t'"$receipt_fail Also: ${gate_out#*$'\t'}"
+			fi
 			invalid_json=$(jq --arg a "$agent" --arg r "${gate_out%%$'\t'*}" --arg d "${gate_out#*$'\t'}" --arg p "$rel" \
 				'. + [{agent:$a, reason:$r, detail:$d, path:$p}]' <<<"$invalid_json")
 			continue
 		fi
 		# Nothing after the gate refuses a verdict, so the line is held from
-		# here; a refused quote never reaches this and reserves nothing.
-		[[ -z "$gate_claim" ]] || context_claims["$gate_claim"]="$agent"
-		[[ -z "$gate_line" ]] || block=$(jq -c --argjson l "$gate_line" '.context_check.line = $l' <<<"$block")
+		# here; a refused quote never reaches this and reserves nothing. A verdict
+		# still owing its receipt is refused below, so it holds nothing either.
+		if [[ -z "$receipt_fail" ]]; then
+			[[ -z "$gate_claim" ]] || context_claims["$gate_claim"]="$agent"
+			[[ -z "$gate_line" ]] || block=$(jq -c --argjson l "$gate_line" '.context_check.line = $l' <<<"$block")
+		fi
+	fi
+	if [[ -n "$receipt_fail" ]]; then
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RECEIPT_MISSING" --arg d "$receipt_fail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		continue
 	fi
 	echo "$block" | jq . >"$(dirname "$raw")/$agent.json"
 	valid_count=$((valid_count + 1))
+	if [[ "$repairs" != "[]" ]]; then
+		salvaged_json=$(jq -c --arg a "$agent" --arg p "$rel" --argjson r "$repairs" \
+			'. + [{agent:$a, path:$p, repairs:$r}]' <<<"$salvaged_json")
+	fi
 	# A reviewer's `model` is its own claim about itself, kept exactly as given:
 	# the renderers allow-list it at display time, and a value trimmed here
 	# could pass that check while differing from what the reviewer said.
@@ -720,6 +953,39 @@ if [[ "$validated_any" -eq 1 ]]; then
 	fi
 fi
 
+# The salvage record. A run without --salvage removes it, since the json files
+# it described may have been revoked since. With --salvage every entry still
+# rejected keeps its reply verbatim under _meta/unverified/, at its path below
+# verdicts/ with .raw.md replaced by .md, so two subsystems' copies of one agent
+# never collide. _meta is never searched for raw files above, so a copy is never
+# extracted. RESERVED_AGENT is no reviewer's reply and is not kept.
+unverified_json="[]"
+rm -rf "$vdir/_meta/unverified"
+rm -f "$vdir/_meta/salvage.json"
+if [[ "$salvage" == "yes" ]]; then
+	# One entry at a time by index: a path is a filename, and no line or field
+	# separator is one a filename cannot contain.
+	u_count=$(jq 'length' <<<"$invalid_json")
+	for ((u_i = 0; u_i < u_count; u_i++)); do
+		u_reason=$(jq -r --argjson i "$u_i" '.[$i].reason' <<<"$invalid_json")
+		[[ "$u_reason" != "RESERVED_AGENT" ]] || continue
+		u_agent=$(jq -r --argjson i "$u_i" '.[$i].agent' <<<"$invalid_json")
+		u_path=$(jq -r --argjson i "$u_i" '.[$i].path' <<<"$invalid_json")
+		u_copy="verdicts/_meta/unverified/${u_path#verdicts/}"
+		u_copy="${u_copy%.raw.md}.md"
+		mkdir -p "$(dirname "$session_dir/$u_copy")"
+		cp -- "$session_dir/$u_path" "$session_dir/$u_copy"
+		unverified_json=$(jq -c --arg a "$u_agent" --arg p "$u_path" --arg why "$u_reason" --arg c "$u_copy" \
+			'. + [{agent:$a, path:$p, reason:$why, copy:$c}]' <<<"$unverified_json")
+	done
+	mkdir -p "$vdir/_meta"
+	salvage_tmp=$(mktemp "$vdir/_meta/.salvage.XXXXXX")
+	jq -n --argjson s "$salvaged_json" --argjson u "$unverified_json" '{salvaged:$s, unverified:$u}' >"$salvage_tmp"
+	mv -f "$salvage_tmp" "$vdir/_meta/salvage.json"
+fi
+salvage_fields=$(jq -nc --arg on "$salvage" --argjson s "$salvaged_json" --argjson u "$unverified_json" \
+	'if $on == "yes" then {salvaged:$s, unverified:$u} else {} end')
+
 invalid_count=$(echo "$invalid_json" | jq 'length')
 if [[ "$invalid_count" -gt 0 ]]; then
 	read -r -d '' remediation <<'REM' || true
@@ -727,6 +993,7 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
 { "agent": "...", "files_read": [...], "verdict": "APPROVE|REQUEST CHANGES",
   "model": "optional: your own model ID, only if you know it",
   "context_check": {"file": "...", "line": 88, "evidence": "..."},
+  "receipt": "rcpt-..., only when your prompt file names one",
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
   "constraint": "...", "description": "...", "recommendation": "...",
   "impact": "who is affected, and how, if this merges as-is",
@@ -734,23 +1001,27 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
 These are the only keys permitted at either level — the schema sets
 "additionalProperties": false, so any other key is rejected, however useful it
 looks. Put anything you would have added into `description`. Optional keys are
-`model` and `context_check` at the top level and `line`, `title` and `constraint` in a finding.
+`model`, `context_check` and `receipt` at the top level and `line`, `title` and `constraint` in a finding.
 `impact` is required on every HIGH or CRITICAL finding and optional on MEDIUM
 and LOW. Every other key above is required.
 `context_check` is required on a code reviewer's APPROVE with no findings,
 unless your round's bundle says it is not required: quote a line outside the
-diff hunks.
+diff hunks, which include their unchanged context lines.
 Emit only the block — no prose before or after.
 Correct only the defect named above: re-emit the SAME findings, with the same
 severities and the same evidence. This is a formatting repair, not a new review.
+For RECEIPT_MISSING alone, the fix is a re-read, not a re-review: open the prompt
+file the detail names, read it to its last line, and re-emit the SAME findings
+with the same severities plus the receipt that line names, in the top-level
+`receipt` field. If the detail also names a context_check or verdict/severity defect, fix that in the same re-emit: add the context_check quote, or, if looking past the diff turns up a defect, file it and set the verdict to match; resolve a verdict/severity mismatch as that detail directs.
 For APPROVE_UNGROUNDED and APPROVE_COLLIDED alone, the fix is to look past the diff: add the
 `context_check` quote, or, if that look turns up a defect, file it and set the
 verdict to match.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \
-		--arg sv "$schema_validation" \
-		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem}
-		 + (if $sv == "" then {} else {schema_validation:$sv} end)'
+		--arg sv "$schema_validation" --arg rc "$receipts" --argjson salv "$salvage_fields" \
+		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem, receipts:$rc}
+		 + (if $sv == "" then {} else {schema_validation:$sv} end) + $salv'
 	exit 0
 fi
 
@@ -768,6 +1039,7 @@ fi
 	json_output "nothing_to_do" "No verdict blocks found: no .raw.md file exists under verdicts/. Reviewers return their verdicts; the orchestrator writes each one verbatim to its .raw.md path. If those responses are still held, write them and re-run extraction instead of re-dispatching." "$extra"
 	exit 0
 }
-payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" '{valid:$v, schema_validation:$sv}')
+payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" --arg rc "$receipts" --argjson salv "$salvage_fields" \
+	'{valid:$v, schema_validation:$sv, receipts:$rc} + $salv')
 json_output "ok" "Extracted $valid_count verdict block(s)." "$payload"
 exit 0

@@ -198,6 +198,37 @@ RC_DEFAULT_BATCH_FILES=50
 # shellcheck disable=SC2034 # read by the scripts that source this file.
 RC_CONTEXT_FILE_BYTES=32768
 
+# Why a round's context_check is waived, as rc-build-context.sh writes it in the
+# bundle and rc-assemble-prompts.sh repeats it in the prompt. One copy, so the
+# two files a reviewer reads never disagree.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_CONTEXT_WAIVED_NO_DIFF="This round has no diff, so context_check is not required."
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_CONTEXT_WAIVED_INSIDE="No file in this round has a line outside the diff hunks, so context_check is not required."
+
+# The jq test a usable dispatch index (<session_dir>/dispatch.json) passes:
+# rc-extract-verdict.sh checks receipts against it, and rc-assemble-prompts.sh
+# --keep-receipts reuses them from it. One copy, so an index one script trusts
+# the other never refuses.
+# shellcheck disable=SC2034 # read by the scripts that source this file.
+RC_DISPATCH_INDEX_OK='.dispatches | type == "array" and all(.[];
+	type == "object" and (.raw | type == "string") and (.prompt | type == "string")
+	and (.receipt | type == "string" and length == 21 and test("^rcpt-[0-9a-f]{16}$")))'
+
+# A code span that no backtick in <text> can close: one backtick longer than the
+# longest run in it. Padded with a space each side only where CommonMark needs
+# it, when the text starts or ends with a backtick or a space; elsewhere the
+# padding would be shown.
+code_span() { # text
+	local text="$1" tick='`' pad=""
+	while [[ "$text" == *"$tick"* ]]; do tick+='`'; done
+	case "$text" in
+	'`'* | *'`' | ' '* | *' ') pad=" " ;;
+	*) ;;
+	esac
+	printf '%s%s%s%s%s' "$tick" "$pad" "$text" "$pad" "$tick"
+}
+
 # How many comments one verdict may span when the project sets no `Max
 # comments`. Three, not one: a trimmed comment loses reviewer analysis that a
 # PR reader has no other way to reach, since the full report stays in the
@@ -407,13 +438,69 @@ rc_parse_kv() {
 		sed -E 's/[[:space:]]+$//' || true
 }
 
+# Git's C-style path quoting, undone. With core.quotePath (the default) git
+# wraps a path holding a control character, a quote, a backslash or any
+# non-ASCII byte in double quotes and escapes those bytes, octal for the
+# non-ASCII ones; in a diff header the a/ b/ prefix sits inside the quotes.
+# Awk source, so rc_diff_index decodes in its own pass and the shell helpers
+# below share the one decoder:
+#   rc_unq(s)       the decoded path; an unquoted s comes back as it is
+#   rc_unq_line(s)  the same, except that a path decoding to any control byte
+#                   (\001-\037, \177) stays exactly as quoted. The author of
+#                   the change picks file names: a tab or newline would split
+#                   a row or a line of changeset.txt, a CR ends a markdown line
+#                   so the rest of the name could forge a heading in a prompt,
+#                   and an ESC reaches the terminal. `git diff --name-only`
+#                   quotes the same names, so changeset and diff still agree.
+# Run under LC_ALL=C, so an octal escape becomes the one byte it names.
+RC_AWK_UNQUOTE='
+function rc_unq(s,   body, out, i, c) {
+	if (length(s) < 2 || substr(s, 1, 1) != "\"" || substr(s, length(s), 1) != "\"") return s
+	body = substr(s, 2, length(s) - 2); out = ""
+	for (i = 1; i <= length(body); i++) {
+		c = substr(body, i, 1)
+		if (c != "\\") { out = out c; continue }
+		c = substr(body, ++i, 1)
+		if (c ~ /[0-3]/ && substr(body, i + 1, 2) ~ /^[0-7][0-7]$/) {
+			out = out sprintf("%c", c * 64 + substr(body, i + 1, 1) * 8 + substr(body, i + 2, 1))
+			i += 2
+		} else if (c == "a") out = out "\007"
+		else if (c == "b") out = out "\010"
+		else if (c == "f") out = out "\014"
+		else if (c == "n") out = out "\n"
+		else if (c == "r") out = out "\r"
+		else if (c == "t") out = out "\t"
+		else if (c == "v") out = out "\013"
+		else out = out c
+	}
+	return out
+}
+function rc_unq_line(s,   d) { d = rc_unq(s); return (d ~ /[\001-\037\177]/) ? s : d }
+'
+
+# Print <text> with git's path quoting undone (rc_unq). Through ENVIRON, since
+# awk -v would interpret the backslashes being decoded.
+rc_git_unquote() { # text
+	RC_UNQ_IN="$1" LC_ALL=C awk "$RC_AWK_UNQUOTE"'BEGIN { printf "%s", rc_unq(ENVIRON["RC_UNQ_IN"]) }'
+}
+
+# Filter `git diff --name-only` output, one path per line, into the names
+# rc_diff_index gives the same files (rc_unq_line). Every changeset.txt writer
+# reads git through this, so a non-ASCII name is the file's real name there,
+# which the review root can open and the diff's hunks are keyed by.
+rc_unquote_lines() {
+	LC_ALL=C awk "$RC_AWK_UNQUOTE"'{ print rc_unq_line($0) }'
+}
+
 # rc_diff_index <diff_file>
 # One pass over a unified git diff, printing tab-separated rows:
-#   F<TAB>path<TAB>bytes          one per file section
+#   F<TAB>path<TAB>bytes<TAB>first<TAB>last  one per file section; first and
+#                                 last are the section's line numbers in the diff
 #   H<TAB>path<TAB>start<TAB>end  one per hunk: its new-side line range
-# rc-plan-batches.sh prices batches on the F rows and rc-build-context.sh
-# locates hunks from the H rows. They share this parser so the two can never
-# disagree about which section belongs to which path (#101).
+# rc-plan-batches.sh prices batches on the F rows, rc_diff_sections cuts a
+# file's diff out by their line spans, and rc-build-context.sh locates
+# hunks from the H rows. They share this parser so they can never disagree
+# about which section belongs to which path (#101).
 #
 # The path is read from the `+++ b/<path>` header rather than from the
 # `diff --git a/<p> b/<p>` line, which is genuinely ambiguous for a path
@@ -424,9 +511,11 @@ rc_parse_kv() {
 # headers: an added line of content may itself begin with `+++`.
 #
 # Git appends one TAB to a `---`/`+++` path that contains a space, so that
-# TAB is stripped. A path git C-quotes (a non-ASCII name under core.quotePath,
-# written `+++ "b/\303\251.go"`) passes through still quoted, as it did in the
-# old planner; a consumer matching it against changeset.txt will not find it.
+# TAB is stripped. A path git C-quotes (`+++ "b/caf\303\251.go"`, the prefix
+# inside the quotes) is decoded by rc_unq_line, the rule preparation also
+# applies to changeset.txt, so the two name every file the same way. One that
+# stays quoted (a control byte in the name) loses its prefix inside the
+# quotes, which is how `git diff --name-only` writes it.
 #
 # A hunk range includes its context lines, because they are visible in the
 # diff too. A hunk whose new-side count is 0 (a pure deletion) adds no lines
@@ -435,24 +524,26 @@ rc_parse_kv() {
 # the `--scope all` case, not an error.
 rc_diff_index() { # diff_file
 	[[ -f "$1" ]] || return 0
-	LC_ALL=C awk '
-		function flush() { if (path != "") printf "F\t%s\t%d\n", path, bytes; path = ""; bytes = 0 }
+	LC_ALL=C awk "$RC_AWK_UNQUOTE"'
+		function flush(last) { if (path != "") printf "F\t%s\t%d\t%d\t%d\n", path, bytes, first, last; path = ""; bytes = 0 }
 		/^diff --git / {
-			flush()
-			hdr = 1; apath = ""; bytes = length($0) + 1
+			flush(NR - 1)
+			hdr = 1; apath = ""; bytes = length($0) + 1; first = NR
 			line = $0; sub(/^diff --git /, "", line)
-			i = index(line, " b/")
-			path = (i > 0) ? substr(line, i + 3) : ""
+			path = ""
+			if ((i = index(line, " \"b/")) > 0) {
+				path = rc_unq_line(substr(line, i + 1)); sub(/^b\//, "", path); sub(/^"b\//, "\"", path)
+			} else if ((i = index(line, " b/")) > 0) path = substr(line, i + 3)
 			next
 		}
 		{
 			bytes += length($0) + 1
 			if (hdr && $0 ~ /^--- /) {
-				p = substr($0, 5); sub(/\t$/, "", p)
-				if (p != "/dev/null") { sub(/^a\//, "", p); apath = p }
+				p = substr($0, 5); sub(/\t$/, "", p); p = rc_unq_line(p)
+				if (p != "/dev/null") { sub(/^a\//, "", p); sub(/^"a\//, "\"", p); apath = p }
 			} else if (hdr && $0 ~ /^\+\+\+ /) {
-				p = substr($0, 5); sub(/\t$/, "", p)
-				if (p != "/dev/null") { sub(/^b\//, "", p); path = p }
+				p = substr($0, 5); sub(/\t$/, "", p); p = rc_unq_line(p)
+				if (p != "/dev/null") { sub(/^b\//, "", p); sub(/^"b\//, "\"", p); path = p }
 				else if (apath != "") path = apath
 			} else if ($0 ~ /^@@ /) {
 				hdr = 0
@@ -464,8 +555,26 @@ rc_diff_index() { # diff_file
 				}
 			}
 		}
-		END { flush() }
+		END { flush(NR) }
 	' "$1"
+}
+
+# rc_diff_sections <diff_file> <path>...
+# Print the file sections of <diff_file> whose rc_diff_index path is one of
+# <path>, whole and in diff order: what a reviewer of those files is shown, and
+# what a path filter keeps of a diff git cannot be re-asked for.
+rc_diff_sections() { # diff_file path...
+	local diff_file="$1" spans
+	shift
+	[[ -f "$diff_file" && $# -gt 0 ]] || return 0
+	spans=$(rc_diff_index "$diff_file" | LC_ALL=C awk -F'\t' '
+		NR == FNR { want[$0] = 1; next }
+		$1 == "F" && ($2 in want) { print $4 " " $5 }' <(printf '%s\n' "$@") - | sort -n -u)
+	[[ -n "$spans" ]] || return 0
+	LC_ALL=C awk '
+		NR == FNR { s[++n] = $1; e[n] = $2; next }
+		FNR == 1 { i = 1 }
+		{ while (i <= n && FNR > e[i]) i++; if (i > n) exit; if (FNR >= s[i]) print }' - "$diff_file" <<<"$spans"
 }
 
 # Fail loudly. With pipefail set, a failing pipeline stage can otherwise abort

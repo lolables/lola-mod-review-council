@@ -436,9 +436,11 @@ quote_span() { # file line evidence round
 
 # Render a reviewer-controlled string for a rejection detail: JSON-quoted, so a
 # newline in it cannot add prose of the reviewer's choosing to the message the
-# re-dispatch relays, and capped, so it cannot bury the rest of the detail.
-detail_str() { # value
-	jq -nr --arg s "$1" '$s[0:120] | tojson'
+# re-dispatch relays, and capped, so it cannot bury the rest of the detail. The
+# cap is 120 characters unless the caller passes one: a path the reviewer must
+# open has to survive whole, and an absolute session path can pass 120 alone.
+detail_str() { # value [cap]
+	jq -nr --arg s "$1" --argjson cap "${2:-120}" '$s[0:$cap] | tojson'
 }
 
 # Print the text of line <n> of changeset path <path> with surrounding
@@ -670,7 +672,7 @@ for raw in "${raw_files[@]}"; do
 		dispatch=$(jq -c --arg rel "$rel" 'first(.dispatches[] | select(.raw == $rel)) // empty' "$dispatch_index")
 		if [[ -n "$dispatch" ]]; then
 			prompt_path=$(jq -r '.prompt' <<<"$dispatch")
-			receipt_reread="Read $(detail_str "$session_abs/$prompt_path") to its last line and copy the receipt it names into the top-level \`receipt\` field."
+			receipt_reread="Read $(detail_str "$session_abs/$prompt_path" 4096) to its last line and copy the receipt it names into the top-level \`receipt\` field."
 		fi
 	fi
 	block=$(extract_block "$raw")

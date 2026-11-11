@@ -1795,6 +1795,17 @@ assert_match_count "$remediation" 1 "remediation calls it a re-read" -F "RECEIPT
 assert_equals "$gone" "yes" "no verdict json is written for a rejected receipt"
 rm -rf "$s"
 
+echo "Test: the prompt path in a RECEIPT_MISSING detail survives a session directory over 120 characters"
+base=$(mk)
+s="$base/$(printf 'd%.0s' {1..150})"
+mkdir -p "$s/prompts"
+jq -nc --arg r "$RCPT_GOOD" '{dispatches: [{agent: "divisor-guard-code", raw: "verdicts/divisor-guard-code.raw.md", prompt: "prompts/dispatch/divisor-guard-code.md", receipt: $r}]}' >"$s/dispatch.json"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the whole path is named, tail included" -F "prompts/dispatch/divisor-guard-code.md\" to its last line"
+rm -rf "$base"
+
 echo "Test: a wrong receipt is RECEIPT_MISSING (c)"
 s=$(receipt_session verdicts/divisor-guard-code.raw.md)
 receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_OTHER\""

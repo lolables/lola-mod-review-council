@@ -1,0 +1,24 @@
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_7825b79426aba3::t_4a04a92df03aad 385-392
+module/tests/test-rc-prepare.sh
+  s_7825b79426aba3::t_4a04a92df03aad 9-10,600-627
+  s_7825b79426aba3::t_1cef57da4663f9 628
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_7825b79426aba3::t_4a04a92df03aad 200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "6e98f5aef00939ebde0eb192f0ea425dcb03fac3",
+  "prompts": {},
+  "sessions": {
+    "s_7825b79426aba3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4d1130a-11a5-4601-ae9f-277ccdc9422a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

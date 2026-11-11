@@ -1,0 +1,19 @@
+module/skills/review-council/references/reviewer-protocol.md
+  s_7825b79426aba3::t_6c9436d2163424 139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "aac17d8eb683969c534abea0d2bdb47fe8756b11",
+  "prompts": {},
+  "sessions": {
+    "s_7825b79426aba3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4d1130a-11a5-4601-ae9f-277ccdc9422a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

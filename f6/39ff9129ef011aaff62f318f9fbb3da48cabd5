@@ -1,0 +1,68 @@
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_7825b79426aba3::t_4a04a92df03aad 200
+module/skills/review-council/references/dispatch-prompt.md
+  s_7825b79426aba3::t_d1998890c44fb3 170
+module/skills/review-council/scripts/rc-lib.sh
+  s_7825b79426aba3::t_c22fcc5e03d440 193-207,456-474
+  s_7825b79426aba3::t_27bd6c87055f00 475-476
+docs/dev/pipeline.md
+  s_7825b79426aba3::t_f0235b2c62c038 183-185
+module/skills/review-council/references/reviewer-protocol.md
+  s_7825b79426aba3::t_6c9436d2163424 139
+  s_7825b79426aba3::t_d1998890c44fb3 137-138,140
+module/tests/test-rc-prepare.sh
+  s_7825b79426aba3::t_1cef57da4663f9 628
+  s_7825b79426aba3::t_4a04a92df03aad 9-10,600-627
+module/skills/review-council/scripts/rc-plan-batches.sh
+  s_7825b79426aba3::t_c22fcc5e03d440 63-64
+module/tests/test-rc-lib.sh
+  s_7825b79426aba3::t_c22fcc5e03d440 361-382
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7825b79426aba3::t_1352989d23a923 561
+  s_7825b79426aba3::t_f0235b2c62c038 552-553
+module/tests/test-rc-doc-guards.sh
+  s_7825b79426aba3::t_c335fefc08314c 3469-3483
+README.md
+  s_7825b79426aba3::t_3590b2685f3007 756
+  s_7825b79426aba3::t_f0235b2c62c038 594,754-755
+  s_7825b79426aba3::t_d1998890c44fb3 577
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_7825b79426aba3::t_4a04a92df03aad 385-392
+module/skills/review-council/scripts/lib/context-lines.sh
+  s_7825b79426aba3::t_6c324bcca90dab 1-112,117-123
+  s_7825b79426aba3::t_b3e33a76bd6d1a 113-116
+module/tests/test-rc-assemble-prompts.sh
+  s_7825b79426aba3::t_70a513480e699c 46,1014-1030,1038-1039,1041-1050,1053-1055,1060-1105,1107-1115,1118-1127,1130-1155,1158-1160,1163
+  s_7825b79426aba3::t_14f13437771b28 1031-1035,1051-1052,1056-1059,1116-1117,1128-1129,1156-1157,1161-1162
+  s_7825b79426aba3::t_0c19fafcd04649 1106
+  s_7825b79426aba3::t_02914eeff751d9 1036-1037,1040
+  s_7825b79426aba3::t_88422eb929fe72 1164
+module/skills/review-council/phases/delegate.md
+  s_7825b79426aba3::t_f0235b2c62c038 539-540
+  s_7825b79426aba3::t_d1998890c44fb3 313,538
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7825b79426aba3::t_984d9e57dba3c1 5-6,29-30,150,564-572,574-576,578-580,707-710
+  s_7825b79426aba3::t_3d85960c8166a0 573,577
+module/skills/review-council/SKILL.md
+  s_7825b79426aba3::t_d1998890c44fb3 1492,1575-1578
+  s_7825b79426aba3::t_4f031b6aa99c7a 1579
+module/tests/test-rc-extract-verdict.sh
+  s_7825b79426aba3::t_1352989d23a923 1680,1682
+  s_7825b79426aba3::t_c326ba9270a28d 1681
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f639ff9129ef011aaff62f318f9fbb3da48cabd5",
+  "prompts": {},
+  "sessions": {
+    "s_7825b79426aba3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4d1130a-11a5-4601-ae9f-277ccdc9422a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

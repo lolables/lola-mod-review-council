@@ -1,0 +1,29 @@
+module/skills/review-council/scripts/lib/context-lines.sh
+  s_7825b79426aba3::t_b3e33a76bd6d1a 113-116
+  s_7825b79426aba3::t_6c324bcca90dab 1-112,117-123
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7825b79426aba3::t_984d9e57dba3c1 5-6,29-30,150,564-572,574-576,578-580,707-710
+  s_7825b79426aba3::t_3d85960c8166a0 573,577
+module/tests/test-rc-assemble-prompts.sh
+  s_7825b79426aba3::t_70a513480e699c 46,1014-1030,1038-1039,1041-1050,1053-1055,1060-1105,1107-1115,1118-1127,1130-1155,1158-1160,1163
+  s_7825b79426aba3::t_02914eeff751d9 1036-1037,1040
+  s_7825b79426aba3::t_14f13437771b28 1031-1035,1051-1052,1056-1059,1116-1117,1128-1129,1156-1157,1161-1162
+  s_7825b79426aba3::t_0c19fafcd04649 1106
+  s_7825b79426aba3::t_88422eb929fe72 1164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "0c5f0a2a299894050987e88ed15a23bdb08631f9",
+  "prompts": {},
+  "sessions": {
+    "s_7825b79426aba3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4d1130a-11a5-4601-ae9f-277ccdc9422a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

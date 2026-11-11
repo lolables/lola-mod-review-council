@@ -1,0 +1,26 @@
+module/skills/review-council/scripts/rc-extract-verdict.sh
+  s_7825b79426aba3::t_f0235b2c62c038 552-553
+docs/dev/pipeline.md
+  s_7825b79426aba3::t_f0235b2c62c038 183-185
+module/skills/review-council/phases/delegate.md
+  s_7825b79426aba3::t_f0235b2c62c038 539-540
+README.md
+  s_7825b79426aba3::t_f0235b2c62c038 594,754-755
+  s_7825b79426aba3::t_3590b2685f3007 756
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "907464579ca2de66f276ace80850531238593132",
+  "prompts": {},
+  "sessions": {
+    "s_7825b79426aba3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c4d1130a-11a5-4601-ae9f-277ccdc9422a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

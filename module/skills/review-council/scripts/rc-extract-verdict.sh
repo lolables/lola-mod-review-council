@@ -549,7 +549,8 @@ context_gate() { # rel block
 			gate_out=$'APPROVE_UNGROUNDED\t'"context_check.evidence must include the whole cited line ($cline of $qfile, surrounding whitespace aside), and that line must not be blank. Cite a non-blank line and quote all of it."
 		# Case-032: an orchestrator pasted one reviewer's passing quote into three
 		# re-dispatch prompts, and all three passed. Each reviewer's quote has to
-		# come from its own reading, so within a round a cited line's text is
+		# come from its own reading (the prompt lists each reviewer its own lines to
+		# choose from, but cannot force the choice), so within a round a cited line's text is
 		# held by the first accepted quote; text rather than position, since a
 		# copied `}` passes at any line it occurs on. Its own reason, because
 		# reviewers who read a small file independently pick the same obvious
@@ -557,7 +558,7 @@ context_gate() { # rel block
 		# spending the one a missing look costs.
 		elif [[ -n "${context_claims["$claim"]:-}" ]]; then
 			holder=$(detail_str "${context_claims["$claim"]}")
-			gate_out=$'APPROVE_COLLIDED\t'"context_check cites the same line as ${holder}'s in this round. Each reviewer quotes a line it chose from its own reading of the files; quote a different line."
+			gate_out=$'APPROVE_COLLIDED\t'"context_check cites the same line as ${holder}'s in this round. Each reviewer quotes a line it chose from its own reading of the files; quote a different line, from your listed lines when the prompt names them."
 		else
 			gate_out=ok
 			gate_claim="$claim"

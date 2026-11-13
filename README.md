@@ -574,6 +574,7 @@ CLAUDE.md:
 - Quality tool: my_quality_reporter
 - Batch bytes: 131072
 - Batch size: 50
+- Context check lines: 6
 - Max comments: 3
 - Comment limit: 65536
 - Persona selection: on
@@ -590,6 +591,7 @@ CLAUDE.md:
 | Quality tool    | Agent name for quality analysis      | Skip quality analysis    |
 | Batch bytes     | Max diff bytes per delegation batch  | 131072 (128 KB)          |
 | Batch size      | Max files per delegation batch       | 50                       |
+| Context check lines | Lines per code reviewer for its context check | 6 (minimum 2)  |
 | Max comments    | Comments one verdict may be spread across | 3                   |
 | Comment limit   | Characters per comment, overriding the forge's own | The forge's limit |
 | Persona selection | Whether change shape may narrow the council | `on`             |
@@ -748,6 +750,9 @@ measured reviews, diff bytes per changed file ranged from 0.9 KB to 18.4 KB, so
 a 25-file changeset was split while a 18-file one four times its size was not.
 The file cap covers what bytes cannot: a rename-heavy changeset is almost no
 diff and a great many files to open.
+
+`Context check lines` is not a batch budget: it sets how many lines each code
+reviewer in a round is offered to quote for its context check.
 
 Files are grouped by parent directory so a reviewer sees a coherent slice, and a
 directory is kept whole whenever it fits. A file larger than the byte budget

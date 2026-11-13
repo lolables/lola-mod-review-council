@@ -3466,6 +3466,21 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-214: reviewers who each chose "the obvious line" collided on one
+# context_check line (#113), and every collision cost the orchestrator a
+# re-dispatch turn (#107). The prompt now lists each reviewer's own lines; the
+# docs must say so, and the orchestrator must still supply no quote (RC-184).
+echo "Test: the dispatch docs name the per-reviewer context-check lines (RC-214)"
+if grep -qF 'Lines to choose your' "$SCRIPT_DIR/../skills/review-council/scripts/lib/context-lines.sh" &&
+	grep -qF 'Context check lines' "$SKILL_MD" &&
+	grep -qF 'Context check lines' "$SCRIPT_DIR/../../README.md"; then
+	echo "  PASS: the block text and the key are documented"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the context-check lines block or its key is undocumented"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

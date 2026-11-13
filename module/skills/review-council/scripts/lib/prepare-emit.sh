@@ -197,6 +197,7 @@ fi
 	# only by whether the line is here.
 	echo "- Batch bytes: ${batch_bytes}"
 	echo "- Batch size: ${batch_size}"
+	echo "- Context check lines: ${context_check_lines}"
 	changeset_line_count=$(wc -l <"${session_dir}/changeset.txt")
 	echo "- Changeset size: ${changeset_line_count} files"
 	echo ""

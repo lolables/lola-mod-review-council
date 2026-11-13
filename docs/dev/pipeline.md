@@ -180,7 +180,9 @@ flowchart TD
    index `dispatch.json` at the session root (`agent`, `raw`, `prompt`, `receipt` per dispatch; `raw` and `prompt`
    relative to the session directory). A code prompt holds the preamble,
    the persona file under `--inline-persona`, the changeset, the diff, the bundle path, the session's context
-   sections and the round's lines inside diff hunks; a spec prompt holds the artifact list and spec sections, and no
+   sections, the round's lines inside diff hunks and, per code reviewer, its own `Context check lines` (default 6,
+   minimum 2; `lib/context-lines.sh` deals unique-text lines outside the hunks across the round's code reviewers so
+   no two can quote the same one); a spec prompt holds the artifact list and spec sections, and no
    preamble, bundle, diff or context check. The agent's `-code` or `-spec` suffix picks which; any other suffix is an
    error. A deep run renders each subsystem's own council, framed from `subsystems.json`, and is refused when
    `diff.patch` has a section no round names. Prior run context comes from the previous pass's `verdicts/findings.json`

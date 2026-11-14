@@ -1,0 +1,54 @@
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_71c2d9be5d6910::t_2bf6b172b746e0 287-289
+  s_71c2d9be5d6910::t_2e71c4b25e4945 243-245,247-248,282-286
+  s_71c2d9be5d6910::t_1beaad981c1bd9 290
+module/skills/review-council/phases/disposition.md
+  s_71c2d9be5d6910::t_d4819dec26dd3a 283
+module/tests/test-rc-render-comment.sh
+  s_71c2d9be5d6910::t_f5fd9a2a1e7210 2837-2839,2842
+  s_71c2d9be5d6910::t_0fc9eeeea4c3ae 2681,2723,2733,2744-2746,2774-2818
+  s_71c2d9be5d6910::t_e519fc96baddb5 2752,2760-2773
+  s_71c2d9be5d6910::t_bae1d18b2224cc 2675-2680,2682-2722,2724-2732,2734-2743,2747-2751,2753-2759,2819-2836,2840-2841,2843-2848
+module/skills/review-council/scripts/rc-lib.sh
+  s_71c2d9be5d6910::t_d4819dec26dd3a 182,190-198,209
+  s_71c2d9be5d6910::t_4af763d492f95c 184-186
+  s_71c2d9be5d6910::t_cbd23a1963fff7 183,199-208
+  s_71c2d9be5d6910::t_59178ab09ba483 187-189
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_71c2d9be5d6910::t_d4819dec26dd3a 115,117,217
+docs/dev/pipeline.md
+  s_71c2d9be5d6910::t_52c68f08122c6b 280,282
+  s_71c2d9be5d6910::t_c55c1aacc07f75 281,433
+README.md
+  s_71c2d9be5d6910::t_c55c1aacc07f75 385-388
+module/tests/test-rc-prepare-conversation.sh
+  s_71c2d9be5d6910::t_1d694a710e84e2 1092-1131
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_71c2d9be5d6910::t_f5fd9a2a1e7210 398-412,414-428,443,529-533
+  s_71c2d9be5d6910::t_59178ab09ba483 413
+  s_71c2d9be5d6910::t_29e94104620cd9 437-441
+  s_71c2d9be5d6910::t_2d3f4721fadc40 436,442
+  s_71c2d9be5d6910::t_5410915a0c6ec5 429-435
+.taskfiles/scripts/mutate-check.sh
+  s_71c2d9be5d6910::t_52c68f08122c6b 1937-1950
+  s_71c2d9be5d6910::t_59178ab09ba483 1951
+  s_71c2d9be5d6910::t_2bf6b172b746e0 1952-1960
+module/skills/review-council/references/forge-adapters.md
+  s_71c2d9be5d6910::t_c55c1aacc07f75 120-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d2ce10b67e4e436681d62a9c123b40913548af28",
+  "prompts": {},
+  "sessions": {
+    "s_71c2d9be5d6910": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5664e86f-270a-45de-884e-a3f9d10f4603",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

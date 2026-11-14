@@ -1,0 +1,19 @@
+module/skills/review-council/references/forge-adapters.md
+  s_5dadff5e8c8257::t_946adb0eeb7803 340,354-356
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "321c4fa21f8a1760cb98c23124942631e1578a61",
+  "prompts": {},
+  "sessions": {
+    "s_5dadff5e8c8257": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a5bc5a04-b877-4f0d-a65d-d335de80e1ed",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

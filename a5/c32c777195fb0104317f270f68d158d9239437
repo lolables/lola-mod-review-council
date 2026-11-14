@@ -1,0 +1,21 @@
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_5e2e85d1f77a13::t_910a68e9e2f603 117,218
+.taskfiles/scripts/mutate-check.sh
+  s_5e2e85d1f77a13::t_4e696dd6675fad 1404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "a5c32c777195fb0104317f270f68d158d9239437",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

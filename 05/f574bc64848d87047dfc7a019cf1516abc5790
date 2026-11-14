@@ -1,0 +1,55 @@
+.lola-eval/tests/case-024-disposition-true-fix/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+.lola-eval/tests/case-022-disposition-injection/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+module/tests/test-rc-prepare-conversation.sh
+  s_9c84341a411a9b::t_201c288bb1e5dc 1015-1091
+module/skills/review-council/references/forge-adapters.md
+  s_9c84341a411a9b::t_96ae9e0b105d5c 23,32-33,103-104,107-116
+  s_9c84341a411a9b::t_fb4061d2a36cf4 117
+module/tests/test-rc-forge-adapters.sh
+  s_9c84341a411a9b::t_201c288bb1e5dc 1274-1336
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 41
+module/tests/test-rc-render-comment.sh
+  s_9c84341a411a9b::t_201c288bb1e5dc 2648-2674
+.lola-eval/tests/case-023-disposition-false-fix/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+docs/dev/pipeline.md
+  s_9c84341a411a9b::t_9ef6fc63c6378a 431
+module/skills/review-council/phases/disposition.md
+  s_9c84341a411a9b::t_9ef6fc63c6378a 30-32
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_9c84341a411a9b::t_4bcb890c303edc 389-397,691-693,695-696,698
+module/skills/review-council/scripts/rc-lib.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 175-181
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_9c84341a411a9b::t_0010290590bb4d 141,198-202,212-226,255-274,288-289,292-298,302,325-327,332-337,339,341,353-356
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 13-14,81,95-97
+.taskfiles/scripts/mutate-check.sh
+  s_9c84341a411a9b::t_96ae9e0b105d5c 488,499-506
+  s_9c84341a411a9b::t_2c9fd4b8d4b849 507
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 114-117,191-193
+.lola-eval/tests/case-025-disposition-scoping-hint/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "05f574bc64848d87047dfc7a019cf1516abc5790",
+  "prompts": {},
+  "sessions": {
+    "s_9c84341a411a9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "73fba73d-6fcc-4a6c-a113-016e25f5eb6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

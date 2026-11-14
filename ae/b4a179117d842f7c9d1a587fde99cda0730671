@@ -1,0 +1,34 @@
+module/skills/review-council/phases/disposition.md
+  s_9c84341a411a9b::t_7e76a718561380 10
+module/tests/test-rc-prepare-conversation.sh
+  s_9c84341a411a9b::t_7ab5869622c64f 43,60-65,182-211,979-1012
+  s_9c84341a411a9b::t_d4c00fe69730c7 1013-1014
+module/skills/review-council/references/forge-adapters.md
+  s_9c84341a411a9b::t_7e76a718561380 68
+.taskfiles/scripts/mutate-check.sh
+  s_9c84341a411a9b::t_9ad11c0818e243 491-497
+  s_9c84341a411a9b::t_638a0a0bfc6e50 498
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_9c84341a411a9b::t_1be3b7242ada8a 156-157,162-167,201-202,206-222,230-232,234-246,248-249,251-266,268-271
+  s_9c84341a411a9b::t_ca498d68593268 223-229,267
+  s_9c84341a411a9b::t_147d911bbf916f 250
+module/tests/test-rc-forge-adapters.sh
+  s_9c84341a411a9b::t_8a382f86a21f60 298-334,336-371,443,448-454
+  s_9c84341a411a9b::t_d048b10b6819d4 335,372-386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "aeb4a179117d842f7c9d1a587fde99cda0730671",
+  "prompts": {},
+  "sessions": {
+    "s_9c84341a411a9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "73fba73d-6fcc-4a6c-a113-016e25f5eb6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

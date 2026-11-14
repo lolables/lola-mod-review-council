@@ -1,0 +1,82 @@
+module/tests/test-rc-render-comment.sh
+  s_9c84341a411a9b::t_201c288bb1e5dc 2648-2674
+module/skills/review-council/references/forge-adapters.md
+  s_9c84341a411a9b::t_96ae9e0b105d5c 23,32-33,105-106,109-118
+  s_9c84341a411a9b::t_235b355d10c1ed 58,68-69
+  s_9c84341a411a9b::t_a201f37c0b5095 72
+  s_9c84341a411a9b::t_fb4061d2a36cf4 119
+.lola-eval/tests/case-024-disposition-true-fix/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 114-117,191-193
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 41
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_9c84341a411a9b::t_84c7b4e598eb0f 345-350,361,365,381,403-410,413-417,419-421,423-430
+  s_9c84341a411a9b::t_a21b02e41c4f70 336-344,366-380,382-398,402,437-442
+  s_9c84341a411a9b::t_3338436059179c 351-354,362-364,411,418,431-436
+  s_9c84341a411a9b::t_3f1c685b8517f5 355-360,399-401,412,422
+  s_9c84341a411a9b::t_0010290590bb4d 141,147-151,161-175,204-223,237-238,241-247,251,274-276,281-286,288,290,302-305
+.lola-eval/tests/case-022-disposition-injection/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+module/tests/test-rc-prepare-conversation.sh
+  s_9c84341a411a9b::t_cfe81b09151c93 1263
+  s_9c84341a411a9b::t_7deca550330e6b 1220-1222,1224
+  s_9c84341a411a9b::t_d4c00fe69730c7 1013-1014
+  s_9c84341a411a9b::t_ce2277f57c5bde 1247-1262,1264-1265
+  s_9c84341a411a9b::t_61bf23310e5d50 1192-1219,1223,1225-1246
+  s_9c84341a411a9b::t_cffd671715d9ab 1092-1191
+  s_9c84341a411a9b::t_7ab5869622c64f 43,60-65,182-211,979-1012
+  s_9c84341a411a9b::t_201c288bb1e5dc 1015-1091
+.taskfiles/scripts/mutate-check.sh
+  s_9c84341a411a9b::t_b9fe741103f2f9 508-513
+  s_9c84341a411a9b::t_96ae9e0b105d5c 488-489,499-506
+  s_9c84341a411a9b::t_79e9b33526f7aa 490
+  s_9c84341a411a9b::t_9ad11c0818e243 491-497
+  s_9c84341a411a9b::t_638a0a0bfc6e50 498
+  s_9c84341a411a9b::t_2c9fd4b8d4b849 507
+module/skills/review-council/scripts/rc-lib.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 175-181
+.lola-eval/tests/case-023-disposition-false-fix/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+module/skills/review-council/scripts/lib/forge/github.sh
+  s_9c84341a411a9b::t_8ecbf7261508a0 13-16,96,110-112
+  s_9c84341a411a9b::t_1be3b7242ada8a 174-175,180-185,228-229,233-249,257-259,261-273,276,278-293,295-298
+  s_9c84341a411a9b::t_8050eb8d331fe2 68-82,203-206,212,214-215,217-225,275,277,294
+  s_9c84341a411a9b::t_a21b02e41c4f70 202
+  s_9c84341a411a9b::t_ca498d68593268 250-256
+.lola-eval/tests/case-025-disposition-scoping-hint/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+.lola-eval/tests/case-027-disposition-high-fix-held/starter/.rc-session/pr-conversation.txt
+  s_9c84341a411a9b::t_9ef6fc63c6378a 2-5
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_9c84341a411a9b::t_4bcb890c303edc 389-397,691-693,695-696,698
+docs/dev/pipeline.md
+  s_9c84341a411a9b::t_a201f37c0b5095 431
+module/tests/test-rc-forge-adapters.sh
+  s_9c84341a411a9b::t_61a90414acdfe7 298,389
+  s_9c84341a411a9b::t_8a382f86a21f60 299-302,305-331,333-336,338-373,465,470-476
+  s_9c84341a411a9b::t_d6591f57ae28f9 293,297
+  s_9c84341a411a9b::t_cd8472cc74ac1f 303-304,332,390-408
+  s_9c84341a411a9b::t_d048b10b6819d4 337,375-388
+  s_9c84341a411a9b::t_201c288bb1e5dc 1296-1358
+module/skills/review-council/phases/disposition.md
+  s_9c84341a411a9b::t_7e76a718561380 10
+  s_9c84341a411a9b::t_9ef6fc63c6378a 30-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3c8be9d2c812e18329366f05563c9164f809b6df",
+  "prompts": {},
+  "sessions": {
+    "s_9c84341a411a9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "73fba73d-6fcc-4a6c-a113-016e25f5eb6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

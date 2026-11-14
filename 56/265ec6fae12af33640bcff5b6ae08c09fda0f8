@@ -1,0 +1,23 @@
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_9c84341a411a9b::t_3f1c685b8517f5 355-360,399-401,412,422
+module/tests/test-rc-prepare-conversation.sh
+  s_9c84341a411a9b::t_ce2277f57c5bde 1247-1262,1264-1265
+  s_9c84341a411a9b::t_cfe81b09151c93 1263
+  s_9c84341a411a9b::t_7deca550330e6b 1220-1222,1224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "56265ec6fae12af33640bcff5b6ae08c09fda0f8",
+  "prompts": {},
+  "sessions": {
+    "s_9c84341a411a9b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "73fba73d-6fcc-4a6c-a113-016e25f5eb6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

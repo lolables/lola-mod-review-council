@@ -1,0 +1,42 @@
+module/skills/review-council/phases/disposition.md
+  s_71c2d9be5d6910::t_d4819dec26dd3a 283
+module/tests/test-rc-render-comment.sh
+  s_71c2d9be5d6910::t_e519fc96baddb5 2752,2760-2774
+  s_71c2d9be5d6910::t_f5fd9a2a1e7210 2793-2795,2798
+  s_71c2d9be5d6910::t_bae1d18b2224cc 2675-2751,2753-2759,2775-2792,2796-2797,2799-2804
+.taskfiles/scripts/mutate-check.sh
+  s_71c2d9be5d6910::t_52c68f08122c6b 1937-1950
+  s_71c2d9be5d6910::t_59178ab09ba483 1951
+module/skills/review-council/scripts/lib/forge/gitlab.sh
+  s_71c2d9be5d6910::t_d4819dec26dd3a 115,117,217
+docs/dev/pipeline.md
+  s_71c2d9be5d6910::t_52c68f08122c6b 280-282
+README.md
+  s_71c2d9be5d6910::t_52c68f08122c6b 385-387
+module/skills/review-council/scripts/rc-lib.sh
+  s_71c2d9be5d6910::t_cbd23a1963fff7 183,199-208
+  s_71c2d9be5d6910::t_d4819dec26dd3a 182,190-198,209
+  s_71c2d9be5d6910::t_59178ab09ba483 187-189
+  s_71c2d9be5d6910::t_4af763d492f95c 184-186
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_71c2d9be5d6910::t_29e94104620cd9 427-430
+  s_71c2d9be5d6910::t_2d3f4721fadc40 426,431
+  s_71c2d9be5d6910::t_f5fd9a2a1e7210 398-412,414-425,432,518-522
+  s_71c2d9be5d6910::t_59178ab09ba483 413
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "930fef413490dcfff31074a43edd722a0a956501",
+  "prompts": {},
+  "sessions": {
+    "s_71c2d9be5d6910": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5664e86f-270a-45de-884e-a3f9d10f4603",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}

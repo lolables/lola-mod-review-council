@@ -1,0 +1,52 @@
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_5e2e85d1f77a13::t_358bfc50d3220b 505-566
+module/tests/test-rc-render-comment.sh
+  s_5e2e85d1f77a13::t_479944d3816bd9 2752,2756-2757
+  s_5e2e85d1f77a13::t_dd4c83aca41c5c 2763,2768
+module/skills/review-council/references/forge-adapters.md
+  s_5e2e85d1f77a13::t_2b0fc4986bdece 81-93,117-118,137-140,148-156,160
+module/tests/test-rc-prepare-conversation.sh
+  s_5e2e85d1f77a13::t_053507303df209 485,489
+  s_5e2e85d1f77a13::t_73834ba41166c2 1133-1135
+  s_5e2e85d1f77a13::t_751b7787bcc6df 186-191,193,197-219,370-377,387-394,396,399,401-418,421-422,425-443,445-447,449-454,456-484,486-488,490-492,515-518,525,529,531-538,541-544,547-552
+  s_5e2e85d1f77a13::t_545aa813e854d2 493-497,503-505,508,510-512
+  s_5e2e85d1f77a13::t_7f447f13d96c0b 1093-1095,1098-1100,1104-1105,1114,1124,1129,1151,1165,1170-1172,1178-1180,1182-1184,1192,1194-1195
+docs/dev/pipeline.md
+  s_5e2e85d1f77a13::t_dd4c83aca41c5c 281
+  s_5e2e85d1f77a13::t_2b0fc4986bdece 433
+module/skills/review-council/SKILL.md
+  s_5e2e85d1f77a13::t_b4546c1abc17f6 1494
+  s_5e2e85d1f77a13::t_ea37f5e9670b74 1501
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_5e2e85d1f77a13::t_a9f8e08812469b 465-467
+  s_5e2e85d1f77a13::t_dd4c83aca41c5c 475,477
+module/tests/test-rc-doc-guards.sh
+  s_5e2e85d1f77a13::t_387c428463582b 1827-1828,1830,1835,1839
+.taskfiles/scripts/mutate-check.sh
+  s_5e2e85d1f77a13::t_e922e85cf5f668 448,453,476,557,567-579,581
+  s_5e2e85d1f77a13::t_3e1fd616dde352 488
+README.md
+  s_5e2e85d1f77a13::t_ea37f5e9670b74 639
+  s_5e2e85d1f77a13::t_2b0fc4986bdece 459-462,608,626
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_5e2e85d1f77a13::t_79fa7514ff74ab 182-190,192-198,200,205-206,208-215,218-221,224,226,228-231,235-250,252-268,271-272,274,291-292,298-299,304,306,310,328-332,378
+  s_5e2e85d1f77a13::t_0714575c7d718b 362-364
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_5e2e85d1f77a13::t_358bfc50d3220b 191-200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "130d68a5fad2c0049ee95d67fb82284a66488a83",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

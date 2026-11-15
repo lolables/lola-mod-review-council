@@ -1,0 +1,42 @@
+scripts/lib/forge-gitlab.sh
+  s_5e2e85d1f77a13::t_aeccf15f051457 218-225
+module/tests/test-review-open-prs.sh
+  s_5e2e85d1f77a13::t_0ef951532d9f4a 1019-1036
+  s_5e2e85d1f77a13::t_10616283319b28 1038-1045
+  s_5e2e85d1f77a13::t_23482381896243 118-125,994-1018,1037,1046-1053
+  s_5e2e85d1f77a13::t_d740077fee7fd8 1054
+scripts/review-open-prs.sh
+  s_5e2e85d1f77a13::t_aeccf15f051457 800-803
+scripts/lib/prs.sh
+  s_5e2e85d1f77a13::t_86bd2e08142a95 317-319
+  s_5e2e85d1f77a13::t_aeccf15f051457 230-252,275,313-316,320
+module/tests/test-review-pr-status.sh
+  s_5e2e85d1f77a13::t_0b936a1e590ba7 105-112,469-490
+  s_5e2e85d1f77a13::t_915f57804acc66 491
+scripts/lib/forge-github.sh
+  s_5e2e85d1f77a13::t_aeccf15f051457 82-91
+docs/batch-reviewing-prs.md
+  s_5e2e85d1f77a13::t_05aac17a99d106 104-105,765-770
+  s_5e2e85d1f77a13::t_47e6d790e1ea48 771
+scripts/lib/common.sh
+  s_5e2e85d1f77a13::t_aeccf15f051457 128-133
+scripts/lib/comments.sh
+  s_5e2e85d1f77a13::t_aeccf15f051457 72-93,192-193,209-210,251,254
+  s_5e2e85d1f77a13::t_91c94a4710c56e 128-132,138,148-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c6fbc812cd55454078fdf37fcf375a13981e2e19",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

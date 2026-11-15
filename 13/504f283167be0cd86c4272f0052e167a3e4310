@@ -1,0 +1,24 @@
+module/tests/test-rc-prepare-conversation.sh
+  s_5e2e85d1f77a13::t_7d7b1ae19792a5 1250-1265
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_5e2e85d1f77a13::t_6c6dfe8b0a0740 405-406
+  s_5e2e85d1f77a13::t_dad2ac15f97b2b 407
+.taskfiles/scripts/mutate-check.sh
+  s_5e2e85d1f77a13::t_6c6dfe8b0a0740 540-546
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "13504f283167be0cd86c4272f0052e167a3e4310",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_5e2e85d1f77a13::t_0ffae50b1713c9 247-248,279-288
+module/tests/test-rc-render-comment.sh
+  s_5e2e85d1f77a13::t_48dce23811735b 2752-2768
+.taskfiles/scripts/mutate-check.sh
+  s_5e2e85d1f77a13::t_fe9d3af823deb3 547-558
+module/skills/review-council/scripts/rc-lib.sh
+  s_5e2e85d1f77a13::t_f077549df8975b 182-187
+module/skills/review-council/references/forge-adapters.md
+  s_5e2e85d1f77a13::t_21902866e8044a 134-140
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_5e2e85d1f77a13::t_7540fec9178e59 446-452,456
+module/tests/test-rc-prepare-conversation.sh
+  s_5e2e85d1f77a13::t_69ade4a6a217e5 468-471,1189-1202,1213-1226
+  s_5e2e85d1f77a13::t_f077549df8975b 1203-1212
+  s_5e2e85d1f77a13::t_b2b5df64227df0 1227
+README.md
+  s_5e2e85d1f77a13::t_8328ae7ba0b123 388-390
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7974afb1a49629d1bcad7e7b9477d935384cf41c",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

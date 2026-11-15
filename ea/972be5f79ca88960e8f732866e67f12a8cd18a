@@ -1,0 +1,39 @@
+.lola-eval/tests/case-036-disposition-stale-reply/rubric.md
+  s_5e2e85d1f77a13::t_4355a919070b10 1-87
+.lola-eval/tests/case-036-disposition-stale-reply/task.yaml
+  s_5e2e85d1f77a13::t_4355a919070b10 1-25
+AGENTS.md
+  s_5e2e85d1f77a13::t_5f08a526e1613e 53,98-99
+.lola-eval/tests/case-036-disposition-stale-reply/prompt.md
+  s_5e2e85d1f77a13::t_4355a919070b10 1-14
+.lola-eval/tests/case-036-disposition-stale-reply/starter/.rc-session/verdicts/verdicts-map.json
+  s_5e2e85d1f77a13::t_3f3a1f37026c9a 1-3
+.taskfiles/lola-eval.yml
+  s_5e2e85d1f77a13::t_c585f961c9caee 189,197
+.lola-eval/tests/case-036-disposition-stale-reply/starter/.rc-session/tracking.md
+  s_5e2e85d1f77a13::t_3f3a1f37026c9a 1-23
+.lola-eval/tests/case-036-disposition-stale-reply/starter/.rc-session/pr-conversation.txt
+  s_5e2e85d1f77a13::t_3f3a1f37026c9a 1-15
+.lola-eval/tests/case-036-disposition-stale-reply/starter/.rc-session/verdicts/findings.json
+  s_5e2e85d1f77a13::t_3f3a1f37026c9a 1-24
+.lola-eval/tests/case-036-disposition-stale-reply/starter/prune.sh
+  s_5e2e85d1f77a13::t_3f3a1f37026c9a 1-8
+module/skills/review-council/phases/disposition.md
+  s_5e2e85d1f77a13::t_0071df00425e6e 179-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "ea972be5f79ca88960e8f732866e67f12a8cd18a",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

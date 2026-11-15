@@ -1,0 +1,21 @@
+module/tests/test-rc-prepare-conversation.sh
+  s_5e2e85d1f77a13::t_21e867264ce371 1475-1476
+module/tests/test-rc-render-comment.sh
+  s_5e2e85d1f77a13::t_8bd850b96e679a 2898
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "655a7d64310ccdc2e05499ca803dc0054b13980e",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

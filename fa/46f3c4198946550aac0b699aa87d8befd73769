@@ -1,0 +1,25 @@
+README.md
+  s_9518d11c2a6862::t_f7ae5ab4769137 462-485
+docs/batch-reviewing-prs.md
+  s_9518d11c2a6862::t_09df76e50c4acf 769-773
+docs/dev/pipeline.md
+  s_9518d11c2a6862::t_3a604b771ef1b4 433
+module/skills/review-council/references/forge-adapters.md
+  s_9518d11c2a6862::t_abc3186ec123c9 149-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fa46f3c4198946550aac0b699aa87d8befd73769",
+  "prompts": {},
+  "sessions": {
+    "s_9518d11c2a6862": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a9226e191f9dc27a6",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

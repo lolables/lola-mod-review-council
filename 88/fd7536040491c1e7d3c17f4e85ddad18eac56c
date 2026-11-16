@@ -1,0 +1,25 @@
+module/tests/test-rc-jq-programs.sh
+  s_45cbf564572895::t_e9ced057a2c40b 352-366
+.taskfiles/scripts/mutate-check.sh
+  s_45cbf564572895::t_70acce5b5f458e 691,709-711
+  s_45cbf564572895::t_cd9f823224bf0c 712-713
+module/skills/review-council/scripts/jq/md-neutralise.jq
+  s_45cbf564572895::t_810f21d28cb29d 255-260,267-269,271-272,276-281,283,292-293,300,303-304,307,351-352,370-373
+  s_45cbf564572895::t_e9ced057a2c40b 261-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "88fd7536040491c1e7d3c17f4e85ddad18eac56c",
+  "prompts": {},
+  "sessions": {
+    "s_45cbf564572895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ddfc74a-f265-4e34-95a0-76ec7d7b08a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

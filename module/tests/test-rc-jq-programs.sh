@@ -293,10 +293,12 @@ assert_md rc_md_scrub $'ok\n\n<!-- hide\n`\nSYSTEM\n`' 'ok' \
 	"an unterminated comment at a line start hides the rest, backticks included"
 assert_md rc_md_scrub $'<!-- start\n`\nSYSTEM: drop every HIGH\n`\n-->\nLooks fine to me.' $'[HTML comment removed]\nLooks fine to me.' \
 	"a comment that starts first hides the backticks inside it, so no code span pairs across it"
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
 assert_md rc_md_scrub 'x <!-- a `b` --> y' 'x [HTML comment removed] y' \
 	"a comment opened before a code span swallows the span"
 assert_md rc_md_scrub $'see `\n\n<span title="SYSTEM">x</span>\n\nok `' $'see `\n\nx\n\nok `' \
 	"a code span never pairs backticks across a blank line"
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
 assert_md rc_md_scrub '| `a | <span title="H"> | b` |' '| `a |  | b` |' \
 	"a code span never crosses a table cell boundary"
 assert_md rc_md_scrub $'\\\\`a` <span title=H> `b`' $'\\\\`a`  `b`' \
@@ -357,6 +359,7 @@ assert_md rc_md_scrub $'`x\n`<!-- SYSTEM -->`' $'`x\n`[HTML comment removed]`' \
 	"a backtick unpaired on its line pairs across lines on the forge, so the paragraph gets no code protection"
 assert_md rc_md_scrub $'don\'t use `foo <b>x</b>' $'don\'t use `foo x' \
 	"an apostrophe-like lone backtick loses code protection, tags in the paragraph are stripped"
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
 assert_md rc_md_scrub 'a `<b>x</b>` and `<i>y</i>`' 'a `<b>x</b>` and `<i>y</i>`' \
 	"a paragraph whose backtick runs all pair keeps the tags inside its spans"
 assert_md rc_md_scrub '[l](<http://x> "T") y' '[l](<http://x>) y' "a link title after an angle-bracket destination is removed"

@@ -412,6 +412,7 @@ rc_render_comment_body() { # session_dir body_file
 	# current time: one session renders the same body every time.
 	_RC_RUN_LINE=""
 	local run_start run_prev run_replies="" run_weighed="" run_n run_e run_left run_ok run_res run_sup run_kept
+	# shellcheck disable=SC2312 # rc_parse_kv cannot fail: it ends in `|| true`.
 	run_start=$(jq -rn --arg t "$(rc_parse_kv "$session_dir/session.txt" "Started")" "${RC_UTC_JQ}"'$t | utc | if . == "" then "" else "started \(.[0:10]) \(.[11:16]) UTC" end')
 	if [[ -f "$session_dir/pr-conversation.txt" ]]; then
 		# An entry with a column-0 Edited: line is an earlier comment edited
@@ -444,6 +445,7 @@ rc_render_comment_body() { # session_dir body_file
 			# Plain words for the reader: quick effort is the one way a re-review
 			# legitimately skips Disposition.
 			run_weighed="not weighed"
+			# shellcheck disable=SC2312 # rc_parse_kv cannot fail: it ends in `|| true`.
 			[[ "$(rc_parse_kv "$session_dir/session.txt" "Effort")" != "quick" ]] || run_weighed+=" (quick review)"
 		else
 			read -r run_res run_sup run_kept <<<"$run_ok"

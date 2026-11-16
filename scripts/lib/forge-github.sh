@@ -67,8 +67,30 @@ forge_collect_prs() {
 # ({comments: [...]}), or empty on failure. Fetched once per PR and handed to
 # each reader in comments.sh, so one request answers the verdict, the re-review
 # requests and the rate-limit ledger.
+#
+# GraphQL names a GitHub App "ci-bot" where REST, CODEOWNERS and a review say
+# "ci-bot[bot]", so a declared "ci-bot[bot]" would never match a verdict. When
+# one is declared, comment authors are renamed from the REST list, joined on
+# the id (a GraphQL comment id is the REST node_id), and only for Bot-typed
+# accounts. The declared name is not stripped of "[bot]" instead: a user who
+# registered the bare name would then pass as the app. A failed REST read
+# renames nothing, so the bot's verdict does not count, which reviews more,
+# never less. The rename applies to every Bot-typed commenter, not only the
+# declared ones: a renamed "x[bot]" fails forge_member_can_write's login check,
+# so a bot can never be a re-review requester (fails closed). Once any "[bot]"
+# account is declared, a declared bare "x" no longer matches the app, which is
+# correct. Needs load_council_accounts to have run.
 forge_comments_for() {
-	gh pr view "$1" --repo "$REPO" --json comments 2>/dev/null || true
+	local timeline bots
+	timeline="$(gh pr view "$1" --repo "$REPO" --json comments 2>/dev/null)" || return 0
+	if jq -e 'any(.[]; endswith("[bot]"))' <<<"${COUNCIL_ACCOUNTS_JSON:-[]}" >/dev/null 2>&1; then
+		bots="$(gh api --paginate "repos/${REPO}/issues/$1/comments" \
+			--jq '.[] | select(.user.type == "Bot") | {(.node_id): .user.login}' 2>/dev/null)" || bots=""
+		bots="$(jq -sc 'add // {}' <<<"$bots" 2>/dev/null)" || bots='{}'
+		timeline="$(jq -c --argjson bots "$bots" \
+			'.comments |= map(if $bots[.id] then .author.login = $bots[.id] else . end)' <<<"$timeline")" || return 0
+	fi
+	printf '%s\n' "$timeline"
 }
 
 # forge_member_can_write <login> -> success when the account has admin or write
@@ -79,6 +101,35 @@ forge_comments_for() {
 # folds the finer roles the way this wants them folded: maintain reports as
 # write, triage reports as read. Triage can label and close but cannot push,
 # and should not be able to spend the API budget either.
+# forge_read_file <path> -> the file's content on the default branch. Status 0
+# with the content, possibly empty, so an empty file is told from a missing
+# one. Status 1 when the file is absent (HTTP 404) or is not a regular file.
+# Status 2 for any other failure (network, 5xx, rate limit, a failed raw
+# fetch): the caller cannot tell whether the file exists, and must not read
+# the next location as if it did not. <path> is one of the fixed configuration
+# paths, gated anyway since it goes into a URL. Decoded by jq, not base64(1),
+# whose flags differ between GNU and BSD. The contents API returns no content
+# for a file over 1 MB (encoding "none"); that one is fetched again as raw
+# bytes.
+#
+# gh's stderr rides along in $out so the failure can be classified; on success
+# the program's marker letter must come first, and anything else is a failure.
+forge_read_file() {
+	local out
+	[[ "$1" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && "$1" != *..* ]] || return 1
+	if ! out="$(gh api "repos/${REPO}/contents/$1" --jq 'if type != "object" or .type != "file" then error("not a file")
+		elif .encoding == "base64" then "b" + (.content | gsub("\n"; "") | @base64d)
+		else "r" end' 2>&1)"; then
+		[[ "$out" == *"HTTP 404"* || "$out" == *"not a file"* ]] && return 1
+		return 2
+	fi
+	case "$out" in
+	b*) printf '%s' "${out#b}" ;;
+	r*) gh api -H 'Accept: application/vnd.github.raw+json' "repos/${REPO}/contents/$1" 2>/dev/null || return 2 ;;
+	*) return 2 ;;
+	esac
+}
+
 forge_member_can_write() {
 	local login="$1" perm
 	# The login is interpolated into an API path. GitHub logins are alphanumeric

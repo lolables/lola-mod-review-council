@@ -115,6 +115,66 @@ pr\ comment*)
 *--json\ changedFiles,author,files*)
 	echo '{"changedFiles":1,"author":{"is_bot":false},"files":[{"path":"README.md"}]}'
 	;;
+# Every comment's REST author, reduced by the --jq the caller passes (run here for
+# real, so the driver's filter is what is tested). The fixture is the REST array
+# in MOCK_BOTS_DIR/pr-<n>.json; a PR without one has no comments.
+*api\ --paginate\ repos/*/issues/*/comments*)
+	n="${args#*issues/}"
+	n="${n%%/*}"
+	expr=""
+	prev=""
+	for a in "$@"; do
+		[[ "$prev" == "--jq" ]] && expr="$a"
+		prev="$a"
+	done
+	[[ -n "${MOCK_BOTS_DIR:-}" && -f "${MOCK_BOTS_DIR}/pr-$n.json" ]] || exit 1
+	jq -c "$expr" "${MOCK_BOTS_DIR}/pr-$n.json"
+	;;
+# A file on the default branch, in the two shapes forge_read_file asks for. With
+# --jq: the program is run for real over the contents-API object, a base64 one
+# for a file in MOCK_CONTENTS_DIR and an encoding "none" one (no content, as
+# GitHub answers above 1 MB) for a file in MOCK_BIG_DIR. With the raw Accept
+# header: the file's bytes. Anything else answers 404, which gh reports as a
+# failure.
+*api\ *repos/*/contents/*)
+	p="${args#*contents/}"
+	p="${p%% *}"
+	if [[ "$args" == *"Accept: application/vnd.github.raw+json"* ]]; then
+		for d in "${MOCK_BIG_DIR:-}" "${MOCK_CONTENTS_DIR:-}"; do
+			[[ -n "$d" && -f "$d/$p" ]] && exec cat "$d/$p"
+		done
+		exit 1
+	fi
+	expr=""
+	prev=""
+	for a in "$@"; do
+		[[ "$prev" == "--jq" ]] && expr="$a"
+		prev="$a"
+	done
+	# A directory at the paths in MOCK_DIR_PATHS: the API answers with an array.
+	case " ${MOCK_DIR_PATHS:-} " in
+	*" $p "*)
+		echo '[{"type":"file","name":"x"}]' | jq -r "$expr"
+		exit
+		;;
+	esac
+	# A transient failure for the paths in MOCK_ERR_PATHS; absent is a 404.
+	case " ${MOCK_ERR_PATHS:-} " in
+	*" $p "*)
+		echo "gh: HTTP 502: Bad Gateway (https://api.github.com/repos/x/contents/$p)" >&2
+		exit 1
+		;;
+	esac
+	if [[ -n "${MOCK_CONTENTS_DIR:-}" && -f "${MOCK_CONTENTS_DIR}/$p" ]]; then
+		printf '{"type":"file","encoding":"base64","content":"%s"}' \
+			"$(base64 <"${MOCK_CONTENTS_DIR}/$p" | tr -d '\n')" | jq -r "$expr"
+	elif [[ -n "${MOCK_BIG_DIR:-}" && -f "${MOCK_BIG_DIR}/$p" ]]; then
+		echo '{"type":"file","encoding":"none","content":""}' | jq -r "$expr"
+	else
+		echo "gh: Not Found (HTTP 404)" >&2
+		exit 1
+	fi
+	;;
 *) exit 1 ;;
 esac
 MOCKGH
@@ -982,6 +1042,210 @@ JSON
 run_case "__eof__" --repo acme/widgets
 assert_contains "$OUT" "Unreviewed: 2" "a marker we did not author is not a verdict"
 assert_contains "$OUT" "2:mallory" "and the caller is told whose marker was ignored"
+
+echo ""
+echo "Test: a declared council account's verdict at head is a review done"
+# CI posts as ci-bot, a maintainer runs the driver: CODEOWNERS on the default
+# branch names ci-bot, so its verdict counts as the council's, as it does in a
+# review (council-accounts.sh), and is not reported as a foreign marker.
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"CI-Bot"},"authorAssociation":"COLLABORATOR","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+contents=$(mktemp -d)
+mkdir -p "$contents/.github"
+printf '* @ci-bot @acme/maintainers\n' >"$contents/.github/CODEOWNERS"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_not_contains "$OUT" "2:CI-Bot" "a declared account's marker is not reported as foreign"
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "its verdict at head counts as reviewed"
+assert_contains "$OUT" "Council accounts (.github/CODEOWNERS and Council accounts: on the default branch): ci-bot" \
+	"the accounts trusted are named"
+
+echo ""
+echo "Test: a declared account's unreadable verdict is reviewed, not reported as foreign"
+# The marker's sha does not parse, so nothing counts as reviewed; the comment
+# is still the council's own, not a rotated token or a forgery.
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"ci-bot"},"authorAssociation":"COLLABORATOR","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"<!-- review-council:marker sha=not-a-sha part=1 of=1 -->"}
+]}
+JSON
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Unreviewed: 2" "an unreadable verdict is reviewed again"
+assert_not_contains "$OUT" "2:ci-bot" "a declared account is not reported as a foreign marker"
+
+echo ""
+echo "Test: the Council accounts setting on the default branch declares an account"
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"ci-bot"},"authorAssociation":"COLLABORATOR","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+rm -rf "$contents"
+contents=$(mktemp -d)
+printf '# P\n\n## Review Council Configuration\n\n- Council accounts: ci-bot\n' >"$contents/AGENTS.md"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "the setting's account counts as the council"
+rm -rf "$contents"
+
+# A verdict by ci-bot at PR 2's head, the shape most tests below need.
+write_ci_bot_verdict() {
+	reset_comments
+	write_comments 2 <<'JSON'
+{"comments":[
+ {"id":"IC_1","author":{"login":"ci-bot"},"authorAssociation":"COLLABORATOR","createdAt":"2026-08-16T15:09:35Z",
+  "isMinimized":false,"viewerDidAuthor":false,
+  "body":"<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+}
+
+echo ""
+echo "Test: an empty CODEOWNERS is the one that counts, as in a review"
+# GitHub uses the first CODEOWNERS that exists even when it is empty, and so
+# does prepare-config.sh; falling through to the root file would trust an
+# account the review does not.
+write_ci_bot_verdict
+contents=$(mktemp -d)
+mkdir -p "$contents/.github"
+: >"$contents/.github/CODEOWNERS"
+printf '* @ci-bot\n' >"$contents/CODEOWNERS"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Unreviewed: 2" "an empty first CODEOWNERS declares nobody"
+assert_contains "$OUT" "2:ci-bot" "so the later file's account is a foreign marker"
+rm -rf "$contents"
+
+echo ""
+echo "Test: a CODEOWNERS over the contents API's size limit is still read"
+# Above 1 MB the API answers encoding "none" with no content; the raw media type
+# has the bytes.
+write_ci_bot_verdict
+big=$(mktemp -d)
+mkdir -p "$big/.github"
+printf '* @ci-bot\n' >"$big/.github/CODEOWNERS"
+RUN_ENV=(MOCK_BIG_DIR="$big")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "an encoding-none CODEOWNERS is fetched raw"
+rm -rf "$big"
+
+echo ""
+echo "Test: AGENTS.md's Council accounts wins over CLAUDE.md's, as in a review"
+write_ci_bot_verdict
+contents=$(mktemp -d)
+printf '## Review Council Configuration\n\n- Council accounts: agentsbot\n' >"$contents/AGENTS.md"
+printf '## Review Council Configuration\n\n- Council accounts: ci-bot\n' >"$contents/CLAUDE.md"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Unreviewed: 2" "CLAUDE.md's account is not trusted when AGENTS.md sets the key"
+assert_contains "$OUT" "on the default branch): agentsbot" "only AGENTS.md's account is named"
+rm -rf "$contents"
+
+echo ""
+echo "Test: CLAUDE.md's Council accounts is read when AGENTS.md does not set it"
+write_ci_bot_verdict
+contents=$(mktemp -d)
+printf '# P\n\nNo council settings here.\n' >"$contents/AGENTS.md"
+printf '## Review Council Configuration\n\n- Council accounts: ci-bot\n' >"$contents/CLAUDE.md"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "the first file that sets the key is used"
+rm -rf "$contents"
+
+echo ""
+echo "Test: a declared [bot] account matches its verdict, which GraphQL names without the suffix"
+write_ci_bot_verdict
+contents=$(mktemp -d)
+printf '## Review Council Configuration\n\n- Council accounts: ci-bot[bot]\n' >"$contents/AGENTS.md"
+bots=$(mktemp -d)
+cat >"$bots/pr-2.json" <<'JSON'
+[{"node_id":"IC_1","user":{"login":"ci-bot[bot]","type":"Bot"}},
+ {"node_id":"IC_9","user":{"login":"someone","type":"User"}}]
+JSON
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents" MOCK_BOTS_DIR="$bots")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "the bot's verdict counts as the council's"
+
+echo ""
+echo "Test: a user named like the bot is not the bot"
+# The same GraphQL login, but REST says a User: a person who registered the bare
+# name must not pass as the app the repository declared.
+cat >"$bots/pr-2.json" <<'JSON'
+[{"node_id":"IC_1","user":{"login":"ci-bot","type":"User"}}]
+JSON
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents" MOCK_BOTS_DIR="$bots")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Unreviewed: 2" "a User is not the declared [bot]"
+rm -rf "$contents" "$bots"
+
+echo ""
+echo "Test: a CODEOWNERS that cannot be read trusts nobody; one that is absent falls through"
+# A 502 on .github/CODEOWNERS says nothing about whether it exists, so the root
+# file must not stand in for it. A 404 is a plain absence, and the root file is
+# the one that counts.
+write_ci_bot_verdict
+contents=$(mktemp -d)
+printf '* @ci-bot\n' >"$contents/CODEOWNERS"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents" MOCK_ERR_PATHS=".github/CODEOWNERS")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Unreviewed: 2" "an unreadable first CODEOWNERS leaves the root file's account untrusted"
+assert_contains "$OUT" "could not read .github/CODEOWNERS; trusting no declared council accounts this run." \
+	"and the caller is told"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "a 404 on .github/CODEOWNERS falls through to the root file"
+assert_not_contains "$OUT" "could not read" "and is not a warning"
+rm -rf "$contents"
+
+echo ""
+echo "Test: a directory at a configuration path is absent, not unreadable"
+# The contents API answers a directory with an array; a review treats a
+# non-file as absent, so the root file is the one that counts.
+write_ci_bot_verdict
+contents=$(mktemp -d)
+printf '* @ci-bot\n' >"$contents/CODEOWNERS"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents" MOCK_DIR_PATHS=".github/CODEOWNERS")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Skipped (already reviewed at head, unchanged): 2" "a directory falls through to the root CODEOWNERS"
+assert_not_contains "$OUT" "could not read" "and is not a warning"
+rm -rf "$contents"
+
+echo ""
+echo "Test: an AGENTS.md that cannot be read does not hand the setting to CLAUDE.md"
+write_ci_bot_verdict
+contents=$(mktemp -d)
+printf '## Review Council Configuration\n\n- Council accounts: ci-bot\n' >"$contents/CLAUDE.md"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents" MOCK_ERR_PATHS="AGENTS.md")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_contains "$OUT" "Unreviewed: 2" "CLAUDE.md's account is not trusted when AGENTS.md is unreadable"
+assert_contains "$OUT" "could not read AGENTS.md; trusting no declared council accounts this run." "and the caller is told"
+rm -rf "$contents"
 
 echo ""
 echo "Test: a verdict from a rotated token is disclosed, not trusted"

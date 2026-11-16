@@ -101,6 +101,8 @@ Most of that plan prints on every run. Six lines are conditional:
   `Forced re-review of unchanged PRs enabled (--force).` under `--force`.
 - `Ignored (author email):` — only on a batch run with a non-empty ignore list.
 - `Ignored (approved):` — only on a batch run under `--ignore-approved`.
+- `Council accounts (<CODEOWNERS path> and Council accounts: on the default branch):`
+  — only when the default branch names any.
 - `Council marker from another account (queued anyway):` — only when there is one.
 - `Effort: forced to '<tier>' for every PR (--effort).` — only under `--effort`.
 
@@ -759,6 +761,17 @@ Council marker from another account: 240:otheruser
       A token rotated between runs reads this way, and so does a forged
       marker. Neither is trusted, so these PRs report as unreviewed.
 ```
+
+A verdict counts as the council's when this account posted it, or when the
+default branch names its account: a CODEOWNERS `@user`, or a login in the
+`Council accounts:` setting of the Review Council Configuration block. That is
+the rule a review itself applies, read from the default branch instead of the
+pull request's base: the first CODEOWNERS location that exists, and
+`Council accounts:` from the first of `AGENTS.md` and `CLAUDE.md` that sets it;
+a `name[bot]` account declared there is matched. When a configuration file
+cannot be read (as against absent), the run trusts no declared accounts and
+says so on stderr. A maintainer's verdict, or CI's, at head is then a review
+done, and its login shows under `BY`.
 
 A marker that the scope did **not** count is named under the table like that,
 and its PR still reports as `unreviewed`. A rotated token and a forged marker

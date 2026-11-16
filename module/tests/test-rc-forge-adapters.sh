@@ -1349,11 +1349,14 @@ GLAB
 
 echo "Test: rc_forge_fetch_pr reports when the PR was opened (#135)"
 # The snapshot for an empty timeline: nothing on the PR can be older.
-assert_equals "$(github_created_at_for '{"title":"T","createdAt":"2026-01-02T03:04:05Z"}')" \
+opened=$(github_created_at_for '{"title":"T","createdAt":"2026-01-02T03:04:05Z"}')
+assert_equals "$opened" \
 	"2026-01-02T03:04:05Z" "GitHub createdAt"
-assert_equals "$(gitlab_created_at_for '{"title":"T","created_at":"2026-01-02T03:04:05.678-04:00"}')" \
+opened=$(gitlab_created_at_for '{"title":"T","created_at":"2026-01-02T03:04:05.678-04:00"}')
+assert_equals "$opened" \
 	"2026-01-02T07:04:05Z" "GitLab created_at normalised to UTC seconds"
-assert_equals "$(gitlab_created_at_for '{"title":"T","created_at":"yesterday"}')" \
+opened=$(gitlab_created_at_for '{"title":"T","created_at":"yesterday"}')
+assert_equals "$opened" \
 	"" "an unparseable GitLab created_at is dropped"
 
 echo ""

@@ -317,12 +317,13 @@ for case in quoted banner; do
 	if [[ "$case" == quoted ]]; then
 		printf '## Review Council: APPROVE\n\n    evidence: grep review-council:obsolete\n' >"$bin/old.md"
 	else
+		# shellcheck disable=SC2016 # literal markdown code span, not command substitution.
 		printf '> **Obsolete.** Superseded by the [current Review Council verdict](u) for commit `abc`. <!-- review-council:obsolete -->\n\nold\n' >"$bin/old.md"
 	fi
 	PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="" MOCK_NEWID="778" \
 		MOCK_LIST="808\tNODE808\tdeadbeefdeadbeef\n" MOCK_GETBODY="$bin/old.md" \
 		REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send >/dev/null 2>&1
-	patched=$(grep -c 'issues/comments/808.*-X PATCH\|-X PATCH.*issues/comments/808' "$bin/log" || true)
+	patched=$(grep -cE 'issues/comments/808.*-X PATCH|-X PATCH.*issues/comments/808' "$bin/log" || true)
 	if [[ "$case" == quoted ]]; then
 		assert_equals "$patched" "1" "a verdict quoting the string still gets its banner"
 	else

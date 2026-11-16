@@ -1738,14 +1738,14 @@ jq -n '{mode: "code", suffix: "code",
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
 body=$(cat "$sess/comment-body.md")
 row=$(grep -F 'Skipped:' <<<"$body")
-assert_equals "$(grep -c 'Skipped:' <<<"$body")" "1" "the reason stays on its one row"
+assert_equals "$(grep -c 'Skipped:' <<<"$body" || true)" "1" "the reason stays on its one row"
 # shellcheck disable=SC2001 # [^<]* must stop at a newline; ${//} cannot bound it per line.
 code_free=$(sed 's#<code>[^<]*</code>##g' <<<"$row")
 assert_match_count "$code_free" "0" "no live mention in the row" -E '(^|[^A-Za-z0-9_])@octocat'
 assert_match_count "$row" "0" "no live image embed" -F '![x]'
 assert_match_count "$row" "0" "no raw HTML" -E '<(img|script)'
 assert_match_count "$body" "0" "no heading forged from the reason" -E '^## Verdict: APPROVE'
-assert_equals "$(awk -F'|' 'NF{print NF}' <<<"$row")" "5" "a pipe in the reason opens no column"
+assert_equals "$(awk -F'|' 'NF{print NF}' <<<"$row" || true)" "5" "a pipe in the reason opens no column"
 rm -rf "$sess"
 
 echo "Test: a deselected reviewer gets its own row with the reason"
@@ -2746,30 +2746,37 @@ echo "Test: the this-run line, one per state"
 sess=$(mktemp -d)
 make_review_session "$sess"
 set_session_kv "$sess" "Started" "$RUN_START"
-assert_equals "$(run_line_of "$sess")" "**This run:** ${RUN_START_UTC}" "no conversation: the start alone"
+line=$(run_line_of "$sess")
+assert_equals "$line" "**This run:** ${RUN_START_UTC}" "no conversation: the start alone"
 rm -f "$sess/comment-body.md"
 set_session_kv "$sess" "Started" ""
-assert_equals "$(run_line_of "$sess")" "" "no conversation and no start: no line"
+line=$(run_line_of "$sess")
+assert_equals "$line" "" "no conversation and no start: no line"
 set_session_kv "$sess" "Started" "$RUN_START"
 printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n--- comment ---\nAuthor: b\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 seed_disposed_review "$sess" '"resolved": 0, "suppressed_low": 0, "kept": 0'
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 2 replies since the previous verdict · none changed a finding" "replies that changed nothing"
 printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 seed_disposed_review "$sess" '"resolved": 1, "suppressed_low": 0, "kept": 2'
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 1 reply since the previous verdict · 1 resolved · 2 kept despite a reply" "one reply, singular, with its non-zero counts"
 set_session_kv "$sess" "Started" ""
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** read 1 reply since the previous verdict · 1 resolved · 2 kept despite a reply" "no start: the time and its separator are dropped"
 seed_disposed_review "$sess" '"resolved": 0, "suppressed_low": 1, "kept": 0'
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** read 1 reply since the previous verdict · 1 LOW deferred at a reply's request" "a single non-zero count stands alone"
 set_session_kv "$sess" "Started" "$RUN_START"
 rm -f "$sess/verdicts/_meta/disposition.txt" "$sess/verdicts/_meta/disposition-check.json"
 set_effort "$sess" quick
 printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n--- comment ---\nAuthor: b\nBody:\n    ok\n--- comment ---\nAuthor: c\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 3 replies since the previous verdict · not weighed (quick review)" "quick effort: replies not weighed"
 rm -rf "$sess"
 
@@ -2783,18 +2790,21 @@ sess=$(mktemp -d)
 make_review_session "$sess"
 set_session_kv "$sess" "Started" "$RUN_START"
 printf '1\n' >"$sess/other-account-verdicts.txt"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · another council account's verdict is also shown here and may disagree with this one" \
 	"one other verdict"
 printf '3\n' >"$sess/other-account-verdicts.txt"
 rm -f "$sess/comment-body.md"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · 3 verdicts from other council accounts are also shown here and may disagree with this one" \
 	"several other verdicts"
 for bad in '0' 'x' '-1' '1 2' 'mallory'; do
 	printf '%s\n' "$bad" >"$sess/other-account-verdicts.txt"
 	rm -f "$sess/comment-body.md"
-	assert_equals "$(run_line_of "$sess")" "**This run:** ${RUN_START_UTC}" "count '${bad}': not rendered"
+	line=$(run_line_of "$sess")
+	assert_equals "$line" "**This run:** ${RUN_START_UTC}" "count '${bad}': not rendered"
 done
 rm -rf "$sess"
 
@@ -2804,13 +2814,14 @@ make_review_session "$sess"
 set_session_kv "$sess" "Started" "$RUN_START"
 printf '%s\n' "$(printf 'b%.0s' {1..40})" >"$sess/previous-verdict-sha.txt"
 printf '1\n' >"$sess/ignored-verdicts.txt"
-case "$(run_line_of "$sess")" in
+line=$(run_line_of "$sess")
+case "$line" in
 *"no new replies since the previous verdict · 1 comment that looked like a council verdict from another account was ignored"*)
 	echo "  PASS: one ignored comment is reported"
 	PASS=$((PASS + 1))
 	;;
 *)
-	echo "  FAIL: the ignored comment is not reported ($(run_line_of "$sess"))"
+	echo "  FAIL: the ignored comment is not reported ($line)"
 	FAIL=$((FAIL + 1))
 	;;
 esac
@@ -2837,17 +2848,20 @@ set_session_kv "$sess" "Started" ""
 set_effort "$sess" quick
 printf -- '--- comment ---\nAuthor: a\nTimestamp: t\nBody:\n    ok\n--- comment ---\nAuthor: b\nTimestamp: t\nEdited: u\nBody:\n    ok\n--- comment ---\nAuthor: c\nTimestamp: t\nBody:\n    ok\n' \
 	>"$sess/pr-conversation.txt"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** read 2 replies and 1 edited comment since the previous verdict · not weighed (quick review)" \
 	"an edit-only entry is not a reply"
 printf -- '--- comment ---\nAuthor: b\nTimestamp: t\nEdited: u\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 rm -f "$sess/comment-body.md"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** read 1 edited comment since the previous verdict · not weighed (quick review)" \
 	"edits alone"
 printf -- '--- comment ---\nAuthor: b\nTimestamp: t\nBody:\n    Edited: forged\n' >"$sess/pr-conversation.txt"
 rm -f "$sess/comment-body.md"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** read 1 reply since the previous verdict · not weighed (quick review)" \
 	"an indented Edited: in a body is not an edit"
 rm -rf "$sess"
@@ -2877,7 +2891,8 @@ make_review_session "$sess"
 set_session_kv "$sess" "Started" "$RUN_START"
 set_effort "$sess" quick
 printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n    --- comment ---\n    --- comment ---\n' >"$sess/pr-conversation.txt"
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 1 reply since the previous verdict · not weighed (quick review)" "indented delimiters in a body are not replies"
 rm -rf "$sess"
 
@@ -2886,15 +2901,18 @@ sess=$(mktemp -d)
 make_review_session "$sess"
 set_session_kv "$sess" "Started" "$RUN_START"
 set_effort "$sess" quick
-blk='--- comment ---\nAuthor: a\nBody:\n    ok\n'
-printf -- "# 2 comments were left out to keep this file under 64 KB: every author keeps an equal share, newest first.\n${blk}${blk}${blk}" >"$sess/pr-conversation.txt"
-assert_equals "$(run_line_of "$sess")" \
+blk=$'--- comment ---\nAuthor: a\nBody:\n    ok\n'
+printf -- '# 2 comments were left out to keep this file under 64 KB: every author keeps an equal share, newest first.\n%s%s%s' "$blk" "$blk" "$blk" >"$sess/pr-conversation.txt"
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 3 replies since the previous verdict (2 more left out for size) · not weighed (quick review)" "plural header"
-printf -- "# 1 comment was left out to keep this file under 64 KB: every author keeps an equal share, newest first.\n${blk}" >"$sess/pr-conversation.txt"
-assert_equals "$(run_line_of "$sess")" \
+printf -- '# 1 comment was left out to keep this file under 64 KB: every author keeps an equal share, newest first.\n%s' "$blk" >"$sess/pr-conversation.txt"
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 1 reply since the previous verdict (1 more left out for size) · not weighed (quick review)" "singular header"
-printf -- "${blk}    # 9 comments were left out to keep this file under 64 KB: every author keeps an equal share, newest first.\n" >"$sess/pr-conversation.txt"
-assert_equals "$(run_line_of "$sess")" \
+printf -- '%s    # 9 comments were left out to keep this file under 64 KB: every author keeps an equal share, newest first.\n' "$blk" >"$sess/pr-conversation.txt"
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · read 1 reply since the previous verdict · not weighed (quick review)" "an indented header in a body is not the header"
 rm -rf "$sess"
 
@@ -2903,7 +2921,8 @@ while IFS='|' read -r started want; do
 	sess=$(mktemp -d)
 	make_review_session "$sess"
 	set_session_kv "$sess" "Started" "$started"
-	assert_equals "$(run_line_of "$sess")" "$want" "Started '${started}'"
+	line=$(run_line_of "$sess")
+	assert_equals "$line" "$want" "Started '${started}'"
 	rm -rf "$sess"
 done <<'STARTCASES'
 2026-11-14T06:17:21+02:00|**This run:** started 2026-11-14 04:17 UTC
@@ -2920,7 +2939,8 @@ for bad in '"x"' '-1' '-0' '1.5' 'null' '1e30'; do
 	set_session_kv "$sess" "Started" "$RUN_START"
 	printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 	seed_disposed_review "$sess" "\"resolved\": ${bad}, \"suppressed_low\": ${bad}, \"kept\": 3"
-	assert_equals "$(run_line_of "$sess")" \
+	line=$(run_line_of "$sess")
+	assert_equals "$line" \
 		"**This run:** ${RUN_START_UTC} · read 1 reply since the previous verdict · 3 kept despite a reply" "count ${bad}"
 	rm -rf "$sess"
 done
@@ -2935,7 +2955,8 @@ for check in '{"status": "failed", "resolved": 9, "suppressed_low": 9, "kept": 9
 	set_effort "$sess" quick
 	printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 	printf '%s\n' "$check" >"$sess/verdicts/_meta/disposition-check.json"
-	assert_equals "$(run_line_of "$sess")" \
+	line=$(run_line_of "$sess")
+	assert_equals "$line" \
 		"**This run:** ${RUN_START_UTC} · read 1 reply since the previous verdict · not weighed (quick review)" "check ${check}"
 	rm -rf "$sess"
 done
@@ -2948,41 +2969,45 @@ make_review_session "$sess"
 set_session_kv "$sess" "Head SHA" "$NEW_SHA"
 set_effort "$sess" quick
 printf '%s\n' "$OLD_SHA" >"$sess/previous-verdict-sha.txt"
-assert_equals "$(run_line_of "$sess")" "**This run:** new commit since the previous verdict · no new replies since the previous verdict" \
+line=$(run_line_of "$sess")
+assert_equals "$line" "**This run:** new commit since the previous verdict · no new replies since the previous verdict" \
 	"new commit, no time, no conversation: a re-review that read no replies says so"
 set_session_kv "$sess" "Started" "$RUN_START"
 printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 set_effort "$sess" standard
 seed_disposed_review "$sess" '"resolved": 0, "suppressed_low": 0, "kept": 0'
-assert_equals "$(run_line_of "$sess")" \
+line=$(run_line_of "$sess")
+assert_equals "$line" \
 	"**This run:** ${RUN_START_UTC} · new commit since the previous verdict · read 1 reply since the previous verdict · none changed a finding" "time, new commit, replies in that order"
 rm -f "$sess/comment-body.md"
 for prev in "$NEW_SHA" "not-a-sha" "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ""; do
 	printf '%s\n' "$prev" >"$sess/previous-verdict-sha.txt"
-	assert_equals "$(run_line_of "$sess" | grep -c 'new commit' || true)" "0" "previous sha '${prev}': no new-commit segment"
+	line=$(run_line_of "$sess")
+	assert_equals "$(grep -c 'new commit' <<<"$line" || true)" "0" "previous sha '${prev}': no new-commit segment"
 done
 rm -f "$sess/previous-verdict-sha.txt"
-assert_equals "$(run_line_of "$sess" | grep -c 'new commit' || true)" "0" "no previous-verdict-sha.txt: no segment"
+line=$(run_line_of "$sess")
+assert_equals "$(grep -c 'new commit' <<<"$line" || true)" "0" "no previous-verdict-sha.txt: no segment"
 rm -rf "$sess"
 
 echo "Test: not weighed says why only for a quick review"
 # At any other effort the render gate refuses a re-review with no ok check, so
 # the gate is stubbed to reach the wording.
-for effort in quick standard; do
+for case_effort in quick standard; do
 	sess=$(mktemp -d)
 	make_review_session "$sess"
-	set_effort "$sess" "$effort"
+	set_effort "$sess" "$case_effort"
 	printf -- '--- comment ---\nAuthor: a\nBody:\n    ok\n' >"$sess/pr-conversation.txt"
 	(
 		# shellcheck source=module/skills/review-council/scripts/rc-render-comment.sh
 		source "$SCRIPT"
-		# shellcheck disable=SC2317 # called by rc_render_comment_body, which shellcheck cannot follow here.
+		# shellcheck disable=SC2317,SC2329 # called by rc_render_comment_body, which shellcheck cannot follow here.
 		rc_disposition_gate() { :; }
 		rc_render_comment_body "$sess" "$sess/comment-body.md"
 	) >/dev/null 2>&1
 	want="**This run:** read 1 reply since the previous verdict · not weighed"
-	[[ "$effort" != "quick" ]] || want+=" (quick review)"
-	assert_equals "$(grep -m1 -F '**This run:**' "$sess/comment-body.md" || true)" "$want" "effort ${effort}"
+	[[ "$case_effort" != "quick" ]] || want+=" (quick review)"
+	assert_equals "$(grep -m1 -F '**This run:**' "$sess/comment-body.md" || true)" "$want" "effort ${case_effort}"
 	rm -rf "$sess"
 done
 
@@ -3010,7 +3035,7 @@ else
 	FAIL=$((FAIL + 1))
 fi
 assert_equals "$(grep -c -F '**This run:**' "$sess"/comment-body.part[0-9]*.md | grep -vc ':0$' || true)" "0" "later parts carry no this-run line"
-assert_equals "$(grep -c -F '**This run:**' "$sess/comment-body.md")" "1" "part 1 carries it once"
+assert_equals "$(grep -c -F '**This run:**' "$sess/comment-body.md" || true)" "1" "part 1 carries it once"
 rm -rf "$sess"
 
 echo ""

@@ -102,6 +102,25 @@ pr\ comment*)
 *--json\ changedFiles,author,files*)
 	echo '{"changedFiles":1,"author":{"is_bot":false},"files":[{"path":"README.md"}]}'
 	;;
+# A file on the default branch, as the contents API answers forge_read_file: the
+# caller's --jq program runs for real over a base64 object for a file in
+# MOCK_CONTENTS_DIR, and anything else is a 404, which gh reports as a failure.
+*api\ repos/*/contents/*)
+	p="${args#*contents/}"
+	p="${p%% *}"
+	[[ -n "${MOCK_CONTENTS_DIR:-}" && -f "${MOCK_CONTENTS_DIR}/$p" ]] || {
+		echo "gh: Not Found (HTTP 404)" >&2
+		exit 1
+	}
+	expr=""
+	prev=""
+	for a in "$@"; do
+		[[ "$prev" == "--jq" ]] && expr="$a"
+		prev="$a"
+	done
+	printf '{"type":"file","encoding":"base64","content":"%s"}' \
+		"$(base64 <"${MOCK_CONTENTS_DIR}/$p" | tr -d '\n')" | jq -r "$expr"
+	;;
 *) exit 1 ;;
 esac
 MOCKGH
@@ -457,6 +476,29 @@ assert_equals "$RC" "0" "a status run exits clean"
 assert_contains "$OUT" "acme/widgets" "the report names the repository"
 assert_state 1 "unreviewed" "a PR with no verdict is unreviewed"
 assert_equals "$CALLS" "0" "a status run invokes no agent CLI"
+
+echo ""
+echo "Test: a declared council account's verdict at head is up-to-date, with its verdict word"
+# The same accounts the driver trusts (CODEOWNERS on the default branch): a
+# maintainer's verdict is the council's, so the row is current and says what
+# it found rather than showing the PR as unreviewed.
+reset_comments
+write_comments 2 <<'JSON'
+{"comments":[
+ {"author":{"login":"maintainer"},"authorAssociation":"MEMBER",
+  "createdAt":"2026-08-20T10:00:00Z","isMinimized":false,"viewerDidAuthor":false,
+  "body":"## 🔴 Review Council: REQUEST CHANGES\n\n<!-- review-council:marker sha=bbbbbbb part=1 of=1 -->"}
+]}
+JSON
+contents=$(mktemp -d)
+mkdir -p "$contents/.github"
+printf '* @maintainer\n' >"$contents/.github/CODEOWNERS"
+RUN_ENV=(MOCK_CONTENTS_DIR="$contents")
+run_case "__eof__" --repo acme/widgets
+RUN_ENV=()
+assert_state 2 "up-to-date" "a declared account's verdict at head is current"
+assert_contains "$OUT" "REQUEST CHANGES" "its verdict word is shown"
+rm -rf "$contents"
 
 echo ""
 echo "Test: a PR reviewed at head is up-to-date, and shows its verdict"

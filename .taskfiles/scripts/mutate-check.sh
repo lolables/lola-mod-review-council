@@ -526,11 +526,11 @@ check_mutation "RC-226 an empty COMMENTED container is no review in full" \
 	test-rc-prepare-conversation.sh
 
 # Another account's verdict stays up beside this run's (the poster retires only
-# its own account's comments): counted unless it carries the obsolete banner,
+# its own account's comments): counted unless it opens with the obsolete banner,
 # and said on the This run line only as a plain count, never a name.
 check_mutation "RC-227 a retired verdict is not counted as still shown" \
 	lib/prepare-context.sh \
-	's#and ((\.body // "") | contains("review-council:obsolete") | not)##' \
+	's#| test(\$obs) | not)#| true)#' \
 	test-rc-prepare-conversation.sh
 
 check_mutation "RC-228 only a positive count of other verdicts is rendered" \
@@ -591,7 +591,7 @@ check_mutation "RC-236 a multi-part verdict from another account counts once" \
 # were reported as verdicts "left out".
 check_mutation "RC-237 the council's own parts are not reported as left out" \
 	lib/prepare-context.sh \
-	's#and ((\.author // "") != \$window\.who or \.created_at > \$window\.at)#and (.created_at != $window.at or (.author // "") != $window.who)#' \
+	's#and (((\.author // "") | ascii_downcase) != \$window\.who or \.created_at > \$window\.at)#and (.created_at != $window.at or ((.author // "") | ascii_downcase) != $window.who)#' \
 	test-rc-prepare-conversation.sh
 
 # A reply posted inside the window is not an edit-only entry, whatever was

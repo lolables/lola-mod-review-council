@@ -416,6 +416,18 @@ if [[ -f "$verdict_map" ]]; then
 			.verdicts[$a] // "UNKNOWN" | tostring
 			| rc_md_title | gsub("\\|"; "&#124;")' "$verdict_map")
 		finding_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent==$a)] | length' "$verdict_map")
+		# Findings consolidation folded into another agent's: credited in its
+		# provenance.consolidated_from, and this agent's verdict stands on them
+		# (recompute-verdicts.jq), so a bare 0 left that verdict unexplained.
+		merged_count=$(jq -r --arg a "$agent_name" '[.verified[] | select(.agent != $a
+			and any((.provenance | objects | .consolidated_from | arrays)[]; (objects | .agent) == $a))] | length' "$verdict_map")
+		if [[ "$merged_count" -gt 0 ]]; then
+			if [[ "$finding_count" -gt 0 ]]; then
+				finding_count="${finding_count} + ${merged_count} merged into others"
+			else
+				finding_count="${merged_count} merged into others"
+			fi
+		fi
 		agent_persona=$(persona_label "$agent_name")
 		echo "| $agent_persona | $verdict | $finding_count |"
 	done <<<"$agent_names"

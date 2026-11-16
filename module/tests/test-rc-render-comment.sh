@@ -2086,6 +2086,29 @@ else
 fi
 rm -rf "$sess"
 
+echo "Test: a reviewer whose findings were merged into another's says so in the agent table"
+# Its verdict stands on the merged finding (recompute-verdicts.jq credits it),
+# so "Changes | none" gave the reader a verdict with no reason anywhere.
+sess=$(mktemp -d)
+make_review_session "$sess"
+jq '.verified[0].provenance.consolidated_from = [
+		{"agent":"divisor-testing-code","severity":"HIGH","angle":"a"},
+		{"agent":"divisor-sre-code","severity":"MEDIUM","angle":"b"}]
+	| .verified += [{"agent":"divisor-sre-code","severity":"LOW","file":"auth/token.go","line":2,
+		"evidence":"if exp < now","description":"d","recommendation":"r",
+		"status":"verified","verdict":"REQUEST CHANGES","provenance":{}}]
+	| .verdicts += {"divisor-testing-code":"REQUEST CHANGES","divisor-sre-code":"REQUEST CHANGES"}' \
+	"$sess/verdicts/findings.json" >"$sess/f.next"
+mv "$sess/f.next" "$sess/verdicts/findings.json"
+bash "$SCRIPT" "$sess" >/dev/null 2>&1
+assert_equals "$(grep -cxF "| 🧪 Tester (code) | ❌ Changes | 1 merged into others |" "$sess/comment-body.md" || true)" "1" \
+	"merged only: the count replaces none"
+assert_equals "$(grep -cxF "| ⚙️ Operator (code) | ❌ Changes | 1 LOW + 1 merged into others |" "$sess/comment-body.md" || true)" "1" \
+	"own and merged: both counted"
+assert_equals "$(grep -cxF "| 🛡️ Adversary (code) | ❌ Changes | 1 HIGH |" "$sess/comment-body.md" || true)" "1" \
+	"the survivor's own count is unchanged"
+rm -rf "$sess"
+
 # --- Scripted verdict (RC-077) -------------------------------------------------
 echo "Test V1: a verdict.txt the findings do not decide is refused (RC-077)"
 sess=$(mktemp -d)

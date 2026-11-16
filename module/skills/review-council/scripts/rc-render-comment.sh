@@ -48,9 +48,13 @@ sev_count() { # SEVERITY
 	jq -r --arg s "$1" '[.verified[]? | select(.severity==$s)] | length' "$RC_EVIDENCE" 2>/dev/null || echo 0
 }
 
-# Per-agent verified-finding summary ("2 MEDIUM, 1 LOW" | "none"). Reads $RC_EVIDENCE.
+# Per-agent verified-finding summary ("2 MEDIUM, 1 LOW", "1 LOW + 2 merged into
+# others", "2 merged into others" | "none"). Reads $RC_EVIDENCE. A finding
+# consolidation folded into another agent's is credited to this agent in its
+# provenance.consolidated_from, and its verdict stands on it
+# (recompute-verdicts.jq): leaving it out showed a verdict with no reason.
 agent_findings() { # agent-name
-	local a="$1" out="" n sev
+	local a="$1" out="" n sev merged
 	[[ -f "$RC_EVIDENCE" ]] || {
 		echo "none"
 		return
@@ -59,6 +63,10 @@ agent_findings() { # agent-name
 		n=$(jq -r --arg a "$a" --arg s "$sev" '[.verified[]? | select(.agent==$a and .severity==$s)] | length' "$RC_EVIDENCE" 2>/dev/null || echo 0)
 		[[ "$n" -gt 0 ]] && out="${out:+$out, }${n} ${sev}"
 	done
+	merged=$(jq -r --arg a "$a" '[.verified[]? | select(.agent != $a
+		and any((.provenance | objects | .consolidated_from | arrays)[]; (objects | .agent) == $a))] | length' \
+		"$RC_EVIDENCE" 2>/dev/null || echo 0)
+	[[ "$merged" -gt 0 ]] && out="${out:+$out + }${merged} merged into others"
 	echo "${out:-none}"
 }
 

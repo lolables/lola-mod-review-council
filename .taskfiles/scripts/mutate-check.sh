@@ -731,6 +731,16 @@ check_mutation "RC-267 a paragraph with an unpaired backtick loses code protecti
 	's#\.string != null)\] | length > 0)#.string != null)] | length > 1000000)#' \
 	test-rc-jq-programs.sh
 
+check_mutation "RC-224 the comment's agent table counts merged findings" \
+	rc-render-comment.sh \
+	's#\[\[ "\$merged" -gt 0 \]\] && out=#[[ "$merged" -lt 0 ]] \&\& out=#' \
+	test-rc-render-comment.sh
+
+check_mutation "RC-225 the report's agent table counts merged findings" \
+	rc-render-report.sh \
+	's#if \[\[ "\$merged_count" -gt 0 \]\]; then#if [[ "$merged_count" -lt 0 ]]; then#' \
+	test-rc-render-report.sh
+
 # The renderer's last resort keeps whole lines from the top until the limit is
 # reached, and the marker is the last line of the body — so the cut took it.
 # Dropping the re-append is the shipped state: the body is still written, still

@@ -1243,6 +1243,35 @@ else
 fi
 rm -rf "$s"
 
+echo "Test: the Per-Agent table counts findings merged into another reviewer's"
+# The merged reviewer's verdict stands on them (recompute-verdicts.jq), so a
+# bare 0 next to REQUEST CHANGES gave that verdict no reason.
+s=$(new_session)
+cat >"$s/verdicts/findings.json" <<'FJ'
+{"verified":[
+ {"agent":"divisor-adversary-code","severity":"HIGH","file":"a.sh","line":1,"evidence":"x",
+  "description":"d","recommendation":"r","status":"verified","verdict":"REQUEST CHANGES",
+  "provenance":{"consolidated_from":[{"agent":"divisor-testing-code","severity":"HIGH","angle":"a"},
+    {"agent":"divisor-sre-code","severity":"MEDIUM","angle":"b"}]}},
+ {"agent":"divisor-sre-code","severity":"LOW","file":"a.sh","line":2,"evidence":"y",
+  "description":"d","recommendation":"r","status":"verified","verdict":"REQUEST CHANGES","provenance":{}}
+],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":2,
+ "verdicts":{"divisor-adversary-code":"REQUEST CHANGES","divisor-testing-code":"REQUEST CHANGES",
+   "divisor-sre-code":"REQUEST CHANGES"}}
+FJ
+printf 'Review Council Session\nOwner:        acme\nRepo:         widgets\nEffort:       standard\nReview root:  .\n' >"$s/session.txt"
+printf '# Review Council Session Tracking\n\n## Phase: Preparation\n\n- Forge: github\n- PR: 42\n- Mode: code\n' >"$s/tracking.md"
+echo "REQUEST CHANGES" >"$s/verdict.txt"
+write_verification_log "$s"
+rep=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_equals "$(grep -cxF '| 🧪 Tester (code) | REQUEST CHANGES | 1 merged into others |' <<<"$rep" || true)" "1" \
+	"merged only: the count says where they went"
+assert_equals "$(grep -cxF '| ⚙️ Operator (code) | REQUEST CHANGES | 1 + 1 merged into others |' <<<"$rep" || true)" "1" \
+	"own and merged: both counted"
+assert_equals "$(grep -cxF '| 🛡️ Adversary (code) | REQUEST CHANGES | 1 |' <<<"$rep" || true)" "1" \
+	"the survivor's own count is unchanged"
+rm -rf "$s"
+
 echo "Test: a folded reviewer's impact renders with its credit, and only when present"
 s=$(new_session)
 cat >"$s/verdicts/findings.json" <<'FJ'

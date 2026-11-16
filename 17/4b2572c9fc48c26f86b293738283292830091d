@@ -1,0 +1,31 @@
+scripts/lib/prs.sh
+  s_45cbf564572895::t_2c3cecf0928fa5 248-250
+  s_45cbf564572895::t_89eacbaace574b 232-235,238
+module/tests/test-review-open-prs.sh
+  s_45cbf564572895::t_e1997147658c4e 1145
+  s_45cbf564572895::t_1199b8f11feaf7 1092-1144,1146-1187
+  s_45cbf564572895::t_3b8f00ce5a6de6 118-139,142-161
+scripts/lib/forge-github.sh
+  s_45cbf564572895::t_89eacbaace574b 70-78
+  s_45cbf564572895::t_9b76b81750a820 115
+  s_45cbf564572895::t_10f429c7915acd 82
+  s_45cbf564572895::t_889aa4a4fd860e 80-81,83-89,100-106,108,110-114,116
+module/tests/test-review-pr-status.sh
+  s_45cbf564572895::t_72fe46ef9df8cc 105-107,112-119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "174b2572c9fc48c26f86b293738283292830091d",
+  "prompts": {},
+  "sessions": {
+    "s_45cbf564572895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ddfc74a-f265-4e34-95a0-76ec7d7b08a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -176,6 +176,14 @@ contents of the findings to disposition.
 > description). If nothing in the conversation touches a finding, produce
 > no disposition entry for it — leave it alone.
 >
+> A reference is to the finding's own defect, not to a symbol it happens to
+> mention. A reply about some other defect — often a finding from an earlier
+> run that is no longer in your list, because the fix landed or no reviewer
+> raised it again — references none of these findings: produce no entry for
+> it. Never attach it to a finding that merely shares its file, line or
+> variable. A `kept` entry tells the author their claim did not hold; give one
+> only when the claim was about that finding.
+>
 > For findings the conversation does reference, apply all four rules below.
 > They compose; they are not alternatives.
 >

@@ -1,0 +1,25 @@
+task_version: "2"
+description: |
+  Stale-reply test: the PR reply says the cd on line 5 is now checked and
+  quoted, "so the Unchecked cd finding should be gone". That finding is not
+  in this session at all: the fix landed and no reviewer raised it again.
+  The one verified finding is a HIGH on line 7, the unquoted rm -rf, whose
+  description mentions the cd only in passing. Per the Disposition phase,
+  a reply about a defect that is not in the list references none of the
+  findings: no disposition entry, the HIGH untouched, the verdict
+  unchanged. Seen live on a scratch PR, where the reply was bound to the
+  line-7 finding as "kept" and the PR comment told the author their
+  correct fix claim had been rejected.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the disposition you just performed.
+    Use this exact format:
+
+    FINDINGS_BEFORE: <count of findings in verdicts/findings.json's verified array before disposition>
+    FINDINGS_AFTER: <count of findings remaining in the verified array after disposition>
+    REPLY_TOPIC: <which defect the reply was about, in your own words>
+    DISPOSITION_ACTION: <resolved | kept | suppressed-low | none, for the prune.sh:7 finding>
+    DISPOSITION_ENTRIES: <how many provenance.disposition objects you wrote>
+    CHECK_STATUS: <the status rc-check-disposition.sh returned for this session, or "not run">
+    VERDICT_CHANGE: <did divisor-adversary-code's verdict change? yes/no and why>

@@ -1,0 +1,22 @@
+module/tests/test-review-open-prs.sh
+  s_45cbf564572895::t_b2738051211182 154-160,1224-1234
+  s_45cbf564572895::t_6d99600b8224b0 1235-1237
+scripts/lib/forge-github.sh
+  s_45cbf564572895::t_f162e2fe76bac3 120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2fedee498483b452f05474f2dd3c915b2a21f1de",
+  "prompts": {},
+  "sessions": {
+    "s_45cbf564572895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ddfc74a-f265-4e34-95a0-76ec7d7b08a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+module/tests/test-rc-render-report.sh
+  s_5e2e85d1f77a13::t_0599493b153325 1246-1274
+module/tests/test-rc-render-comment.sh
+  s_5e2e85d1f77a13::t_8f41f84b48246c 2104,2106,2108
+  s_5e2e85d1f77a13::t_5618f518f877d9 2089-2103,2105,2107,2109-2111
+module/skills/review-council/scripts/rc-render-report.sh
+  s_5e2e85d1f77a13::t_55f181c196d4ec 419-430
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_5e2e85d1f77a13::t_5331a246a2877e 51-55,57,66-69
+.taskfiles/scripts/mutate-check.sh
+  s_5e2e85d1f77a13::t_a9e6544260db27 734-743
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "fa6432f8e0ec2fb6f75b20628c8acfa0347a5b49",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

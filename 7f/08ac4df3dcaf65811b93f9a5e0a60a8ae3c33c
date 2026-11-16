@@ -1,0 +1,19 @@
+module/tests/test-rc-prepare-conversation.sh
+  s_45cbf564572895::t_8ed9a431a67006 1017-1018,1026-1027,1038
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "7f08ac4df3dcaf65811b93f9a5e0a60a8ae3c33c",
+  "prompts": {},
+  "sessions": {
+    "s_45cbf564572895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ddfc74a-f265-4e34-95a0-76ec7d7b08a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

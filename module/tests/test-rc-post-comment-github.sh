@@ -306,6 +306,31 @@ else
 fi
 rm -rf "$sess" "$bin"
 
+echo "Test 5b: only the banner line marks a comment retired, not the string quoted in it"
+# A live verdict can quote review-council:obsolete in a finding's evidence; it
+# must still get its banner. A comment that opens with the banner keeps one.
+for case in quoted banner; do
+	sess=$(mktemp -d)
+	make_review_session "$sess"
+	bin=$(mktemp -d)
+	make_gh "$bin"
+	if [[ "$case" == quoted ]]; then
+		printf '## Review Council: APPROVE\n\n    evidence: grep review-council:obsolete\n' >"$bin/old.md"
+	else
+		printf '> **Obsolete.** Superseded by the [current Review Council verdict](u) for commit `abc`. <!-- review-council:obsolete -->\n\nold\n' >"$bin/old.md"
+	fi
+	PATH="$bin:$PATH" GH_LOG="$bin/log" MOCK_FIND="" MOCK_NEWID="778" \
+		MOCK_LIST="808\tNODE808\tdeadbeefdeadbeef\n" MOCK_GETBODY="$bin/old.md" \
+		REVIEW_COUNCIL_ALLOW_POST=1 bash "$SCRIPT" "$sess" --send >/dev/null 2>&1
+	patched=$(grep -c 'issues/comments/808.*-X PATCH\|-X PATCH.*issues/comments/808' "$bin/log" || true)
+	if [[ "$case" == quoted ]]; then
+		assert_equals "$patched" "1" "a verdict quoting the string still gets its banner"
+	else
+		assert_equals "$patched" "0" "a comment opening with the banner is not bannered again"
+	fi
+	rm -rf "$sess" "$bin"
+done
+
 # Test 6: find-by-sha lookup FAILS -> status error, nothing posted
 echo "Test 6: lookup failure reports error"
 sess=$(mktemp -d)

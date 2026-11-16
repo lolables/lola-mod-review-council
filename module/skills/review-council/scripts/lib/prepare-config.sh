@@ -502,6 +502,23 @@ for so_term in ${so_terms[@]+"${so_terms[@]}"}; do
 done
 [[ -n "$severity_override" ]] || severity_override="none"
 
+# --- Council identity ---
+#
+# Which accounts' verdicts are the council's own, besides the account this run
+# posts as (prepare-context.sh asks the forge): CODEOWNERS @user owners and the
+# `Council accounts:` setting, both read from the configuration source so a
+# change cannot name itself. The rule lives in council-accounts.sh, shared with
+# the batch driver.
+# shellcheck source=module/skills/review-council/scripts/lib/council-accounts.sh
+source "$(dirname "${BASH_SOURCE[0]}")/council-accounts.sh"
+rc_council_reset
+while IFS= read -r council_path; do
+	council_text=$(rc_config_read "$council_path") || continue
+	rc_council_from_codeowners "$council_path" "$council_text"
+	break
+done < <(rc_council_codeowners_paths "${forge:-}")
+rc_council_from_setting "$(rc_config_value "Council accounts")"
+
 # ============================================================================
 # Changes to review configuration
 # ============================================================================

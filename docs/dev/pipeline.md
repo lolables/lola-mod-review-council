@@ -277,7 +277,9 @@ flowchart TD
     allows 5
 15. **Post** (opt-in, PR only) — render the verdict comment and publish it, or update the council's existing comment
     in place. Reuses the verdict and TL;DR that Report already wrote rather than re-deriving them, so the comment and
-    the report can never disagree. The post script writes upstream only when `session.txt` (written by preparation
+    the report can never disagree. The comment's `**This run:**` line (part 1 only) is built from script-owned files
+    alone: `Started` from `session.txt` converted to UTC (`started <time>`), `previous-verdict-sha.txt` against the head (`new commit since the previous verdict`; its presence alone gives `no new replies since the previous verdict` when no replies were read), `ignored-verdicts.txt` (a positive count of marker comments from accounts that are not the council's, said as ignored), `other-account-verdicts.txt` (a positive count only: `another council account's verdict is also shown here and may disagree with this one`), `Effort` (`not weighed (quick review)`), the `--- comment ---` and `Edited:` lines at column 0 of
+    `pr-conversation.txt` (replies and edited earlier comments, counted apart), and the counts in `disposition-check.json`, coerced to non-negative integers. The post script writes upstream only when `session.txt` (written by preparation
     alone, unlike the model-appended `tracking.md`) records the user's `Post intent: yes` and the orchestrator sets
     `REVIEW_COUNCIL_ALLOW_POST=1`; the env var alone is refused
 
@@ -428,7 +430,7 @@ behind. The session a run is currently using is never evicted, whatever the cap.
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
 `ci-status.txt`, `head-links.json` (every symlink in the head tree, when it could be listed whole; a local review lists its index) and `symlinks.txt` (written for any review whose diff changes a link). On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
-is added too — untrusted replies posted since that marker, on GitHub and GitLab.
+is added too — untrusted replies posted since the previous run read the thread, on GitHub and GitLab (GitHub reviews and inline review comments included). Every PR review also writes `conversation-seen.txt`, the snapshot the verdict's marker carries as `seen=`. When the anchor matched the council's login it also writes `previous-verdict-sha.txt` (the anchored verdict's 40-hex head), which the comment's `**This run:**` line compares with the current head, and `other-account-verdicts.txt` (how many verdicts by the council's other accounts are also shown, without the obsolete banner). The council's accounts are the run's login plus CODEOWNERS `@user` owners and `Council accounts:` from the configuration source; only their verdicts anchor, and a marker from anyone else is ignored. Bot accounts' comments and every comment with a column-0 marker line are left out of the replies and counted in the file's header; an earlier comment edited inside the window is a reply, with an `Edited:` line. Reply bodies are scrubbed (`rc_md_scrub`, CommonMark rules, scrubbing more when unsure) and capped in bytes (reply 8 KB, review 4 KB, inline comment 2 KB); each file's budget (`pr-conversation.txt` 64 KB, `prior-reviews.txt` 32 KB per section) is shared equally among authors, newest first, and the `**This run:**` line says how many replies were left out for size. On a re-review, `prior-reviews.txt` condenses entries older than the reply window into a capped "Earlier review history" table; none is condensed when the verdict was anchored on the marker alone.
 
 ## The arbiter
 

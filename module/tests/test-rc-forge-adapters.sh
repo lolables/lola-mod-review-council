@@ -290,16 +290,122 @@ assert_jq_str "$actual" '.[0].body' "needs work" "review body normalized"
 
 echo "Test 11: inline comments are normalized to file/line/author/body"
 actual=$(github_context_call rc_forge_fetch_review_comments \
-	'[{"path":"api/client.go","line":null,"original_line":42,"user":{"login":"bob"},"body":"nit"}]')
+	'[{"path":"api/client.go","line":null,"original_line":42,"user":{"login":"bob"},"created_at":"2026-01-04T00:00:00Z","body":"nit"}]')
 assert_jq_str "$actual" '.[0].file' "api/client.go" "comment file normalized off .path"
 assert_jq_str "$actual" '.[0].line' "42" "comment line falls back to original_line"
 assert_jq_str "$actual" '.[0].author' "bob" "comment author normalized"
+assert_jq_str "$actual" '.[0].created_at' "2026-01-04T00:00:00Z" "comment timestamp normalized"
 
-echo "Test 12: conversation comments are normalized to author/created_at/body"
-actual=$(github_context_call rc_forge_fetch_conversation \
-	'[{"user":{"login":"carol"},"created_at":"2026-02-02T00:00:00Z","body":"ping"}]')
-assert_jq_str "$actual" '.[0].author' "carol" "conversation author normalized"
-assert_jq_str "$actual" '.[0].created_at' "2026-02-02T00:00:00Z" "conversation timestamp normalized"
+# Call rc_forge_fetch_conversation against a fake gh that serves one page per
+# endpoint — issue comments, reviews, inline review comments — each a JSON
+# array. <fail> names the endpoint (issues|reviews|comments) whose call exits
+# non-zero, as a call refused or cut off mid-listing does.
+# <fn> names the adapter function to call (default rc_forge_fetch_conversation).
+# Usage: json=$(github_timeline_call '<issues>' '<reviews>' '<comments>' [fail] [fn])
+github_timeline_call() {
+	local bindir
+	bindir=$(mktemp -d)
+	printf '%s\n' "$1" >"$bindir/issues.json"
+	printf '%s\n' "$2" >"$bindir/reviews.json"
+	printf '%s\n' "$3" >"$bindir/comments.json"
+	cat >"$bindir/gh" <<GH
+#!/usr/bin/env bash
+case "\$2" in
+*/issues/7/comments*) src=issues ;;
+*/pulls/7/reviews*) src=reviews ;;
+*/pulls/7/comments*) src=comments ;;
+*) exit 1 ;;
+esac
+[[ "\$src" == "${4:-}" ]] && exit 1
+printf '['
+cat "$bindir/\$src.json"
+printf ']\n'
+GH
+	chmod +x "$bindir/gh"
+	(
+		PATH="$bindir:$PATH"
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/github.sh
+		source "$FORGE_DIR/github.sh"
+		"${5:-rc_forge_fetch_conversation}" 7 acme widgets
+	)
+	rm -rf "$bindir"
+}
+
+echo "Test 12: the conversation merges issue comments, reviews and inline comments (#135, RC-215)"
+# A CHANGES_REQUESTED review or an inline comment posted after the verdict is a
+# reply as surely as an issue comment is; reading only issues/<n>/comments
+# missed both. Each carries its origin as the first line of its body.
+tl_issues='[{"user":{"login":"carol"},"created_at":"2026-02-02T00:00:00Z","body":"ping"}]'
+tl_reviews='[
+ {"user":{"login":"dave"},"state":"CHANGES_REQUESTED","submitted_at":"2026-02-03T00:00:00Z","body":"fix the retry"},
+ {"user":{"login":"erin"},"state":"COMMENTED","submitted_at":"2026-02-04T00:00:00Z","body":""},
+ {"user":{"login":"frank"},"state":"APPROVED","submitted_at":"2026-02-05T00:00:00Z","body":""},
+ {"user":{"login":"gina"},"state":"PENDING","submitted_at":null,"body":"draft"}]'
+tl_comments='[{"user":{"login":"hal"},"path":"api/client.go","line":null,"original_line":42,"created_at":"2026-02-04T00:00:00Z","body":"nit"}]'
+actual=$(github_timeline_call "$tl_issues" "$tl_reviews" "$tl_comments")
+assert_jq_str "$actual" 'map(.author) | join(",")' "carol,dave,hal,frank" \
+	"oldest first; empty COMMENTED container and PENDING review dropped"
+assert_jq_str "$actual" '.[0].body' "ping" "an issue comment body is unchanged"
+assert_jq_str "$actual" '.[1].created_at' "2026-02-03T00:00:00Z" "a review is timed by submitted_at"
+assert_jq_str "$actual" '.[1].body' $'[review: CHANGES_REQUESTED]\nfix the retry' \
+	"a review names its origin on its first line"
+assert_jq_str "$actual" '.[2].body' $'[inline comment: api/client.go:42]\nnit' \
+	"an inline comment names path and line, falling back to original_line"
+assert_jq_str "$actual" '.[3].body' $'[review: APPROVED]\n(no body; review state: APPROVED)' \
+	"an empty APPROVED review is kept with its state as body"
+
+echo "Test 12b: same-second entries keep source order (#135)"
+same='"created_at":"2026-02-02T00:00:00Z"'
+actual=$(github_timeline_call \
+	"[{\"user\":{\"login\":\"i\"},$same,\"body\":\"x\"}]" \
+	'[{"user":{"login":"r"},"state":"COMMENTED","submitted_at":"2026-02-02T00:00:00Z","body":"x"}]' \
+	"[{\"user\":{\"login\":\"c\"},\"path\":\"a\",\"line\":1,$same,\"body\":\"x\"}]")
+assert_jq_str "$actual" 'map(.author) | join(",")' "i,r,c" "ties order issue, review, inline"
+
+echo "Test 12c: any failing endpoint empties the whole timeline (#135)"
+# A partial timeline can move the anchor and the snapshot; no context is safer.
+for endpoint in issues reviews comments; do
+	actual=$(github_timeline_call "$tl_issues" "$tl_reviews" "$tl_comments" "$endpoint")
+	assert_jq_str "$actual" 'length' "0" "a failed $endpoint call yields []"
+done
+
+echo "Test 12d: an inline comment is timed when its review is submitted (#135)"
+# Inline comments of a pending review carry their DRAFT time; they become
+# visible when the parent review is submitted. A review drafted before the
+# council's verdict and submitted after it must not lose its inline comments.
+actual=$(github_timeline_call \
+	'[{"user":{"login":"carol"},"created_at":"2026-02-03T00:00:00Z","body":"ping"}]' \
+	'[{"id":9,"user":{"login":"dave"},"state":"COMMENTED","submitted_at":"2026-02-05T00:00:00Z","body":"late"}]' \
+	'[{"user":{"login":"hal"},"pull_request_review_id":9,"path":"a.go","line":1,"created_at":"2026-02-01T00:00:00Z","body":"drafted early"}]')
+assert_jq_str "$actual" 'map(.author) | join(",")' "carol,dave,hal" "order is issue, review, inline"
+assert_jq_str "$actual" '.[2].created_at' "2026-02-05T00:00:00Z" "an inline comment takes its review's later submitted_at"
+actual=$(github_timeline_call '[]' \
+	'[{"id":9,"user":{"login":"dave"},"state":"COMMENTED","submitted_at":"2026-02-05T00:00:00Z","body":"late"}]' \
+	'[{"user":{"login":"hal"},"pull_request_review_id":77,"path":"a.go","line":1,"created_at":"2026-02-01T00:00:00Z","body":"orphan"}]')
+assert_jq_str "$actual" '.[0].created_at' "2026-02-01T00:00:00Z" "an inline comment naming no review keeps its own created_at"
+
+echo "Test 12b: review comments are timed when they became visible (#135)"
+# A drafted inline comment carries its draft time; its review's submission is
+# when anyone could first see it. Same rule as the conversation timeline.
+actual=$(github_timeline_call '[]' \
+	'[{"id":9,"user":{"login":"dave"},"state":"COMMENTED","submitted_at":"2026-02-05T00:00:00Z","body":"late"}]' \
+	'[{"user":{"login":"gil"},"pull_request_review_id":9,"path":"a.go","line":1,"created_at":"2026-02-01T00:00:00Z","body":"drafted"},
+	  {"user":{"login":"hal"},"pull_request_review_id":77,"path":"a.go","line":2,"created_at":"2026-02-02T00:00:00Z","body":"orphan"},
+	  {"user":{"login":"ivy"},"pull_request_review_id":9,"path":"a.go","line":3,"created_at":"2026-02-07T00:00:00Z","body":"after"}]' \
+	"" rc_forge_fetch_review_comments)
+assert_jq_str "$actual" '.[0].created_at' "2026-02-05T00:00:00Z" "a comment drafted before its review was submitted gets the submission time"
+assert_jq_str "$actual" '.[1].created_at' "2026-02-02T00:00:00Z" "a comment naming no review keeps its own created_at"
+assert_jq_str "$actual" '.[2].created_at' "2026-02-07T00:00:00Z" "a comment posted after its review's submission keeps its own created_at"
+
+echo "Test 12c: a failed reviews list does not drop review comments"
+actual=$(github_timeline_call '[]' '[]' \
+	'[{"user":{"login":"gil"},"pull_request_review_id":9,"path":"a.go","line":1,"created_at":"2026-02-01T00:00:00Z","body":"drafted"}]' \
+	reviews rc_forge_fetch_review_comments)
+assert_jq_str "$actual" 'length' "1" "the comment survives"
+assert_jq_str "$actual" '.[0].created_at' "2026-02-01T00:00:00Z" "and keeps its own created_at"
 
 echo "Test 13: an unreachable forge yields an empty array, never malformed JSON"
 # Preparation must survive a forge that is down; every capability degrades to
@@ -356,11 +462,18 @@ two_pages=$(jq -nc '[
 	[{user: {login: "dave"}, created_at: "2026-02-03T00:00:00Z",
 		submitted_at: "2026-02-03T00:00:00Z", path: "b.go", line: 2, state: "COMMENTED", body: "newest"}]
 ]')
-for fn in rc_forge_fetch_reviews rc_forge_fetch_review_comments rc_forge_fetch_conversation; do
+for fn in rc_forge_fetch_reviews rc_forge_fetch_review_comments; do
 	actual=$(github_paged_call "$fn" "$two_pages")
 	assert_jq_str "$actual" 'length' "101" "$fn reads both pages"
 	assert_jq_str "$actual" '.[100].body' "newest" "$fn keeps page order"
 done
+# The fake serves the same two pages for every endpoint, so the merged
+# timeline holds three full listings; its newest entries are the three page-2
+# items, same second, in source order.
+actual=$(github_paged_call rc_forge_fetch_conversation "$two_pages")
+assert_jq_str "$actual" 'length' "303" "rc_forge_fetch_conversation reads every page of all three lists"
+assert_jq_str "$actual" '.[-1].body' $'[inline comment: b.go:2]\nnewest' \
+	"rc_forge_fetch_conversation keeps page order"
 
 echo "Test 13c: a page that is not an array, or a cut-off listing, yields [] (RC-074)"
 # An error body among the pages, or a call that failed after page 1, is a
@@ -1179,6 +1292,69 @@ assert_equals "$mb_out" "" "a diff_refs that is not an object is no answer"
 echo "Test: a failing GitLab MR view returns nothing (#79)"
 gitlab_merge_base_run '' 1
 assert_equals "$mb_out" "" "no MR, no merge base"
+
+# Print the pr_created_at rc_forge_fetch_pr sets from a fake `gh pr view` that
+# answers <pr-json>.
+github_created_at_for() { # pr-json
+	local bindir
+	bindir=$(mktemp -d)
+	printf '%s\n' "$1" >"$bindir/pr.json"
+	cat >"$bindir/gh" <<GH
+#!/usr/bin/env bash
+[[ "\$1 \$2" == "pr view" ]] && cat "$bindir/pr.json"
+exit 0
+GH
+	chmod +x "$bindir/gh"
+	(
+		PATH="$bindir:$PATH"
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/github.sh
+		source "$FORGE_DIR/github.sh"
+		pr_created_at=""
+		rc_forge_fetch_pr 7 acme widgets
+		printf '%s' "$pr_created_at"
+	)
+	rm -rf "$bindir"
+}
+
+# The same for the gitlab adapter against a fake `glab mr view`, on gitlab.com.
+gitlab_created_at_for() { # mr-json
+	local bindir
+	bindir=$(mktemp -d)
+	printf '%s\n' "$1" >"$bindir/mr.json"
+	cat >"$bindir/glab" <<GLAB
+#!/usr/bin/env bash
+[[ "\$1 \$2" == "mr view" ]] && cat "$bindir/mr.json"
+exit 0
+GLAB
+	chmod +x "$bindir/glab"
+	(
+		PATH="$bindir:$PATH"
+		unset GITLAB_TOKEN GITLAB_ACCESS_TOKEN OAUTH_TOKEN GITLAB_API_HOST GITLAB_HOST GITLAB_URI GL_HOST \
+			GLAB_ENABLE_CI_AUTOLOGIN
+		# shellcheck source=module/skills/review-council/scripts/rc-lib.sh
+		source "$SCRIPTS/rc-lib.sh"
+		rc_require_timeout
+		# shellcheck source=module/skills/review-council/scripts/lib/forge/gitlab.sh
+		source "$FORGE_DIR/gitlab.sh"
+		forge_host="gitlab.com" forge_owner=acme forge_repo=widgets
+		pr_created_at=""
+		rc_forge_fetch_pr 7 acme widgets
+		printf '%s' "$pr_created_at"
+	)
+	rm -rf "$bindir"
+}
+
+echo "Test: rc_forge_fetch_pr reports when the PR was opened (#135)"
+# The snapshot for an empty timeline: nothing on the PR can be older.
+assert_equals "$(github_created_at_for '{"title":"T","createdAt":"2026-01-02T03:04:05Z"}')" \
+	"2026-01-02T03:04:05Z" "GitHub createdAt"
+assert_equals "$(gitlab_created_at_for '{"title":"T","created_at":"2026-01-02T03:04:05.678-04:00"}')" \
+	"2026-01-02T07:04:05Z" "GitLab created_at normalised to UTC seconds"
+assert_equals "$(gitlab_created_at_for '{"title":"T","created_at":"yesterday"}')" \
+	"" "an unparseable GitLab created_at is dropped"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

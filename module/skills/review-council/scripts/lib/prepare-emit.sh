@@ -188,6 +188,16 @@ fi
 	# above. A rejected term gets its own key, which rc_parse_kv cannot
 	# confuse with this one: each match needs the colon right after the name.
 	echo "- Severity override: ${severity_override}"
+	# Who the council's own verdicts may come from (prepare-config.sh), and
+	# what CODEOWNERS or the setting named that is not a login.
+	echo "- Council login: ${council_login_note:-none}"
+	echo "- CODEOWNERS: ${council_codeowners}"
+	council_list=$(printf '%s, ' ${council_accounts[@]+"${council_accounts[@]}"})
+	council_list="${council_list%, }"
+	echo "- Council accounts: ${council_list:-none}"
+	for council_skip in ${council_accounts_skipped[@]+"${council_accounts_skipped[@]}"}; do
+		echo "- Council account skipped: ${council_skip}"
+	done
 	for so_rejected in ${severity_override_rejected[@]+"${severity_override_rejected[@]}"}; do
 		echo "- Severity override rejected: ${so_rejected}"
 	done

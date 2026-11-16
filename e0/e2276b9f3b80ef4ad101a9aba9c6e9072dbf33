@@ -1,0 +1,23 @@
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_45cbf564572895::t_a789b5170f33ba 414,432-440
+.taskfiles/scripts/mutate-check.sh
+  s_45cbf564572895::t_a5e39e62e0105b 2175-2181
+module/tests/test-rc-render-comment.sh
+  s_45cbf564572895::t_ad118f8153819e 2884-2900
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "e0e2276b9f3b80ef4ad101a9aba9c6e9072dbf33",
+  "prompts": {},
+  "sessions": {
+    "s_45cbf564572895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6ddfc74a-f265-4e34-95a0-76ec7d7b08a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_e12df7c9febd93::t_23843e7d596af6 9,146-147
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_e12df7c9febd93::t_23843e7d596af6 169-176,194
+module/tests/test-rc-check-disposition.sh
+  s_e12df7c9febd93::t_0561805a8eec5f 662-683
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f3edec57252ce70c4df63814ac115f7ffe3dd69a",
+  "prompts": {},
+  "sessions": {
+    "s_e12df7c9febd93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bfab2ba-3465-4ddf-93ea-41c5ad9dec81",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

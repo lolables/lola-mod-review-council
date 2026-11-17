@@ -1,0 +1,93 @@
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-037-ledger-deferral-retitled/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-040-ledger-kept-carried/starter/prune.sh
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-8
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.lola-eval/tests/case-040-ledger-kept-carried/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-84
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/prune.sh
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-8
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-038-ledger-deferral-other-low/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-20
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-039-ledger-deferral-raised/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-20
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/README.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-5
+.lola-eval/tests/case-037-ledger-deferral-retitled/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.taskfiles/lola-eval.yml
+  s_e12df7c9febd93::t_4976feb591ab5c 189,197-199
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-039-ledger-deferral-raised/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/README.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.lola-eval/tests/case-040-ledger-kept-carried/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-22
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-037-ledger-deferral-retitled/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-79
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/docs.sh
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-4
+.lola-eval/tests/case-038-ledger-deferral-other-low/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-77
+.lola-eval/tests/case-038-ledger-deferral-other-low/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+.lola-eval/tests/case-039-ledger-deferral-raised/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-79
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-040-ledger-kept-carried/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2d41053e58acfabfc11b0e1a577ba21c1c50ef47",
+  "prompts": {},
+  "sessions": {
+    "s_e12df7c9febd93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bfab2ba-3465-4ddf-93ea-41c5ad9dec81",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+module/tests/test-rc-forge-adapters.sh
+  s_c9517258ec0895::t_b805357eef6d0d 1352-1353,1355-1356,1358-1359
+module/tests/test-rc-render-comment.sh
+  s_c9517258ec0895::t_b805357eef6d0d 2749-2750,2753-2754,2758-2759,2763-2764,2767-2768,2771-2772,2778-2779,2793-2794,2799-2800,2806-2807,2817-2818,2824,2851-2852,2857-2858,2863-2864,2894-2895,2906-2907,2910-2911,2914-2915,2924-2925,2942-2943,2958-2959,2972-2973,2979-2980,2985,2989
+  s_c9517258ec0895::t_5525bda1f262b8 1741,1748,3038
+  s_c9517258ec0895::t_24c368aed9f32f 2904-2905,2909,2913,2986,2990
+  s_c9517258ec0895::t_eaf07eb4483aec 2996,2999,3009-3010
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_c9517258ec0895::t_4de3e7d3d75570 515,521
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_c9517258ec0895::t_4de3e7d3d75570 415,448
+scripts/lib/prs.sh
+  s_c9517258ec0895::t_7de732225c6720 243
+.taskfiles/scripts/mutate-check.sh
+  s_c9517258ec0895::t_13b413caa8eda5 529,533,594
+module/tests/test-rc-prepare-conversation.sh
+  s_c9517258ec0895::t_5525bda1f262b8 388,432,434,448,472,536,553-554,991,1081,1093,1119,1134,1145,1239,1244,1295,1304,1329,1336,1338,1375,1395,1406,1416,1428,1537,1649,1652,1724-1725
+  s_c9517258ec0895::t_1dc675a1975f3b 1347,1499
+module/tests/test-rc-jq-programs.sh
+  s_c9517258ec0895::t_24c368aed9f32f 296,301,362
+module/tests/test-rc-post-comment-github.sh
+  s_c9517258ec0895::t_24c368aed9f32f 320
+  s_c9517258ec0895::t_8b5db2872e4c76 326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f33514b3ed3d197dcd277ecf4d8bc40f4e9ba030",
+  "prompts": {},
+  "sessions": {
+    "s_c9517258ec0895": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f17804cb-0a7f-49cc-9217-3decf16cfcc8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,85 @@
+module/skills/review-council/scripts/rc-lib.sh
+  s_e12df7c9febd93::t_45a53f213484e6 32-36
+  s_e12df7c9febd93::t_7e31d5b9896867 129-134,142,149,163-173,175
+module/tests/helpers.sh
+  s_e12df7c9febd93::t_f185b6ef14812b 313,315-322
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_e12df7c9febd93::t_5d3ac08ea6df48 406-434,755-758,829,847-848,854,861-862
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_e12df7c9febd93::t_08df165f243407 142,339-386
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_e12df7c9febd93::t_08df165f243407 194-196
+module/tests/test-rc-disposition-rules.sh
+  s_e12df7c9febd93::t_310a54d19148a2 146-161,164-172
+  s_e12df7c9febd93::t_ab48657d6f7766 162-163
+module/tests/test-rc-prepare-conversation.sh
+  s_e12df7c9febd93::t_08df165f243407 1769-1796,1798-1835
+  s_e12df7c9febd93::t_80e50cea2ae5fb 1797
+  s_e12df7c9febd93::t_0513739f355406 240-249
+module/skills/review-council/references/pipeline-states.md
+  s_e12df7c9febd93::t_179ea825bdad16 23,67
+README.md
+  s_e12df7c9febd93::t_5ba147750be8bf 371
+  s_e12df7c9febd93::t_287c206efd7715 486
+module/skills/review-council/SKILL.md
+  s_e12df7c9febd93::t_2232613fa60b21 1034,1047,1050-1051,1071-1072,1088
+module/skills/review-council/scripts/jq/ledger.jq
+  s_e12df7c9febd93::t_287c206efd7715 51,151
+  s_e12df7c9febd93::t_45a53f213484e6 1-29,31,33-50,52-110,112-113,118-122,124-128,132,134,136,138-150,152-178
+  s_e12df7c9febd93::t_7852e988d1833b 30,32,111,114-117,123,129-131,133,135,137
+module/tests/test-rc-ledger.sh
+  s_e12df7c9febd93::t_287c206efd7715 29-30,59
+  s_e12df7c9febd93::t_80e50cea2ae5fb 33,75
+  s_e12df7c9febd93::t_8a885b757bf84d 28,66-69,133,138-143,145-168
+  s_e12df7c9febd93::t_0bc1c57338495f 70-72,144
+  s_e12df7c9febd93::t_45a53f213484e6 1-27,31-32,34-58,60-65,73-74,76-132,134-137,170-172
+  s_e12df7c9febd93::t_6dfb07ce473fb4 169
+module/tests/test-rc-idempotency.sh
+  s_e12df7c9febd93::t_bbcadd12e9ad73 195,198
+module/tests/test-rc-render-comment.sh
+  s_e12df7c9febd93::t_75f2e69c3dd2cb 3068-3154,3156-3175
+  s_e12df7c9febd93::t_f185b6ef14812b 2071-2081,2083-2093,2757,2760-2763
+  s_e12df7c9febd93::t_80e50cea2ae5fb 2070,2082,3155
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_e12df7c9febd93::t_aa9760000a4764 6-8,31,45-65,67,69,71-83,105,148-151
+  s_e12df7c9febd93::t_23843e7d596af6 9,146-147
+.taskfiles/scripts/mutate-check.sh
+  s_e12df7c9febd93::t_bb0377f86a11c4 1459
+  s_e12df7c9febd93::t_80e50cea2ae5fb 2187-2250
+module/skills/review-council/phases/disposition.md
+  s_e12df7c9febd93::t_3c5581c1ea62a2 81,97-98,121-124,146-149,182-190,238-253,257-265,275-278,288-293,328-329,356-359,415-420,423-428,463,482-483
+  s_e12df7c9febd93::t_870b7b0e3a5700 254-256
+  s_e12df7c9febd93::t_a41279ea0079a7 26,37-43
+docs/dev/pipeline.md
+  s_e12df7c9febd93::t_5ba147750be8bf 259,427-429
+  s_e12df7c9febd93::t_179ea825bdad16 270-274,440
+  s_e12df7c9febd93::t_287c206efd7715 28
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_e12df7c9febd93::t_30398c36d2a42d 37-48,83-87,102-103,115-118,126,137-138,152-168,177-180,228-232,251
+  s_e12df7c9febd93::t_23843e7d596af6 169-176,194
+  s_e12df7c9febd93::t_287c206efd7715 252-254
+module/tests/test-rc-check-disposition.sh
+  s_e12df7c9febd93::t_e3a4737963410e 662
+  s_e12df7c9febd93::t_287c206efd7715 639
+  s_e12df7c9febd93::t_fb70872fc2be43 56-67,77-78,571-594,596-598,600-638,640-646,648-661
+  s_e12df7c9febd93::t_0561805a8eec5f 663-684
+  s_e12df7c9febd93::t_80e50cea2ae5fb 595,599,647
+module/skills/review-council/scripts/jq/md-neutralise.jq
+  s_e12df7c9febd93::t_0bc1c57338495f 365-367,379
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b5e6f4fdd62cf2dd398f203841c555630ee82f20",
+  "prompts": {},
+  "sessions": {
+    "s_e12df7c9febd93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bfab2ba-3465-4ddf-93ea-41c5ad9dec81",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

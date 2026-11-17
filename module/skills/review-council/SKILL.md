@@ -1491,13 +1491,14 @@ Configure optional integrations in project's AGENTS.md or CLAUDE.md:
 - Batch size: 50
 - Context check lines: 6
 - Severity override: guard<=LOW
+- Council accounts: ci-bot[bot]
 ```
 
 All extension points optional, degrade gracefully when omitted.
 No Constitution path configured: constitution-specific checks skipped.
 
 **Configuration source.** The change under review never configures its own
-review. Inside a git repository, the block, `Constitution:` and
+review. Inside a git repository, the block, `Constitution:`, CODEOWNERS and
 `.review-council/packs/` are read from a base revision, never from the working
 tree, and `rc-prepare.sh` copies what the review obeys into
 `${session_dir}/review-config/`. Reviewers read only that copy, through the

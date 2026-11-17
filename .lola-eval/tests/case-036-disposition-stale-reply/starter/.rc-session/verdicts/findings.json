@@ -1,0 +1,24 @@
+{
+  "verified": [
+    {
+      "severity": "HIGH",
+      "file": "prune.sh",
+      "line": 7,
+      "evidence": "rm -rf $dir/tmp/*",
+      "description": "The recursive delete expands an unquoted, unvalidated $dir. An empty or missing argument turns it into rm -rf /tmp/*, and a path with spaces splits into several targets. Before the cd on line 5 was checked, a failed cd also sent the find on line 6 into the wrong tree; line 7 does not depend on the cd at all.",
+      "recommendation": "Require a non-empty existing directory argument and quote the expansion: rm -rf -- \"${dir:?}\"/tmp/*.",
+      "agent": "divisor-adversary-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {},
+      "id": "F1"
+    }
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 1,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-adversary-code": "REQUEST CHANGES"
+  }
+}

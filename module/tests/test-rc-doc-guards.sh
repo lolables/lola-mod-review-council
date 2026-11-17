@@ -1824,18 +1824,19 @@ rc039_flat=$(tr '\n' ' ' <"$rc039_ctx" | tr -s ' ')
 # of this guard grepped for `rc_forge_current_user` / `.author` / `council_login`
 # anywhere in the file and stayed green when the author clause was deleted from
 # the jq program, because all three survive in the comments and in the
-# capability probe above it. `== $me` exists only inside the exclusion.
+# capability probe above it. The membership test against the council's
+# accounts exists only inside the anchor and the classification.
 # Hoisted out of the `if` chain: a shellcheck directive cannot sit between the
-# operands of a `&&` list, and this one is needed -- `$me` is the jq variable
+# operands of a `&&` list, and this one is needed -- `$ids` is the jq variable
 # being pinned, not a shell expansion, so expanding it would search for the
 # empty string and the guard would pass on anything.
 rc039_author_ok=0
 # shellcheck disable=SC2016
-if grep -qF '(.author // "") == $me' <<<"$rc039_flat"; then
+if grep -qF '(.author // "") | ascii_downcase | IN($ids[])' <<<"$rc039_flat"; then
 	rc039_author_ok=1
 fi
 if grep -qF 'rc_forge_current_user' <<<"$rc039_flat" &&
-	grep -qF -- '--arg me' <<<"$rc039_flat" &&
+	grep -qF -- '--argjson ids' <<<"$rc039_flat" &&
 	[[ "$rc039_author_ok" -eq 1 ]]; then
 	echo "  PASS: identity is marker AND author, with the capability probed"
 	PASS=$((PASS + 1))
@@ -3463,6 +3464,21 @@ if [[ -z "$rc213_missing" ]]; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: salvage run undocumented in:$rc213_missing"
+	FAIL=$((FAIL + 1))
+fi
+
+# The retired-verdict banner is matched as a line in three places: preparation
+# and the GitHub poster read RC_OBSOLETE_LINE_RE from rc-lib.sh, the GitLab
+# poster keeps its own copy for the batch driver's equality check. A drift
+# would count a retired verdict as live, or a live one as retired.
+echo "Test: the obsolete banner pattern is one value in rc-lib.sh and the GitLab poster"
+obs_lib=$(sed -nE "s/^RC_OBSOLETE_LINE_RE='(.*)'\$/\1/p" "$SCRIPTS/rc-lib.sh")
+obs_gl=$(sed -nE "s/^RC_GL_OBSOLETE_RE='(.*)'\$/\1/p" "$SCRIPTS/rc-post-comment-gitlab.sh")
+if [[ -n "$obs_lib" && "$obs_lib" == "$obs_gl" ]]; then
+	echo "  PASS: both copies of the banner pattern agree"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: RC_OBSOLETE_LINE_RE ('$obs_lib') differs from RC_GL_OBSOLETE_RE ('$obs_gl')"
 	FAIL=$((FAIL + 1))
 fi
 

@@ -310,7 +310,8 @@ supersede_file="${session_dir}/.supersede-body.md"
 gh_retire() { # id node_id current_url
 	local id="$1" node="$2" url="$3" old_body
 	old_body=$(gh_get_body "$owner" "$repo" "$id" 2>/dev/null || echo "")
-	if [[ -n "$old_body" && "$old_body" != *"review-council:obsolete"* ]]; then
+	if [[ -n "$old_body" ]] && ! jq -en --arg b "$old_body" --arg re "$RC_OBSOLETE_LINE_RE" \
+		'$b | gsub("\r"; "") | split("\n")[0] // "" | test($re)' >/dev/null; then
 		{
 			echo "> **Obsolete.** Superseded by the [current Review Council verdict](${url}) for commit \`${RC_SHORT_SHA}\`. <!-- review-council:obsolete -->"
 			echo ""

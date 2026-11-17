@@ -48,9 +48,13 @@ sev_count() { # SEVERITY
 	jq -r --arg s "$1" '[.verified[]? | select(.severity==$s)] | length' "$RC_EVIDENCE" 2>/dev/null || echo 0
 }
 
-# Per-agent verified-finding summary ("2 MEDIUM, 1 LOW" | "none"). Reads $RC_EVIDENCE.
+# Per-agent verified-finding summary ("2 MEDIUM, 1 LOW", "1 LOW + 2 merged into
+# others", "2 merged into others" | "none"). Reads $RC_EVIDENCE. A finding
+# consolidation folded into another agent's is credited to this agent in its
+# provenance.consolidated_from, and its verdict stands on it
+# (recompute-verdicts.jq): leaving it out showed a verdict with no reason.
 agent_findings() { # agent-name
-	local a="$1" out="" n sev
+	local a="$1" out="" n sev merged
 	[[ -f "$RC_EVIDENCE" ]] || {
 		echo "none"
 		return
@@ -59,6 +63,10 @@ agent_findings() { # agent-name
 		n=$(jq -r --arg a "$a" --arg s "$sev" '[.verified[]? | select(.agent==$a and .severity==$s)] | length' "$RC_EVIDENCE" 2>/dev/null || echo 0)
 		[[ "$n" -gt 0 ]] && out="${out:+$out, }${n} ${sev}"
 	done
+	merged=$(jq -r --arg a "$a" '[.verified[]? | select(.agent != $a
+		and any((.provenance | objects | .consolidated_from | arrays)[]; (objects | .agent) == $a))] | length' \
+		"$RC_EVIDENCE" 2>/dev/null || echo 0)
+	[[ "$merged" -gt 0 ]] && out="${out:+$out + }${merged} merged into others"
 	echo "${out:-none}"
 }
 
@@ -386,6 +394,115 @@ rc_render_comment_body() { # session_dir body_file
 	_RC_RUN_ID="${_RC_RUN_ID##*/}"
 	[[ "$_RC_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || _RC_RUN_ID=""
 
+	# How far preparation read the thread (lib/prepare-context.sh). The next
+	# run opens its reply window there, so a reply posted while this run was
+	# reviewing is read then. Only the exact shape is stamped: the value sits
+	# inside the marker every parser reads.
+	_RC_SEEN=""
+	[[ -f "$session_dir/conversation-seen.txt" ]] &&
+		_RC_SEEN=$(head -n1 "$session_dir/conversation-seen.txt")
+	[[ "$_RC_SEEN" =~ $RC_SEEN_TS_RE ]] || _RC_SEEN=""
+
+	# The one line that makes a run visible: when it started, and what the
+	# replies it read changed. Every input is a file a script wrote. A reply is
+	# the PR author's text and this reaches a public comment, so none of it is
+	# quoted: the count comes from the delimiter lines prepare-context.sh emits
+	# at column 0 (it indents every reply body, so a body cannot add one), and
+	# the check's numbers are coerced to non-negative integers. Never the
+	# current time: one session renders the same body every time.
+	_RC_RUN_LINE=""
+	local run_start run_prev run_replies="" run_weighed="" run_n run_e run_left run_ok run_res run_sup run_kept
+	# shellcheck disable=SC2312 # rc_parse_kv cannot fail: it ends in `|| true`.
+	run_start=$(jq -rn --arg t "$(rc_parse_kv "$session_dir/session.txt" "Started")" "${RC_UTC_JQ}"'$t | utc | if . == "" then "" else "started \(.[0:10]) \(.[11:16]) UTC" end')
+	if [[ -f "$session_dir/pr-conversation.txt" ]]; then
+		# An entry with a column-0 Edited: line is an earlier comment edited
+		# since (prepare-context.sh writes the line for nothing else), not a
+		# reply posted since the previous verdict: counted apart.
+		run_n=$(grep -c '^--- comment ---$' "$session_dir/pr-conversation.txt" || true)
+		run_e=$(grep -c '^Edited: ' "$session_dir/pr-conversation.txt" || true)
+		run_n=$((run_n - run_e))
+		if [[ "$run_n" -gt 0 ]]; then
+			run_replies="${run_n} repl"
+			if [[ "$run_n" -eq 1 ]]; then run_replies+="y"; else run_replies+="ies"; fi
+		fi
+		if [[ "$run_e" -gt 0 ]]; then
+			run_replies+="${run_replies:+ and }${run_e} edited comment"
+			[[ "$run_e" -eq 1 ]] || run_replies+="s"
+		fi
+		run_replies="read ${run_replies} since the previous verdict"
+		# prepare-context.sh states the replies its size budget dropped in a
+		# column-0 header; a body is indented, so it cannot forge one. Public:
+		# it is a coverage disclosure.
+		run_left=$(grep -m1 -E '^# [0-9]+ comments? (was|were) left out to keep this file under 64 KB' "$session_dir/pr-conversation.txt" || true)
+		run_left=${run_left#\# }
+		run_left=${run_left%% *}
+		if [[ "$run_left" =~ ^[1-9][0-9]*$ ]]; then
+			run_replies+=" (${run_left} more left out for size)"
+		fi
+		run_ok=$(jq -r 'if .status == "ok" then "\([.resolved, .suppressed_low, .kept] | map(if type == "number" and . >= 0 and . < 1000000000 and . == floor then . + 0 else 0 end) | join(" "))" else "" end' \
+			"$session_dir/verdicts/_meta/disposition-check.json" 2>/dev/null) || run_ok=""
+		if [[ -z "$run_ok" ]]; then
+			# Plain words for the reader: quick effort is the one way a re-review
+			# legitimately skips Disposition.
+			run_weighed="not weighed"
+			# shellcheck disable=SC2312 # rc_parse_kv cannot fail: it ends in `|| true`.
+			[[ "$(rc_parse_kv "$session_dir/session.txt" "Effort")" != "quick" ]] || run_weighed+=" (quick review)"
+		else
+			read -r run_res run_sup run_kept <<<"$run_ok"
+			# Only the counts that happened. A kept finding is one a reply argued
+			# with or claimed fixed and the source check did not bear out: the
+			# reply need not have been a dispute.
+			[[ "$run_res" -eq 0 ]] || run_weighed="${run_res} resolved"
+			[[ "$run_sup" -eq 0 ]] || run_weighed+="${run_weighed:+ · }${run_sup} LOW deferred at a reply's request"
+			[[ "$run_kept" -eq 0 ]] || run_weighed+="${run_weighed:+ · }${run_kept} kept despite a reply"
+			[[ -n "$run_weighed" ]] || run_weighed="none changed a finding"
+		fi
+	fi
+	# The head moved since the previous verdict. prepare-context.sh writes the
+	# sha only for an author-matched verdict marker and only when it is 40-hex;
+	# it is re-checked here because the file is read from disk, and a head that
+	# is not 40-hex cannot be compared.
+	# A file holding a 40-hex sha is also what says this is a re-review at all:
+	# one that read no replies says so, or it renders like a first review.
+	run_prev=""
+	local run_rereview=0
+	[[ -f "$session_dir/previous-verdict-sha.txt" ]] && run_prev=$(head -n1 "$session_dir/previous-verdict-sha.txt")
+	[[ "$run_prev" =~ ^[0-9a-f]{40}$ ]] && run_rereview=1
+	[[ "$run_prev" =~ ^[0-9a-f]{40}$ && "$RC_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$run_prev" != "$RC_HEAD_SHA" ]] || run_prev=""
+	[[ -n "$run_replies" || "$run_rereview" -eq 0 ]] || run_replies="no new replies since the previous verdict"
+	# Verdicts another account posted that are still shown: the poster retires
+	# only its own account's comments. prepare-context.sh counts them; whose
+	# they are goes unsaid, since a column-0 marker is all that marks one and a
+	# stranger can type it. Nor whether they are older: an in-place edit leaves a
+	# newer one below this comment, and the poster picks that path after this
+	# renders. Re-checked: the count is read from disk.
+	local run_other=""
+	[[ -f "$session_dir/other-account-verdicts.txt" ]] && run_other=$(head -n1 "$session_dir/other-account-verdicts.txt")
+	[[ "$run_other" =~ ^[1-9][0-9]{0,5}$ ]] || run_other=""
+	local run_parts=() seg
+	[[ -z "$run_start" ]] || run_parts+=("$run_start")
+	[[ -z "$run_prev" ]] || run_parts+=("new commit since the previous verdict")
+	if [[ "$run_other" == "1" ]]; then
+		run_parts+=("another council account's verdict is also shown here and may disagree with this one")
+	elif [[ -n "$run_other" ]]; then
+		run_parts+=("${run_other} verdicts from other council accounts are also shown here and may disagree with this one")
+	fi
+	[[ -z "$run_replies" ]] || run_parts+=("$run_replies")
+	[[ -z "$run_weighed" ]] || run_parts+=("$run_weighed")
+	# Comments carrying the council's marker from accounts that are not the
+	# council's (prepare-context.sh): ignored, and said so, so "no new replies"
+	# is not read as "nobody said anything". A count read from disk, re-checked.
+	local run_ignored=""
+	[[ -f "$session_dir/ignored-verdicts.txt" ]] && run_ignored=$(head -n1 "$session_dir/ignored-verdicts.txt")
+	if [[ "$run_ignored" == "1" ]]; then
+		run_parts+=("1 comment that looked like a council verdict from another account was ignored")
+	elif [[ "$run_ignored" =~ ^[1-9][0-9]{0,5}$ ]]; then
+		run_parts+=("${run_ignored} comments that looked like council verdicts from other accounts were ignored")
+	fi
+	if [[ "${#run_parts[@]}" -gt 0 ]]; then
+		_RC_RUN_LINE="**This run:** ${run_parts[0]}"
+		for seg in "${run_parts[@]:1}"; do _RC_RUN_LINE+=" · ${seg}"; done
+	fi
 	# How the review ran, shared with the report (lib/render-provenance.sh).
 	# Built after RC_FORGE_WEB so the SHAs can link through the forge's hook.
 	provenance=$(rc_render_provenance "$session_dir" "$RC_HEAD_SHA" rc_url_commit "$RC_FORGE_WEB")
@@ -438,12 +555,19 @@ rc_render_comment_body() { # session_dir body_file
 	# The reason goes in the Verdict cell, where "why this outcome" belongs, and
 	# the Findings cell stays a dash: a count column holding prose is a column
 	# that has stopped meaning anything. Pipes are re-encoded for the same reason
-	# the inline-comment table re-encodes them — one would open a column.
-	if [[ -f "$session_dir/session-manifest.json" ]]; then
+	# the inline-comment table re-encodes them — one would open a column. Triage
+	# writes the reason after reading the diff, so it is model prose like a
+	# finding's and is neutralised as one line (rc_md_title) before printing.
+	# A manifest that is not JSON lists nobody, as before; only a library that
+	# will not load stops the render, so a reason is never printed raw.
+	if [[ -f "$session_dir/session-manifest.json" ]] && jq -e . "$session_dir/session-manifest.json" >/dev/null 2>&1; then
 		local skipped_rows reason
-		skipped_rows=$(jq -r '(.deselected // [])[]
-			| "\(.agent)\t\(.reason // "out of scope" | gsub("\\|"; "&#124;") | gsub("\r?\n"; " "))"' \
-			"$session_dir/session-manifest.json" 2>/dev/null || true)
+		if ! skipped_rows=$(jq -r -L "$RC_JQ_DIR" 'include "md-neutralise"; (.deselected // [])[]
+			| "\(.agent)\t\(.reason // "out of scope" | tostring | rc_md_title | gsub("\\|"; "&#124;") | gsub("\t"; " "))"' \
+			"$session_dir/session-manifest.json" 2>/dev/null); then
+			echo "rc-error: could not read the deselected reviewers from session-manifest.json with ${RC_JQ_DIR}/md-neutralise.jq; no comment written" >&2
+			exit 1
+		fi
 		while IFS=$'\t' read -r name reason; do
 			[[ "$name" == divisor-* ]] || continue
 			# ASCII hyphen and plain colon: the assembled body carries no em or en
@@ -471,6 +595,11 @@ rc_render_comment_body() { # session_dir body_file
 		echo "**TL;DR:** ${tldr}"
 		echo ""
 		echo "**Findings:** 🔴 ${c_crit} Critical, 🟠 ${c_high} High, 🟡 ${c_med} Medium, 🔵 ${c_low} Low"
+		# Its own block, so the table after it stays a table.
+		if [[ -n "$_RC_RUN_LINE" ]]; then
+			echo ""
+			echo "$_RC_RUN_LINE"
+		fi
 		# Two newlines, not one: `$(...)` strips every trailing newline, so the
 		# blank line that separates the counts from whatever follows has to be put
 		# back here. Without it a markdown table on the next line is not a table --
@@ -679,12 +808,14 @@ _rc_prelude() { # part_index part_count disclosure -> _RC_OUT
 
 # The identity tag every part carries. `part`/`of` let the poster match a
 # re-render against the comments it wrote last time, one part at a time.
-# `run` goes last, after every key a parser anchors on, and is never parsed:
-# it exists so each run's body differs (see _RC_RUN_ID above).
+# `seen` is read by the next run's preparation (lib/prepare-context.sh), never
+# by a poster. `run` goes last, after every key a parser anchors on, and is
+# never parsed: it exists so each run's body differs (see _RC_RUN_ID above).
 _rc_marker() { # part_index part_count -> _RC_OUT
-	local run=""
+	local seen="" run=""
+	[[ -n "${_RC_SEEN:-}" ]] && seen=" seen=${_RC_SEEN}"
 	[[ -n "${_RC_RUN_ID:-}" ]] && run=" run=${_RC_RUN_ID}"
-	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2}${run} -->"$'\n'
+	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2}${seen}${run} -->"$'\n'
 }
 
 # Last resort: keep whole lines until the limit is reached. Cutting on a line

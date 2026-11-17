@@ -215,6 +215,14 @@ forge_comments_for() {
 #
 # 30 (Developer) is the lowest role that can push. Reporter (20) and Guest (10)
 # are refused, as GitHub's triage and read are.
+# forge_read_file <path> -> the file's content on the default branch (ref
+# HEAD), or nothing when it is absent or the call fails. <path> is one of the
+# fixed configuration paths, gated anyway since it goes into a URL.
+forge_read_file() {
+	[[ "$1" =~ ^[A-Za-z0-9._][A-Za-z0-9._/-]*$ && "$1" != *..* ]] || return 1
+	_gl_get "repository/files/${1//\//%2F}/raw?ref=HEAD"
+}
+
 forge_member_can_write() {
 	local login="$1" id level
 	# The login is interpolated into a query string. GitLab usernames are

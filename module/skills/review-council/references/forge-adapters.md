@@ -20,7 +20,7 @@ Both must exist or the adapter is not usable:
 
 | Function                                        | Sets / does                                                                  |
 |-------------------------------------------------|------------------------------------------------------------------------------|
-| `rc_forge_fetch_pr <pr> <owner> <repo>`         | `pr_title`, `pr_body`, `pr_base`, `pr_head`, `pr_head_sha`, `pr_url`, `pr_state`, `pr_status_checks` |
+| `rc_forge_fetch_pr <pr> <owner> <repo>`         | `pr_title`, `pr_body`, `pr_base`, `pr_head`, `pr_head_sha`, `pr_url`, `pr_state`, `pr_status_checks`, `pr_created_at` |
 | `rc_forge_fetch_diff <pr> <owner> <repo> <out>` | Writes the PR diff to `<out>`                                                |
 
 `pr_head_sha` is the head commit the forge reports (GitHub `headRefOid`,
@@ -28,6 +28,8 @@ GitLab `.sha`), kept only when it is a full 40-hex commit id and emptied
 otherwise. `prepare-emit.sh` records it in `session.txt` as `Head SHA:` (`none`
 when empty); it is the commit the posted marker names (see "Marker and reviewed
 commit"), and GitLab hands it to `rc-clone-target.sh` as `--head-sha`.
+
+`pr_created_at` is when the PR was opened (GitHub `createdAt`, GitLab `.created_at` normalised to UTC seconds), or empty. `prepare-context.sh` uses it as the re-review snapshot when the timeline is empty and ignores any value not shaped `YYYY-MM-DDTHH:MM:SSZ`.
 
 `prepare-target.sh` passes every one-line value an adapter sets (`pr_title`,
 `pr_base`, `pr_head`, `pr_url`, `pr_state`) through `rc_single_line` before
@@ -53,8 +55,8 @@ stub that pretends to work.
 |------------------------------------------------------|------------------------------------------|-------------------------|
 | `rc_forge_fetch_issue <n> <owner> <repo>`            | `{title, body, state}`                   | `linked-issues.txt`     |
 | `rc_forge_fetch_reviews <pr> <owner> <repo>`         | `[{author, state, submitted_at, body}]`  | `prior-reviews.txt`     |
-| `rc_forge_fetch_review_comments <pr> <owner> <repo>` | `[{file, line, author, body}]`           | `prior-reviews.txt`     |
-| `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, created_at, body}]`           | `pr-conversation.txt`   |
+| `rc_forge_fetch_review_comments <pr> <owner> <repo>` | `[{file, line, author, created_at, body}]` | `prior-reviews.txt`     |
+| `rc_forge_fetch_conversation <pr> <owner> <repo>`    | `[{author, bot?, channel?, created_at, edited_at?, body}]` | `pr-conversation.txt`   |
 | `rc_forge_current_user`                              | `<login>` (bare string, or empty)        | (no artifact; see below)|
 | `rc_forge_fetch_links <pr> <owner> <repo> <head_sha>` | `[{path, target}]`, target string or null | `head-links.json` (see below) |
 | `rc_forge_fetch_merge_base <pr> <owner> <repo> <head_sha>` | `<sha>` (40 hex, or empty)          | `Base SHA:` in `session.txt` (see below) |
@@ -63,9 +65,11 @@ stub that pretends to work.
 exist, so a half-implemented adapter cannot report "no inline comments" for a
 call it never makes.
 
+On re-review, entries older than reply window start (see "Reply window") condensed into `## Earlier review history (condensed)`: one row per entry, newest first, first body line cut to 160 characters, capped at 4096 bytes with count of what was omitted. Entries inside window rendered in full.
+
 GitHub's list endpoints (`pulls/<n>/reviews`, `pulls/<n>/comments`,
 `issues/<n>/comments`) are read with `gh api --paginate --slurp` and merged in
-order; a failed call or an error page yields `[]`, never a partial list.
+order; a failed call or an error page yields `[]`, never a partial list. `rc_forge_fetch_conversation` merges all three into one timeline (stable sort on `created_at`, reviews timed by `submitted_at`); one failed list empties it. Inline-comment `created_at`, in the timeline and in `rc_forge_fetch_review_comments`, is when the comment became visible: the later of its own and its review's `submitted_at` (a drafted comment carries its draft time). Review and inline-comment bodies open with an origin line, `[review: <STATE>]` or `[inline comment: <path>:<line>]`; empty `COMMENTED` review containers and `PENDING` reviews are dropped. `edited_at` is `updated_at` when later than that visible time, else `""`; reviews have none.
 
 `rc_forge_current_user` names the account the council posts as. It writes no
 artifact; it decides whether the council's own verdict comment can be told apart
@@ -74,18 +78,20 @@ AND author** — the marker ships in every verdict this tool has ever posted, so
 it is public by construction, and GitHub's "Quote reply" copies it into a
 reply without anyone intending to. `rc-post-comment-<forge>.sh` has always
 required both before it will update or hide a comment; the re-review filter in
-`prepare-context.sh` now does too.
+`prepare-context.sh` does too.
 
-Three things send the filter back to marker-only, and an adapter author should
-expect all three: omitting the function, implementing it and having the call
-fail (on GitHub, a token without `read:user`), and returning a login that
-authored none of the marker comments on the PR. The last is ordinary operation
-rather than a fault — CI posts the verdict as a bot and a maintainer re-runs the
-council under their own token, or the token rotates between runs — so a login
-that matches nothing is treated as a wrong answer about identity, not as
-evidence that no verdict was ever posted. Each fallback is **disclosed in
-`pr-conversation.txt`**, naming which of the three it was, so the Disposition
-phase can see that its input may be short and a maintainer knows what to repair.
+The council's accounts are that login plus the ones the configuration source
+names (`prepare-config.sh`): the `@user` owners in CODEOWNERS (the first of the
+forge's locations that exists; teams and emails are skipped and listed in
+`tracking.md`) and the `Council accounts:` setting. Logins compare lowercase.
+Only a verdict by one of them anchors the reply window, sets `seen=` and the
+previous head, or counts as a council verdict; a comment carrying the marker
+from anyone else is ignored: `pr-conversation.txt`'s header counts it, and
+`ignored-verdicts.txt` holds the count for the comment, which says it.
+There is no marker-only fallback: when the function is missing, the call fails
+(on GitHub, a token without `read:user`) and nothing is declared, no verdict is
+anchored and the replies are not read. `tracking.md`'s `Council login:` and
+stderr say which of those it was.
 
 The marker literal lives once, as `RC_MARKER_KEY` in `rc-lib.sh`, and the
 opening that is actually matched lives beside it as `RC_MARKER_OPEN`. Match a
@@ -98,14 +104,90 @@ this way too (`RC_MARKER_LINE_JQ`); they are one contract, so they use one test.
 `rc_forge_fetch_conversation` **must** return the timeline oldest first. The
 re-review path takes `last` of the comments carrying the council's marker **and
 authored by that login** to locate the most recent posted verdict, then selects
-replies at or after that timestamp. Newest-first would pick the oldest verdict
+replies after the `seen=` snapshot on its marker line (falling back to at or
+after its `created_at`; see "Reply window" below). Newest-first would pick the oldest verdict
 ever posted and sweep in every reply since.
+
+### Reply window
+
+`prepare-context.sh` writes `conversation-seen.txt`: the newest `created_at` or
+`edited_at` in the fetched timeline, or `pr_created_at` when it is empty. `rc-render-comment.sh`
+stamps it on every marker as `seen=<ts>` (between `of=` and `run=`). The next
+run opens its window strictly after that value, so a reply posted while a run
+was reviewing is read by the next one. The value is used only when it matches
+`RC_SEEN_TS_RE` and is no later than the anchor comment's own `created_at`.
+Otherwise the window opens at that `created_at`, inclusive. Timestamps compare
+as strings, so an adapter must normalise them to `YYYY-MM-DDTHH:MM:SSZ`.
+
+`edited_at` is optional: the time an entry's body was last changed, when that is
+later than `created_at`, else `""` or absent. An entry whose `created_at` is
+before the window but whose `edited_at` is inside it is a reply — answering by
+editing an earlier comment changes nothing else — and is written with a column-0
+`Edited: <ts>` line after `Timestamp:`; an entry created inside the window gets
+no such line, whatever was edited later, so the renderer counts `Edited:`
+entries apart from replies. A value not matching `RC_SEEN_TS_RE` is treated as
+no edit, because that line is envelope. Report only body edits: a time that also
+moves for other reasons (a resolved thread, a reaction) re-reads the comment as
+a reply every run.
+
+`channel` is optional: `issue`, `review` or `inline`; absent means `issue`. The
+council posts verdicts as issue comments only, so only an issue comment can be
+one: a marker line in a review or inline body (a file path in an inline origin
+line included, whose line separators the GitHub adapter turns into spaces) is a
+reply. An adapter whose verdicts and replies are one kind (GitLab notes) omits it.
+
+`bot` is optional: true for an account the forge marks as a bot (GitHub:
+`user.type == "Bot"`, App accounts with a `[bot]` login). Two kinds of entry in
+the window are not replies, and `pr-conversation.txt`'s header counts them
+instead: a bot's comment (a coverage or CI bot editing its own comment every
+push would otherwise be a reply on every re-review, and force a fresh verdict
+post), and any comment with a column-0 marker line, whoever posted it: another
+council account's verdict, or a stranger's, which is ignored and costs only
+its author's own text. A machine account the forge does not flag is still read
+as a person.
+
+Bodies scrubbed before reaching a model prompt: `rc_md_scrub`
+(`scripts/jq/md-neutralise.jq`) models CommonMark (same rules GitHub and GitLab
+parse), not a tag list; when unsure, scrubs more. Removes HTML comments, any
+well-formed HTML tag with attributes (text stays), script/style/template/
+noscript/svg/math with content, CDATA/processing instructions/declarations,
+images (`[image: alt]`), link titles, link reference definitions, `data:` URIs,
+invisible Unicode (tag characters, variation selectors included). Unclosed
+script/style/raw-HTML construct hides rest of reply. Kept verbatim: fence opened
+at column 0; code span on one line when every backtick in its paragraph pairs on
+its line (else paragraph scrubbed as text). Text forge reads as tag goes:
+`List<String>` outside code becomes `List`. CSS-hidden text and
+attribute-hidden elements keep their text (undetectable without rendering).
+
+Bodies bounded before reaching a model prompt (`cap_jq`), in bytes after
+indentation: reply 8 KB, review 4 KB, inline comment 2 KB; each keeps start and
+end, says how much was cut. Pre-cut bounds what is scrubbed; drops tail when cut
+part could change markup state (holds `<`, backtick or `~`). File budgets
+(`pr-conversation.txt` 64 KB, each `prior-reviews.txt` section 32 KB) shared
+equally among authors, newest first within an author; header or section says how
+many were left out. PR comment's "This run" line repeats count for replies.
+Residual: enough accounts each posting at the cap (about thirty against a 3 KB
+reply) still crowd out a reply.
+
+Every body is written with each line separator (CR, CRLF, U+2028, U+2029, NEL,
+VT, FF) turned into `\n` and then indented, in `pr-conversation.txt` and in
+`prior-reviews.txt`'s review bodies and table cells, so no forge-authored line
+reaches column 0.
+
+It also writes `previous-verdict-sha.txt`: the 40-hex `sha=` of the anchored
+verdict's marker line. The renderer says "new commit since the previous
+verdict" when it differs from the head.
+
+It writes `other-account-verdicts.txt`: the number of verdicts by the council's
+other accounts (any but the run's own login) that do not carry the obsolete
+banner, one per verdict however many comments it spans (its `part=1`). The
+poster retires only its own account's comments, so those stay visible beside
+the new verdict. The renderer says one or more are also shown, never whose and
+never whether they are older: an in-place edit leaves a newer one below.
 
 Do not anchor on `last` of a body merely *containing* the marker. A quote of the
 verdict contains it and is posted *after* it, so such a `last` lands on the
-quote and moves the window past every comment filed in between — and on the
-fallback the exclusion then drops that same quote as the council's own, leaving
-nothing to write and taking the disclosure with it.
+quote and moves the window past every comment filed in between.
 
 Matching at column 0 leaves one genuinely ambiguous case: a body the council did
 not write that puts a marker at the start of a line, which takes deliberate
@@ -175,7 +257,7 @@ costs the review its context, not its life.
 | Capability                       | `lib/forge/gitlab.sh`                                                   |
 |----------------------------------|-------------------------------------------------------------------------|
 | Required contract                | implemented; `pr_status_checks` is left empty, so no pipeline status    |
-| `rc_forge_fetch_conversation`    | implemented: MR notes, oldest first, system notes dropped, timestamps normalised to UTC |
+| `rc_forge_fetch_conversation`    | implemented: MR notes, oldest first, system notes dropped, timestamps normalised to UTC; no `edited_at` (not yet verified that a note's `updated_at` moves only on body edits), so an edited note is not re-read |
 | `rc_forge_current_user`          | implemented: the GitLab username of the account glab is logged in as    |
 | `rc_forge_fetch_links`           | implemented: repository tree at the MR head commit, raw blobs           |
 | `rc_forge_fetch_merge_base`      | implemented: `diff_refs.base_sha` of the MR already fetched, no extra call |
@@ -321,7 +403,7 @@ The ladder and its terminal case are documented at the top of
 
 Every rendered body ends with a hidden tag carrying the reviewed commit SHA:
 
-    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> run=<session-id> -->
+    <!-- review-council:marker sha=<full-head-sha> part=<n> of=<m> [seen=<ts>] run=<session-id> -->
 
 The `sha=` field identifies the exact commit reviewed. The renderer takes it,
 in order, from `session.txt`'s `Head SHA:` (the PR/MR head the forge reported),
@@ -335,7 +417,9 @@ comment in a chain; an unsplit verdict carries `part=1 of=1`. `run=` is the
 session directory's name, so every run's body differs from the last one's and
 the poster edits the verdict even when the review rendered the same text. That
 is how a batch run tells a completed re-review from one that posted nothing.
-Re-posting the same session renders the same body and edits nothing. `run=` is
+Re-posting the same session renders the same body and edits nothing. `seen=` is optional: `rc-render-comment.sh` writes it from
+`conversation-seen.txt`, and only the next run's preparation reads it (see "Reply
+window"). `run=` is
 always the last field and nothing parses it; a session name outside
 `[A-Za-z0-9._-]` is left off. Both GitHub and GitLab
 render HTML comments invisibly, so the marker is portable. The body also shows

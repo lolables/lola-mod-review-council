@@ -227,6 +227,52 @@ declare -A REVIEWED_IS_OURS
 # list it was given rather than on that list plus the previous one.
 #
 # WINDOW_START must be set by the caller before this runs.
+# load_council_accounts -> COUNCIL_ACCOUNTS_JSON, the logins besides this
+# account whose verdicts are the council's own: CODEOWNERS @users and the
+# `Council accounts:` setting, read from the default branch the way
+# prepare-config.sh reads them from the base (council-accounts.sh): the first
+# CODEOWNERS that exists, even empty, and the first of AGENTS.md and CLAUDE.md
+# that sets the key. Read once per run. A read that fails (forge_read_file
+# status 2, as against 1 for absent) names nobody at all, since the next
+# location must not stand in for one that could not be read; that reviews
+# more, never less.
+load_council_accounts() {
+	local path text value rc unreadable=""
+	[[ -z "${COUNCIL_ACCOUNTS_JSON:-}" ]] || return 0
+	rc_council_reset
+	# shellcheck disable=SC2312 # rc_council_codeowners_paths only prints; it has no failure to mask.
+	while IFS= read -r path; do
+		rc=0
+		text="$(forge_read_file "$path")" || rc=$?
+		if [[ "$rc" -eq 2 ]]; then
+			unreadable="$path"
+			break
+		fi
+		[[ "$rc" -eq 0 ]] || continue
+		rc_council_from_codeowners "$path" "$text"
+		break
+	done < <(rc_council_codeowners_paths "${FORGE:-github}")
+	for path in AGENTS.md CLAUDE.md; do
+		[[ -z "$unreadable" ]] || break
+		rc=0
+		text="$(forge_read_file "$path")" || rc=$?
+		if [[ "$rc" -eq 2 ]]; then
+			unreadable="$path"
+			break
+		fi
+		[[ "$rc" -eq 0 ]] || continue
+		value="$(rc_council_setting_in "$text")" || continue
+		rc_council_from_setting "$value"
+		break
+	done
+	if [[ -n "$unreadable" ]]; then
+		echo "could not read ${unreadable}; trusting no declared council accounts this run." >&2
+		rc_council_reset
+	fi
+	COUNCIL_ACCOUNTS_JSON="$(printf '%s\n' ${council_accounts[@]+"${council_accounts[@]}"} |
+		jq -Rsc 'split("\n") | map(select(. != ""))')"
+}
+
 classify_prs() {
 	local prs_raw="$1"
 	local pr head comments_json verdict_tsv reviewed reviewed_at foreign spent_here
@@ -249,6 +295,7 @@ classify_prs() {
 	REVIEWED_IS_OURS=()
 	SPENT=0
 	OLDEST_IN_WINDOW=""
+	load_council_accounts
 
 	while IFS=$'\t' read -r pr head; do
 		[[ -n "$pr" ]] || continue
@@ -286,13 +333,14 @@ classify_prs() {
 		# every later review. A caller that sets nothing therefore gets the
 		# gated reader, and the driver sets nothing.
 		if [[ "${VERDICT_SCOPE:-self}" = "self" ]]; then
-			verdict_tsv="$(council_verdict_for "$comments_json")"
-			IFS=$'\t' read -r reviewed reviewed_at <<<"$verdict_tsv"
-			# viewerDidAuthor IS that reader's gate, so anything it returns is
-			# ours. It reports no login and nothing here goes looking for one:
-			# the account is the one gh is authenticated as, and asking the API
-			# for its name would be a request spent on a value already known.
-			reviewed_by=""
+			# This account's verdicts and the declared council accounts':
+			# a maintainer's or CI's verdict at head is a review done.
+			verdict_tsv="$(council_verdict_council_for "$comments_json")"
+			IFS=$'\t' read -r reviewed reviewed_at reviewed_by reviewed_ours <<<"$verdict_tsv"
+			# Every verdict that reader returns is the council's, so the driver
+			# trusts it: "ours". Only another account's keeps its login for BY;
+			# this account's name is the one gh holds, not worth a request.
+			[[ "$reviewed_ours" = "1" ]] && reviewed_by=""
 			reviewed_ours=1
 		else
 			verdict_tsv="$(council_verdict_any_for "$comments_json" "$VERDICT_SCOPE")"

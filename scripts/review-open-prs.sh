@@ -797,6 +797,10 @@ fi
 if [[ "$IGNORE_APPROVED" -eq 1 ]] && [[ -z "$TARGET_PR" ]]; then
 	echo "Ignored (approved): ${IGNORED_APPROVED[*]:-(none)}"
 fi
+if [[ "${#council_accounts[@]}" -gt 0 ]]; then
+	council_named="$(printf '%s, ' "${council_accounts[@]}")"
+	echo "Council accounts (${council_codeowners} and Council accounts: on the default branch): ${council_named%, }"
+fi
 if [[ "${#FOREIGN[@]}" -gt 0 ]]; then
 	echo "Council marker from another account (queued anyway): ${FOREIGN[*]}"
 	echo "      A token rotated between runs reads this way, and so does a forged"

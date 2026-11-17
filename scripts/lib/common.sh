@@ -125,6 +125,12 @@ _rc_council_version="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/modu
 }
 # shellcheck source=module/skills/review-council/scripts/lib/council-version.sh
 source "$_rc_council_version"
+
+# Which accounts' verdicts are the council's: the same rule a review applies
+# (CODEOWNERS @users and `Council accounts:`), from the module, not a copy.
+_rc_council_accounts="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/module/skills/review-council/scripts/lib/council-accounts.sh"
+# shellcheck source=module/skills/review-council/scripts/lib/council-accounts.sh
+source "$_rc_council_accounts"
 unset _rc_council_version
 
 # council_install_lines <claude|opencode> -> one "Council version: <version>

@@ -38,6 +38,7 @@ pr_url=""
 pr_state=""
 pr_body=""
 pr_status_checks=""
+pr_created_at=""
 
 if [[ "$input_type" == "pr_number" ]] || [[ "$input_type" == "url" ]]; then
 	pr_number="$input_value"

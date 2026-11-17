@@ -69,6 +69,28 @@ council_verdict_for() {
 	' 2>/dev/null || true
 }
 
+# council_verdict_council_for <comments-json> ->
+# "<sha>\t<createdAt>\t<login>\t<viewerDidAuthor>" of the newest verdict by
+# this account or a declared council account (COUNCIL_ACCOUNTS_JSON,
+# load_council_accounts), or empty when there is none. The same gates as
+# council_verdict_for besides authorship, which widens only to accounts the
+# default branch names: a marker from anyone else is still no verdict.
+council_verdict_council_for() {
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --argjson accounts "${COUNCIL_ACCOUNTS_JSON:-[]}" '
+		[ .comments[]?
+		  | select((.viewerDidAuthor // false) or ((.author.login // "") | ascii_downcase | IN($accounts[])))
+		  | select((.isMinimized // false) | not)
+		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
+		] | sort_by(.createdAt) | last as $v
+		| if $v == null then "" else
+		    (($v.body | gsub("\r"; "") | split("\n") | map(select(startswith($open))) | last
+		      | ltrimstr($open) | split(" ")[0] | split("-->")[0])) as $sha
+		    | [ $sha, $v.createdAt, ($v.author.login // ""),
+		        (if ($v.viewerDidAuthor // false) then "1" else "0" end) ] | @tsv
+		  end
+	' 2>/dev/null || true
+}
+
 # council_verdict_body_for <comments-json> -> a checksum of the body of the
 # newest verdict THIS account posted, or empty when there is none.
 #
@@ -103,15 +125,17 @@ council_verdict_body_for() {
 # quoted marker and a collapsed comment are no more a verdict from a stranger
 # than from us.
 #
-# The fourth field is what lets a caller say which of the two it got. It comes
-# from the payload already fetched, so telling ours from someone else's costs
-# no second lookup.
+# The fourth field is what lets a caller say which of the two it got: "1" for
+# a verdict the council posted, from this account or one the default branch
+# names (COUNCIL_ACCOUNTS_JSON), so the driver would trust it. It comes from the
+# payload already fetched, so telling ours from someone else's costs no second
+# lookup.
 #
 # A login is compared, never interpolated: it arrives as a jq --arg and is
 # tested with ==, so a login carrying quotes, a bracket ("dependabot[bot]") or
 # a newline is matched literally rather than parsed.
 council_verdict_any_for() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --arg scope "$2" '
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --arg scope "$2" --argjson accounts "${COUNCIL_ACCOUNTS_JSON:-[]}" '
 		[ .comments[]?
 		  | select($scope == "all" or ((.author.login // "") == $scope))
 		  | select((.isMinimized // false) | not)
@@ -121,7 +145,8 @@ council_verdict_any_for() {
 		    (($v.body | gsub("\r"; "") | split("\n") | map(select(startswith($open))) | last
 		      | ltrimstr($open) | split(" ")[0] | split("-->")[0])) as $sha
 		    | [ $sha, $v.createdAt, ($v.author.login // ""),
-		        (if ($v.viewerDidAuthor // false) then "1" else "0" end) ] | @tsv
+		        (if ($v.viewerDidAuthor // false) or (($v.author.login // "") | ascii_downcase | IN($accounts[]))
+		         then "1" else "0" end) ] | @tsv
 		  end
 	' 2>/dev/null || true
 }
@@ -164,7 +189,8 @@ council_verdict_any_for() {
 # Display only. Nothing gates on this, so every failure path is empty output
 # rather than an error.
 council_verdict_word() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --arg scope "${2:-self}" '
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --arg scope "${2:-self}" \
+		--argjson accounts "${COUNCIL_ACCOUNTS_JSON:-[]}" '
 		def marker_line:
 			((.body // "") | gsub("\r"; "") | split("\n")
 			 | map(select(startswith($open))) | last);
@@ -180,7 +206,8 @@ council_verdict_word() {
 		    # The scope decides who may be read, and only that. A collapsed
 		    # comment and a quoted marker are no more readable from a stranger
 		    # than from us, so both gates below stay where they are.
-		    | select(if $scope == "self" then (.viewerDidAuthor // false)
+		    | select(if $scope == "self" then ((.viewerDidAuthor // false)
+		                 or ((.author.login // "") | ascii_downcase | IN($accounts[])))
 		             elif $scope == "all" then true
 		             else ((.author.login // "") == $scope) end)
 		    | select((.isMinimized // false) | not)
@@ -221,9 +248,10 @@ council_verdict_word() {
 # right to: what it loses by refusing is a maintainer's reply that Disposition
 # never reads. Losing data is not the same as suppressing a review.
 foreign_verdict_login() {
-	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" '
+	printf '%s' "$1" | jq -r --arg open "$MARKER_OPEN" --argjson accounts "${COUNCIL_ACCOUNTS_JSON:-[]}" '
 		[ .comments[]?
 		  | select((.viewerDidAuthor // false) | not)
+		  | select((.author.login // "") | ascii_downcase | IN($accounts[]) | not)
 		  | select((.isMinimized // false) | not)
 		  | select(((.body // "") | gsub("\r"; "") | split("\n") | any(startswith($open))))
 		] | sort_by(.createdAt) | last | (.author.login // "") // ""

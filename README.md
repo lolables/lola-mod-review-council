@@ -366,11 +366,15 @@ sequenceDiagram
     Note over Council,PR: Re-review of the same PR
     Council->>PR: find comment by marker
     PR-->>Council: prior verdict and its timestamp
-    Council->>PR: fetch replies posted since the marker
+    Council->>PR: fetch replies since the previous run read the thread
     PR-->>Council: pr-conversation.txt for Disposition
     Council->>You: show updated body and ask again
     You-->>Council: approve
-    Council->>PR: edit the same comment in place
+    alt same commit, no replies
+        Council->>PR: edit the same comment in place
+    else new commit, or replies to answer
+        Council->>PR: post a new comment, mark the old one Obsolete
+    end
 ```
 
 For PR/URL reviews you can ask the council to post its verdict back to the PR
@@ -380,8 +384,22 @@ per-agent tables, findings in collapsible sections — and **shows it to you and
 asks before sending** (say "post without asking" to skip the prompt). Ask for the
 post in the same request as the review: a review that was not asked to post
 refuses to, so asking afterwards means running the review again with the post
-request. Re-reviews edit the same comment (matched by a hidden marker) instead
-of posting new ones.
+request. A re-review of the same commit with nothing new said edits the
+existing comment (matched by a hidden marker), or leaves it alone when nothing
+changed. A re-review of a new commit, or one that read replies, posts a new
+comment and marks the old one **Obsolete**, so the answer arrives with a
+notification instead of as a silent edit.
+
+A **This run** line under the counts says when the run started (UTC), whether
+the head moved since the previous verdict, and, on a re-review, what it read:
+"no new replies", or how many replies and how many edited earlier comments,
+and what they changed. Only counts that are not zero appear: resolved (a reply
+showed the finding fixed), "LOW deferred at a reply's request" (a LOW finding
+left out because a reply asked to defer it), and "kept despite a reply" (a reply
+argued with the finding or said it was fixed, and the source did not bear that
+out). A re-review retires only verdicts its own account posted; when another
+account's verdict is still shown (a changed token, or CI and a maintainer
+posting as different accounts), the line says so without naming the account.
 
 **The verdict header says how the review ran.** Under the verdict and the
 automated-review banner, the comment and `report.md` carry the same provenance
@@ -434,10 +452,41 @@ superseded GitLab verdict keeps an "Obsolete" banner and folds the rest of the
 note into a collapsed `<details>` block.
 
 On a re-review, that same marker also tells Prepare where the council's prior
-verdict landed: it fetches PR conversation replies posted since then so the
-Disposition step (below) can triage maintainer follow-up against the surviving
-findings. On GitLab those replies are the merge request's notes; GitLab
-approvals and review threads are not imported. See [the pipeline
+verdict landed: it fetches what was said since the previous run read the thread
+so the Disposition step (below) can triage maintainer follow-up against the
+surviving findings. On GitHub that is issue comments, review bodies and inline
+review comments, plus earlier comments edited since; comments from bot accounts
+and other council verdicts are left out. Only the council's own accounts count
+as the council: the account the review runs as, the `@user` owners in the base
+branch's CODEOWNERS, and any `Council accounts:` you configure. A comment that
+looks like a council verdict from anyone else is ignored. Replies are scrubbed before the models
+read them, following how markdown is parsed (CommonMark, the same rules on
+GitHub and GitLab) rather than a list of tags, and removing more when unsure.
+Removed: HTML comments; every well-formed HTML tag with its attributes (its text
+stays); `script`, `style`, `template`, `noscript`, `svg` and `math` with their
+content; CDATA, processing instructions and declarations; images (replaced by
+`[image: alt]`); link titles; link reference definitions; `data:` URIs;
+and invisible Unicode, including tag characters and variation selectors. An
+unclosed script, style or raw-HTML construct hides the rest of the reply. Kept
+verbatim: a fenced code block opened at column 0, and a code span on one line
+when every backtick in its paragraph pairs on that line (otherwise the paragraph
+is scrubbed like text). So text the forge itself reads as a tag goes too:
+`List<String>` outside code becomes `List`. CSS-hidden text and text inside
+attribute-hidden elements are not detectable without rendering and stay.
+
+What reaches the models is also bounded, in bytes after indentation: a reply
+keeps its start and end up to 8 KB, a review body 4 KB and an inline comment
+2 KB, each saying how much was cut (a coarse pre-cut bounds what is scrubbed,
+and drops the tail when the cut part could change markup state). Each file has a
+budget (`pr-conversation.txt` 64 KB, each section of `prior-reviews.txt`
+32 KB) shared equally among authors, newest first within an author, so one
+account cannot push out another's reply. The PR comment's "This run" line says
+how many replies were left out for size. Enough accounts each posting at the cap
+(about thirty against a 3 KB reply) can still crowd out a reply. A reply is weighed by the next run
+only: answer again if a later run raises the finding again. An edited review
+body is not re-read. On GitLab those replies are the merge request's notes,
+and an edited note is not re-read; GitLab approvals and review threads are not
+imported. See [the pipeline
 reference](docs/dev/pipeline.md) for what Disposition does with that
 conversation.
 
@@ -579,6 +628,7 @@ CLAUDE.md:
 - Comment limit: 65536
 - Persona selection: on
 - Pin personas: adversary, guard
+- Council accounts: ci-bot[bot]
 - Subsystem triage: on
 - Severity override: guard<=LOW
 ```
@@ -596,6 +646,7 @@ CLAUDE.md:
 | Comment limit   | Characters per comment, overriding the forge's own | The forge's limit |
 | Persona selection | Whether change shape may narrow the council | `on`             |
 | Pin personas    | Personas that are never dropped      | none                     |
+| Council accounts | Further accounts whose verdicts are the council's own (CI, bots), comma- or space-separated | The reviewing account and CODEOWNERS users |
 | Subsystem triage | Whether a triage pass may narrow deep-mode subsystem councils | `off` |
 | Severity override | Cap (`<=`), floor (`>=`) or set (`=`) a reviewer's finding severity, e.g. `guard<=LOW, sre>=HIGH` | none |
 
@@ -608,7 +659,7 @@ require unconfigured extensions.
 ### Where configuration is read from
 
 The change under review never configures its own review. Inside a git repository, the configuration block, the
-`Constitution` file and `.review-council/packs/` are read from a base revision, not from your working tree:
+`Constitution` file, CODEOWNERS and `.review-council/packs/` are read from a base revision, not from your working tree:
 
 | Scope                                                              | Base revision                                                             |
 |--------------------------------------------------------------------|---------------------------------------------------------------------------|

@@ -138,8 +138,9 @@ def _rc_md_tokens:
 # that the next run of exactly N closes (a backslash escapes nothing inside a
 # span), a backtick escaped by an odd number of backslashes opens nothing, and
 # an unclosed run is literal. Emits, in order, {text} for text outside spans,
-# {lit} for backticks outside spans, and {lit, code} for a span (lit being the
-# escaped backtick before an escaped opener, if any).
+# {lit} for backticks outside spans, and {lit, len, code} for a span (lit being
+# the escaped backtick before an escaped opener, if any; len the length of its
+# delimiter runs).
 #
 # Outside backticks become "&#96;" so they cannot pair in the renderer with a
 # backtick this did not pair them with; an escaped one stays "\`", which opens
@@ -167,7 +168,7 @@ def _rc_md_segments:
         | if $len == 0 then .out = {lit: $lit}
           elif $j == null then .out = {lit: ($lit + "&#96;" * $len)}
           else
-            .out = {lit: $lit,
+            .out = {lit: $lit, len: $len,
                     code: ($t[$i + 1:$j] | map(if type == "number" then "`" * . else . end) | add)}
             | .to = $j
           end
@@ -237,3 +238,139 @@ def rc_md_title:
 # up a space like "\n" does. Dashes are kept: the value is verbatim, not prose.
 def rc_md_code:
   _rc_md_lf | _rc_md_code_html;
+
+# Someone else's reply, before a model reads it (prepare-context.sh). A forge
+# renders some content invisibly, and a model reads it all: an HTML comment, a
+# tag the forge sanitises away, a link reference definition or link title, a
+# script or style block, a zero-width, bidi or Unicode tag character can carry
+# an instruction no person on the thread sees. An image or a data: URI carries
+# no argument, only bulk. Each is removed, with a marker where content was;
+# tags are dropped but their text stays.
+#
+# Models CommonMark, the grammar GitHub and GitLab both parse, not either
+# forge's sanitiser allowlist. When the scrubber and the forge might disagree,
+# scrub more: never keep what a forge might hide.
+#
+# Code: a span is recognised on one line only and never across "|" (a blank
+# line or a table cell ends it, so it cannot pair backticks across them), and
+# only when every backtick run in its paragraph pairs on its own line: that is
+# where this matches CommonMark exactly, and one unpaired run (which CommonMark
+# pairs with a run on a later line) leaves the paragraph with no code
+# protection. A fence is kept verbatim, and is recognised only when it opens at
+# column 0: an indented opener may sit in a list item the forge closes at the
+# next column-0 line, so it is paragraph text. An HTML block is raw: no code in
+# it, the browser's lenient tag rules apply, and unclosed markup hides the rest
+# of the reply. NUL is the internal cut sentinel, so it is stripped from the
+# input first.
+#
+# Residuals, accepted: text hidden by CSS (style="display:none") cannot be told
+# from shown text without rendering, and stays, as does an element hidden by an
+# attribute (hidden) or a collapsed <details> (visible on click); a link
+# reference definition whose label spans lines stays.
+def _rc_scrub_attr: "\\s+[A-Za-z_:][A-Za-z0-9_.:-]*(?:\\s*=\\s*(?:[^\\s\"'=<>`]+|'[^']*'|\"[^\"]*\"))?";
+def _rc_scrub_hidden_names: "(?i:script|style|template|noscript|svg|math)";
+def _rc_scrub_media: "(?i:img|picture|source|video|audio|iframe|object|embed)";
+
+# Inline alternatives, leftmost-first, the way a CommonMark parser tokenises:
+# an escape, a code span (one line, no "|", so neither a paragraph break nor a
+# table cell can split it), an autolink, then raw HTML. $mode "code" has code
+# spans plus a "lone" run of backticks that pairs on no line; "text" has no
+# code (a paragraph with a lone run); "raw" is an HTML block, where backticks
+# pair nothing and the browser's lenient tag rules hold.
+def _rc_scrub_re($mode):
+  (if $mode != "raw" then
+     "(?<esc>\\\\[!-/:-@\\[-`{-~])"
+     + (if $mode == "code" then "|(?<code>(?<!`)(?<bt>`+)(?!`)[^\\n|]*?(?<!`)\\k<bt>(?!`))|(?<lone>`+)" else "" end)
+   else "(?<esc>(?!))" end)
+  + "|(?<auto><[A-Za-z][A-Za-z0-9.+-]{1,31}:[^<>\\x00-\\x20]*>)"
+  + "|(?<cmt><!---?>|<!--(?s:.*?)-->)"
+  + "|(?<cdata><!\\[CDATA\\[(?s:.*?)\\]\\]>)"
+  + "|(?<pi><\\?(?s:.*?)\\?>)"
+  + "|(?<decl><![A-Za-z][^>]*>)"
+  + "|(?<hid><(?<hn>" + _rc_scrub_hidden_names + ")(?:" + _rc_scrub_attr + ")*\\s*/?>(?s:.*?)</(?i:\\k<hn>)\\s*>)"
+  + "|(?<cut><" + _rc_scrub_hidden_names + "(?:" + _rc_scrub_attr + ")*\\s*/?>"
+  + (if $mode == "raw" then "|<!--" else "" end) + ")"
+  + (if $mode != "raw" then
+       "|(?<tag></?(?<tn>[A-Za-z][A-Za-z0-9-]*)(?:" + _rc_scrub_attr + ")*\\s*/?>)"
+     else
+       "|(?<tag></?(?<tn>[A-Za-z][A-Za-z0-9-]*)(?:[^>\"']|\"[^\"]*\"|'[^']*')*>)"
+       + "|(?<ucut><[A-Za-z/!?])"
+     end)
+  + "|(?<img>!\\[(?<alt>[^\\]\\n]*)\\]\\([^)\\n]*\\))"
+  + "|(?<ltitle>\\[(?<lt>[^\\]\\n]*)\\]\\(\\s*(?<lu><[^<>\\n]*>|[^)\\s]*)\\s+(?:\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|\\((?:[^()\\\\]|\\\\.)*\\))\\s*\\))"
+  + "|(?<data>\\(data:[^)\\s]*\\))";
+
+def _rc_scrub_inline($mode):
+  gsub(_rc_scrub_re($mode);
+    if .esc then .esc
+    elif .code then .code
+    elif .lone then .lone
+    elif .auto then .auto
+    elif .cmt then "[HTML comment removed]"
+    elif .cdata or .pi or .decl or .hid then ""
+    elif .cut or .ucut then "\u0000"
+    elif .tag then (if .tn | test("^" + _rc_scrub_media + "$") then "[embedded content]" else "" end)
+    elif .img then "[image: \(.alt)]"
+    elif .ltitle then "[\(.lt)](\(.lu))"
+    elif .data then "(data URI removed)"
+    else "" end);
+
+# Link reference definitions render as nothing. Removed at any line start in a
+# paragraph (after container markers): a false match only removes more.
+def _rc_scrub_defs:
+  gsub("(?:\\A|(?<=\\n))(?:[ \\t]*(?:>|[-+*]|\\d{1,9}[.)]))*[ \\t]*\\[(?!\\^)(?:[^\\]\\\\\\n]|\\\\.){0,999}[^\\]\\s\\\\](?:[^\\]\\\\\\n]|\\\\.){0,999}\\]:[ \\t]*\\n?[ \\t]*(?:<[^<>\\n]*>|[^\\s<>]\\S*)(?:[ \\t]*\\n?[ \\t]*(?:\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*'|\\((?:[^()\\\\]|\\\\.)*\\)))?[ \\t]*(?:\\n|\\z)"; "");
+
+# HTML block start (CommonMark types 1-7), after any indentation and container
+# markers: detecting one where the forge would not only scrubs more. Returns
+# the end-condition regex, "" for "ends at a blank line", or null.
+def _rc_scrub_html_start($para_open):
+  (sub("\\A(?:[ \\t]*(?:>|[-+*](?=[ \\t])|\\d{1,9}[.)](?=[ \\t])))*[ \\t]*"; "")) as $s
+  | if $s | test("\\A<(?i:pre|script|style|textarea)(?:[ \\t>]|\\z)") then "(?i:</(?:pre|script|style|textarea)>)"
+    elif $s | test("\\A<!--") then "-->"
+    elif $s | test("\\A<\\?") then "\\?>"
+    elif $s | test("\\A<![A-Za-z]") then ">"
+    elif $s | test("\\A<!\\[CDATA\\[") then "\\]\\]>"
+    elif $s | test("\\A</?(?i:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:[ \\t>]|/>|\\z)") then ""
+    elif ($para_open | not) and ($s | test("\\A</?[A-Za-z][A-Za-z0-9-]*(?:" + _rc_scrub_attr + ")*\\s*/?>[ \\t]*\\z")) then ""
+    else null end;
+
+# Split into blocks: {code} fence lines (kept verbatim), {text} paragraphs,
+# {raw} HTML blocks, {blank} lines.
+def _rc_scrub_blocks:
+  def flush: if (.buf | length) > 0 then .out += [{(.kind): (.buf | join("\n"))}] | .buf = [] else . end;
+  reduce (split("\n")[]) as $l ({out: [], mode: "none", buf: [], kind: "text", fc: null, fl: 0, hend: null};
+    if .mode == "fence" then
+      ("\\A {0,3}" + .fc + "{" + (.fl | tostring) + ",}[ \\t]*\\z") as $close
+      | .out += [{code: $l}]
+      | if ($l | test($close)) then .mode = "none" else . end
+    elif .mode == "html" then
+      if .hend == "" then
+        if ($l | test("\\A[ \\t]*\\z")) then flush | .out += [{blank: $l}] | .mode = "none" else .buf += [$l] end
+      else .hend as $he | .buf += [$l] | if ($l | test($he)) then flush | .mode = "none" else . end end
+    elif ($l | test("\\A[ \\t]*\\z")) then flush | .out += [{blank: $l}]
+    elif ($l | (contains("```") or contains("~~~")) and test("\\A(?:`{3,}(?!.*`)|~{3,})")) then
+      ($l | capture("\\A(?<f>`+|~+)").f) as $f
+      | flush | .out += [{code: $l}] | .mode = "fence" | .fc = ($f[0:1] | if . == "`" then "`" else "~" end) | .fl = ($f | length)
+    else
+      (.kind == "text" and (.buf | length) > 0) as $po
+      | (if $l | contains("<") then $l | _rc_scrub_html_start($po) else null end) as $h
+      | if $h != null then
+          flush | .mode = "html" | .kind = "raw" | .hend = $h | .buf = [$l]
+          | if $h != "" and ($l | test($h)) then flush | .mode = "none" | .kind = "text" else . end
+        else .kind = "text" | .buf += [$l] end
+    end
+    | if .mode == "none" and .kind == "raw" and (.buf | length) == 0 then .kind = "text" else . end)
+  | flush | .out;
+
+def rc_md_scrub:
+  gsub("\u0000"; "")
+  | [_rc_scrub_blocks[]
+     | if has("code") then .code
+       elif has("blank") then .blank
+       elif has("raw") then .raw | _rc_scrub_inline("raw")
+       else .text | _rc_scrub_defs
+            | if ([match(_rc_scrub_re("code"); "g") | .captures[] | select(.name == "lone" and .string != null)] | length > 0)
+              then _rc_scrub_inline("text") else _rc_scrub_inline("code") end end]
+  | join("\n")
+  | (index("\u0000") as $i | if $i == null then . else .[:$i] end)
+  | gsub("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0󠀀-󠿿]"; "");

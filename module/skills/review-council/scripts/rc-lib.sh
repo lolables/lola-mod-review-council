@@ -172,6 +172,49 @@ RC_MARKER_OPEN="<!-- ${RC_MARKER_KEY} sha="
 # shellcheck disable=SC2034 # read by rc-post-comment-github.sh and rc-post-comment-gitlab.sh.
 RC_MARKER_LINE_JQ="((.body | split(\"\\n\") | map(select(startswith(\"${RC_MARKER_OPEN}\"))) | last) // \"\")"
 
+# The one shape a `seen=` snapshot may take: UTC to the second, as GitHub and
+# the GitLab adapter both normalise timestamps. prepare-context.sh writes and
+# reads it, rc-render-comment.sh stamps it into the marker, where anything
+# wider (a space, `-->`) would break every parser. Valid as bash ERE and jq.
+# The first line of a retired verdict, the banner both posters write, as a jq
+# (Oniguruma) pattern. Only that line retires a verdict: the string alone can
+# be quoted anywhere in a live one, a finding's evidence included. The GitLab
+# poster keeps its own copy (RC_GL_OBSOLETE_RE); test-rc-doc-guards.sh pins the
+# two equal.
+# shellcheck disable=SC2034 # read by prepare-context.sh and rc-post-comment-github.sh.
+RC_OBSOLETE_LINE_RE='^> \*\*Obsolete\.\*\* .*<!-- review-council:obsolete -->[ \t]*$'
+
+# shellcheck disable=SC2034 # read by prepare-context.sh and rc-render-comment.sh.
+RC_SEEN_TS_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+
+# Normalise a timestamp to UTC `YYYY-MM-DDTHH:MM:SSZ`, the shape GitHub returns.
+# The GitLab adapter pipes every note timestamp through it; rc-render-comment.sh
+# prints a session's start with it. prepare-context.sh opens the re-review
+# window by comparing created_at values as STRINGS, so a self-managed instance
+# stamping `-04:00` beside a `.645Z` would order notes by wall clock, not by
+# time. Fractions are dropped, so a reply in the same second as a run's
+# snapshot but posted after it is missed; prepare-context.sh accepts that
+# rather than re-read the newest answered reply forever.
+#
+# Anything unparseable becomes "", GitHub's own fallback for a missing
+# timestamp. That sorts before every real one, so such a note can never be
+# mistaken for the newest verdict, nor land inside a window it was not shown to
+# belong to; the cost is that it is left out of the replies. Keeping the raw
+# string instead would compare by accident of spelling.
+#
+# shellcheck disable=SC2016,SC2034 # jq program, not shell expansion; read by lib/forge/gitlab.sh and rc-render-comment.sh.
+RC_UTC_JQ='
+  def utc:
+    (try (
+      capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})T(?<t>[0-9]{2}:[0-9]{2}:[0-9]{2})([.][0-9]+)?(?<z>Z|(?<s>[-+])(?<h>[0-9]{2}):?(?<m>[0-9]{2}))$")
+      | ("\(.d)T\(.t)Z" | fromdateiso8601)
+        - (if .z == "Z" then 0
+           else (if .s == "+" then 1 else -1 end) * ((.h | tonumber) * 3600 + (.m | tonumber) * 60)
+           end)
+      | todateiso8601
+    ) catch null) // "";
+'
+
 # Delegation batching budgets, as phases/delegate.md applies them: a batch
 # closes when either would be breached. Bytes are primary, because context is
 # what a delegation round actually spends — 128 KB is roughly 32k tokens of

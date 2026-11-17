@@ -445,12 +445,12 @@ check_mutation "RC-34 rejection detail names the offending key" \
 # reproduces the other's symptom.
 check_mutation "RC-039 re-review exclusion tests the author" \
 	lib/prepare-context.sh \
-	's#and (\$me == "" or (\.author // "") == \$me)) | not#and true) | not#' \
+	's#then (if (\.author // "") | ascii_downcase | IN(\$ids\[\]) then "verdict" else "foreign" end)#then "verdict"#' \
 	test-rc-prepare-conversation.sh
 
 check_mutation "RC-039 re-review anchor tests the author" \
 	lib/prepare-context.sh \
-	's#and (\$me == "" or (\.author // "") == \$me))\] | last#and true)] | last#' \
+	's#and ((\.author // "") | ascii_downcase | IN(\$ids\[\])))\] | last#and true)] | last#' \
 	test-rc-prepare-conversation.sh
 
 # The marker only counts at the START of a line. rc-render-comment.sh emits it
@@ -466,27 +466,280 @@ check_mutation "RC-039 re-review anchor tests the author" \
 # still written. `.*` spans the `split("\n")` rather than spelling it -- `\n` in
 # a POSIX BRE is a GNU escape that BSD sed reads as the letter `n`, the same
 # portability trap as `\t` described at the top of this file.
-check_mutation "RC-039 anchor matches a marker line, not the body" \
+check_mutation "RC-039 a verdict is a marker line, not the marker anywhere in the body" \
 	lib/prepare-context.sh \
-	's#^[[:space:]]*| select(((\.body // "") | split(.*any(startswith(\$open)))#| select(((.body // "") | contains($open))#' \
+	's#and ((\.body // "") | split("\\n") | any(startswith(\$open)));#and ((.body // "") | contains($open));#' \
 	test-rc-prepare-conversation.sh
 
-check_mutation "RC-039 exclusion matches a marker line, not the body" \
+# GitHub wraps every batch of inline comments in an empty COMMENTED review.
+# Those comments are already in the timeline, so keeping the container adds one
+# empty "reply" per batch, which Disposition then reads as someone speaking.
+check_mutation "RC-215 timeline drops the empty review container" \
+	lib/forge/github.sh \
+	's#| select((\.body // "") != "" or \.state != "COMMENTED")#| .#' \
+	test-rc-forge-adapters.sh
+
+# A `seen=` later than the comment carrying it is refused: a snapshot precedes
+# its post, and a later one opens the window past replies nobody has read.
+check_mutation "RC-216 seen= is bounded by its comment's created_at" \
 	lib/prepare-context.sh \
-	's#^[[:space:]]*(((\.body // "") | split(.*any(startswith(\$open)))#(((.body // "") | contains($open))#' \
+	's#(\$seen | test(\$re)) and \$seen <= \.created_at#($seen | test($re))#' \
 	test-rc-prepare-conversation.sh
 
-# Testing the author is right; requiring it is not. The login names the account
-# this RUN holds a token for, and the verdict on the PR may have been posted by
-# another one — CI files it as a bot, a maintainer re-runs locally, the token
-# rotates. The author-filtered anchor then matches nothing, which reads as "no
-# prior verdict", so the whole block is skipped: no conversation file and no
-# disclosure, on a PR that is mid-argument. Deleting the fallback is the
-# quietest failure of the three, which is why it is guarded like the others.
-check_mutation "RC-039 anchor falls back when no comment matches" \
+# The condensed history is what keeps prior-reviews.txt from growing with every
+# round of review; without the cap it is only shorter per entry, still linear
+# in history, and on a long-lived PR still most of every reviewer prompt.
+check_mutation "RC-217 condensed review history is capped" \
 	lib/prepare-context.sh \
-	's/^[[:space:]]*if \[\[ -n "\$council_login" \]\] && \[\[ -z "\$marker_created_at" \]\]; then$/if false; then/' \
+	's#utf8bytelength) > \$cap#utf8bytelength) > 1000000#' \
 	test-rc-prepare-conversation.sh
+
+# The previous run read every entry up to and including the seen= second, but
+# prior-reviews.txt compared inclusively whatever the window, so an entry at
+# that second was condensed by neither and re-presented in full as new.
+check_mutation "RC-221 history honours the window's strict seen= bound" \
+	lib/prepare-context.sh \
+	's#if \$strict then \$t > \$cutoff#if $strict then $t >= $cutoff#' \
+	test-rc-prepare-conversation.sh
+
+# Answering by editing an earlier comment leaves its created_at outside the
+# window, and a window on created_at alone never read the edit.
+check_mutation "RC-222 an edit inside the window is a reply" \
+	lib/prepare-context.sh \
+	's#select(in_window(\.created_at) or (\.edited_at != "" and in_window(\.edited_at)))#select(in_window(.created_at))#' \
+	test-rc-prepare-conversation.sh
+
+# The Edited: line is column-0 envelope; a forge time holding a newline would
+# write a delimiter of its own there.
+check_mutation "RC-223 only an exact-shape edit time reaches the envelope" \
+	lib/prepare-context.sh \
+	's#if type == "string" and test(\$re) then \. else "" end#.#' \
+	test-rc-prepare-conversation.sh
+
+# A reviewer whose findings consolidation folded into another's read
+# "Changes | none": its verdict stands on them, but neither table said so.
+# Every inline batch on GitHub sits in an empty COMMENTED review; in full they
+# were bare headings in every reviewer prompt.
+check_mutation "RC-226 an empty COMMENTED container is no review in full" \
+	lib/prepare-context.sh \
+	's#select(is_new(\.submitted_at) and ((\.body // "") != "" or \.state != "COMMENTED"))#select(is_new(.submitted_at))#' \
+	test-rc-prepare-conversation.sh
+
+# Another account's verdict stays up beside this run's (the poster retires only
+# its own account's comments): counted unless it opens with the obsolete banner,
+# and said on the This run line only as a plain count, never a name.
+check_mutation "RC-227 a retired verdict is not counted as still shown" \
+	lib/prepare-context.sh \
+	's#| test(\$obs) | not)#| true)#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-228 only a positive count of other verdicts is rendered" \
+	rc-render-comment.sh \
+	's#\[\[ "\$run_other" =~ ^\[1-9\]\[0-9\]{0,5}\$ \]\] || run_other=""#true#' \
+	test-rc-render-comment.sh
+
+# A bot that edits its own comment every push was a reply on every re-review,
+# and forced a fresh verdict post each time.
+check_mutation "RC-229 a bot account's comment is not a reply" \
+	lib/prepare-context.sh \
+	's#elif \.bot == true then "bot"#elif false then "bot"#' \
+	test-rc-prepare-conversation.sh
+
+# A second council account's verdict (CI as a bot, a maintainer re-running
+# under their own token) was read as a human reply by the other.
+check_mutation "RC-230 any column-0 marker comment is a verdict, not a reply" \
+	lib/prepare-context.sh \
+	's#| \.kind = (if is_verdict_shape(\$open)$#| .kind = (if false#' \
+	test-rc-prepare-conversation.sh
+
+# Only \n was indented: CR, U+2028/2029, NEL, VT or FF carried a forged
+# envelope line to column 0.
+check_mutation "RC-231 every line separator is indented" \
+	lib/prepare-context.sh \
+	's#gsub("\\r\\n|\[\\r\\u2028\\u2029\\u0085\\u000b\\u000c\]"; "\\n")#gsub("\\r\\n"; "\\n")#' \
+	test-rc-prepare-conversation.sh
+
+# The council's identity: the run's login plus the base's CODEOWNERS users and
+# `Council accounts:`. A marker from anyone else is discarded.
+check_mutation "RC-241 a CODEOWNERS user on the base is a council account" \
+	lib/council-accounts.sh \
+	's#\[\[ "\$owner" == \*@\* \]\] && rc_council_add "\$owner"#:#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-266 a CRLF CODEOWNERS still names its last owner on each line" \
+	lib/council-accounts.sh \
+	'/line="\${line%\$.\\r.}"/d' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-242 the Council accounts setting names council accounts" \
+	lib/council-accounts.sh \
+	's#^\(\t\t\)rc_council_add "\$owner"$#\1:#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-243 only a council account's verdict counts as also shown" \
+	lib/prepare-context.sh \
+	's#and (\$who | IN(\$ids\[\])) and \$who != \$me#and $who != $me#' \
+	test-rc-prepare-conversation.sh
+
+# A verdict split across comments was counted once per part as "still shown".
+check_mutation "RC-236 a multi-part verdict from another account counts once" \
+	lib/prepare-context.sh \
+	's#| capture(" part=(?<p>\[0-9\]+) ") | \.p\] | all(\. == "1")#| capture(" part=(?<p>[0-9]+) ") | .p] | all(true)#' \
+	test-rc-prepare-conversation.sh
+
+# The council's own earlier parts sat inside the window beside the anchor and
+# were reported as verdicts "left out".
+check_mutation "RC-237 the council's own parts are not reported as left out" \
+	lib/prepare-context.sh \
+	's#and (((\.author // "") | ascii_downcase) != \$window\.who or \.created_at > \$window\.at)#and (.created_at != $window.at or ((.author // "") | ascii_downcase) != $window.who)#' \
+	test-rc-prepare-conversation.sh
+
+# A reply posted inside the window is not an edit-only entry, whatever was
+# edited later; the comment counts Edited: entries apart from replies.
+check_mutation "RC-233 Edited: marks only an edit of a comment from before the window" \
+	lib/prepare-context.sh \
+	's#| \.edited_at = (if in_window(\.created_at) then "" else \.edited_at end)##' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-234 an edited earlier comment is not counted as a reply" \
+	rc-render-comment.sh \
+	's#run_n=\$((run_n - run_e))#run_n=$((run_n))#' \
+	test-rc-render-comment.sh
+
+# A re-review that read no replies rendered exactly like a first review.
+check_mutation "RC-235 a quiet re-review says it read no new replies" \
+	rc-render-comment.sh \
+	's#|| run_replies="no new replies since the previous verdict"#|| true#' \
+	test-rc-render-comment.sh
+
+# Adversarial pass (#135): a file path holding a newline put a forged marker
+# line at column 0 of an inline comment, dropping a reviewer's reply on that
+# file or, from a council account, anchoring the window on it.
+check_mutation "RC-244 an inline origin line keeps its path on one line" \
+	lib/forge/github.sh \
+	's#\.path // "?" | tostring | gsub("\[\\r\\n\\u2028\\u2029\\u0085\\u000b\\u000c\]"; " ")#.path // "?"#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-245 only an issue comment can be a council verdict" \
+	lib/prepare-context.sh \
+	's#def is_verdict_shape(\$open): (\.channel // "issue") == "issue" and #def is_verdict_shape($open): #' \
+	test-rc-prepare-conversation.sh
+
+# The string alone can be quoted in a live verdict; only the banner line the
+# poster writes retires one.
+check_mutation "RC-246 only the banner line retires a verdict in preparation" \
+	lib/prepare-context.sh \
+	's#(\.body // "") | gsub("\\r"; "") | split("\\n")\[0\] // "" | test(\$obs) | not#(.body // "") | contains("review-council:obsolete") | not#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-247 a triage skip reason is neutralised before it is printed" \
+	rc-render-comment.sh \
+	's#| tostring | rc_md_title | gsub#| tostring | gsub#' \
+	test-rc-render-comment.sh
+
+check_mutation "RC-248 ignored would-be verdicts are reported on the comment" \
+	rc-render-comment.sh \
+	's#\[\[ -f "\$session_dir/ignored-verdicts.txt" \]\] && run_ignored=#true || run_ignored=#' \
+	test-rc-render-comment.sh
+
+# A hostile thread put 13 MB into pr-conversation.txt and 1.8 MB into
+# prior-reviews.txt, both read whole into model prompts.
+check_mutation "RC-249 a long reply is cut, keeping its start and end" \
+	lib/prepare-context.sh \
+	's#+ \$nl + \$tail end;#+ $nl end;#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-250 pr-conversation.txt keeps the newest replies within its budget" \
+	lib/prepare-context.sh \
+	's#fair_within(65536)#fair_within(1000000000)#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-251 prior-reviews.txt keeps the newest reviews within its budget" \
+	lib/prepare-context.sh \
+	's#cap_bytes(4096; "\\n    ")#cap_bytes(1000000000; "\\n    ")#' \
+	test-rc-prepare-conversation.sh
+
+# What a person would not see on the forge (an HTML comment, an image,
+# invisible Unicode) was read whole by the models: an injection channel.
+check_mutation "RC-252 someone else's reply is scrubbed before a model reads it" \
+	lib/prepare-context.sh \
+	's#precut(16000) | rc_md_scrub | gsub#precut(16000) | gsub#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-253 an HTML comment is removed from a reply" \
+	jq/md-neutralise.jq \
+	's#elif \.cmt then "\[HTML comment removed\]"#elif .cmt then .cmt#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-254 code spans are kept verbatim when scrubbing" \
+	jq/md-neutralise.jq \
+	's#elif \.code then \.code#elif .code then (.code | gsub("<[^>]*>"; ""))#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-255 an HTML block starting with a comment hides what follows, code included" \
+	jq/md-neutralise.jq \
+	's#elif \$s | test("\\\\A<!--") then "-->"#elif false then "-->"#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-256 a code span never crosses a line or a table cell" \
+	jq/md-neutralise.jq \
+	's#\[\^\\\\n|\]\*?(?<!#(?s:.)*?(?<!#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-257 any well-formed tag is stripped, not only a named list" \
+	jq/md-neutralise.jq \
+	's#</?(?<tn>\[A-Za-z\]\[A-Za-z0-9-\]\*)(?:" + _rc_scrub_attr#</?(?<tn>(?i:img|svg))(?:" + _rc_scrub_attr#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-258 link reference definitions are removed" \
+	jq/md-neutralise.jq \
+	's#else \.text | _rc_scrub_defs$#else .text#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-259 invisible tag characters are removed" \
+	jq/md-neutralise.jq \
+	's#\\ufeff\\uffa0󠀀-󠿿\]#\\ufeff\\uffa0]#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-260 a fence inside an HTML block is raw, not code" \
+	jq/md-neutralise.jq \
+	's#|ul)(?:\[ \\\\t>\]|/>|\\\\z)") then ""#|ul)(?:[ \\\\t>]|/>|\\\\z)") then null#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-261 unclosed script or style hides the rest of the reply" \
+	jq/md-neutralise.jq \
+	's#elif \.cut or \.ucut then "\\u0000"#elif .cut or .ucut then ""#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-262 a cut middle that can change markup state drops the tail" \
+	lib/prepare-context.sh \
+	's#(if \$stateful then "" else \.\[length - \$t:\] end)#.[length - $t:]#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-263 every author keeps an equal share of a budget" \
+	lib/prepare-context.sh \
+	's#group_by(\.value\.author)#group_by(0)#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-264 a reply's cap is measured in bytes after indentation" \
+	lib/prepare-context.sh \
+	's#cap_bytes(8192; "\\n    ")#cap_bytes(1000000000; "\\n    ")#' \
+	test-rc-prepare-conversation.sh
+
+check_mutation "RC-267 a paragraph with an unpaired backtick loses code protection" \
+	jq/md-neutralise.jq \
+	's#\.string != null)\] | length > 0)#.string != null)] | length > 1000000)#' \
+	test-rc-jq-programs.sh
+
+check_mutation "RC-224 the comment's agent table counts merged findings" \
+	rc-render-comment.sh \
+	's#\[\[ "\$merged" -gt 0 \]\] && out=#[[ "$merged" -lt 0 ]] \&\& out=#' \
+	test-rc-render-comment.sh
+
+check_mutation "RC-225 the report's agent table counts merged findings" \
+	rc-render-report.sh \
+	's#if \[\[ "\$merged_count" -gt 0 \]\]; then#if [[ "$merged_count" -lt 0 ]]; then#' \
+	test-rc-render-report.sh
 
 # The renderer's last resort keeps whole lines from the top until the limit is
 # reached, and the marker is the last line of the body — so the cut took it.
@@ -1376,7 +1629,7 @@ check_mutation "RC-080 a same-second preparation gets its own session directory"
 # driver reported it as never posted. The marker now carries the session id.
 check_mutation "RC-081 every part's marker carries the run that rendered it" \
 	rc-render-comment.sh \
-	's|of=\${2}\${run} -->|of=${2} -->|' \
+	's|of=\${2}\${seen}\${run} -->|of=${2}${seen} -->|' \
 	test-rc-render-comment.sh
 
 # --- RC-082..RC-089: the change never configures its own review (#75) --------
@@ -1908,6 +2161,28 @@ check_mutation "RC-212 a salvaged block skips validation" \
 	rc-extract-verdict.sh \
 	's/^\([[:space:]]*\)if ! validate "\$block"; then$/\1if [[ "\$repairs" == "[]" ]] \&\& ! validate "\$block"; then/' \
 	test-rc-extract-verdict.sh
+
+# The reply count reaches a public comment, and a reply body is the PR author's
+# text. prepare-context.sh indents every body, so only a column-0 delimiter is
+# a reply; unanchored, a body quoting the delimiter inflates the count.
+check_mutation "RC-218 reply count matches column 0 only" \
+	rc-render-comment.sh \
+	"s#grep -c '^--- comment ---\\$'#grep -c -- '--- comment ---\\$'#" \
+	test-rc-render-comment.sh
+
+# Started is written with the local offset; printing its wall clock as UTC
+# would be wrong by hours. Bypassing the normaliser prints the raw digits.
+check_mutation "RC-219 run start is converted to UTC" \
+	rc-render-comment.sh \
+	's#\$t | utc | if#$t | if#' \
+	test-rc-render-comment.sh
+
+# prepare-context.sh drops replies past its size budget and says how many in
+# a header; the PR comment must repeat the count or it overstates coverage.
+check_mutation "RC-265 the PR comment says how many replies were left out for size" \
+	rc-render-comment.sh \
+	's#run_replies+=" (\${run_left} more left out for size)"#run_replies+=""#' \
+	test-rc-render-comment.sh
 
 total=$((caught + missed + broken + applied))
 echo ""

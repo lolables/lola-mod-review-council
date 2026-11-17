@@ -111,6 +111,11 @@ rc_forge_fetch_pr() {
 	[[ "$pr_head_sha" =~ ^[0-9a-f]{40}$ ]] || pr_head_sha=""
 	pr_url=$(echo "$mr_json" | jq -r '.web_url // ""')
 	pr_state=$(echo "$mr_json" | jq -r '.state // ""')
+	# When the MR was opened, normalised like every timeline timestamp
+	# (RC_UTC_JQ below): the re-review snapshot when the timeline is
+	# empty.
+	# shellcheck disable=SC2154 # set by rc-lib.sh, which every caller sources first.
+	pr_created_at=$(echo "$mr_json" | jq -r "${RC_UTC_JQ}"'.created_at // "" | utc' 2>/dev/null) || pr_created_at=""
 	# diff_refs.base_sha is the merge-base of the target branch and the head
 	# the diff was taken at (diff_refs.head_sha). A diff_refs that is not an
 	# object reads as no answer rather than failing the fetch.
@@ -180,32 +185,6 @@ rc_forge_host_refusal() {
 	echo "glab is not logged in to ${host}; run 'glab auth login --hostname ${host}' first. Refusing to send GitLab credentials to a host glab is not configured for."
 }
 
-# Normalise a GitLab timestamp to UTC `YYYY-MM-DDTHH:MM:SSZ`, the shape GitHub
-# returns. prepare-context.sh opens the re-review window by comparing
-# created_at values as STRINGS, so a self-managed instance stamping `-04:00`
-# beside a `.645Z` would order notes by wall clock, not by time. Fractions are
-# dropped: the window is inclusive, so a reply in the verdict's own second is
-# still kept.
-#
-# Anything unparseable becomes "", GitHub's own fallback for a missing
-# timestamp. That sorts before every real one, so such a note can never be
-# mistaken for the newest verdict, nor land inside a window it was not shown to
-# belong to; the cost is that it is left out of the replies. Keeping the raw
-# string instead would compare by accident of spelling.
-#
-# shellcheck disable=SC2016 # jq program, not shell expansion.
-RC_FORGE_GL_UTC_JQ='
-  def utc:
-    (try (
-      capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2})T(?<t>[0-9]{2}:[0-9]{2}:[0-9]{2})([.][0-9]+)?(?<z>Z|(?<s>[-+])(?<h>[0-9]{2}):?(?<m>[0-9]{2}))$")
-      | ("\(.d)T\(.t)Z" | fromdateiso8601)
-        - (if .z == "Z" then 0
-           else (if .s == "+" then 1 else -1 end) * ((.h | tonumber) * 3600 + (.m | tonumber) * 60)
-           end)
-      | todateiso8601
-    ) catch null) // "";
-'
-
 # [{author, created_at, body}] — the MR's comment timeline, oldest first.
 #
 # Notes, not discussions: one row per comment, which is the shape the re-review
@@ -236,7 +215,8 @@ rc_forge_fetch_conversation() {
 		return 0
 	}
 
-	jq -sc "${RC_FORGE_GL_UTC_JQ}"'
+	# shellcheck disable=SC2154 # set by rc-lib.sh, which every caller sources first.
+	jq -sc "${RC_UTC_JQ}"'
 		if all(.[]; type == "array") then
 			[add // [] | .[] | select(.system != true) | {
 				author: (.author.username // "unknown"),

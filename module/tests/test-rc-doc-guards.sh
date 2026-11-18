@@ -952,6 +952,36 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-287: CI runs the unit layer as one job per shard, each named `unit-i/n` in
+# .github/workflows/test.yml and run with UNIT_SHARD=i/n, because the whole
+# layer reached the 20-minute limit on macOS. The runner guarantees n shards
+# cover the selection, but only if all n run: a shard dropped from the list, or
+# one left at an old n after the count changed, leaves a share of the suites
+# untested in CI with every job green. So the entries must be exactly 1/n..n/n.
+echo "Test: CI unit shards are exactly 1/n through n/n (RC-287)"
+rc287_entries=""
+[[ -f "$TEST_WORKFLOW" ]] &&
+	rc287_entries=$(tr -s ' ,[]' '\n' <"$TEST_WORKFLOW" |
+		sed -n 's/^"unit-\([^"]*\)"$/\1/p' | sort -u)
+rc287_line="${rc287_entries//$'\n'/ }"
+rc287_counts=$(sed -n 's|^[0-9]*/\([0-9]*\)$|\1|p' <<<"$rc287_entries" | sort -u)
+rc287_expected=""
+if [[ "$rc287_counts" =~ ^[1-9][0-9]*$ ]]; then
+	rc287_expected=$(for ((i = 1; i <= rc287_counts; i++)); do echo "$i/$rc287_counts"; done | sort -u)
+fi
+if [[ -z "$rc287_entries" ]]; then
+	echo "  FAIL: extracted no \"unit-i/n\" layers from test.yml — the file is missing or"
+	echo "        changed shape, and this guard is comparing nothing"
+	FAIL=$((FAIL + 1))
+elif [[ -n "$rc287_expected" && "$rc287_entries" == "$rc287_expected" ]]; then
+	echo "  PASS: unit runs as a complete set of shards ($rc287_line)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: CI's unit shards do not cover the layer: $rc287_line"
+	echo "        expected 1/n through n/n with one n; a missing shard is suites CI never runs"
+	FAIL=$((FAIL + 1))
+fi
+
 # RC-025: Disposition is the one phase where attacker-authored text — PR comments
 # anyone can post — reaches something that edits state. The subagent that reads
 # them cannot read `disposition.md`: Step 2 says so in as many words, and its file

@@ -26,13 +26,13 @@ layer by layer, as separate jobs, rather than calling that target.
 
 | Workflow | Runs | On |
 |----------|------|-----|
-| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` (every layer; degraded as one job per tool); `macos-latest` (unit, e2e, mutate-expressions) |
+| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` (every layer; unit as three shards, degraded as one job per tool); `macos-latest` (unit as three shards, e2e, mutate-expressions) |
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
 
 `test.yml` is a two-dimensional matrix — layers by operating systems — plus a
 gating job that depends on all of them. Pushes and pull requests run unit,
 e2e, release and degraded on Ubuntu and three layers (unit, e2e,
-mutate-expressions) on macOS, nine jobs; the nightly schedule and a manual
+mutate-expressions) on macOS, thirteen jobs; the nightly schedule and a manual
 dispatch run the mutation layer on Ubuntu and mutate-expressions on macOS, two
 jobs. The matrix job and the gating
 job are easy to confuse: the matrix job has the id `test` and displays per leg
@@ -46,6 +46,15 @@ commit was killed at 25m22s.
 They share no state, so as separate jobs a leg costs the slowest single
 layer instead, and a layer that grows can no longer push an unrelated one over
 the limit.
+
+Unit runs as three shards — `unit-1/3`, `unit-2/3`, `unit-3/3` — each
+`task test:unit` with `UNIT_SHARD=i/3`. As one job it took 17–20 minutes on
+macOS against the 20-minute limit and was cancelled on its last suite. The
+runner deals the discovered suites round-robin, so the shards stay balanced as
+suites are added and together always cover the whole tree; that holds only if
+every shard runs, so RC-287 in `test-rc-doc-guards.sh` fails unless the
+workflow lists exactly `1/n` through `n/n`. To change the count, rename every
+entry together.
 
 Degraded runs as one layer per hidden tool — `degraded-jsonschema`,
 `degraded-gh`, `degraded-glab` — each `task test:degraded -- <tool>`. As a
@@ -132,6 +141,11 @@ cannot read fails the run rather than being skipped — a caller whose selection
 has gone wrong would otherwise run a smaller set than it asked for and still be
 told everything passed — and the `Suites run:` line counts what actually ran, not
 what the directory holds.
+
+`UNIT_SHARD=i/n` narrows whatever was selected — discovered or named — to every
+n-th suite starting at the i-th, and the summary adds a `Shard:` line so a
+partial run does not read as a full one. A malformed value, or a shard left with
+no suites, fails the run before any suite starts.
 
 A suite with no `SCRIPT=` covers something that spans scripts: a documented rule
 (`test-rc-doc-guards.sh`), a shared library (`test-rc-lib.sh`), a contract

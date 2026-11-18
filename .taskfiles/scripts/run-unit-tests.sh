@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run module unit suites and report a combined total.
 #
-# Usage: run-unit-tests.sh [suite.sh ...]
+# Usage: [UNIT_SHARD=i/n] run-unit-tests.sh [suite.sh ...]
 #
 # With no arguments every suite is discovered from module/tests. The list used
 # to be hand-maintained in Taskfile.yml, and a new test file that nobody
@@ -42,6 +42,33 @@ else
 		echo "ERROR: no suites discovered under $test_dir." >&2
 		exit 1
 	fi
+fi
+
+# UNIT_SHARD=i/n runs only the i-th of n shards of the selection, so CI can
+# spread the unit layer over n jobs against its per-job time limit. Shards are
+# dealt round-robin from the sorted list: the slow suites cluster by name, and
+# contiguous blocks would put them in one shard. Applied after discovery, never
+# instead of it, so the n shards together are always the whole selection.
+shard_note=""
+if [[ -n "${UNIT_SHARD:-}" ]]; then
+	if [[ ! "$UNIT_SHARD" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] ||
+		((BASH_REMATCH[1] > BASH_REMATCH[2])); then
+		echo "ERROR: UNIT_SHARD must be i/n with 1 <= i <= n, got '$UNIT_SHARD'" >&2
+		exit 1
+	fi
+	shard_index=${BASH_REMATCH[1]}
+	shard_count=${BASH_REMATCH[2]}
+	selected=${#suites[@]}
+	shard=()
+	for i in "${!suites[@]}"; do
+		((i % shard_count == shard_index - 1)) && shard+=("${suites[$i]}")
+	done
+	if [[ ${#shard[@]} -eq 0 ]]; then
+		echo "ERROR: shard $UNIT_SHARD of $selected suite(s) is empty; use fewer shards." >&2
+		exit 1
+	fi
+	suites=("${shard[@]}")
+	shard_note="$UNIT_SHARD (${#suites[@]} of $selected suites)"
 fi
 
 failed_suites=()
@@ -99,6 +126,7 @@ suite_count=${#suites[@]}
 
 echo ""
 echo "========================================"
+[[ -n "$shard_note" ]] && echo "Shard:       $shard_note"
 echo "Suites run:  $suite_count"
 echo "Assertions:  $total_pass passed, $total_fail failed"
 if [[ ${#failed_suites[@]} -gt 0 || ${#deleted_cwd[@]} -gt 0 || $total_fail -gt 0 ]]; then

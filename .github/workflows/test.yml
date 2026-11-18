@@ -30,11 +30,17 @@ jobs:
     # the leg costs the slowest single layer instead, and a layer that grows
     # can no longer push an unrelated one past the limit.
     #
+    # `unit` runs as three shards, `unit-i/3`, each `task test:unit` with
+    # UNIT_SHARD=i/3: as one job it took 17-20 minutes on macOS against the
+    # 20-minute limit and was cancelled on the last suite. The runner deals
+    # suites round-robin, so the shards stay balanced as suites are added; to
+    # change the count, rename all the entries together (RC-287 in
+    # test-rc-doc-guards.sh fails on a missing or mismatched shard).
+    #
     # `degraded` and `mutate` are re-runs of the unit suites (one PATH
-    # configuration per optional tool, and one targeted suite per mutation), so
-    # they are the two long poles; `unit`, `e2e` and `release` finish in a few
-    # minutes. `degraded` runs as one layer per hidden tool, `degraded-<tool>`:
-    # as one job its three runs summed to 13-20 minutes against the 20-minute
+    # configuration per optional tool, and one targeted suite per mutation);
+    # `e2e` and `release` finish in a few minutes. `degraded` runs as one
+    # layer per hidden tool, `degraded-<tool>`: as one job its three runs summed to 13-20 minutes against the 20-minute
     # limit, the `gh` and `glab` suites being the slow ones. The tool list must
     # match the default in .taskfiles/scripts/run-degraded-tests.sh, and
     # test-rc-doc-guards.sh holds the two to each other (RC-278).
@@ -56,7 +62,7 @@ jobs:
             (github.event_name == 'schedule'
               || github.event_name == 'workflow_dispatch')
             && '["mutate"]'
-            || '["unit", "e2e", "release", "degraded-jsonschema", "degraded-gh", "degraded-glab"]'
+            || '["unit-1/3", "unit-2/3", "unit-3/3", "e2e", "release", "degraded-jsonschema", "degraded-gh", "degraded-glab"]'
           ) }}
         # macOS is here to prove the shipped scripts run under BSD userland
         # (sed, readlink, date, mktemp), and unit plus e2e are the layers that
@@ -187,8 +193,9 @@ jobs:
         # source is one edit away from being injectable, and the env form costs
         # nothing.
         #
-        # A `degraded-<tool>` layer is `test:degraded` with that one tool
-        # hidden; every other layer names its task directly.
+        # A `unit-i/n` layer is shard i of n of `test:unit`; a
+        # `degraded-<tool>` layer is `test:degraded` with that one tool hidden;
+        # every other layer names its task directly.
         #
         # Lint is not run here; the megalinter workflow owns it.
         env:
@@ -196,6 +203,7 @@ jobs:
         run: |
           set -euo pipefail
           case "${LAYER}" in
+            unit-*) UNIT_SHARD="${LAYER#unit-}" task test:unit ;;
             degraded-*) task test:degraded -- "${LAYER#degraded-}" ;;
             *) task "test:${LAYER}" ;;
           esac

@@ -30,9 +30,14 @@ jobs:
     # the leg costs the slowest single layer instead, and a layer that grows
     # can no longer push an unrelated one past the limit.
     #
-    # `degraded` and `mutate` are re-runs of the unit suites (three PATH
-    # configurations, and one targeted suite per mutation), so they are the two
-    # long poles; `unit`, `e2e` and `release` finish in a few minutes.
+    # `degraded` and `mutate` are re-runs of the unit suites (one PATH
+    # configuration per optional tool, and one targeted suite per mutation), so
+    # they are the two long poles; `unit`, `e2e` and `release` finish in a few
+    # minutes. `degraded` runs as one layer per hidden tool, `degraded-<tool>`:
+    # as one job its three runs summed to 13-20 minutes against the 20-minute
+    # limit, the `gh` and `glab` suites being the slow ones. The tool list must
+    # match the default in .taskfiles/scripts/run-degraded-tests.sh, and
+    # test-rc-doc-guards.sh holds the two to each other (RC-278).
     #
     # `mutate` runs only on the schedule and on dispatch, and those events run
     # nothing else. At 18–20 minutes per OS it was about twice the next-slowest
@@ -51,7 +56,7 @@ jobs:
             (github.event_name == 'schedule'
               || github.event_name == 'workflow_dispatch')
             && '["mutate"]'
-            || '["unit", "e2e", "release", "degraded"]'
+            || '["unit", "e2e", "release", "degraded-jsonschema", "degraded-gh", "degraded-glab"]'
           ) }}
         # macOS is here to prove the shipped scripts run under BSD userland
         # (sed, readlink, date, mktemp), and unit plus e2e are the layers that
@@ -69,7 +74,11 @@ jobs:
             layer: mutate-expressions
         exclude:
           - os: macos-latest
-            layer: degraded
+            layer: degraded-jsonschema
+          - os: macos-latest
+            layer: degraded-gh
+          - os: macos-latest
+            layer: degraded-glab
           - os: macos-latest
             layer: release
           - os: macos-latest
@@ -178,10 +187,18 @@ jobs:
         # source is one edit away from being injectable, and the env form costs
         # nothing.
         #
+        # A `degraded-<tool>` layer is `test:degraded` with that one tool
+        # hidden; every other layer names its task directly.
+        #
         # Lint is not run here; the megalinter workflow owns it.
         env:
           LAYER: ${{ matrix.layer }}
-        run: task "test:${LAYER}"
+        run: |
+          set -euo pipefail
+          case "${LAYER}" in
+            degraded-*) task test:degraded -- "${LAYER#degraded-}" ;;
+            *) task "test:${LAYER}" ;;
+          esac
 
   # A single stable check name that summarises the matrix, so branch protection
   # has one thing to require and does not have to enumerate the job names that

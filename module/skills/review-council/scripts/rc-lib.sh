@@ -29,6 +29,11 @@ _RC_LIB_LOADED=1
 # rc-render-comment.sh writes it, and both readers match it through
 # RC_MARKER_OPEN below rather than reaching for the bare key.
 RC_MARKER_KEY="review-council:marker"
+# The settlement ledger's hidden line (#138, jq/ledger.jq), written directly
+# above the marker in part 1 of a verdict and read back by the next run's
+# preparation. One definition, as for the marker key.
+# shellcheck disable=SC2034 # read by rc-render-comment.sh and prepare-context.sh.
+RC_LEDGER_KEY="review-council:ledger"
 
 # The agent name of the one script-authored verdict: rc-check-symlinks.sh files
 # it from diff.patch, not a reviewer. Its findings are deterministic, so the
@@ -121,6 +126,12 @@ rc_sha256() { # file
 # The quick-effort and no-conversation exemptions excuse a session that never
 # ran Disposition. A snapshot (findings.pre-disposition.json) says it did run,
 # whatever those say, so its check is required then too.
+#
+# Earlier settlements (#138) need Disposition too: prior-settlements.txt is the
+# ledger the previous verdict carried, and only Disposition decides which of its
+# deferrals still apply. Its output, verdicts/_meta/ledger.json, becomes the
+# next verdict's ledger, so the check's record of it is required alongside the
+# findings hash.
 rc_disposition_gate() { # session_dir
 	local sdir="$1" effort check have want snap needed=true ran=false
 	[[ -f "$sdir/verdicts/findings.json" ]] || return 0
@@ -128,14 +139,14 @@ rc_disposition_gate() { # session_dir
 	if [[ -e "$snap" || -L "$snap" ]]; then
 		ran=true
 	fi
-	[[ -f "$sdir/pr-conversation.txt" ]] || needed=false
+	[[ -f "$sdir/pr-conversation.txt" || -f "$sdir/prior-settlements.txt" ]] || needed=false
 	effort=$(rc_parse_kv "$sdir/session.txt" "Effort")
 	[[ "$effort" == "quick" ]] && needed=false
 	if ! $needed && ! $ran; then
 		return 0
 	fi
 	if $needed && [[ ! -f "$sdir/verdicts/_meta/disposition.txt" ]]; then
-		printf '%s' "Not rendering: this re-review has replies to weigh (pr-conversation.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
+		printf '%s' "Not rendering: this re-review has replies or earlier settlements to weigh (pr-conversation.txt, prior-settlements.txt) at effort '${effort:-unrecorded}', and the Disposition phase has not run. Run SKILL.md Step 4.5 (phases/disposition.md), which writes verdicts/_meta/disposition.txt, then render again."
 		return 0
 	fi
 	check="$sdir/verdicts/_meta/disposition-check.json"
@@ -149,8 +160,19 @@ rc_disposition_gate() { # session_dir
 		printf '%s' "Not rendering: neither sha256sum nor shasum is installed, so findings.json cannot be matched to the Disposition check. Install coreutils, then render again."
 		return 0
 	fi
+	if [[ "$have" != "$want" ]]; then
+		printf '%s' "Not rendering: verdicts/findings.json changed after rc-check-disposition.sh accepted it. Run rc-check-disposition.sh ${sdir} again, then render again."
+		return 0
+	fi
+	have=$(jq -r 'if .status == "ok" then (.ledger_sha256 // "" | tostring) else "" end' "$check" 2>/dev/null) || have=""
+	if [[ -z "$have" ]]; then
+		printf '%s' "Not rendering: the Disposition check recorded no ledger hash. Run rc-check-disposition.sh ${sdir} again, then render again."
+		return 0
+	fi
+	want=""
+	[[ -f "$sdir/verdicts/_meta/ledger.json" ]] && want=$(rc_sha256 "$sdir/verdicts/_meta/ledger.json")
 	[[ "$have" == "$want" ]] && return 0
-	printf '%s' "Not rendering: verdicts/findings.json changed after rc-check-disposition.sh accepted it. Run rc-check-disposition.sh ${sdir} again, then render again."
+	printf '%s' "Not rendering: verdicts/_meta/ledger.json changed after rc-check-disposition.sh wrote it. Run rc-check-disposition.sh ${sdir} again, then render again."
 }
 
 # The opening of a marker as rc-render-comment.sh emits it, which is always the
@@ -466,6 +488,41 @@ rc_require_timeout() {
 # silently running the command unbounded — which is the failure this wrapper
 # exists to prevent.
 # Usage: rc_timeout <seconds> <command> [args...]
+# rc_git_network_env <forge> <host> — the environment every git call that may
+# reach a forge runs in, as two arrays to prefix a command with:
+#
+#   RC_GIT_NO_PROMPT  `env` with each credential prompt disabled. A private
+#                     host with no credential helper otherwise makes git ask for
+#                     a username on the terminal or through an askpass program,
+#                     and the run waits out its timeout before falling back. A
+#                     configured credential helper still answers; an empty
+#                     GIT_ASKPASS/SSH_ASKPASS is read as unset. GCM_INTERACTIVE
+#                     is Git Credential Manager's own switch for its prompts.
+#   RC_GIT_GH_AUTH    for github.com, gh as the credential helper; else empty.
+#                     `gh repo clone` hands its helper to that one clone and
+#                     stores nothing, so on a private repository every later
+#                     fetch, and every read of a blob a blobless clone has not
+#                     downloaded yet, had no credentials unless the operator had
+#                     run `gh auth setup-git`. Passed the way gh passes it, as
+#                     process-scoped configuration: scoped to https://github.com
+#                     so no other host ever asks gh for a token, appended after
+#                     any GIT_CONFIG_* entries the caller set, and written to no
+#                     config file. A non-numeric GIT_CONFIG_COUNT is left alone;
+#                     git refuses it either way.
+# shellcheck disable=SC2034 # read by rc-clone-target.sh and prepare-config.sh.
+rc_git_network_env() { # forge host
+	local index
+	RC_GIT_NO_PROMPT=(env GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS=)
+	RC_GIT_GH_AUTH=()
+	if [[ "$1" == "github" && "$2" == "github.com" ]] && command -v gh >/dev/null 2>&1 &&
+		[[ "${GIT_CONFIG_COUNT:-0}" =~ ^[0-9]+$ ]]; then
+		index=$((10#${GIT_CONFIG_COUNT:-0}))
+		RC_GIT_GH_AUTH=("GIT_CONFIG_COUNT=$((index + 1))"
+			"GIT_CONFIG_KEY_${index}=credential.https://github.com.helper"
+			"GIT_CONFIG_VALUE_${index}=!gh auth git-credential")
+	fi
+}
+
 rc_timeout() {
 	local secs="$1"
 	shift

@@ -186,7 +186,7 @@ tasks:
         echo "PASS: all recovery cases passed"
 
   test-disposition:
-    desc: Run disposition contract cases (case-022 through case-025, case-027 and case-036)
+    desc: Run disposition contract cases (case-022 through case-025, case-027, case-036 and case-037 through case-040)
     deps: [reset-starters, _ensure-init, _preflight]
     cmds:
       - |
@@ -194,7 +194,9 @@ tasks:
         failed=0
         for case in case-022-disposition-injection case-023-disposition-false-fix \
                     case-024-disposition-true-fix case-025-disposition-scoping-hint \
-                    case-027-disposition-high-fix-held case-036-disposition-stale-reply; do
+                    case-027-disposition-high-fix-held case-036-disposition-stale-reply \
+                    case-037-ledger-deferral-retitled case-038-ledger-deferral-other-low \
+                    case-039-ledger-deferral-raised case-040-ledger-kept-carried; do
           echo "=== Running $case ==="
           if ! {{.LOLA_EVAL}} test --case "$case"; then
             failed=$((failed + 1))

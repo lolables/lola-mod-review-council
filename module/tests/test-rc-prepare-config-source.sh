@@ -799,6 +799,137 @@ assert_session "$sess" "Base SHA" "2222222222222222222222222222222222222222" \
 assert_session "$sess" "Head SHA" "1111111111111111111111111111111111111111" "the forge's head is recorded"
 rm -rf "$work" "$bindir"
 
+# --- A pull request materialised in a clone reads its own base (#75) -------
+#
+# The configuration used to come from the directory the review was started
+# from. Run anywhere but a checkout of the same repository, that was nothing at
+# all (outside git, recorded as "no main or master branch"), or another
+# project's configuration applied to this one's pull request. The trust anchor
+# is now the commit the forge diffed against, read from the pull request's
+# clone: the change cannot write it, and it is the same wherever the run starts.
+
+# Each case clones into a cache of its own: a cached clone of "acme/widgets"
+# keeps the origin of the fixture that made it, which the case deletes.
+#
+# A fixture standing in for github.com/acme/widgets: main carries the benign
+# configuration, refs/pull/7/head the hostile branch. Writes the fake forge
+# into <ghbin> (answering for that head, with <merge-base> as the forge's
+# merge-base, "" for none) and a git that clones the fixture into <gitbin>.
+make_clone_case() { # fixture ghbin gitbin merge-base
+	make_hostile_branch_repo "$1"
+	git -C "$1" update-ref refs/pull/7/head feature
+	write_fake_gh "$2"
+	# The fake forge's catch-all would report a `gh repo clone` that made nothing
+	# as a success; refusing it sends the clone script to plain git, which the
+	# wrapper redirects to the fixture.
+	sed -i 's/^\*) exit 0 ;;$/"repo clone") exit 1 ;;\n*) exit 0 ;;/' "$2/gh"
+	git -C "$1" rev-parse feature >"$2/head-sha"
+	git -C "$1" rev-parse main >"$2/base-sha"
+	if [[ -n "$4" ]]; then printf '%s' "$4" >"$2/merge-base"; else rm -f "$2/merge-base"; fi
+	# Served the way GitHub serves it: the clone script's --filter=blob:none is
+	# honoured, so a blob only the base holds is fetched from the origin when it
+	# is read. Over file:// that needs no credentials; against a private GitHub
+	# repository it does, which is what the logged environment below checks.
+	git -C "$1" config uploadpack.allowFilter true
+	git -C "$1" config uploadpack.allowAnySHA1InWant true
+	make_fixture_git "$3" "$1"
+	rm -f "$3/gh"
+	# Every blob read, with the environment it ran in: prompts off, and gh as the
+	# credential helper for github.com.
+	sed -i '2i if printf "%s\\n" "$@" | grep -qx cat-file; then echo "prompt=${GIT_TERMINAL_PROMPT:-} helper=${GIT_CONFIG_VALUE_0:-}" >>"'"$3"'/blob-reads.log"; fi' "$3/git"
+}
+
+echo "Test 33b: a pull request reviewed from outside any repository reads its base from the clone"
+fixture=$(mktemp -d)
+ghbin=$(mktemp -d)
+gitbin=$(mktemp -d)
+outside=$(mktemp -d)
+make_clone_case "$fixture" "$ghbin" "$gitbin" placeholder
+base_sha=$(git -C "$fixture" rev-parse main)
+printf '%s' "$base_sha" >"$ghbin/merge-base"
+result=$(cd "$outside" && PATH="$ghbin:$gitbin:$PATH" AGENTS_DIR="$AGENTS" XDG_CACHE_HOME="$ghbin/cache" \
+	bash "$SCRIPT" --scope url --scope-value https://github.com/acme/widgets/pull/7 --mode code 2>/dev/null)
+sess=$(session_of "$result")
+assert_json_field "$result" "status" "ok" "the review prepares"
+assert_track "$sess" "Config source" "${base_sha:0:12} (the pull request's base, from its clone)" \
+	"the configuration came from the forge's base, in the clone"
+assert_track "$sess" "Subsystem triage" "off" "the base's value is obeyed"
+assert_track "$sess" "Docs repo" "acme/docs" "not the branch's evil/docs"
+assert_track "$sess" "Pin personas" "none" "the branch's pin is not obeyed"
+assert_track "$sess" "Constitution" "none" "the branch's constitution is not obeyed"
+assert_session "$sess" "Packs" "base-rules" "the base's pack is loaded, not the branch's"
+# Head-side reads (symlink targets, prepare-links.sh) find their blobs already
+# checked out and may run bare; the configuration's base-side reads may not.
+assert_equals "$(grep -cxF 'prompt=0 helper=!gh auth git-credential' "$gitbin/blob-reads.log" 2>/dev/null || true)" "2" \
+	"the base's AGENTS.md and pack are read with prompts off and gh's credentials"
+rm -rf "$fixture" "$ghbin" "$gitbin" "$outside" ${sess:+"$sess"}
+
+echo "Test 33c: another project's checkout does not configure this pull request"
+fixture=$(mktemp -d)
+ghbin=$(mktemp -d)
+gitbin=$(mktemp -d)
+other=$(mktemp -d)
+make_clone_case "$fixture" "$ghbin" "$gitbin" placeholder
+base_sha=$(git -C "$fixture" rev-parse main)
+printf '%s' "$base_sha" >"$ghbin/merge-base"
+(
+	cd "$other"
+	git_init_sandbox
+	git checkout -q -b main
+	git remote add origin https://github.com/other/project.git
+	printf '## Review Council Configuration\n\n- Subsystem triage: on\n- Max comments: 7\n' >AGENTS.md
+	git add AGENTS.md
+	git commit -qm other
+)
+result=$(cd "$other" && PATH="$ghbin:$gitbin:$PATH" AGENTS_DIR="$AGENTS" XDG_CACHE_HOME="$ghbin/cache" \
+	bash "$SCRIPT" --scope url --scope-value https://github.com/acme/widgets/pull/7 --mode code 2>/dev/null)
+sess=$(session_of "$result")
+assert_track "$sess" "Config source" "${base_sha:0:12} (the pull request's base, from its clone)" \
+	"the clone's base wins over the invoking checkout"
+assert_track "$sess" "Subsystem triage" "off" "the other project's triage value is not applied"
+assert_track "$sess" "Max comments" "3" "nor its comment budget"
+rm -rf "$fixture" "$ghbin" "$gitbin" "$other" ${sess:+"$sess"}
+
+echo "Test 33d: a forge base the clone does not hold is not used"
+# The forge is believed about which commit; the clone must hold it, below the
+# head it checked out. Otherwise the configuration falls back, here to none.
+fixture=$(mktemp -d)
+ghbin=$(mktemp -d)
+gitbin=$(mktemp -d)
+outside=$(mktemp -d)
+make_clone_case "$fixture" "$ghbin" "$gitbin" 2222222222222222222222222222222222222222
+result=$(cd "$outside" && PATH="$ghbin:$gitbin:$PATH" AGENTS_DIR="$AGENTS" XDG_CACHE_HOME="$ghbin/cache" \
+	bash "$SCRIPT" --scope url --scope-value https://github.com/acme/widgets/pull/7 --mode code 2>/dev/null)
+sess=$(session_of "$result")
+assert_track "$sess" "Config source" \
+	"none (the pull request's base is not in its clone, and the review was not started from a checkout of acme/widgets)" \
+	"an unverifiable base is refused, and the reason says what to do"
+assert_track "$sess" "Subsystem triage" "off" "built-in defaults apply"
+rm -rf "$fixture" "$ghbin" "$gitbin" "$outside" ${sess:+"$sess"}
+
+echo "Test 33e: with no clone, only a checkout of the same project configures the review"
+# The clone failed (the fake forge refuses it and the network is not reached),
+# so the base cannot be read there. The invoking checkout stands in only when
+# its origin is the pull request's repository; Test 33 is that case.
+work=$(mktemp -d)
+bindir=$(mktemp -d)
+(
+	cd "$work"
+	git_init_sandbox
+	git remote add origin https://github.com/other/project.git
+)
+make_hostile_branch_repo "$work"
+write_fake_gh "$bindir"
+printf '%s' 1111111111111111111111111111111111111111 >"$bindir/head-sha"
+git -C "$work" rev-parse main >"$bindir/base-sha"
+result=$(cd "$work" && PATH="$bindir:$PATH" AGENTS_DIR="$AGENTS" \
+	bash "$SCRIPT" --scope url --scope-value https://github.com/acme/widgets/pull/7 --mode code 2>/dev/null)
+sess=$(session_of "$result")
+assert_track "$sess" "Config source" \
+	"none (no clone of the pull request, and the review was not started from a checkout of acme/widgets)" \
+	"another project's checkout is not used as the pull request's configuration"
+rm -rf "$work" "$bindir" ${sess:+"$sess"}
+
 echo "Test 34: a forge that cannot report the merge-base leaves Base SHA empty, with a warning"
 # The compare call fails. That costs the header its base, never the run: the
 # session is still written, and the only trace is one stderr line.

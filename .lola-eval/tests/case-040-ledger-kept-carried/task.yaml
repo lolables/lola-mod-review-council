@@ -1,0 +1,22 @@
+task_version: "2"
+description: |
+  Kept argument carried, re-checked, still kept: settlement s1 records an
+  earlier kept decision on the HIGH at prune.sh:7, with the claim "cron
+  always passes an absolute path, so dir is never empty". Nothing in the
+  source validates $dir (prune.sh:3 assigns dir=$1 with no check). Per the
+  Disposition phase a kept settlement on a HIGH is re-checked under rule 2:
+  the check does not confirm the claim, so F1 stays kept (never resolved),
+  with source ledger, ledger_id s1, a fresh note quoting the source and
+  claim_verified false. Nothing is revoked.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the disposition you just performed.
+    Use this exact format:
+
+    FINDINGS_BEFORE: <count of findings in verdicts/findings.json's verified array before disposition>
+    FINDINGS_AFTER: <count of findings remaining in the verified array after disposition>
+    SETTLEMENT_MATCH: <for each settlement Id, the finding id it matched, or "none">
+    DISPOSITIONS: <finding id: action and source, one per line, or "none">
+    REVOKED: <the ids written to ledger-revoked.json, or "none">
+    CHECK_STATUS: <the status rc-check-disposition.sh returned for this session, or "not run">

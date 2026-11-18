@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "next": 2,
+  "dropped": 0,
+  "entries": [
+    {
+      "id": "s1",
+      "action": "deferred",
+      "severity": "LOW",
+      "file": "prune.sh",
+      "summary": "xargs rm -f splits artefact names on spaces.",
+      "who": "pr-author77",
+      "at": "2026-11-10T09:00:00Z",
+      "claim": null,
+      "note": null
+    }
+  ]
+}

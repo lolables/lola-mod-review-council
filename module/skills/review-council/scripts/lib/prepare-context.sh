@@ -139,6 +139,7 @@ fi
 
 prior_reviews_count=0
 marker_window=""
+ledger_note="none"
 
 if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; then
 	# --- RE-review: fetch replies to the council's own prior verdict ---
@@ -335,6 +336,54 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 		[[ -z "$previous_sha" ]] || printf '%s\n' "$previous_sha" >"${session_dir}/previous-verdict-sha.txt"
 
 		if [[ -n "$marker_window" ]]; then
+			# --- The settlement ledger (#138) ---
+			# What earlier runs settled (deferred LOWs, claims checked and kept),
+			# carried in part 1 of the council's verdict on the line directly
+			# above its last marker line (rc-render-comment.sh). Read from the
+			# newest live part 1 that the anchor's own account posted. Not from
+			# the anchor itself: a same-sha re-run that grows from one part to two
+			# creates part 2 fresh and edits part 1 in place, so the anchor can be
+			# part 2. A retired verdict (obsolete banner) is never read: its
+			# ledger was superseded. Only the line adjacent to the last marker
+			# counts, so a counterfeit planted higher up, in a finding's quoted
+			# evidence, is never it.
+			#
+			# The content is still untrusted: collaborators can edit any comment,
+			# and the council edits its own on same-sha upserts, so an edit
+			# cannot be told from either. It is validated (jq/ledger.jq), and
+			# Disposition weighs it under the same rules as a reply.
+			ledger_line=$(echo "$conversation_json" | jq -r \
+				--arg open "$RC_MARKER_OPEN" --arg who "$(jq -r '.who' <<<"$marker_window")" \
+				--arg obs "$RC_OBSOLETE_LINE_RE" "$verdict_shape_jq"'
+				[.[] | select(is_verdict_shape($open) and ((.author // "") | ascii_downcase) == $who)
+				 | ((.body // "") | gsub("\r"; "") | split("\n")) as $l
+				 | select(($l[0] // "") | test($obs) | not)
+				 | ([$l | to_entries[] | select(.value | startswith($open))] | last) as $m
+				 | select(($m.value | test(" part=[0-9]+ ") | not) or ($m.value | test(" part=1 ")))
+				 | if $m.key > 0 then $l[$m.key - 1] else "" end] | last // ""
+			' 2>/dev/null || echo "")
+			# shellcheck disable=SC2016 # jq program, not a shell expansion
+			ledger_read=$(jq -nc -L "$context_jq_dir" --arg line "$ledger_line" --arg key "$RC_LEDGER_KEY" \
+				--arg re "$RC_SEEN_TS_RE" 'include "ledger";
+				if ($line | startswith("<!-- " + $key + " ")) | not then {}
+				else ($line | capture("^<!-- " + $key + " v=1 (?<b>[A-Za-z0-9+/]{1,8192}={0,2}) -->$") // null) as $c
+				| if $c == null then {problem: "the ledger line is not well-formed"}
+				  else (try ($c.b | @base64d | fromjson) catch null) as $doc
+				  | if $doc == null then {problem: "the ledger payload does not decode to JSON"}
+				    else (first($doc | ledger_problem($re)) // null) as $p
+				    | if $p == null then {ledger: $doc} else {problem: $p} end end end end
+			' 2>/dev/null || echo '{"problem":"the ledger could not be read"}')
+			ledger_problem=$(jq -r '.problem // empty' <<<"$ledger_read")
+			if [[ -n "$ledger_problem" ]]; then
+				ledger_note="unreadable (${ledger_problem}); earlier settlements are not carried"
+				echo "rc-prepare: the previous verdict's settlement ledger is unreadable (${ledger_problem}); earlier settlements are not carried" >&2
+			elif jq -e '.ledger.entries | length > 0' <<<"$ledger_read" >/dev/null 2>&1; then
+				jq '.ledger' <<<"$ledger_read" >"${session_dir}/prior-settlements.json"
+				jq -r -L "$context_jq_dir" 'include "ledger"; ledger_settlements_txt' \
+					"${session_dir}/prior-settlements.json" >"${session_dir}/prior-settlements.txt"
+				ledger_note="$(jq -r '.ledger.entries | length' <<<"$ledger_read") carried from the previous verdict"
+			fi
+
 			# Replies inside the window. An earlier comment edited inside the
 			# window is a reply too: its edit is what the previous run never read,
 			# and only such an edit-only entry gets the column-0 Edited: line,

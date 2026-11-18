@@ -362,6 +362,9 @@ def _rc_scrub_blocks:
     | if .mode == "none" and .kind == "raw" and (.buf | length) == 0 then .kind = "text" else . end)
   | flush | .out;
 
+# The characters a reader cannot see; shared with jq/ledger.jq so the two cannot drift.
+def rc_md_invisible: "[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0󠀀-󠿿]";
+
 def rc_md_scrub:
   gsub("\u0000"; "")
   | [_rc_scrub_blocks[]
@@ -373,4 +376,4 @@ def rc_md_scrub:
               then _rc_scrub_inline("text") else _rc_scrub_inline("code") end end]
   | join("\n")
   | (index("\u0000") as $i | if $i == null then . else .[:$i] end)
-  | gsub("[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u3164\ufe00-\ufe0f\ufeff\uffa0󠀀-󠿿]"; "");
+  | gsub(rc_md_invisible; "");

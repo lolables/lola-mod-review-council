@@ -1031,7 +1031,7 @@ Proceed to Step 4.5 (Disposition).
 
 ### Step 4.5: DISPOSITION (re-review only)
 
-**Skip entirely unless `${session_dir}/pr-conversation.txt` exists AND
+**Skip entirely unless `${session_dir}/pr-conversation.txt` or `${session_dir}/prior-settlements.txt` exists AND
 effort is not `quick` AND the evidence check returned `ok`.** The last
 condition is not redundant with Step 4's skip: this phase edits
 `findings.json`, and on `nothing_to_do` this run wrote no such file — the
@@ -1044,10 +1044,11 @@ replies.
 The gate is enforced at render time: `rc-render-comment.sh` and both post
 scripts refuse with `status: "error"`, writing and posting nothing, and
 `rc-render-report.sh` prints **Not rendered.**, when
-`pr-conversation.txt` and `verdicts/findings.json` exist, effort is not
+`pr-conversation.txt` or `prior-settlements.txt`, and `verdicts/findings.json`, exist, effort is not
 `quick`, and `verdicts/_meta/disposition.txt` is missing — or
 `verdicts/_meta/disposition-check.json` is missing, not `ok`, or records a
-hash `findings.json` no longer has. A Disposition snapshot
+hash `findings.json` no longer has (or a `ledger_sha256` that
+`verdicts/_meta/ledger.json` no longer has). A Disposition snapshot
 (`verdicts/_meta/findings.pre-disposition.json`) means the phase ran, so its
 check is required then even at `quick` effort or with no conversation. On
 that error, run this phase (or its check), then render again.
@@ -1067,7 +1068,8 @@ prompt text — restating them here, paraphrased, would not reach the
 subagent and would silently weaken the security posture this phase exists
 for.
 
-Append the untrusted contents of `${session_dir}/pr-conversation.txt` after
+Append the untrusted contents of `${session_dir}/pr-conversation.txt`, then of
+`${session_dir}/prior-settlements.txt` when it exists, after
 the prompt, then the findings to disposition, per `disposition.md` Step 2
 ("Inputs the subagent receives"). Agent profile (read-only over the review
 root, plus narrowly-scoped structured edits to `findings.json`'s provenance
@@ -1083,6 +1085,7 @@ After the subagent returns:
   `suppressed-low` removals are verdict-neutral and do NOT
   (`disposition.md` Step 4).
 - Findings marked `provenance.validator.result: "SCRIPT"` (from `rc-check-symlinks`) are never handed to the subagent and never moved.
+- Settlements the subagent revoked are listed in `verdicts/_meta/ledger-revoked.json`; the check validates them and builds `verdicts/_meta/ledger.json`, the next verdict's settlement ledger (`disposition.md` Step 4).
 - Run `bash ${SCRIPTS_DIR}/rc-check-disposition.sh ${session_dir}`
   (`disposition.md` Step 4, "Check"). A reply never clears HIGH/CRITICAL:
   `resolved` only on MEDIUM/LOW, `suppressed-low` only on LOW. On
@@ -1507,9 +1510,12 @@ delegation prompt; the orchestrator reads `Knowledge tool:` from `tracking.md`.
 Neither reads AGENTS.md, CLAUDE.md or the packs directory in the tree. The base
 is:
 
-- `changed`, `all`, `paths`, and a PR or url reviewed in a separate checkout:
-  the merge-base of HEAD with the base branch (for url scope, `main`, else
-  `master`).
+- `changed`, `all`, `paths`: the merge-base of HEAD with the base branch.
+- A PR or url reviewed in a separate clone: the commit the forge diffed
+  against (`Base SHA`), read from that clone, wherever the run started. When
+  the clone cannot supply it (a GitLab archive has no history, a clone
+  failed), a checkout of the same repository stands in (its merge-base with
+  the PR base); any other directory gives no project configuration.
 - `range`: the start of the range; for `A...B`, the merge-base of A and B.
 - A PR reviewed in place: the merge-base of HEAD with `origin/<base>`, else the
   local `<base>`.

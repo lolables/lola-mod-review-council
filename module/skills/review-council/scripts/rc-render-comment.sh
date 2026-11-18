@@ -403,6 +403,35 @@ rc_render_comment_body() { # session_dir body_file
 		_RC_SEEN=$(head -n1 "$session_dir/conversation-seen.txt")
 	[[ "$_RC_SEEN" =~ $RC_SEEN_TS_RE ]] || _RC_SEEN=""
 
+	# The settlement ledger (#138, jq/ledger.jq): a collapsed "Settled earlier"
+	# block after the reviewer table, and the hidden line the next run reads,
+	# directly above part 1's marker. After Disposition the source is the ledger
+	# rc-check-disposition.sh built (the render gate has matched its hash); with
+	# no Disposition (quick effort) it is the prior ledger unchanged, since
+	# skipping the judgement must not erase what was settled. Validated again
+	# here: either file is read from disk.
+	_RC_LEDGER_LINE=""
+	_RC_HEAD_SETTLED=""
+	local ledger_src="" ledger_out
+	if [[ -f "$session_dir/verdicts/_meta/disposition-check.json" ]]; then
+		ledger_src="$session_dir/verdicts/_meta/ledger.json"
+	elif [[ -f "$session_dir/prior-settlements.json" ]]; then
+		ledger_src="$session_dir/prior-settlements.json"
+	fi
+	if [[ -n "$ledger_src" && -f "$ledger_src" ]]; then
+		if ledger_out=$(jq -c -L "$RC_JQ_DIR" --arg re "$RC_SEEN_TS_RE" --arg key "$RC_LEDGER_KEY" 'include "ledger";
+			if ([ledger_problem($re)] | length) > 0 then error("invalid")
+			elif (.entries | length) == 0 then {line: "", visible: ""}
+			else {line: ledger_line($key), visible: ([ledger_visible] | join("\n"))} end' "$ledger_src" 2>/dev/null); then
+			_RC_LEDGER_LINE=$(jq -r '.line' <<<"$ledger_out")
+			[[ -z "$_RC_LEDGER_LINE" ]] || _RC_LEDGER_LINE+=$'\n'
+			_RC_HEAD_SETTLED=$(jq -r '.visible' <<<"$ledger_out")
+			[[ -z "$_RC_HEAD_SETTLED" ]] || _RC_HEAD_SETTLED+=$'\n\n'
+		else
+			echo "rc-render-comment: the settlement ledger ${ledger_src##*/} is not valid; rendered without it" >&2
+		fi
+	fi
+
 	# The one line that makes a run visible: when it started, and what the
 	# replies it read changed. Every input is a file a script wrote. A reply is
 	# the PR author's text and this reaches a public comment, so none of it is
@@ -723,6 +752,10 @@ _rc_pack() { # level keep limit max_parts
 	# max_parts for both can only over-reserve.
 	_rc_marker "$max_parts" "$max_parts"
 	marker_len=$(_rc_bytes "$_RC_OUT")
+	# Part 1's marker also carries the ledger line (#138), which the costing
+	# above only includes when max_parts is 1. Reserved in every part, as the
+	# marker is: it can only over-reserve.
+	[[ "$max_parts" -eq 1 ]] || marker_len=$((marker_len + $(_rc_bytes "${_RC_LEDGER_LINE:-}")))
 
 	_rc_prelude 1 "$max_parts" "$disc"
 	used=$(($(_rc_bytes "${_RC_OUT}${_RC_FOOTER}") + marker_len))
@@ -793,7 +826,7 @@ _rc_pack() { # level keep limit max_parts
 _rc_prelude() { # part_index part_count disclosure -> _RC_OUT
 	local p="$1" total="$2" disc="$3"
 	if [[ "$p" -eq 1 ]]; then
-		_RC_OUT="${_RC_HEAD_TOP}${disc}${_RC_HEAD_TABLE}"
+		_RC_OUT="${_RC_HEAD_TOP}${disc}${_RC_HEAD_TABLE}${_RC_HEAD_SETTLED}"
 		# Placeholder for the links to the other parts. The poster substitutes
 		# it once those comments exist and their URLs are known; left alone it
 		# is an HTML comment and renders as nothing, which is what the
@@ -811,18 +844,22 @@ _rc_prelude() { # part_index part_count disclosure -> _RC_OUT
 # `seen` is read by the next run's preparation (lib/prepare-context.sh), never
 # by a poster. `run` goes last, after every key a parser anchors on, and is
 # never parsed: it exists so each run's body differs (see _RC_RUN_ID above).
+# Part 1 also carries the settlement ledger's line directly above the marker
+# (#138); the next run reads it there and nowhere else.
 _rc_marker() { # part_index part_count -> _RC_OUT
 	local seen="" run=""
 	[[ -n "${_RC_SEEN:-}" ]] && seen=" seen=${_RC_SEEN}"
 	[[ -n "${_RC_RUN_ID:-}" ]] && run=" run=${_RC_RUN_ID}"
 	_RC_OUT="<!-- ${RC_MARKER_KEY} sha=${RC_HEAD_SHA:-unknown} part=${1} of=${2}${seen}${run} -->"$'\n'
+	[[ "$1" -ne 1 ]] || _RC_OUT="${_RC_LEDGER_LINE:-}${_RC_OUT}"
 }
 
 # Last resort: keep whole lines until the limit is reached. Cutting on a line
 # boundary rather than a byte offset keeps the result valid UTF-8 and stops the
 # cut landing inside a markdown structure the reader would then see unclosed.
 #
-# Two lines outlive the cut, because the cut takes the tail and both of them
+# Two lines outlive the cut (the marker block includes the ledger line on
+# part 1), because the cut takes the tail and both of them
 # live there or past it. They are reserved out of the fill budget and appended
 # afterwards:
 #

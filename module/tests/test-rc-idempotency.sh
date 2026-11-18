@@ -192,9 +192,10 @@ cat >"$s/verdicts/findings.json" <<'FJ'
 ],"correctable":[],"stripped":[],"total_findings":2,"duplicates_consolidated":0,"verdicts":{"divisor-guard-code":"REQUEST CHANGES"}}
 FJ
 printf '{"divisor-guard-code":"REQUEST CHANGES"}\n' >"$s/verdicts/verdicts-map.json"
+printf -- '--- comment ---\nAuthor: alice\nTimestamp: 2026-11-15T10:00:00Z\nBody:\n    fixed\n--- end comment ---\n' >"$s/pr-conversation.txt"
 bash "$SCRIPTS/rc-check-disposition.sh" "$s" --snapshot >/dev/null
 jq '.verified[1] += {status: "stripped", reason: "DISPOSITION_RESOLVED",
-	provenance: {disposition: {source: "pr-comment", action: "resolved", claim: "fixed", claim_verified: true,
+	provenance: {disposition: {source: "pr-comment", ledger_id: null, by: "alice", at: "2026-11-15T10:00:00Z", action: "resolved", claim: "fixed", claim_verified: true,
 	evidence: "b.go:9 reads y := 0", reason: null, note: null}}}
 	| .stripped = [.verified[1]] | .verified = [.verified[0]]' \
 	"$s/verdicts/findings.json" >"$s/edited.json"

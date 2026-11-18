@@ -34,6 +34,18 @@ rc_trap_errors
 # accepted; the render gate (rc_disposition_gate, rc-lib.sh) requires that file
 # and that hash. Re-running on an unchanged state gives the same result.
 #
+# The settlement ledger (#138). --snapshot also copies prior-settlements.json
+# (what preparation read from the previous verdict) to
+# verdicts/_meta/prior-settlements.pre-disposition.json, because Disposition can
+# write beside findings.json and an entry it planted in the live file would be
+# carried into the next verdict comment unchecked. The check matches every
+# disposition's attribution against pr-conversation.txt or that copy, and reads
+# the revocations Disposition wrote to verdicts/_meta/ledger-revoked.json. On
+# success it builds the next ledger (jq/ledger.jq ledger_build) into
+# verdicts/_meta/ledger.json and records its hash beside the findings hash; the
+# render gate requires both. On a violation the revocation file is removed with
+# the edits, so the restored run carries every prior entry.
+#
 # This script makes no forge calls, so it does not require GNU timeout.
 
 session_dir="${1:-}"
@@ -68,6 +80,11 @@ check_file="$vdir/_meta/disposition-check.json"
 rules="$(dirname "$0")/jq/check-disposition.jq"
 recompute="$(dirname "$0")/jq/recompute-verdicts.jq"
 declared_file="$vdir/_meta/verdicts-map.pre-disposition.json"
+prior_file="$session_dir/prior-settlements.json"
+prior_snap="$vdir/_meta/prior-settlements.pre-disposition.json"
+revoked_file="$vdir/_meta/ledger-revoked.json"
+ledger_file="$vdir/_meta/ledger.json"
+jq_dir="$(dirname "$0")/jq"
 
 if $take_snapshot; then
 	if [[ -e "$snapshot" || -L "$snapshot" ]]; then
@@ -82,7 +99,8 @@ if $take_snapshot; then
 	# The check ties every finding to its snapshot by id, so findings it could
 	# not tie are refused here, before the subagent has edited anything. The
 	# rules file holds the one definition of that (snapshot_ok).
-	if ! jq -e --arg mode snapshot --argjson pre null -f "$rules" "$findings" >/dev/null 2>&1; then
+	if ! jq -e --arg mode snapshot --argjson pre null --argjson pairs '[]' --argjson ledger '{}' --argjson revoked '[]' \
+		-f "$rules" "$findings" >/dev/null 2>&1; then
 		json_output "validation_error" \
 			"findings.json is not a findings document with a unique id on every finding, so Disposition's edits could not be checked. Stop and report; no snapshot was taken."
 		exit 0
@@ -94,6 +112,10 @@ if $take_snapshot; then
 	if [[ -f "$vdir/verdicts-map.json" ]]; then
 		cp "$vdir/verdicts-map.json" "$declared_file"
 	fi
+	rm -f "$prior_snap"
+	if [[ -f "$prior_file" ]]; then
+		cp "$prior_file" "$prior_snap"
+	fi
 	cp "$findings" "$snapshot"
 	json_output "ok" "Snapshot taken. Dispatch the Disposition subagent; after it returns and the Step 4 moves are made, run rc-check-disposition.sh ${session_dir}."
 	exit 0
@@ -101,7 +123,7 @@ fi
 
 # A check file describes one accepted findings.json. Removed before anything
 # else, so no exit below leaves an earlier acceptance for the render gate.
-rm -f "$check_file"
+rm -f "$check_file" "$ledger_file"
 
 if [[ ! -f "$snapshot" ]] || ! jq -e 'type == "object"' "$snapshot" >/dev/null 2>&1; then
 	json_output "validation_error" \
@@ -112,6 +134,8 @@ fi
 work=$(mktemp -d)
 restore=""
 staged=""
+prior='{"v":1,"next":1,"dropped":0,"entries":[]}'
+revoked='[]'
 trap 'rm -rf "$work"; [[ -z "$restore" ]] || rm -f "$restore"; [[ -z "$staged" ]] || rm -f "$staged"' EXIT
 if [[ -L "$findings" ]]; then
 	violations='["findings.json was replaced by a symlink"]'
@@ -125,7 +149,35 @@ else
 	if ! jq -se 'length == 1' "$checked" >/dev/null 2>&1; then
 		violations='["findings.json is not valid JSON (one document)"]'
 	else
-		jq --arg mode check --slurpfile pre "$snapshot" -f "$rules" "$checked" >"$work/result.json"
+		# The inputs the attribution rules read. A prior ledger that does not
+		# validate is read as empty: preparation validated it, so a failure
+		# here means it changed after the snapshot, and nothing in it is
+		# trusted.
+		if [[ -f "$prior_snap" ]] &&
+			jq -e -L "$jq_dir" --arg re "$RC_SEEN_TS_RE" 'include "ledger"; [ledger_problem($re)] | length == 0' "$prior_snap" >/dev/null 2>&1; then
+			prior=$(jq -c . "$prior_snap")
+		fi
+		ledger_by_id=$(jq -c '.entries | map({key: .id, value: .}) | from_entries' <<<"$prior")
+		pairs='[]'
+		if [[ -f "$session_dir/pr-conversation.txt" ]]; then
+			pairs=$(jq -Rn '[inputs] as $l
+				| [range(0; ($l | length) - 1) as $i
+				   | select(($l[$i] | startswith("Author: ")) and ($l[$i + 1] | startswith("Timestamp: ")))
+				   | {by: $l[$i][8:], at: $l[$i + 1][11:]}]' "$session_dir/pr-conversation.txt")
+		fi
+		revoked='[]'
+		if [[ -L "$revoked_file" || -e "$revoked_file" ]]; then
+			# Never opened unless a regular file: a FIFO or /dev/zero would hang jq.
+			if [[ -L "$revoked_file" || ! -f "$revoked_file" ]]; then
+				revoked='"not-a-file"'
+			else
+				revoked=$(jq -c 'if type == "array" then . else null end' "$revoked_file" 2>/dev/null) || revoked='null'
+				[[ -n "$revoked" ]] || revoked='null'
+			fi
+		fi
+		jq --arg mode check --slurpfile pre "$snapshot" --argjson pairs "$pairs" \
+			--argjson ledger "$ledger_by_id" --argjson revoked "$revoked" \
+			-f "$rules" "$checked" >"$work/result.json"
 		violations=$(jq -c '.violations' "$work/result.json")
 	fi
 fi
@@ -139,6 +191,7 @@ if [[ "$violations" != "[]" ]]; then
 	cp -p "$snapshot" "$restore"
 	mv -f "$restore" "$findings"
 	restore=""
+	rm -rf -- "$revoked_file"
 	listing=$(jq -r 'join("; ")' <<<"$violations")
 	payload=$(jq -n --argjson v "$violations" '{violations: $v}')
 	json_output "validation_error" \
@@ -172,6 +225,11 @@ if [[ -z "$digest" ]]; then
 	json_output "skip" "Neither sha256sum nor shasum is installed, so the checked findings.json cannot be recorded for the render gate. Install coreutils (brew install coreutils | apt-get install coreutils | dnf install coreutils), then run again."
 	exit 0
 fi
+# The next ledger, from what was accepted. Revocations are honoured only here:
+# the rules above already refused any that named no settlement.
+jq -L "$jq_dir" --argjson prior "$prior" --argjson revoked "$revoked" --arg re "$RC_SEEN_TS_RE" \
+	'include "ledger"; ledger_build($prior; $revoked; $re)' "$accepted" >"$work/ledger.json"
+ledger_digest=$(rc_sha256 "$work/ledger.json")
 # Upgrades are counted against the snapshot, so a re-run reports the same
 # count; verdict_changes lists what this run changed in findings.json, each
 # truncated as finding ids are, since a hand edit may have written it.
@@ -190,7 +248,10 @@ if [[ "$accepted" != "$checked" ]]; then
 	mv -f "$staged" "$findings"
 	staged=""
 fi
-jq --arg h "$digest" '{status: "ok"} + . + {findings_sha256: $h}' <<<"$payload" >"$work/check.json"
+mv -f "$work/ledger.json" "$ledger_file"
+payload=$(jq --slurpfile l "$ledger_file" '. + {ledger_entries: ($l[0].entries | length)}' <<<"$payload")
+jq --arg h "$digest" --arg lh "$ledger_digest" \
+	'{status: "ok"} + . + {findings_sha256: $h, ledger_sha256: $lh}' <<<"$payload" >"$work/check.json"
 mv -f "$work/check.json" "$check_file"
 summary=$(jq -r '"\(.resolved) resolved, \(.suppressed_low) suppressed-low, \(.kept) kept, \(.verdicts_upgraded) verdict(s) upgraded, \(.verdict_changes | length) verdict(s) changed by the recompute"' <<<"$payload")
 json_output "ok" "Disposition's edits are within its rules: ${summary}." "$payload"

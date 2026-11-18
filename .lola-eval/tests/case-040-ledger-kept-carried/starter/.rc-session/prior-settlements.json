@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "next": 2,
+  "dropped": 0,
+  "entries": [
+    {
+      "id": "s1",
+      "action": "kept",
+      "severity": "HIGH",
+      "file": "prune.sh",
+      "summary": "rm -rf expands an unquoted, unvalidated dir.",
+      "who": "pr-author77",
+      "at": "2026-11-10T09:00:00Z",
+      "claim": "cron always passes an absolute path, so dir is never empty",
+      "note": "prune.sh:3 assigns dir=$1 with no check"
+    }
+  ]
+}

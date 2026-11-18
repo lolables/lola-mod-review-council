@@ -1456,7 +1456,7 @@ check_mutation "RC-074 the adapter refuses a page that is not an array" \
 # lives in rc-lib.sh so the report shares it.
 check_mutation "RC-075 rendering refuses a re-review that skipped Disposition" \
 	rc-lib.sh \
-	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" \]\] || needed=false$/needed=false/' \
+	's/^[[:space:]]*\[\[ -f "\$sdir\/pr-conversation.txt" || -f "\$sdir\/prior-settlements.txt" \]\] || needed=false$/needed=false/' \
 	test-rc-render-comment.sh
 
 # --- RC-076: committed symlinks reached reviewers live -----------------------
@@ -1687,6 +1687,26 @@ check_mutation "RC-089 the report names configuration the change modified" \
 	rc-render-report.sh \
 	's|^\([[:space:]]*\)if \[\[ -n "\$config_changed" && "\$config_changed" != "none" \]\]; then$|\1if false; then|' \
 	test-rc-render-report.sh
+
+# A pull request reviewed in a clone took its configuration from the directory
+# the run started in: none at all outside a checkout, another project's in one.
+# It is read from the pull request's own base, in its clone.
+check_mutation "RC-238 a cloned pull request reads its configuration from its base" \
+	lib/prepare-config.sh \
+	's#git -C "\$config_clone_top" merge-base --is-ancestor "\$forge_base_sha" HEAD 2>/dev/null; then#false; then#' \
+	test-rc-prepare-config-source.sh
+
+# The clone is blobless, so a file only the base holds is fetched when read:
+# on a private repository, without gh's credentials every read came back empty.
+check_mutation "RC-240 configuration reads from the clone carry its network environment" \
+	lib/prepare-config.sh \
+	's#config_git=(rc_timeout 60 "\${RC_GIT_NO_PROMPT\[@\]}" \${RC_GIT_GH_AUTH\[@\]+"\${RC_GIT_GH_AUTH\[@\]}"} git -C "\$config_clone_top")#config_git=(git -C "$config_clone_top")#' \
+	test-rc-prepare-config-source.sh
+
+check_mutation "RC-239 only a checkout of the same project stands in for the clone" \
+	lib/prepare-config.sh \
+	's#"\${rc_remote_path,,}" == "\${forge_owner,,}/\${forge_repo,,}" \]\]; then#true ]]; then#' \
+	test-rc-prepare-config-source.sh
 
 # In place matched the PR's bare head branch name, so a fork PR from main, or a
 # local branch behind the PR, had reviewers read the operator's tree (#63).
@@ -2182,6 +2202,70 @@ check_mutation "RC-219 run start is converted to UTC" \
 check_mutation "RC-265 the PR comment says how many replies were left out for size" \
 	rc-render-comment.sh \
 	's#run_replies+=" (\${run_left} more left out for size)"#run_replies+=""#' \
+	test-rc-render-comment.sh
+
+# #138: a deferred entry above LOW must be refused on read, or an edited ledger
+# could carry a HIGH as "deferred".
+check_mutation "RC-268 a deferred ledger entry must be LOW" \
+	jq/ledger.jq \
+	's#elif .action == "deferred" and .severity != "LOW" then "a deferred entry is not LOW"#elif false then ""#' \
+	test-rc-ledger.sh
+
+# Revoked settlements must leave the next ledger.
+check_mutation "RC-269 revoked settlements are dropped from the next ledger" \
+	jq/ledger.jq \
+	's#select(.id as $i | (\$revoked | index(\[\$i\])) == null)#select(true)#' \
+	test-rc-ledger.sh
+
+# A line separator in a free-text field would reach column 0 of the model file.
+check_mutation "RC-270 ledger text fields refuse line separators" \
+	jq/ledger.jq \
+	's#def _ledger_line(\$max): type == "string" and (test(_ledger_ctl) | not) and#def _ledger_line($max): type == "string" and#' \
+	test-rc-ledger.sh
+
+# A disposition attributed to a reply nobody wrote must be refused.
+check_mutation "RC-271 reply attributions are matched against the conversation" \
+	jq/check-disposition.jq \
+	's#elif ({by, at} | IN(\$pairs\[\]) | not) then#elif false then#' \
+	test-rc-check-disposition.sh
+
+# A settlement id must exist in the snapshot's ledger.
+check_mutation "RC-272 settlement ids are checked against the prior ledger" \
+	jq/check-disposition.jq \
+	's#if (\$id | type) != "string" or (\$ledger | has(\$id) | not)#if false#' \
+	test-rc-check-disposition.sh
+
+# The prior ledger is the snapshot's copy; reading the live file lets
+# Disposition plant entries the next comment carries.
+check_mutation "RC-273 the check reads the snapshot's prior ledger, not the live one" \
+	rc-check-disposition.sh \
+	's#if \[\[ -f "\$prior_snap" \]\] \&\&#if [[ -f "$prior_file" ]] \&\& prior_snap="$prior_file" \&\&#' \
+	test-rc-check-disposition.sh
+
+# The render gate must refuse a ledger.json changed after the check. The range
+# starts at the ledger hash so the verdict gate's identical comparison is spared.
+check_mutation "RC-274 the render gate hash-checks ledger.json" \
+	rc-lib.sh \
+	'/want=\$(rc_sha256 "\$sdir\/verdicts\/_meta\/ledger.json")/,$ s#\[\[ "\$have" == "\$want" \]\] \&\& return 0#return 0#' \
+	test-rc-render-comment.sh
+
+# Earlier settlements alone require Disposition.
+check_mutation "RC-275 prior settlements open the Disposition gate" \
+	rc-lib.sh \
+	's#\[\[ -f "\$sdir/pr-conversation.txt" || -f "\$sdir/prior-settlements.txt" \]\]#[[ -f "$sdir/pr-conversation.txt" ]]#' \
+	test-rc-render-comment.sh
+
+# Only the line directly above the last marker is the ledger; widening the read
+# lets a counterfeit in quoted evidence through.
+check_mutation "RC-276 the ledger is read only directly above the last marker" \
+	lib/prepare-context.sh \
+	's#(\[\$l | to_entries\[\] | select(.value | startswith(\$open))\] | last) as \$m#([$l | to_entries[] | select(.value | startswith($open))] | first) as $m#' \
+	test-rc-prepare-conversation.sh
+
+# The ledger line must survive the last-resort cut.
+check_mutation "RC-277 part 1's marker block carries the ledger line" \
+	rc-render-comment.sh \
+	's#\[\[ "\$1" -ne 1 \]\] || _RC_OUT="\${_RC_LEDGER_LINE:-}\${_RC_OUT}"#:#' \
 	test-rc-render-comment.sh
 
 total=$((caught + missed + broken + applied))

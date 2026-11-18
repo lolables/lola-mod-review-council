@@ -1,0 +1,183 @@
+module/skills/review-council/scripts/jq/ledger.jq
+  s_e12df7c9febd93::t_45a53f213484e6 1-29,31,33-50,52-110,112-113,118-122,124-128,132,134,136,138-150,152-178
+  s_e12df7c9febd93::t_7852e988d1833b 30,32,111,114-117,123,129-131,133,135,137
+  s_e12df7c9febd93::t_287c206efd7715 51,151
+module/skills/review-council/scripts/rc-clone-target.sh
+  s_5e2e85d1f77a13::t_b3b269fcbdb2a2 274-278
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/docs.sh
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-4
+module/tests/test-rc-prepare-conversation.sh
+  s_e12df7c9febd93::t_80e50cea2ae5fb 1797
+  s_e12df7c9febd93::t_0513739f355406 240-249
+  s_e12df7c9febd93::t_08df165f243407 1769-1796,1798-1835
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+module/skills/review-council/scripts/jq/check-disposition.jq
+  s_e12df7c9febd93::t_aa9760000a4764 6-8,31,45-65,67,69,71-83,105,148-151
+  s_e12df7c9febd93::t_23843e7d596af6 9,146-147
+.lola-eval/tests/case-040-ledger-kept-carried/starter/prune.sh
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-8
+.lola-eval/tests/case-040-ledger-kept-carried/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-22
+.taskfiles/scripts/mutate-check.sh
+  s_e12df7c9febd93::t_bb0377f86a11c4 1459
+  s_5e2e85d1f77a13::t_7f4eae9ea62a97 1699-1705
+  s_5e2e85d1f77a13::t_8a75993352844f 1691-1698,1706-1710
+  s_e12df7c9febd93::t_80e50cea2ae5fb 2207-2270
+module/tests/helpers.sh
+  s_5e2e85d1f77a13::t_ffe8ea2481003e 429-466
+  s_e12df7c9febd93::t_f185b6ef14812b 313,315-322
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_e12df7c9febd93::t_08df165f243407 194-196
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/README.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-5
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/README.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+module/tests/test-rc-idempotency.sh
+  s_e12df7c9febd93::t_bbcadd12e9ad73 195,198
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+module/skills/review-council/phases/disposition.md
+  s_e12df7c9febd93::t_870b7b0e3a5700 254-256
+  s_e12df7c9febd93::t_3c5581c1ea62a2 81,97-98,121-124,146-149,182-190,238-253,257-265,275-278,288-293,328-329,356-359,415-420,423-428,463,482-483
+  s_e12df7c9febd93::t_a41279ea0079a7 26,37-43
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-037-ledger-deferral-retitled/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-039-ledger-deferral-raised/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-79
+.lola-eval/tests/case-038-ledger-deferral-other-low/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-20
+module/tests/test-rc-render-comment.sh
+  s_e12df7c9febd93::t_80e50cea2ae5fb 2070,2082,3155
+  s_e12df7c9febd93::t_f185b6ef14812b 2071-2081,2083-2093,2757,2760-2763
+  s_e12df7c9febd93::t_75f2e69c3dd2cb 3068-3154,3156-3175
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+.lola-eval/tests/case-039-ledger-deferral-raised/task.yaml
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-20
+module/tests/test-rc-prepare-config-source.sh
+  s_5e2e85d1f77a13::t_4399aa5bfbcae7 829-834,837-839,861-864
+  s_5e2e85d1f77a13::t_5e1f2f3ad88459 802-828,835-836,840-860,865-932
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-038-ledger-deferral-other-low/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-77
+.lola-eval/tests/case-040-ledger-kept-carried/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+.lola-eval/tests/case-037-ledger-deferral-retitled/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/prior-settlements.txt
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-21
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/verdicts/findings.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-038-ledger-deferral-other-low/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_e12df7c9febd93::t_08df165f243407 142,339-386
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_5e2e85d1f77a13::t_71ce31387a6729 117-123
+  s_5e2e85d1f77a13::t_94565ccd66be8d 43-45,51,59,100-116,124-161,163-164,223-224,230,325,609-613,621-624
+.lola-eval/tests/case-038-ledger-deferral-other-low/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+.lola-eval/tests/case-039-ledger-deferral-raised/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+module/skills/review-council/SKILL.md
+  s_5e2e85d1f77a13::t_841f3f3cf9bfb8 1513-1518
+  s_e12df7c9febd93::t_2232613fa60b21 1034,1047,1050-1051,1071-1072,1088
+.lola-eval/tests/case-037-ledger-deferral-retitled/prompt.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-16
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+module/skills/review-council/scripts/jq/md-neutralise.jq
+  s_e12df7c9febd93::t_0bc1c57338495f 365-367,379
+.taskfiles/lola-eval.yml
+  s_e12df7c9febd93::t_4976feb591ab5c 189,197-199
+.lola-eval/tests/case-040-ledger-kept-carried/starter/.rc-session/prior-settlements.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-18
+module/tests/test-rc-ledger.sh
+  s_e12df7c9febd93::t_45a53f213484e6 1-27,31-32,34-58,60-65,73-74,76-132,134-137,170-172
+  s_e12df7c9febd93::t_8a885b757bf84d 28,66-69,133,138-143,145-168
+  s_e12df7c9febd93::t_287c206efd7715 29-30,59
+  s_e12df7c9febd93::t_80e50cea2ae5fb 33,75
+  s_e12df7c9febd93::t_0bc1c57338495f 70-72,144
+  s_e12df7c9febd93::t_6dfb07ce473fb4 169
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/verdicts/verdicts-map.json
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-3
+README.md
+  s_e12df7c9febd93::t_287c206efd7715 486
+  s_5e2e85d1f77a13::t_a3f93bc371f7bc 666-668,672
+  s_e12df7c9febd93::t_5ba147750be8bf 371
+module/tests/test-rc-check-disposition.sh
+  s_e12df7c9febd93::t_80e50cea2ae5fb 595,599,647
+  s_e12df7c9febd93::t_287c206efd7715 639
+  s_e12df7c9febd93::t_fb70872fc2be43 56-67,77-78,571-594,596-598,600-638,640-646,648-661
+  s_e12df7c9febd93::t_e3a4737963410e 662
+  s_e12df7c9febd93::t_0561805a8eec5f 663-684
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/prune.sh
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-8
+.lola-eval/tests/case-037-ledger-deferral-retitled/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-79
+module/tests/test-rc-disposition-rules.sh
+  s_e12df7c9febd93::t_ab48657d6f7766 162-163
+  s_e12df7c9febd93::t_310a54d19148a2 146-161,164-172
+docs/dev/pipeline.md
+  s_e12df7c9febd93::t_287c206efd7715 28
+  s_e12df7c9febd93::t_5ba147750be8bf 259,427-429
+  s_e12df7c9febd93::t_179ea825bdad16 270-274,440
+module/skills/review-council/scripts/rc-render-comment.sh
+  s_e12df7c9febd93::t_5d3ac08ea6df48 406-434,755-758,829,847-848,854,861-862
+.lola-eval/tests/case-039-ledger-deferral-raised/starter/.rc-session/tracking.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-24
+.lola-eval/tests/case-040-ledger-kept-carried/rubric.md
+  s_e12df7c9febd93::t_6d4d842f43fa12 1-84
+module/skills/review-council/scripts/rc-lib.sh
+  s_5e2e85d1f77a13::t_64f0cfbfa0eb81 491-525
+  s_e12df7c9febd93::t_7e31d5b9896867 129-134,142,149,163-173,175
+  s_e12df7c9febd93::t_45a53f213484e6 32-36
+module/skills/review-council/scripts/rc-check-disposition.sh
+  s_e12df7c9febd93::t_23843e7d596af6 169-176,194
+  s_e12df7c9febd93::t_287c206efd7715 252-254
+  s_e12df7c9febd93::t_30398c36d2a42d 37-48,83-87,102-103,115-118,126,137-138,152-168,177-180,228-232,251
+module/skills/review-council/references/pipeline-states.md
+  s_e12df7c9febd93::t_179ea825bdad16 23,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2160cf2fb1c772341bae866a113f4b7c4ee9e00c",
+  "prompts": {},
+  "sessions": {
+    "s_5e2e85d1f77a13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8b34725d-8729-4f9b-a805-d0a5a8a60d01",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_e12df7c9febd93": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0bfab2ba-3465-4ddf-93ea-41c5ad9dec81",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+module/tests/test-rc-check-disposition.sh
+  s_95441206e59928::t_558aada8dbb8a8 643-644,661-662
+  s_95441206e59928::t_2a44401c1de696 682
+module/tests/test-rc-ledger.sh
+  s_95441206e59928::t_b5efd37f305827 24,28,30,32,34,36,46,93,99,102,106,109,112,118,122,133,141,154,159,163,165,168,173,178
+  s_95441206e59928::t_750531d5be940a 83-84
+module/skills/review-council/scripts/lib/prepare-context.sh
+  s_95441206e59928::t_558aada8dbb8a8 355,357
+module/tests/test-rc-prepare-config-source.sh
+  s_95441206e59928::t_2a44401c1de696 819,826-827,841-847
+module/tests/test-rc-render-comment.sh
+  s_95441206e59928::t_994b99e0e7ea15 3105,3129,3186
+  s_95441206e59928::t_750531d5be940a 3084-3091
+  s_95441206e59928::t_558aada8dbb8a8 3092,3103-3104,3106-3107,3119-3120,3130-3131,3150-3151,3153-3154,3176-3177,3187
+module/skills/review-council/scripts/lib/prepare-config.sh
+  s_95441206e59928::t_558aada8dbb8a8 138,143,147
+module/tests/test-rc-prepare-conversation.sh
+  s_95441206e59928::t_558aada8dbb8a8 1778-1779,1793,1799,1801-1802,1810,1812-1813,1818,1820-1821,1827-1828,1836-1838
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "59138b77326d75716b4517fe27cf09b919d011b1",
+  "prompts": {},
+  "sessions": {
+    "s_95441206e59928": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8df9ca64-c474-4086-9092-dc3439e879d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

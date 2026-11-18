@@ -352,8 +352,9 @@ if [[ -f "${session_dir}/pr-metadata.txt" ]] && [[ "$forge_tool" != "none" ]]; t
 			# and the council edits its own on same-sha upserts, so an edit
 			# cannot be told from either. It is validated (jq/ledger.jq), and
 			# Disposition weighs it under the same rules as a reply.
+			ledger_who=$(jq -r '.who' <<<"$marker_window")
 			ledger_line=$(echo "$conversation_json" | jq -r \
-				--arg open "$RC_MARKER_OPEN" --arg who "$(jq -r '.who' <<<"$marker_window")" \
+				--arg open "$RC_MARKER_OPEN" --arg who "$ledger_who" \
 				--arg obs "$RC_OBSOLETE_LINE_RE" "$verdict_shape_jq"'
 				[.[] | select(is_verdict_shape($open) and ((.author // "") | ascii_downcase) == $who)
 				 | ((.body // "") | gsub("\r"; "") | split("\n")) as $l

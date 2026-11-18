@@ -135,13 +135,16 @@ else
 				[[ -n "$config_want_host" ]] || case "$forge" in
 				github) config_want_host="github.com" ;;
 				gitlab) config_want_host="gitlab.com" ;;
+				*) ;;
 				esac
 				if [[ -n "$rc_remote_host" && "${rc_remote_host,,}" == "${config_want_host,,}" &&
 					"${rc_remote_path,,}" == "${forge_owner,,}/${forge_repo,,}" ]]; then
 					config_base="${pr_base:-}"
+					# shellcheck disable=SC2312 # rc_config_commit cannot fail: it ends in `|| true`.
 					[[ -n "$config_base" && -n "$(rc_config_commit "$config_base")" ]] || config_base=""
 					if [[ -z "$config_base" ]]; then
 						for config_ref in main master; do
+							# shellcheck disable=SC2312 # rc_config_commit cannot fail: it ends in `|| true`.
 							if [[ -n "$(rc_config_commit "$config_ref")" ]]; then
 								config_base="$config_ref"
 								break

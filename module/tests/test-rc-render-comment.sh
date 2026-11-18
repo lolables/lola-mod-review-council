@@ -3081,8 +3081,15 @@ ledger_above_marker() {
 	local f="$1" l m
 	l=$(tail -n 2 "$f" | head -n 1)
 	m=$(tail -n 1 "$f")
-	[[ "$m" == "<!-- review-council:marker "* ]] || { echo "no marker last"; return; }
-	[[ "$l" =~ ^'<!-- review-council:ledger v=1 '([A-Za-z0-9+/]+=*)' -->'$ ]] || { echo "no ledger above"; return; }
+	[[ "$m" == "<!-- review-council:marker "* ]] || {
+		echo "no marker last"
+		return
+	}
+	[[ "$l" =~ ^'<!-- review-council:ledger v=1 '([A-Za-z0-9+/]+=*)' -->'$ ]] || {
+		echo "no ledger above"
+		return
+	}
+	# shellcheck disable=SC2312 # a line that does not decode is the "wrong ledger" outcome, not a suite abort.
 	if [[ "$(jq -Rr '@base64d' <<<"${BASH_REMATCH[1]}" | jq -c .)" == "$(jq -c . <<<"$LEDGER_R")" ]]; then echo ok; else echo "wrong ledger"; fi
 }
 
@@ -3093,9 +3100,11 @@ set_effort "$sess" quick
 jq -c . <<<"$LEDGER_R" >"$sess/prior-settlements.json"
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "rendered"
-assert_equals "$(ledger_above_marker "$sess/comment-body.md")" "ok" "the ledger line sits directly above the marker"
-assert_match_count "$(cat "$sess/comment-body.md")" "1" "the visible block" -xF -e '<details><summary>Settled earlier (2)</summary>'
-assert_match_count "$(cat "$sess/comment-body.md")" "0" "no bare @mention of a settler" -E -e '(^|[^\\`>])@(alice|bob)'
+got=$(ledger_above_marker "$sess/comment-body.md")
+assert_equals "$got" "ok" "the ledger line sits directly above the marker"
+body=$(cat "$sess/comment-body.md")
+assert_match_count "$body" "1" "the visible block" -xF -e '<details><summary>Settled earlier (2)</summary>'
+assert_match_count "$body" "0" "no bare @mention of a settler" -E -e '(^|[^\\`>])@(alice|bob)'
 rm -rf "$sess"
 
 echo "Test G2: after Disposition, the checked ledger.json is the one rendered"
@@ -3107,7 +3116,8 @@ jq -c . <<<"$LEDGER_R" >"$sess/verdicts/_meta/ledger.json"
 seed_disposed_review "$sess" '"resolved": 0, "suppressed_low": 0, "kept": 0'
 result=$(bash "$SCRIPT" "$sess" 2>/dev/null)
 assert_json_field "$result" "status" "rendered" "rendered"
-assert_equals "$(ledger_above_marker "$sess/comment-body.md")" "ok" "ledger.json, not the prior file"
+got=$(ledger_above_marker "$sess/comment-body.md")
+assert_equals "$got" "ok" "ledger.json, not the prior file"
 rm -rf "$sess"
 
 echo "Test G3: an empty ledger renders neither block"
@@ -3116,8 +3126,9 @@ make_review_session "$sess"
 printf 'reply\n' >"$sess/pr-conversation.txt"
 seed_disposed_review "$sess" '"resolved": 0, "suppressed_low": 0, "kept": 0'
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
-assert_match_count "$(cat "$sess/comment-body.md")" "0" "no ledger line" -F -e 'review-council:ledger'
-assert_match_count "$(cat "$sess/comment-body.md")" "0" "no visible block" -F -e 'Settled earlier'
+body=$(cat "$sess/comment-body.md")
+assert_match_count "$body" "0" "no ledger line" -F -e 'review-council:ledger'
+assert_match_count "$body" "0" "no visible block" -F -e 'Settled earlier'
 rm -rf "$sess"
 
 echo "Test G4: a chained verdict carries the ledger in part 1 only, every part within the limit"
@@ -3136,9 +3147,11 @@ else
 	echo "  FAIL: the fixture did not chain; raise the findings or lower the limit"
 	FAIL=$((FAIL + 1))
 fi
-assert_equals "$(ledger_above_marker "${parts[0]}")" "ok" "part 1 carries the ledger"
+got=$(ledger_above_marker "${parts[0]}")
+assert_equals "$got" "ok" "part 1 carries the ledger"
 for p in "${parts[@]:1}"; do
-	assert_match_count "$(cat "$p")" "0" "${p##*/} carries no ledger" -F -e 'review-council:ledger'
+	body=$(cat "$p")
+	assert_match_count "$body" "0" "${p##*/} carries no ledger" -F -e 'review-council:ledger'
 done
 for p in "${parts[@]}"; do
 	b=$(wc -c <"$p")
@@ -3160,7 +3173,8 @@ set_effort "$sess" quick
 jq -c . <<<"$LEDGER_R" >"$sess/prior-settlements.json"
 printf -- '- Comment limit: 3500\n- Max comments: 1\n' >>"$sess/tracking.md"
 bash "$SCRIPT" "$sess" >/dev/null 2>&1
-assert_equals "$(ledger_above_marker "$sess/comment-body.md")" "ok" "the cut keeps the ledger line"
+got=$(ledger_above_marker "$sess/comment-body.md")
+assert_equals "$got" "ok" "the cut keeps the ledger line"
 rm -rf "$sess"
 
 echo "Test G6: an invalid prior file is not rendered, and the render says so on stderr"
@@ -3169,7 +3183,8 @@ make_review_session "$sess"
 set_effort "$sess" quick
 jq -c '.v = 2' <<<"$LEDGER_R" >"$sess/prior-settlements.json"
 err=$(bash "$SCRIPT" "$sess" 2>&1 >/dev/null)
-assert_match_count "$(cat "$sess/comment-body.md")" "0" "no ledger line" -F -e 'review-council:ledger'
+body=$(cat "$sess/comment-body.md")
+assert_match_count "$body" "0" "no ledger line" -F -e 'review-council:ledger'
 assert_match_count "$err" "1" "stderr names it" -F -e 'settlement ledger'
 rm -rf "$sess"
 

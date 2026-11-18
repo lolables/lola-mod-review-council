@@ -816,13 +816,15 @@ rm -rf "$work" "$bindir"
 # into <ghbin> (answering for that head, with <merge-base> as the forge's
 # merge-base, "" for none) and a git that clones the fixture into <gitbin>.
 make_clone_case() { # fixture ghbin gitbin merge-base
+	local script
 	make_hostile_branch_repo "$1"
 	git -C "$1" update-ref refs/pull/7/head feature
 	write_fake_gh "$2"
 	# The fake forge's catch-all would report a `gh repo clone` that made nothing
 	# as a success; refusing it sends the clone script to plain git, which the
 	# wrapper redirects to the fixture.
-	sed -i 's/^\*) exit 0 ;;$/"repo clone") exit 1 ;;\n*) exit 0 ;;/' "$2/gh"
+	script=$(awk '$0 == "*) exit 0 ;;" { print "\"repo clone\") exit 1 ;;" } { print }' "$2/gh")
+	printf '%s\n' "$script" >"$2/gh"
 	git -C "$1" rev-parse feature >"$2/head-sha"
 	git -C "$1" rev-parse main >"$2/base-sha"
 	if [[ -n "$4" ]]; then printf '%s' "$4" >"$2/merge-base"; else rm -f "$2/merge-base"; fi
@@ -836,7 +838,13 @@ make_clone_case() { # fixture ghbin gitbin merge-base
 	rm -f "$3/gh"
 	# Every blob read, with the environment it ran in: prompts off, and gh as the
 	# credential helper for github.com.
-	sed -i '2i if printf "%s\\n" "$@" | grep -qx cat-file; then echo "prompt=${GIT_TERMINAL_PROMPT:-} helper=${GIT_CONFIG_VALUE_0:-}" >>"'"$3"'/blob-reads.log"; fi' "$3/git"
+	# shellcheck disable=SC2016 # the inserted line is wrapper source, expanded when it runs
+	script=$(
+		sed -n 1p "$3/git"
+		printf '%s\n' 'if printf "%s\n" "$@" | grep -qx cat-file; then echo "prompt=${GIT_TERMINAL_PROMPT:-} helper=${GIT_CONFIG_VALUE_0:-}" >>"'"$3"'/blob-reads.log"; fi'
+		sed 1d "$3/git"
+	)
+	printf '%s\n' "$script" >"$3/git"
 }
 
 echo "Test 33b: a pull request reviewed from outside any repository reads its base from the clone"

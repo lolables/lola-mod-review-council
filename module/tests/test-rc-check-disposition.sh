@@ -640,7 +640,8 @@ assert_json_field "$result" "ledger_entries" "2" "the printed payload counts the
 assert_jq "$s/verdicts/_meta/ledger.json" '[.entries[].id] | join(",")' "s1,s3" \
 	"s1 carried by its suppression, s2 revoked, the kept reply is new as s3"
 assert_jq "$s/verdicts/_meta/ledger.json" '.entries[] | select(.id == "s3") | .who' "alice" "the new entry names the reply's author"
-assert_jq "$s/verdicts/_meta/disposition-check.json" '.ledger_sha256' "$(sha256_of "$s/verdicts/_meta/ledger.json")" \
+want=$(sha256_of "$s/verdicts/_meta/ledger.json")
+assert_jq "$s/verdicts/_meta/disposition-check.json" '.ledger_sha256' "$want" \
 	"the check records the ledger's hash"
 rm -rf "$s"
 
@@ -657,7 +658,8 @@ s=$(mk_session)
 snapshot "$s"
 result=$(bash "$SCRIPT" "$s")
 assert_accepted "$s" "nothing to carry"
-assert_equals "$(jq -c . "$s/verdicts/_meta/ledger.json")" '{"v":1,"next":1,"dropped":0,"entries":[]}' "the empty ledger"
+ledger=$(jq -c . "$s/verdicts/_meta/ledger.json")
+assert_equals "$ledger" '{"v":1,"next":1,"dropped":0,"entries":[]}' "the empty ledger"
 rm -rf "$s"
 
 echo "Test L9: a revocation path that is not a regular file is refused, not read"
@@ -677,7 +679,7 @@ rm -rf "$s"
 s=$(mk_ledger_session)
 mkfifo "$s/verdicts/_meta/ledger-revoked.json"
 # timeout: a check that reads the FIFO blocks, and must fail here, not hang the suite.
-result=$(timeout 10 bash "$SCRIPT" "$s") || true
+result=$("$RC_TIMEOUT_BIN" 10 bash "$SCRIPT" "$s") || true
 assert_refused "$s" "ledger-revoked.json is not a regular file" "revocation path is a FIFO"
 assert_absent "$s/verdicts/_meta/ledger-revoked.json" "the FIFO is removed"
 rm -rf "$s"

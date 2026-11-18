@@ -419,10 +419,10 @@ rc_render_comment_body() { # session_dir body_file
 		ledger_src="$session_dir/prior-settlements.json"
 	fi
 	if [[ -n "$ledger_src" && -f "$ledger_src" ]]; then
-		if ledger_out=$(jq -c -L "$RC_JQ_DIR" --arg re "$RC_SEEN_TS_RE" --arg key "$RC_LEDGER_KEY" 'include "ledger";
+		if ledger_out=$(jq -c -L "$RC_JQ_DIR" --arg re "$RC_SEEN_TS_RE" --arg key "$RC_LEDGER_KEY" 'include "md-neutralise"; include "ledger";
 			if ([ledger_problem($re)] | length) > 0 then error("invalid")
 			elif (.entries | length) == 0 then {line: "", visible: ""}
-			else {line: ledger_line($key), visible: ([ledger_visible] | join("\n"))} end' "$ledger_src" 2>/dev/null); then
+			else {line: ledger_line($key), visible: ([ledger_visible(rc_md_code; rc_md_title)] | join("\n"))} end' "$ledger_src" 2>/dev/null); then
 			_RC_LEDGER_LINE=$(jq -r '.line' <<<"$ledger_out")
 			[[ -z "$_RC_LEDGER_LINE" ]] || _RC_LEDGER_LINE+=$'\n'
 			_RC_HEAD_SETTLED=$(jq -r '.visible' <<<"$ledger_out")

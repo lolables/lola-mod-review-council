@@ -145,14 +145,14 @@ assert_equals "$back" "$LEDGER" "decodes to the same ledger"
 
 echo "Test 8: the visible block neutralises forge text and never mentions anyone"
 hostile=$(jq -c '.entries[1].claim = "<!-- hidden --> @octocat said so" | .entries[0].who = "mallory"' <<<"$LEDGER")
-vis=$(jq -r -L "$JQ_DIR" 'include "ledger"; ledger_visible' <<<"$hostile")
+vis=$(jq -r -L "$JQ_DIR" 'include "md-neutralise"; include "ledger"; ledger_visible(rc_md_code; rc_md_title)' <<<"$hostile")
 assert_match_count "$vis" "1" "a collapsed block with the count" -xF -e '<details><summary>Settled earlier (2)</summary>'
 assert_match_count "$vis" "0" "no raw HTML comment survives" -F -e '<!-- hidden'
 assert_match_count "$vis" "1" "the mention is neutralised to code" -F -e '<code>\@octocat</code>'
 assert_match_count "$vis" "0" "no bare @mention survives" -E -e '(^|[^\\])@octocat'
 assert_match_count "$vis" "1" "the deferral names its login as code" -F -e "Deferred at <code>mallory</code>'s request, 2026-11-15."
 # shellcheck disable=SC2312 # a failing filter must fail this assertion, not abort the suite.
-assert_equals "$(jq -r -L "$JQ_DIR" 'include "ledger"; [ledger_visible] | length' <<<'{"v":1,"next":1,"dropped":0,"entries":[]}')" "0" "an empty ledger prints nothing"
+assert_equals "$(jq -r -L "$JQ_DIR" 'include "md-neutralise"; include "ledger"; [ledger_visible(rc_md_code; rc_md_title)] | length' <<<'{"v":1,"next":1,"dropped":0,"entries":[]}')" "0" "an empty ledger prints nothing"
 
 echo "Test 9: ledger_build review findings"
 dup=$(jq -c '.stripped += [.stripped[0] | .id = "F4"]' <<<"$FINDINGS")
@@ -188,7 +188,7 @@ assert_jq_str "$fit" '(tojson | utf8bytelength) <= 4096' "true" "within 4096 byt
 echo "Test 11: the visible block cannot be broken out of"
 brk=$(jq -c '.entries |= map(.file = "a</details></summary>" | .summary = "b</details></summary>")
 	| .entries[1].claim = "c</details></summary>" | .entries[1].note = "d</details></summary>"' <<<"$LEDGER")
-vis=$(jq -r -L "$JQ_DIR" 'include "ledger"; ledger_visible' <<<"$brk")
+vis=$(jq -r -L "$JQ_DIR" 'include "md-neutralise"; include "ledger"; ledger_visible(rc_md_code; rc_md_title)' <<<"$brk")
 assert_match_count "$vis" "1" "only the closing line closes the block" -xF -e '</details>'
 assert_match_count "$vis" "1" "no raw closing summary outside the opening line" -F -e '</summary>'
 

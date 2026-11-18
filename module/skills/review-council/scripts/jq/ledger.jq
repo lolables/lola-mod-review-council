@@ -18,6 +18,10 @@
 # rc-check-disposition.sh (build the next ledger), rc-render-comment.sh (the
 # hidden line and the visible "Settled earlier" block).
 
+# Only constants (rc_md_invisible) may be used through this include. jq 1.8.2
+# aborts compiling a module that calls, through an include, a function that
+# itself calls another (jqlang/jq#3597), so anything that does — rc_md_code,
+# rc_md_title — is passed in by the caller instead; see ledger_visible.
 include "md-neutralise";
 
 def ledger_caps: {entries: 20, bytes: 4096, summary: 100, text: 160, file: 200};
@@ -163,16 +167,20 @@ def ledger_line($key): "<!-- \($key) v=1 \(tojson | @base64) -->";
 # The visible block, after the reviewer table. Every value passes the same
 # neutralisers finding prose does; the login is printed as code, never as an
 # @mention, so a re-review does not notify the person on every run.
-def ledger_visible:
+#
+# The neutralisers are arguments rather than direct calls for jq 1.8.2's sake
+# (see the include above): call it as `include "md-neutralise"; include
+# "ledger"; ledger_visible(rc_md_code; rc_md_title)`.
+def ledger_visible(md_code; md_title):
 	if (.entries | length) == 0 then empty
 	else
 		"<details><summary>Settled earlier (\(.entries | length))</summary>", "",
 		(.entries[]
-		 | "- \(.severity) in " + (.file | rc_md_code) + ": " + (.summary | rc_md_title | _ledger_sentence) + " "
+		 | "- \(.severity) in " + (.file | md_code) + ": " + (.summary | md_title | _ledger_sentence) + " "
 		   + (if .action == "deferred"
-		      then "Deferred at " + (.who | rc_md_code) + "'s request, \(.at[:10])."
-		      else (if .claim != null then "Claim \"" + (.claim | rc_md_title) + "\" checked: " else "Checked: " end)
-		           + (.note | rc_md_title | _ledger_sentence) + " Kept, \(.at[:10])." end)),
+		      then "Deferred at " + (.who | md_code) + "'s request, \(.at[:10])."
+		      else (if .claim != null then "Claim \"" + (.claim | md_title) + "\" checked: " else "Checked: " end)
+		           + (.note | md_title | _ledger_sentence) + " Kept, \(.at[:10])." end)),
 		(if .dropped > 0 then "", "_\(.dropped) older settlement(s) no longer shown._" else empty end),
 		"", "</details>"
 	end;

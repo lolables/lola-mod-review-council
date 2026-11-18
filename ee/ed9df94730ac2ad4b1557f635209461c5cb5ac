@@ -1,0 +1,23 @@
+module/agents/review-council-arbiter.md
+  s_57550b6f4b080b::t_36f320ed07de43 49,57
+module/skills/review-council/phases/verify.md
+  s_57550b6f4b080b::t_5a829f16ae3fc6 628
+module/tests/test-rc-doc-guards.sh
+  s_57550b6f4b080b::t_43368414dc56c3 3728-3750
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "eeed9df94730ac2ad4b1557f635209461c5cb5ac",
+  "prompts": {},
+  "sessions": {
+    "s_57550b6f4b080b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aafaad023e479bff0",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

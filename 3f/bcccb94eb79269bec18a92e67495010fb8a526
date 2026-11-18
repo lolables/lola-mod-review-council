@@ -1,0 +1,19 @@
+module/tests/test-rc-doc-guards.sh
+  s_6fcf332ead7769::t_3857d9920b9c8e 3595
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "3fbcccb94eb79269bec18a92e67495010fb8a526",
+  "prompts": {},
+  "sessions": {
+    "s_6fcf332ead7769": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6182f768-9b70-4147-8290-f7ceb8ff3da0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

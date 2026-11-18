@@ -67,24 +67,6 @@ rc_is_lock() { # basename
 	esac
 }
 
-# `spec` and `specs` are NOT in the directory list. In this module they are
-# specification directories, and a spec artifact is not a test artifact — the
-# `*.spec.*` and `*_spec.rb` basenames below still catch the two languages that
-# spell a test file that way.
-rc_is_test() { # path basename
-	case "/$1/" in
-	*/test/* | */tests/* | */__tests__/* | */__mocks__/* | */testdata/* | */e2e/*) return 0 ;;
-	*) ;;
-	esac
-	case "$2" in
-	*_test.* | *.test.* | *.spec.*) return 0 ;;
-	test_*.py | conftest.py | *_spec.rb) return 0 ;;
-	*Test.java | *Tests.java | *Test.cs | *Tests.cs) return 0 ;;
-	*.venom.yml | *.venom.yaml) return 0 ;;
-	*) return 1 ;;
-	esac
-}
-
 rc_is_doc() { # basename
 	case "$1" in
 	*.md | *.markdown | *.rst | *.adoc | *.asciidoc | *.org) return 0 ;;

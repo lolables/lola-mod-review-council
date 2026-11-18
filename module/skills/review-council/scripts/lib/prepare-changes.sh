@@ -89,21 +89,7 @@ if [[ "$mode" == "code" ]]; then
 				done
 				$excluded && continue
 			fi
-			for pattern in "${SMART_EXCLUDES[@]}"; do
-				if [[ "$pattern" == */ ]]; then
-					# Directory pattern
-					if [[ "$file" == "$pattern"* ]] || [[ "$file" == *"/$pattern"* ]]; then
-						excluded=true
-						break
-					fi
-				else
-					# File pattern (exact basename match)
-					if [[ "${file##*/}" == "$pattern" ]]; then
-						excluded=true
-						break
-					fi
-				fi
-			done
+			rc_smart_excluded "$file" && excluded=true
 			$excluded || filtered_files+="${file}"$'\n'
 		done <<<"$all_files"
 

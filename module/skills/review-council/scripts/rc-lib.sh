@@ -728,3 +728,21 @@ rc_trap_errors() {
 	set -o errtrace
 	trap 'rc_on_err "$?" "$LINENO" "${BASH_SOURCE[0]}"' ERR
 }
+
+# `spec` and `specs` are NOT in the directory list. In this module they are
+# specification directories, and a spec artifact is not a test artifact — the
+# `*.spec.*` and `*_spec.rb` basenames below still catch the two languages that
+# spell a test file that way.
+rc_is_test() { # path basename
+	case "/$1/" in
+	*/test/* | */tests/* | */__tests__/* | */__mocks__/* | */testdata/* | */e2e/*) return 0 ;;
+	*) ;;
+	esac
+	case "$2" in
+	*_test.* | *.test.* | *.spec.*) return 0 ;;
+	test_*.py | conftest.py | *_spec.rb) return 0 ;;
+	*Test.java | *Tests.java | *Test.cs | *Tests.cs) return 0 ;;
+	*.venom.yml | *.venom.yaml) return 0 ;;
+	*) return 1 ;;
+	esac
+}

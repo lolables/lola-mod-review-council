@@ -1336,6 +1336,7 @@ writes subsequent phases.
 - Config source: {sha (how) | working tree (no git repository) | none (reason)}
 - Project packs: {dir (count) | none}
 - Severity pack: {project | user | module}
+- Test suite: {none found | N test files | unknown (listing failed)}
 - Docs repo: {owner/repo | none}
 - Knowledge tool: {name | none}
 - Config changed by changeset: {none | paths, TAB-separated}

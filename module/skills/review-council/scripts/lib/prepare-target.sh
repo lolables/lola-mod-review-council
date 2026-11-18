@@ -190,6 +190,21 @@ SMART_EXCLUDES=(
 	"composer.lock"
 )
 
+# Succeed when <path> lies under an excluded directory or is an excluded file.
+# The changeset builder and the test-suite count (#136) filter git's file list
+# with it; rc_walk_files below prunes the same list during a walk.
+rc_smart_excluded() { # path
+	local pattern
+	for pattern in "${SMART_EXCLUDES[@]}"; do
+		if [[ "$pattern" == */ ]]; then
+			[[ "$1" == "$pattern"* || "$1" == *"/$pattern"* ]] && return 0
+		elif [[ "${1##*/}" == "$pattern" ]]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 # Basename globs for files that commonly hold credentials. Applied only to trees
 # walked outside a git repository, where no ignore list exists: inside one,
 # untracked files already honour .gitignore, which is where .env and keys live.

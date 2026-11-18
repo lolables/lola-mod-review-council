@@ -1,0 +1,73 @@
+module/skills/review-council/references/severity.md
+  s_57550b6f4b080b::t_60c0bad067b7f0 45
+  s_57550b6f4b080b::t_0870c261d35d69 44
+module/agents/review-council-arbiter.md
+  s_57550b6f4b080b::t_e1eb997305a44a 120
+  s_57550b6f4b080b::t_36f320ed07de43 49,57
+  s_57550b6f4b080b::t_c9388380f8f408 36,56
+module/tests/test-rc-doc-guards.sh
+  s_6fcf332ead7769::t_efe564b026d8c6 3554
+  s_57550b6f4b080b::t_43368414dc56c3 3728-3750
+  s_6fcf332ead7769::t_9d930eebb54994 3563-3594,3596-3621
+  s_6fcf332ead7769::t_3857d9920b9c8e 3595
+  s_6fcf332ead7769::t_09947e7d1b0ca6 3543-3553,3556-3562,3622-3637,3639-3649,3658-3665
+  s_6fcf332ead7769::t_fe56ed4c3152e5 3555,3638,3650-3657,3666-3727
+module/skills/review-council/SKILL.md
+  s_6fcf332ead7769::t_e110c35020a52c 1339
+module/skills/review-council/phases/verify.md
+  s_57550b6f4b080b::t_5a829f16ae3fc6 628
+  s_57550b6f4b080b::t_44dbdf214f0aba 627,629
+module/tests/test-rc-prepare-framework.sh
+  s_6fcf332ead7769::t_cb742da4f9b908 78-79,154-156
+  s_6fcf332ead7769::t_bfc2a8c511399b 157
+module/skills/review-council/scripts/rc-lib.sh
+  s_6fcf332ead7769::t_035c68097807c7 731-748
+module/skills/review-council/scripts/lib/prepare-changes.sh
+  s_6fcf332ead7769::t_fb1fd4c7acec0f 92
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_6fcf332ead7769::t_e110c35020a52c 125-130,146,149
+  s_6fcf332ead7769::t_4ceff5d57d9b5e 131,136-141,143-145,147-148,150-151,178
+  s_6fcf332ead7769::t_cb742da4f9b908 132-135
+  s_6fcf332ead7769::t_fb1fd4c7acec0f 142
+module/skills/review-council/scripts/lib/prepare-target.sh
+  s_6fcf332ead7769::t_fb1fd4c7acec0f 193-207
+module/tests/test-rc-prepare-no-git.sh
+  s_6fcf332ead7769::t_e840b9fdad1271 371-381,384-386,389-395,402-411,414-417
+  s_6fcf332ead7769::t_446723432cb741 382-383,387,396-397
+  s_6fcf332ead7769::t_cb742da4f9b908 388
+  s_6fcf332ead7769::t_951592513f1c4c 398-399
+  s_6fcf332ead7769::t_09bb0466d82411 412-413
+  s_6fcf332ead7769::t_fd67d85f6db834 400-401
+module/tests/test-rc-prepare.sh
+  s_6fcf332ead7769::t_dabd103b2b5e28 942-951
+  s_6fcf332ead7769::t_1be764c226e8aa 895-929,932-933,935-936,940-941,952-954,957-963,966-973,980-986,992-993,996-998
+  s_6fcf332ead7769::t_cb742da4f9b908 934,938-939,956,965
+  s_6fcf332ead7769::t_446723432cb741 930-931,937,955,964,974-975
+  s_6fcf332ead7769::t_951592513f1c4c 976-977,994-995
+  s_6fcf332ead7769::t_fd67d85f6db834 978-979
+  s_6fcf332ead7769::t_849f60ad767a30 987-991
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1137f11f2bb9619a6435b2c44b08e91f6507a96e",
+  "prompts": {},
+  "sessions": {
+    "s_57550b6f4b080b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-aafaad023e479bff0",
+        "model": "unknown"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    },
+    "s_6fcf332ead7769": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6182f768-9b70-4147-8290-f7ceb8ff3da0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

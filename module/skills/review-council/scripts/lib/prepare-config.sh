@@ -40,12 +40,15 @@ config_failure="" # overrides "<config_how> did not resolve" when set
 config_source=""
 config_dir="${session_dir}/review-config"
 mkdir -p "$config_dir"
+# The repository every configuration read runs in: the current directory's,
+# unless a pull request's clone supplies its own base (below).
+config_git=(git)
 
 # The commit <ref> names, or nothing. Every ref reaches git through this or
 # through a sha it returned, and `--end-of-options` keeps one that begins with
 # `-` from being read as an option.
 rc_config_commit() { # ref
-	git rev-parse --verify --quiet --end-of-options "${1}^{commit}" 2>/dev/null || true
+	"${config_git[@]}" rev-parse --verify --quiet --end-of-options "${1}^{commit}" 2>/dev/null || true
 }
 
 rc_config_merge_base() { # ref ref
@@ -53,7 +56,7 @@ rc_config_merge_base() { # ref ref
 	a=$(rc_config_commit "$1")
 	b=$(rc_config_commit "$2")
 	[[ -n "$a" && -n "$b" ]] || return 0
-	git merge-base "$a" "$b" 2>/dev/null || true
+	"${config_git[@]}" merge-base "$a" "$b" 2>/dev/null || true
 }
 
 if $rc_no_git; then
@@ -94,11 +97,74 @@ else
 					fi
 				done
 			fi
+		elif [[ "$input_type" == "pr_number" || "$input_type" == "url" ]]; then
+			# A pull request materialised elsewhere. Its own base is the trust
+			# anchor: the commit the forge diffed against, which the change
+			# cannot write, read from the pull request's clone, so the answer is
+			# the same wherever the run was started. The forge is believed about
+			# WHICH commit; the clone must hold it below the head it checked out.
+			#
+			# Without that (a GitLab review materialises an archive with no
+			# history; a clone can fail), the directory the run started in stands
+			# in only when it is a checkout of the same repository: same host and
+			# project path, the clone script's own test. Anything else is another
+			# project's configuration, or none, and never this pull request's.
+			config_clone_top=""
+			[[ "$review_root" != "." ]] &&
+				config_clone_top=$(git -C "$review_root" rev-parse --show-toplevel 2>/dev/null) || true
+			if [[ -n "$config_clone_top" && "${forge_base_sha:-}" =~ ^[0-9a-f]{40}$ ]] &&
+				git -C "$config_clone_top" merge-base --is-ancestor "$forge_base_sha" HEAD 2>/dev/null; then
+				# The clone is blobless: a file only the base holds is fetched
+				# from the forge when read, so the reads need the clone's own
+				# network environment, and a bound on how long one may take.
+				config_clone_host="${forge_host:-}"
+				[[ -n "$config_clone_host" || "$forge" != "github" ]] || config_clone_host="github.com"
+				rc_git_network_env "$forge" "$config_clone_host"
+				config_git=(rc_timeout 60 "${RC_GIT_NO_PROMPT[@]}" ${RC_GIT_GH_AUTH[@]+"${RC_GIT_GH_AUTH[@]}"} git -C "$config_clone_top")
+				config_rev="$forge_base_sha"
+				config_how="the pull request's base, from its clone"
+			else
+				if [[ -z "$config_clone_top" ]]; then
+					config_failure="no clone of the pull request"
+				else
+					config_failure="the pull request's base is not in its clone"
+				fi
+				config_origin=$(git remote get-url origin 2>/dev/null) || config_origin=""
+				parse_remote "$config_origin"
+				config_want_host="${forge_host:-}"
+				[[ -n "$config_want_host" ]] || case "$forge" in
+				github) config_want_host="github.com" ;;
+				gitlab) config_want_host="gitlab.com" ;;
+				*) ;;
+				esac
+				if [[ -n "$rc_remote_host" && "${rc_remote_host,,}" == "${config_want_host,,}" &&
+					"${rc_remote_path,,}" == "${forge_owner,,}/${forge_repo,,}" ]]; then
+					config_base="${pr_base:-}"
+					# shellcheck disable=SC2312 # rc_config_commit cannot fail: it ends in `|| true`.
+					[[ -n "$config_base" && -n "$(rc_config_commit "$config_base")" ]] || config_base=""
+					if [[ -z "$config_base" ]]; then
+						for config_ref in main master; do
+							# shellcheck disable=SC2312 # rc_config_commit cannot fail: it ends in `|| true`.
+							if [[ -n "$(rc_config_commit "$config_ref")" ]]; then
+								config_base="$config_ref"
+								break
+							fi
+						done
+					fi
+					if [[ -n "$config_base" ]]; then
+						config_how="merge-base of ${config_base} and HEAD"
+						config_rev=$(rc_config_merge_base "$config_base" HEAD)
+						config_failure=""
+					else
+						config_failure+=", and this checkout has no ${pr_base:-main or master} branch"
+					fi
+				else
+					config_failure+=", and the review was not started from a checkout of ${forge_owner}/${forge_repo}"
+				fi
+			fi
 		else
-			# Every other scope inside git: changed, all, paths, and a PR or url
-			# materialised elsewhere (the working tree is then the invoking
-			# repository, and may itself be a contributor's checkout). Section 4
-			# leaves base_branch empty for url scope, so main/master is found here.
+			# Every other scope inside git: changed, all and paths, read from the
+			# merge-base of the base branch and the working tree's HEAD.
 			config_base="${base_branch:-}"
 			if [[ -z "$config_base" ]]; then
 				for config_ref in main master; do
@@ -157,14 +223,14 @@ rc_config_read() { # path relative to the review's directory
 		# the same path, must be one and the same. A directory path (`.`,
 		# `docs/`) makes `ls-tree` list its children, whose regular-file mode
 		# would otherwise vouch for the tree that `cat-file` then prints.
-		oid=$(git rev-parse --verify --quiet "${config_rev}:./${path#./}" 2>/dev/null) || return 1
-		entry=$(git --literal-pathspecs ls-tree "$config_rev" -- "$path" 2>/dev/null) || return 1
+		oid=$("${config_git[@]}" rev-parse --verify --quiet "${config_rev}:./${path#./}" 2>/dev/null) || return 1
+		entry=$("${config_git[@]}" --literal-pathspecs ls-tree "$config_rev" -- "$path" 2>/dev/null) || return 1
 		# `<mode> SP <type> SP <oid> TAB <path>`: past the first two fields the
 		# entry starts with the oid.
 		[[ "$entry" != *$'\n'* && "${entry#* * }" == "${oid}"$'\t'* ]] || return 1
 		mode="${entry%% *}"
 		[[ "$mode" == 100644 || "$mode" == 100755 ]] || return 1
-		git cat-file blob "$oid" 2>/dev/null
+		"${config_git[@]}" cat-file blob "$oid" 2>/dev/null
 		;;
 	worktree)
 		[[ -f "$path" && ! -L "$path" ]] || return 1
@@ -259,7 +325,7 @@ rc_config_pack_paths() {
 	local f
 	case "$config_kind" in
 	rev)
-		git --literal-pathspecs ls-tree -z --name-only "$config_rev" -- .review-council/packs/ 2>/dev/null || true
+		"${config_git[@]}" --literal-pathspecs ls-tree -z --name-only "$config_rev" -- .review-council/packs/ 2>/dev/null || true
 		;;
 	worktree)
 		for f in .review-council/packs/*.md; do
@@ -543,10 +609,11 @@ rc_council_from_setting "$(rc_config_value "Council accounts")"
 # Content comparison makes the unchanged candidates fall out.
 #
 # The exception is a cloned review (review_root is not `.`: a PR or url
-# materialised elsewhere). There the source is the invoking repository, which
-# has no relation to the PR head, so any difference between them is not the
-# change's doing. Candidates are then intersected with changeset.txt, which is
-# the forge's diff of the PR, so only files the PR touches can be listed. That
+# materialised elsewhere). There the source is the pull request's base in its
+# clone or, failing that, a checkout of the same repository whose base may lag
+# the forge's, so a difference is not necessarily the change's doing.
+# Candidates are then intersected with changeset.txt, which is the forge's diff
+# of the PR, so only files the PR touches can be listed. That
 # diff covers every file, so spec mode loses nothing there. The cost is that a
 # rename is reported by `--name-only` as its new path only, so in that case a
 # config file moved elsewhere is not listed under its old path.
@@ -554,10 +621,10 @@ rc_council_from_setting "$(rc_config_value "Council accounts")"
 # Candidates are relative to the directory the review runs from, while git
 # prints paths relative to the repository root; the listed path carries the
 # prefix (`git rev-parse --show-prefix`) so it reads like a changeset path. In a
-# clone no prefix applies: the paths are relative to the clone root, but the
-# source is read from the invoking repository's own subdirectory, so the base's
-# `sub/AGENTS.md` is compared with the clone's root `AGENTS.md`. The comparison
-# is only exact when the review runs in place. The constitution path is compared
+# clone no prefix applies: the paths are relative to the clone root, which is
+# where its base is read too; only the same-project fallback reads the invoking
+# checkout's own subdirectory, comparing its `sub/AGENTS.md` with the clone's
+# root `AGENTS.md`. The constitution path is compared
 # with its leading `./` stripped, the form git prints.
 
 head_root=$(CDPATH='' cd -- "$review_root" 2>/dev/null && pwd -P) || head_root=""

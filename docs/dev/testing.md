@@ -26,13 +26,13 @@ layer by layer, as separate jobs, rather than calling that target.
 
 | Workflow | Runs | On |
 |----------|------|-----|
-| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` (every layer); `macos-latest` (unit, e2e, mutate-expressions) |
+| `.github/workflows/test.yml` | One job per test layer | `ubuntu-latest` (every layer; degraded as one job per tool); `macos-latest` (unit, e2e, mutate-expressions) |
 | `.github/workflows/megalinter.yml` | Linting | `ubuntu-latest` |
 
 `test.yml` is a two-dimensional matrix — layers by operating systems — plus a
-gating job that depends on all of them. Pushes and pull requests run four
-layers (unit, e2e, release, degraded) on Ubuntu and three (unit, e2e,
-mutate-expressions) on macOS, seven jobs; the nightly schedule and a manual
+gating job that depends on all of them. Pushes and pull requests run unit,
+e2e, release and degraded on Ubuntu and three layers (unit, e2e,
+mutate-expressions) on macOS, nine jobs; the nightly schedule and a manual
 dispatch run the mutation layer on Ubuntu and mutate-expressions on macOS, two
 jobs. The matrix job and the gating
 job are easy to confuse: the matrix job has the id `test` and displays per leg
@@ -46,6 +46,16 @@ commit was killed at 25m22s.
 They share no state, so as separate jobs a leg costs the slowest single
 layer instead, and a layer that grows can no longer push an unrelated one over
 the limit.
+
+Degraded runs as one layer per hidden tool — `degraded-jsonschema`,
+`degraded-gh`, `degraded-glab` — each `task test:degraded -- <tool>`. As a
+single job its three runs grew from about 10 minutes to 13–20 against the
+20-minute limit, the `gh` and `glab` suites being the slow ones, and the
+limit's own comment says a layer that starts timing out is split rather than
+given more time. The split leaves the tool list in two places, the workflow's
+layer names and the default in `run-degraded-tests.sh`; RC-278 in
+`test-rc-doc-guards.sh` fails when they disagree, so a tool added to the
+script cannot go untested in CI.
 
 Gate on the `test-result` job — the check that appears as `test` — not on the
 matrix jobs. It is one stable check name that does not change when a layer

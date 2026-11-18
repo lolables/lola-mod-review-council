@@ -1,0 +1,24 @@
+{
+  "verified": [
+    {
+      "severity": "LOW",
+      "file": "README.md",
+      "line": 5,
+      "evidence": "Licence: see LICENSE.",
+      "description": "The README points to a LICENSE file that does not exist in the repository, so the licence terms are unstated.",
+      "recommendation": "Add the LICENSE file or name the licence inline.",
+      "agent": "divisor-curator-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {},
+      "id": "F1"
+    }
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 1,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-curator-code": "REQUEST CHANGES"
+  }
+}

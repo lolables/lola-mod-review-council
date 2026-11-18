@@ -3,7 +3,10 @@
 #
 # Input: findings.json as Disposition left it. Args: $mode ("check" or
 # "snapshot"), $pre (--slurpfile: the snapshot rc-check-disposition.sh
-# --snapshot wrote; unused, and may be null, in snapshot mode).
+# --snapshot wrote; unused, and may be null, in snapshot mode), $pairs (the
+# column-0 Author/Timestamp pairs of pr-conversation.txt, as [{by, at}]),
+# $ledger (the prior ledger's entries by id, from the snapshot's copy) and
+# $revoked (ledger-revoked.json, [] when absent; null when it did not parse; "not-a-file" when it is not a regular file).
 # Output, check mode: {violations: [string], counts: {resolved, suppressed_low,
 # kept}}. No violations means every edit is within the rules.
 # Output, snapshot mode: whether the input is a document the check can tie
@@ -25,7 +28,7 @@
 def nonblank: type == "string" and test("\\S");
 def str_or_null: . == null or type == "string";
 def show: tostring | .[:64] | tojson;
-def disp_keys: ["action", "claim", "claim_verified", "evidence", "note", "reason", "source"];
+def disp_keys: ["action", "at", "by", "claim", "claim_verified", "evidence", "ledger_id", "note", "reason", "source"];
 def move_reason: {"resolved": "DISPOSITION_RESOLVED", "suppressed-low": "DISPOSITION_SUPPRESSED_LOW"};
 def is_doc: type == "object"
 	and all(.verified, .correctable, .stripped; type == "array" and all(.[]; type == "object"));
@@ -39,22 +42,45 @@ def where($id): if any(.verified[]; .id == $id) then "verified"
 def frozen: del(.status, .reason)
 	| if (.provenance | type) == "object" then del(.provenance.disposition) else . end;
 
+# Who the disposition says it acts for (#138). A reply is named by the column-0
+# Author and Timestamp pr-conversation.txt holds, so a disposition cannot be
+# attributed to someone who never wrote; a settlement by its id in the prior
+# ledger, with that entry's own who and at, so the ledger the next comment
+# carries says who asked for what. A deferral only ever suppresses, and a kept
+# claim only ever resolves or stays kept: a settlement cannot change kind.
+def disp_source_problems($pairs; $ledger):
+	if .source == "pr-comment" then
+		if .ledger_id != null then "provenance.disposition from a reply (source \"pr-comment\") must have ledger_id null"
+		elif ({by, at} | IN($pairs[]) | not) then "provenance.disposition names a reply (by, at) that pr-conversation.txt does not hold"
+		else empty end
+	elif .source == "ledger" then
+		.ledger_id as $id
+		| if ($id | type) != "string" or ($ledger | has($id) | not)
+		  then "provenance.disposition names a settlement (ledger_id) that prior-settlements.json does not hold"
+		  elif .by != $ledger[$id].who or .at != $ledger[$id].at then "provenance.disposition by and at must be the settlement's Who and At"
+		  elif $ledger[$id].action == "deferred" and .action != "suppressed-low" then "a deferred settlement may only produce suppressed-low"
+		  elif $ledger[$id].action == "kept" and .action == "suppressed-low" then "a kept settlement may only produce resolved or kept"
+		  else empty end
+	else "provenance.disposition.source is not \"pr-comment\" or \"ledger\"" end;
+
 # The shape and null pattern disposition.md's Step 3 prompt specifies.
-def disp_problems:
+def disp_problems($pairs; $ledger):
 	if type != "object" then "provenance.disposition is not an object"
-	elif keys != disp_keys then "provenance.disposition must have exactly the keys source, action, claim, claim_verified, evidence, reason, note"
-	elif .source != "pr-comment" then "provenance.disposition.source is not \"pr-comment\""
+	elif keys != disp_keys then "provenance.disposition must have exactly the keys source, ledger_id, by, at, action, claim, claim_verified, evidence, reason, note"
 	elif ([.claim, .evidence, .reason, .note] | all(str_or_null) | not) then "provenance.disposition claim, evidence, reason and note must each be a string or null"
-	elif .action == "resolved" then
-		if .claim_verified != true or (.evidence | nonblank | not) or .reason != null or .note != null
-		then "resolved needs claim_verified true, evidence set, reason and note null" else empty end
-	elif .action == "kept" then
-		if .claim_verified != false or (.note | nonblank | not) or .evidence != null or .reason != null
-		then "kept needs claim_verified false, note set, evidence and reason null" else empty end
-	elif .action == "suppressed-low" then
-		if .claim_verified != null or (.reason | nonblank | not)
-		then "suppressed-low needs claim_verified null and reason set" else empty end
-	else "provenance.disposition.action is not resolved, kept or suppressed-low" end;
+	else
+		disp_source_problems($pairs; $ledger),
+		(if .action == "resolved" then
+			if .claim_verified != true or (.evidence | nonblank | not) or .reason != null or .note != null
+			then "resolved needs claim_verified true, evidence set, reason and note null" else empty end
+		elif .action == "kept" then
+			if .claim_verified != false or (.note | nonblank | not) or .evidence != null or .reason != null
+			then "kept needs claim_verified false, note set, evidence and reason null" else empty end
+		elif .action == "suppressed-low" then
+			if .claim_verified != null or (.reason | nonblank | not)
+			then "suppressed-low needs claim_verified null and reason set" else empty end
+		else "provenance.disposition.action is not resolved, kept or suppressed-low" end)
+	end;
 
 # Violations for one finding the snapshot holds in verified or stripped.
 def finding_problems($o; $n; $from; $to):
@@ -76,7 +102,7 @@ def finding_problems($o; $n; $from; $to):
 			$p + "changed " + ($changed + (if $added > 0 then ["\($added) added key(s)"] else [] end) | join(", "))
 			+ "; Disposition may write only status, reason and provenance.disposition"
 		   else empty end),
-		(if $has_d then ($d | disp_problems | $p + .) else empty end),
+		(if $has_d then ($d | disp_problems($pairs; $ledger) | $p + .) else empty end),
 		(if $to == "verified" then
 			(if $n.status != $o.status or $n.reason != $o.reason
 			 then $p + "status or reason changed but the finding stayed in verified" else empty end),
@@ -117,6 +143,12 @@ else
 		(($old_ids - $new_ids) | if length > 0 then "finding(s) removed: \(map(show) | join(", "))" else empty end),
 		([$new_ids[] | select(type == "string")] - $old_ids
 		 | if length > 0 then "finding(s) added: \(map(show) | join(", "))" else empty end),
+		(if $revoked == "not-a-file" then "ledger-revoked.json is not a regular file"
+		 elif $revoked == null then "ledger-revoked.json is not a JSON array of settlement ids"
+		 elif ($revoked | type) != "array" or any($revoked[]; type != "string") then "ledger-revoked.json is not a JSON array of settlement ids"
+		 else [$revoked[] | select(. as $i | $ledger | has($i) | not)]
+		      | if length > 0 then "ledger-revoked.json names settlement(s) prior-settlements.json does not hold: \(map(show) | join(", "))" else empty end
+		 end),
 		($old.verified[], $old.stripped[]
 		 | . as $o
 		 | select($by_id | has($o.id))

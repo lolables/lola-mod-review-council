@@ -191,6 +191,9 @@ fi
 	# Who the council's own verdicts may come from (prepare-config.sh), and
 	# what CODEOWNERS or the setting named that is not a login.
 	echo "- Council login: ${council_login_note:-none}"
+	# What the previous verdict's settlement ledger carried (#138), or why it
+	# was not carried. The reasons are fixed strings (jq/ledger.jq).
+	echo "- Prior settlements: ${ledger_note:-none}"
 	echo "- CODEOWNERS: ${council_codeowners}"
 	council_list=$(printf '%s, ' ${council_accounts[@]+"${council_accounts[@]}"})
 	council_list="${council_list%, }"

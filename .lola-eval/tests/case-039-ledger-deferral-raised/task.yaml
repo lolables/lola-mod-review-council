@@ -1,0 +1,20 @@
+task_version: "2"
+description: |
+  Deferral not applied once the finding is above LOW: settlement s1
+  deferred a LOW about xargs rm -f splitting artefact names on spaces. The
+  same defect is now a MEDIUM (the script runs from cron as root). Per the
+  Disposition phase a deferred settlement suppresses only a LOW finding, and
+  is revoked when its finding is now MEDIUM or above. Expected: s1 revoked
+  (ledger-revoked.json is ["s1"]), F1 has no disposition and stays verified.
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the disposition you just performed.
+    Use this exact format:
+
+    FINDINGS_BEFORE: <count of findings in verdicts/findings.json's verified array before disposition>
+    FINDINGS_AFTER: <count of findings remaining in the verified array after disposition>
+    SETTLEMENT_MATCH: <for each settlement Id, the finding id it matched, or "none">
+    DISPOSITIONS: <finding id: action and source, one per line, or "none">
+    REVOKED: <the ids written to ledger-revoked.json, or "none">
+    CHECK_STATUS: <the status rc-check-disposition.sh returned for this session, or "not run">

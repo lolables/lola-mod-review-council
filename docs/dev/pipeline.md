@@ -25,7 +25,7 @@ conditional:
 | **Delegate**          | `phases/delegate.md`                                               | Dispatch by prompt path                                   |
 | **Extract**           | `rc-extract-verdict.sh`                                            | Schema-validate each reviewer's JSON verdict; gate bare APPROVEs |
 | **Verify**            | `rc-verify-evidence.sh` + `rc-apply-corrections.sh` + `rc-consolidate.sh` + `agents/review-council-arbiter.md` + `rc-apply-validation.sh` + `rc-apply-severity-override.sh` + `rc-recompute-verdicts.sh` + `phases/verify.md` | Evidence, correction, dedup, then one arbiter pass: calibration and validation gate; per-agent verdicts derived last |
-| **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies against findings; script-check the edits |
+| **Disposition**       | `phases/disposition.md` + `rc-check-disposition.sh` (re-review only) | Triage untrusted PR-conversation replies and earlier settlements against findings; script-check the edits and build the next settlement ledger |
 | **Report**            | `rc-decide-verdict.sh` + `rc-render-report.sh` + `phases/report.md` | Final report, learnings feedback                          |
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
 | **Post**              | `rc-render-comment.sh` + `rc-post-comment.sh` (opt-in, PR only)    | Publish or update the verdict comment on the PR           |
@@ -256,7 +256,7 @@ flowchart TD
    (`verdicts-map.json`), by the rules in `scripts/jq/recompute-verdicts.jq`: a verified HIGH or CRITICAL forces
    REQUEST CHANGES, an agent holding no finding is APPROVE, anything else keeps its filed verdict. Both per-agent
    tables print that map, which used to be hand-edited from prose.
-12. **Disposition** (re-review only) — when `pr-conversation.txt` exists (see "Posting the verdict to a PR") and
+12. **Disposition** (re-review only) — when `pr-conversation.txt` or `prior-settlements.txt` exists (see "Posting the verdict to a PR") and
     effort is not `quick`, a fresh-context subagent triages that untrusted conversation against the surviving
     findings: resolves a finding only once it independently re-confirms the fix in source, keeps findings whose
     claimed fix doesn't check out, and may suppress LOW findings a narrow scoping hint names (never HIGH/CRITICAL,
@@ -267,6 +267,11 @@ flowchart TD
     `disposition-check.json`). Once the edits pass, the check recomputes `.verdicts` with the same jq program from
     the copy of `verdicts-map.json` taken with the snapshot before hashing, so a resolved reply upgrades its agent
     and no edit to `.verdicts` or to the map survives. See `phases/disposition.md` for the full contract.
+
+    **Settlement ledger (#138).** The ledger lives in part 1 of the council's verdict comment, on the line directly above the marker (`<!-- review-council:ledger v=1 <base64 JSON> -->`), with a visible "Settled earlier" block after the reviewer table.
+    - **Read:** preparation reads it from the anchor account's newest live part 1. Retired verdicts and other accounts' comments are skipped, and only the line adjacent to the last marker counts, so a counterfeit in quoted evidence is never read. It validates the ledger (`jq/ledger.jq`) and writes `prior-settlements.json` and `prior-settlements.txt`.
+    - **Check and build:** Disposition weighs the entries under its four rules. `rc-check-disposition.sh` checks every attribution against the conversation or the snapshot's copy of the ledger, then builds `verdicts/_meta/ledger.json` and records its hash for the render gate.
+    - **Trust:** collaborators can edit any comment, and the council edits its own on same-sha upserts, so an edit is undetectable. The ledger is untrusted input, bounded like a reply: it can suppress a LOW, never clear a HIGH or CRITICAL, and never move a verdict.
 13. **Report** — determine the final verdict, render every artifact, record learnings for future runs. This always
     runs to completion before anything is offered or posted, so a non-interactive run still leaves a full report
     behind
@@ -419,7 +424,9 @@ Each run creates a session directory at `$XDG_CACHE_HOME/review-council/<project
   `disposition.txt` (the untrusted-conversation triage audit trail), `findings.pre-disposition.json` (the snapshot
   Disposition's edits are checked against), `verdicts-map.pre-disposition.json` (the filed verdicts the check
   derives `.verdicts` from, copied with that snapshot) and `disposition-check.json` (the check's result and the SHA-256 of the
-  `findings.json` it accepted). `rc-render-report.sh` refuses to render without `verification.txt`
+  `findings.json` it accepted), `prior-settlements.pre-disposition.json` (the snapshot of the prior ledger the check
+  validates attributions against), `ledger-revoked.json` (the settlements Disposition revoked) and `ledger.json` (the
+  next settlement ledger the check builds, whose SHA-256 the render gate also checks). `rc-render-report.sh` refuses to render without `verification.txt`
 - `learnings.txt` — false positives and validated patterns
 
 The directory is created exclusively (`mktemp -d`), so runs started in the same second never share a session.
@@ -430,7 +437,7 @@ behind. The session a run is currently using is never evicted, whatever the cap.
 
 When reviewing a PR, additional artifacts are created: `pr-metadata.txt`, `linked-issues.txt`, `prior-reviews.txt`,
 `ci-status.txt`, `head-links.json` (every symlink in the head tree, when it could be listed whole; a local review lists its index) and `symlinks.txt` (written for any review whose diff changes a link). On a re-review (the council's marker comment already exists on the PR), `pr-conversation.txt`
-is added too — untrusted replies posted since the previous run read the thread, on GitHub and GitLab (GitHub reviews and inline review comments included). Every PR review also writes `conversation-seen.txt`, the snapshot the verdict's marker carries as `seen=`. When the anchor matched the council's login it also writes `previous-verdict-sha.txt` (the anchored verdict's 40-hex head), which the comment's `**This run:**` line compares with the current head, and `other-account-verdicts.txt` (how many verdicts by the council's other accounts are also shown, without the obsolete banner). The council's accounts are the run's login plus CODEOWNERS `@user` owners and `Council accounts:` from the configuration source; only their verdicts anchor, and a marker from anyone else is ignored. Bot accounts' comments and every comment with a column-0 marker line are left out of the replies and counted in the file's header; an earlier comment edited inside the window is a reply, with an `Edited:` line. Reply bodies are scrubbed (`rc_md_scrub`, CommonMark rules, scrubbing more when unsure) and capped in bytes (reply 8 KB, review 4 KB, inline comment 2 KB); each file's budget (`pr-conversation.txt` 64 KB, `prior-reviews.txt` 32 KB per section) is shared equally among authors, newest first, and the `**This run:**` line says how many replies were left out for size. On a re-review, `prior-reviews.txt` condenses entries older than the reply window into a capped "Earlier review history" table; none is condensed when the verdict was anchored on the marker alone.
+is added too, and `prior-settlements.json` and `prior-settlements.txt` when the anchored verdict carries a readable ledger — untrusted replies posted since the previous run read the thread, on GitHub and GitLab (GitHub reviews and inline review comments included). Every PR review also writes `conversation-seen.txt`, the snapshot the verdict's marker carries as `seen=`. When the anchor matched the council's login it also writes `previous-verdict-sha.txt` (the anchored verdict's 40-hex head), which the comment's `**This run:**` line compares with the current head, and `other-account-verdicts.txt` (how many verdicts by the council's other accounts are also shown, without the obsolete banner). The council's accounts are the run's login plus CODEOWNERS `@user` owners and `Council accounts:` from the configuration source; only their verdicts anchor, and a marker from anyone else is ignored. Bot accounts' comments and every comment with a column-0 marker line are left out of the replies and counted in the file's header; an earlier comment edited inside the window is a reply, with an `Edited:` line. Reply bodies are scrubbed (`rc_md_scrub`, CommonMark rules, scrubbing more when unsure) and capped in bytes (reply 8 KB, review 4 KB, inline comment 2 KB); each file's budget (`pr-conversation.txt` 64 KB, `prior-reviews.txt` 32 KB per section) is shared equally among authors, newest first, and the `**This run:**` line says how many replies were left out for size. On a re-review, `prior-reviews.txt` condenses entries older than the reply window into a capped "Earlier review history" table; none is condensed when the verdict was anchored on the marker alone.
 
 ## The arbiter
 

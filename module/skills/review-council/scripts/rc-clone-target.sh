@@ -271,30 +271,11 @@ if [[ "$origin_names_target" == true ]] && [[ -n "$head_sha" ]] && [[ "$cur_comm
 fi
 
 # --- Materialize into per-endpoint cache ---
-# Every git network call runs with each credential prompt disabled. A private host
-# with no credential helper otherwise makes git ask for a username on the
-# terminal or through an askpass program, and the run waits out the 120s
-# timeout before falling back. A configured credential helper still answers;
-# an empty GIT_ASKPASS/SSH_ASKPASS is read as unset. GCM_INTERACTIVE is Git
-# Credential Manager's own switch for its prompts.
-no_prompt=(env GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ASKPASS= SSH_ASKPASS=)
-# github.com credentials come from gh for every git call, not only the clone.
-# `gh repo clone` hands its credential helper to that one clone and stores
-# nothing, so on a private repository the fetch of pull/N/head — and the
-# checkout, which in a blobless clone downloads the blobs it needs — had no
-# credentials unless the operator had run `gh auth setup-git`. The helper is
-# passed the way gh passes it, as process-scoped configuration: scoped to
-# https://github.com so no other host ever asks gh for a token, appended after
-# any GIT_CONFIG_* entries the caller set, and written to no config file. A
-# non-numeric GIT_CONFIG_COUNT is left alone; git refuses it either way.
-gh_auth=()
-if [[ "$forge" == "github" ]] && [[ "$target_host" == "github.com" ]] && command -v gh >/dev/null 2>&1 &&
-	[[ "${GIT_CONFIG_COUNT:-0}" =~ ^[0-9]+$ ]]; then
-	config_index=$((10#${GIT_CONFIG_COUNT:-0}))
-	gh_auth=("GIT_CONFIG_COUNT=$((config_index + 1))"
-		"GIT_CONFIG_KEY_${config_index}=credential.https://github.com.helper"
-		"GIT_CONFIG_VALUE_${config_index}=!gh auth git-credential")
-fi
+# Every git network call runs without credential prompts and, for github.com,
+# with gh's credentials (rc_git_network_env, rc-lib.sh, says why).
+rc_git_network_env "$forge" "$target_host"
+no_prompt=("${RC_GIT_NO_PROMPT[@]}")
+gh_auth=(${RC_GIT_GH_AUTH[@]+"${RC_GIT_GH_AUTH[@]}"})
 cache_root="${XDG_CACHE_HOME:-$HOME/.cache}/review-council/clones"
 # Built from the host the caller named, never from the origin's.
 clone_url="${url:-https://${target_host}/${owner}/${repo}.git}"

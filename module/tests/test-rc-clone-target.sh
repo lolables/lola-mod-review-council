@@ -1695,44 +1695,6 @@ done
 # clone URL, so the fetch of pull/7/head, the config and the worktree add are
 # exactly what a review does.
 
-# A real git whose clones come from <fixture> instead of the network.
-# LATE_LINK, when set, is a name the wrapper makes a live link under in each
-# worktree it adds, standing in for a materialization that left one behind.
-# The worktree's path is the next-to-last argument of the script's call.
-make_fixture_git() { # bindir fixture
-	local dir="$1" fixture="$2" real_git
-	real_git=$(command -v git)
-	mkdir -p "$dir"
-	cat >"$dir/git" <<WRAP
-#!/usr/bin/env bash
-args=("\$@")
-# The fixture stands in for acme/widgets, so a cache entry's origin reads as
-# that repository, the way a real clone's would, not as the fixture's path.
-if [[ "\$1" == "-C" && "\$3 \$4 \$5" == "remote get-url origin" ]]; then
-	echo "https://github.com/acme/widgets.git"
-	exit 0
-fi
-if printf '%s\n' "\$@" | grep -qx clone; then
-	for i in "\${!args[@]}"; do
-		if [[ "\${args[\$i]}" == "--" ]]; then
-			args[\$((i + 1))]="file://$fixture"
-			break
-		fi
-	done
-fi
-"$real_git" "\${args[@]}"
-rc=\$?
-if [[ -n "\${LATE_LINK:-}" ]] && printf '%s\n' "\$@" | grep -qx worktree &&
-	printf '%s\n' "\$@" | grep -qx add; then
-	ln -s /etc/passwd "\${@: -2:1}/\$LATE_LINK"
-fi
-exit \$rc
-WRAP
-	chmod +x "$dir/git"
-	printf '#!/usr/bin/env bash\nexit 1\n' >"$dir/gh"
-	chmod +x "$dir/gh"
-}
-
 # A repository whose refs/pull/7/head adds an escaping link, an inside one and
 # only7.txt, and whose refs/pull/8/head adds only8.txt to the same base.
 make_link_fixture() { # dir canary

@@ -1,0 +1,24 @@
+{
+  "verified": [
+    {
+      "severity": "MEDIUM",
+      "file": "prune.sh",
+      "line": 6,
+      "evidence": "find . -name '*.o' -mtime +$days | xargs rm -f",
+      "description": "The find pipes names into xargs rm -f without -print0, so a build artefact whose name contains a space or newline deletes the wrong path. Earlier only cosmetic, this now runs from cron as root.",
+      "recommendation": "Use find … -delete, or -print0 with xargs -0.",
+      "agent": "divisor-sre-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {},
+      "id": "F1"
+    }
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 1,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-sre-code": "REQUEST CHANGES"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "verified": [
+    {
+      "severity": "LOW",
+      "file": "README.md",
+      "line": 1,
+      "evidence": "# widgets",
+      "description": "The README's usage section does not describe the new --strict docs build. Contributors running the old command will see warnings they cannot explain.",
+      "recommendation": "Add one line under Usage naming `docs.sh` and its --strict flag.",
+      "agent": "divisor-curator-code",
+      "verdict": "REQUEST CHANGES",
+      "status": "verified",
+      "provenance": {},
+      "id": "F1"
+    }
+  ],
+  "correctable": [],
+  "stripped": [],
+  "total_findings": 1,
+  "duplicates_consolidated": 0,
+  "verdicts": {
+    "divisor-curator-code": "REQUEST CHANGES"
+  }
+}

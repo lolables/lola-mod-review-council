@@ -368,6 +368,7 @@ sequenceDiagram
     PR-->>Council: prior verdict and its timestamp
     Council->>PR: fetch replies since the previous run read the thread
     PR-->>Council: pr-conversation.txt for Disposition
+    PR-->>Council: earlier settlements from the verdict's hidden ledger
     Council->>You: show updated body and ask again
     You-->>Council: approve
     alt same commit, no replies
@@ -482,8 +483,7 @@ budget (`pr-conversation.txt` 64 KB, each section of `prior-reviews.txt`
 32 KB) shared equally among authors, newest first within an author, so one
 account cannot push out another's reply. The PR comment's "This run" line says
 how many replies were left out for size. Enough accounts each posting at the cap
-(about thirty against a 3 KB reply) can still crowd out a reply. A reply is weighed by the next run
-only: answer again if a later run raises the finding again. An edited review
+(about thirty against a 3 KB reply) can still crowd out a reply. A deferral (a LOW finding someone asked not to address yet) and a claim the council checked and kept are carried forward in a hidden ledger in the council's own verdict comment, shown as a collapsed "Settled earlier" list. A deferral holds until a later reply revokes it or the finding is raised above LOW, and a kept claim is checked again against the code on every run except at `quick` effort, which carries the list unchanged. At `quick` effort a deferred LOW finding is therefore listed both as a finding and under "Settled earlier". The list holds up to 20 settlements (fewer if they pass 4 KB), dropping the earliest first. Collaborators who can edit comments can edit the ledger, so it is weighed like a reply: it can hold back a LOW finding, never a HIGH or CRITICAL one. An edited review
 body is not re-read. On GitLab those replies are the merge request's notes,
 and an edited note is not re-read; GitLab approvals and review threads are not
 imported. See [the pipeline
@@ -663,11 +663,13 @@ The change under review never configures its own review. Inside a git repository
 
 | Scope                                                              | Base revision                                                             |
 |--------------------------------------------------------------------|---------------------------------------------------------------------------|
-| `changed`, `all`, `paths`, and a PR or URL reviewed in a separate checkout | Merge-base of HEAD with the base branch (for a URL, `main`, else `master`) |
+| `changed`, `all`, `paths`                                           | Merge-base of HEAD with the base branch                                   |
+| A PR or URL reviewed in a separate clone                           | The commit the forge diffed the PR against, read from the clone, wherever you start the review |
+| The same, when the clone cannot supply it (GitLab, a failed clone) | Your checkout's merge-base with the PR base, only if it is a checkout of the same repository; otherwise none |
 | `range`                                                            | Start of the range; for `A...B`, the merge-base of A and B                |
 | A PR reviewed in place                                             | Merge-base of HEAD with `origin/<base>`, else the local `<base>`          |
 
-Outside git, the files on disk are used.
+Outside git, the files on disk are used, except for a PR or URL review, which reads its clone as above.
 
 For `range`, the trust anchor is the range start, and it must be a commit you trust. A single ref such as `HEAD~1` on an
 untrusted branch can land on a commit the contributor wrote, and its configuration is then what the review obeys.

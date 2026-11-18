@@ -25,9 +25,11 @@ TESTING_MD="$AGENTS/divisor-testing-code.md"
 TESTING_SPEC_MD="$AGENTS/divisor-testing-spec.md"
 ARBITER_MD="$AGENTS/review-council-arbiter.md"
 # Repo root, two levels above this directory: the packaged module lives under
-# module/, these two files do not.
+# module/, these files do not.
 README_MD="$SCRIPT_DIR/../../README.md"
 BREWFILE="$SCRIPT_DIR/../../Brewfile"
+TEST_WORKFLOW="$SCRIPT_DIR/../../.github/workflows/test.yml"
+DEGRADED_RUNNER="$SCRIPT_DIR/../../.taskfiles/scripts/run-degraded-tests.sh"
 
 # Whitespace-flattened copies of the documents whose prose these guards pin:
 # newlines and runs of spaces collapsed to one space. Prose reflows — a sentence
@@ -906,6 +908,47 @@ else
 	echo "  FAIL: a reader who installs from the README gets a different toolchain than CI"
 	echo "        Brewfile: $rc024_brewfile_line"
 	echo "        README:   $rc024_readme_line"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-278: CI runs the degraded layer as one job per hidden tool, each named
+# `degraded-<tool>` in .github/workflows/test.yml, because the three runs summed
+# in one job reached the 20-minute limit. That splits the tool list in two: the
+# workflow names each tool, and run-degraded-tests.sh keeps the default that
+# `task test:degraded` runs locally. A tool added to the script alone would be
+# exercised on every contributor's machine and never in CI, and nothing would
+# say so. So the two sets are pinned to each other.
+#
+# Compare sets, not text: only the quoted `"degraded-<tool>"` entries in the
+# workflow are read, which are the layer list (the macOS `exclude:` entries are
+# unquoted), and only the `|| tools=(...)` default in the script, not the
+# `tools=("$@")` line above it.
+echo "Test: CI degraded layers match the degraded runner's default tools (RC-278)"
+rc278_script=""
+rc278_workflow=""
+# Both files sit outside module/, so an absent one is possible. Guard the reads
+# for the same reason as RC-024: a failing pipeline under `set -e` would end the
+# suite before the diagnostic below.
+[[ -f "$DEGRADED_RUNNER" ]] &&
+	rc278_script=$(sed -n 's/.*|| tools=(\([^)]*\)).*/\1/p' "$DEGRADED_RUNNER" |
+		tr -s ' \t' '\n' | sed '/^$/d' | sort)
+[[ -f "$TEST_WORKFLOW" ]] &&
+	rc278_workflow=$(tr -s ' ,[]' '\n' <"$TEST_WORKFLOW" |
+		sed -n 's/^"degraded-\([A-Za-z0-9_-]*\)"$/\1/p' | sort -u)
+rc278_script_line="${rc278_script//$'\n'/ }"
+rc278_workflow_line="${rc278_workflow//$'\n'/ }"
+if [[ -z "$rc278_script" || -z "$rc278_workflow" ]]; then
+	echo "  FAIL: extracted no tools (runner: '$rc278_script_line', workflow: '$rc278_workflow_line')"
+	echo "        — one of the two files is missing or changed shape, and this guard"
+	echo "          is comparing nothing"
+	FAIL=$((FAIL + 1))
+elif [[ "$rc278_script" == "$rc278_workflow" ]]; then
+	echo "  PASS: both hide the same tools ($rc278_workflow_line)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: CI's degraded layers and the local default hide different tools"
+	echo "        run-degraded-tests.sh: $rc278_script_line"
+	echo "        test.yml:              $rc278_workflow_line"
 	FAIL=$((FAIL + 1))
 fi
 

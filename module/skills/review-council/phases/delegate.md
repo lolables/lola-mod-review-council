@@ -336,8 +336,12 @@ a. Dispatch each entry of `batches[]` as a separate delegation round — the who
    council reviews batch 1 in parallel, then batch 2, and so on.
 b. The script filters each round's prompt: the Changeset section holds that
    batch's `files`, the Diff section the hunks for those files, and the bundle is
-   that round's, found as the Prompt Template's **Data sources** says. Every
-   other part of the prompt is unchanged, batch to batch. Dispatch the
+   that round's, found as the Prompt Template's **Data sources** says. The
+   prompt also carries an **Other files in this changeset** list: every changed
+   file outside the round, each with its round, so a reviewer can read a related
+   file (a test, a caller) on demand. Findings stay anchored in the round's own
+   files; evidence checks do not care which round a cited file belongs to.
+   Every other part of the prompt is unchanged, batch to batch. Dispatch the
    `dispatch.json` entry whose `raw` path is in that round's directory.
 c. Write each agent's raw output for round `N` verbatim to the entry's `raw`
    path, `${session_dir}/verdicts/batch{N}/{agent-name}.raw.md`, creating the
@@ -374,7 +378,9 @@ round per subsystem. The script has rendered each round's prompts already:
    - c. Replaces the scope framing sentence with the `Changeset framing: subsystem`
      section, its placeholders filled with the subsystem's name and description,
      and names the round's bundle, found as the Prompt Template's **Data
-     sources** says (matching on the subsystem and the batch).
+     sources** says (matching on the subsystem and the batch). When the run has
+     more than one round, it also adds the **Other files in this changeset**
+     list, labelled `<subsystem> batch N`, as in Batching step b.
 
    You then, per subsystem:
    - d. Dispatch **that subsystem's own council** in parallel — the

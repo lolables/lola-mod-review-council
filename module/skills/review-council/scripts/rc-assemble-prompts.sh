@@ -198,7 +198,7 @@ for name in \
 	'Review root: checkout' 'Review root: in place' \
 	'Changeset framing: changed' 'Changeset framing: range' 'Changeset framing: all' \
 	'Changeset framing: pr' 'Changeset framing: subsystem' 'Changeset framing: path filter' \
-	'Diff: none' 'Bundle' 'Changeset untrusted' 'Convention packs: code' 'Convention packs: spec' \
+	'Diff: none' 'Bundle' 'Changeset untrusted' 'Other files in this changeset' 'Convention packs: code' 'Convention packs: spec' \
 	'PR Description untrusted' 'Linked Issues untrusted' 'Prior Reviews untrusted' \
 	'CI Status untrusted' 'Symlinks untrusted' 'Prior run context' \
 	'Verdict instruction' 'Output contract: code' 'Output contract: spec' 'Context check' \
@@ -528,6 +528,22 @@ while IFS= read -r round; do
 	fi
 
 	file_list=$(jq -r '.files[].path' <<<"$round")
+
+	# A reviewer sees only its round's files, so a batched tester would judge
+	# coverage without knowing the tests landed in another batch (#69). Name the
+	# other rounds' files, labelled as rc-build-context.sh labels a round. One
+	# round is the whole changeset, so its prompt gets no section and stays
+	# byte-identical to before.
+	other_text=""
+	if [[ "$round_count" -gt 1 ]]; then
+		round_batch=$(jq '.batch' <<<"$round")
+		other_files=$(jq -r --arg s "$sub" --argjson b "$round_batch" '
+			.rounds[] | select(((.subsystem // "") == $s and .batch == $b) | not)
+			| "\(if .subsystem then "\(.subsystem) " else "" end)batch \(.batch)" as $label
+			| .files[] | "\($label): \(.path)"' "$context_file")
+		other_text="## Other files in this changeset"$'\n\n'"${sec["Other files in this changeset"]}"$'\n\n'"$(fenced "" "$other_files")"$'\n\n'
+	fi
+
 	# One unbatched round outside deep mode is the whole diff, verbatim;
 	# otherwise the sections of this round's files, in diff order.
 	if [[ "$round_count" -eq 1 && -z "$sub" ]]; then
@@ -668,6 +684,7 @@ while IFS= read -r round; do
 				fi
 				fenced "" "$file_list"
 				echo ""
+				printf '%s' "$other_text"
 				# Before the diff: on a large PR the diff is thousands of lines, and an
 				# instruction placed after it was never reached (#108).
 				echo "## Bundle"
@@ -734,6 +751,7 @@ while IFS= read -r round; do
 					echo ""
 					echo ""
 				fi
+				printf '%s' "$other_text"
 				echo "## Spec Scope"
 				echo ""
 				printf '%s\n\n' "${sec["Spec scope"]}"

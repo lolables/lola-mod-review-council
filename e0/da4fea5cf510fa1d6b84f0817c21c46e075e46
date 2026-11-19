@@ -1,0 +1,21 @@
+module/tests/test-rc-assemble-prompts.sh
+  s_2f0532f7c9398f::t_5257c6c4a91007 849-871
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_2f0532f7c9398f::t_cae6c7981b809b 753
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "e0da4fea5cf510fa1d6b84f0817c21c46e075e46",
+  "prompts": {},
+  "sessions": {
+    "s_2f0532f7c9398f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c65ab20c-701e-481f-bb01-a837e27222d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

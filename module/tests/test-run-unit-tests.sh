@@ -149,6 +149,19 @@ UNIT_SHARD=3/3 bash "$RUNNER" "$work/test-alpha.sh" "$work/test-beta.sh" >/dev/n
 	status=0 || status=$?
 assert_equals "$status" "1" "an empty shard fails the run"
 
+echo "Test 10: suites do not inherit the runner's shard"
+# The shard applies to this run's selection only. CI sets UNIT_SHARD for the
+# whole job, and a suite that starts the runner itself (this file does) would
+# otherwise shard its own fixtures: shard 3/3 of two fixtures is empty and fails.
+cat >"$work/test-env.sh" <<-EOF
+	#!/usr/bin/env bash
+	printf '%s' "\${UNIT_SHARD-unset}" >"$work/seen-shard"
+	echo "Results: 1 passed, 0 failed"
+EOF
+UNIT_SHARD=1/1 bash "$RUNNER" "$work/test-env.sh" >/dev/null 2>&1 || true
+seen=$(cat "$work/seen-shard" 2>/dev/null) || seen="suite did not run"
+assert_equals "$seen" "unset" "a suite sees no UNIT_SHARD"
+
 # Discovery with no arguments is not re-tested here: it is what `task test:unit`
 # runs on every CI leg, and asserting it would mean executing all 40 real
 # suites — minutes, to re-check a path already covered by every run.

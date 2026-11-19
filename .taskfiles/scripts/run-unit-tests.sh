@@ -70,6 +70,9 @@ if [[ -n "${UNIT_SHARD:-}" ]]; then
 	suites=("${shard[@]}")
 	shard_note="$UNIT_SHARD (${#suites[@]} of $selected suites)"
 fi
+# The shard narrows this run only. A suite that starts this runner itself
+# would otherwise inherit it and shard its own fixtures.
+unset UNIT_SHARD
 
 failed_suites=()
 assertion_failures=()

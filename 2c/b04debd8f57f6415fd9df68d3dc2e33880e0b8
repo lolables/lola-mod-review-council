@@ -1,0 +1,19 @@
+module/skills/review-council/SKILL.md
+  s_58465dc2eb35ab::t_5eb0befa50a927 1486-1488
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "2cb04debd8f57f6415fd9df68d3dc2e33880e0b8",
+  "prompts": {},
+  "sessions": {
+    "s_58465dc2eb35ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60e140f8-ff07-41f1-a3d2-7f6d4ef993c9",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

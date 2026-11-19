@@ -1,0 +1,23 @@
+module/tests/test-rc-prepare-dispatch.sh
+  s_58465dc2eb35ab::t_563f92ee90562e 80-81,106-107,187-190,192-193
+  s_58465dc2eb35ab::t_eed94fe8fb3b0b 134,164
+  s_58465dc2eb35ab::t_ec214c170db056 1-79,82-105,108-133,135-163,165-186,191,194-222
+module/skills/review-council/scripts/rc-prepare-dispatch.sh
+  s_58465dc2eb35ab::t_3d37cc1558dd9e 1-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "792c2b275a781a42855eeaff581754dba34a9c41",
+  "prompts": {},
+  "sessions": {
+    "s_58465dc2eb35ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60e140f8-ff07-41f1-a3d2-7f6d4ef993c9",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

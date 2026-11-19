@@ -73,14 +73,14 @@ _warned_no_validator=0
 # here and test-rc-extract-verdict.sh diffs these two lines against the schema
 # — drift fails the suite instead of silently splitting the two validation
 # paths apart. Keep each on one line: the test extracts them with sed.
-readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model","context_check","receipt"]'
+readonly RC_TOP_KEYS='["agent","files_read","verdict","findings","model","context_check","receipt","bundle_receipt"]'
 readonly RC_FINDING_KEYS='["severity","file","line","title","evidence","constraint","description","recommendation","impact"]'
 # The keys of the optional top-level `context_check` object, all required
 # inside it. Same one-line rule as above — the schema-drift test reads it.
 readonly RC_CONTEXT_CHECK_KEYS='["file","line","evidence"]'
 # The subsets of the two lists above that "required" in verdict-schema.json
 # names: what the rejection message calls a missing key. `model`,
-# `context_check` and `receipt` are the optional top-level keys; `line`,
+# `context_check`, `receipt` and `bundle_receipt` are the optional top-level keys; `line`,
 # `title`, `constraint` and `impact` are the optional finding keys. Same
 # one-line rule as above — the schema-drift test reads them.
 readonly RC_REQUIRED_TOP_KEYS='["agent","files_read","verdict","findings"]'
@@ -236,6 +236,7 @@ validate() { # json_string
 			and (.file | nonempty_string) and (.evidence | nonempty_string)
 			and (.line | integerish) and .line >= 1 and .line <= 10000000)) and
 		((has("receipt") | not) or (.receipt | type == "string" and length == 21 and test("^rcpt-[0-9a-f]{16}$"))) and
+		((has("bundle_receipt") | not) or (.bundle_receipt | type == "string" and length == 21 and test("^bndl-[0-9a-f]{16}$"))) and
 		(([keys[]] - $topkeys) | length) == 0 and
 		(all(.findings[];
 			(.severity | oneof(["CRITICAL","HIGH","MEDIUM","LOW"])) and
@@ -319,6 +320,8 @@ validate_error() { # json_string
 					then "`model` must be a non-empty string when present" else empty end),
 				(if has("receipt") and ((.receipt | type == "string" and length == 21 and test("^rcpt-[0-9a-f]{16}$")) | not)
 					then "`receipt` must be a string of the form rcpt- followed by 16 lowercase hex digits, copied exactly from the last line of your prompt file" else empty end),
+				(if has("bundle_receipt") and ((.bundle_receipt | type == "string" and length == 21 and test("^bndl-[0-9a-f]{16}$")) | not)
+					then "`bundle_receipt` must be a string of the form bndl- followed by 16 lowercase hex digits, copied exactly from the last section of your bundle" else empty end),
 				(if has("context_check") then
 					if (.context_check | type) != "object" then "`context_check` must be an object"
 					else ((.context_check | keys) - $cckeys) as $cx
@@ -596,6 +599,20 @@ if [[ -e "$dispatch_index" || -L "$dispatch_index" ]]; then
 	fi
 fi
 
+# The bundle receipt (#108), the same proof for the other thing a code reviewer
+# must read: rc-build-context.sh ends each round's bundle with a token and
+# records it as `bundle_receipt` in that round of prompts/context.json. The
+# status says `checked` only when a check can run: the index exists, parses,
+# and at least one round carries a token. Absent, unparseable and pre-#108
+# indexes all report `unchecked`, so the status never claims a check that did
+# not run. A round recorded without the field is unchecked for its own
+# verdicts alone. A malformed index is not rejected here: the context gate
+# owns that fault (CONTEXT_MISSING) and reports it.
+bundle_receipts="unchecked"
+if jq -e 'any(.rounds[]?; (.bundle_receipt | type) == "string")' "$context_index" >/dev/null 2>&1; then
+	bundle_receipts="checked"
+fi
+
 invalid_json="[]"
 valid_count=0
 # {agent, path, repairs} for every block --salvage repaired and the checks
@@ -676,10 +693,34 @@ for raw in "${raw_files[@]}"; do
 			receipt_reread="Read $(detail_str "$session_abs/$prompt_path" 4096) to its last line and copy the receipt it names into the top-level \`receipt\` field."
 		fi
 	fi
+	# The same for the bundle receipt, which only code reviewers are handed a
+	# bundle to carry. The round is found as context_gate finds it. The sentence
+	# names the bundle's path and never its token.
+	bundle_want=""
+	bundle_reread=""
+	if [[ "$bundle_receipts" == "checked" && "$agent" == *-code ]]; then
+		vd=$(dirname "${rel#verdicts/}")
+		[[ "$vd" == "." ]] && vd=""
+		round=$(jq -c --arg d "$vd" 'first(.rounds[]? | select(.verdict_dir == $d)) // empty' "$context_index" 2>/dev/null) || round=""
+		# A token that is not a string, or a round that names no bundle to open,
+		# is treated as no token: the status above only counts string tokens, and
+		# a detail pointing at no file would send the reviewer to a directory.
+		if [[ -n "$round" ]]; then
+			bundle_want=$(jq -r '(.bundle_receipt | select(type == "string")) // ""' <<<"$round" 2>/dev/null) || bundle_want=""
+			bundle_path=$(jq -r '(.bundle | select(type == "string")) // ""' <<<"$round" 2>/dev/null) || bundle_path=""
+			[[ -n "$bundle_path" ]] || bundle_want=""
+		fi
+		if [[ -n "$bundle_want" ]]; then
+			bundle_reread="Open $(detail_str "$session_abs/$bundle_path" 4096), your round's changed-file bundle, read it to its last section and copy the value that section names into the top-level \`bundle_receipt\` field."
+		fi
+	fi
 	block=$(extract_block "$raw")
 	if [[ -z "$block" ]] || ! echo "$block" | jq -e . >/dev/null 2>&1; then
-		if [[ -n "$receipt_reread" ]]; then
-			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg d "The verdict must also carry its receipt. $receipt_reread" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		no_json_detail=""
+		[[ -z "$receipt_reread" ]] || no_json_detail="The verdict must also carry its receipt. $receipt_reread"
+		[[ -z "$bundle_reread" ]] || no_json_detail+="${no_json_detail:+ }The verdict must also carry its bundle receipt. $bundle_reread"
+		if [[ -n "$no_json_detail" ]]; then
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg d "$no_json_detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		else
 			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "NO_JSON_BLOCK" --arg p "$rel" '. + [{agent:$a, reason:$r, path:$p}]')
 		fi
@@ -710,6 +751,12 @@ for raw in "${raw_files[@]}"; do
 			index_receipt=$(jq -r '.receipt' <<<"$dispatch")
 			if [[ "$block_receipt" != "$index_receipt" ]]; then
 				detail="$detail Also: your verdict carries no receipt, or the wrong one. $receipt_reread"
+			fi
+		fi
+		if [[ -n "$bundle_want" ]]; then
+			block_bundle=$(jq -r 'if type == "object" and (.bundle_receipt | type) == "string" then .bundle_receipt else "" end' <<<"$block" 2>/dev/null) || block_bundle=""
+			if [[ "$block_bundle" != "$bundle_want" ]]; then
+				detail="$detail Also: your verdict carries no bundle_receipt, or the wrong one. $bundle_reread"
 			fi
 		fi
 		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "SCHEMA_INVALID" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
@@ -776,6 +823,17 @@ for raw in "${raw_files[@]}"; do
 			receipt_fail="Your verdict carries no receipt, or the wrong one. $receipt_reread"
 		fi
 	fi
+	# The bundle receipt is held in the same variable, so every fold below that
+	# carries a missing dispatch receipt carries this too, in one re-dispatch.
+	# Only the reason differs: the dispatch receipt's wins when both are owed.
+	# A round the index does not hold has no bundle_want and is left to the
+	# context gate.
+	receipt_reason="RECEIPT_MISSING"
+	got_bundle=$(jq -r '.bundle_receipt // ""' <<<"$block")
+	if [[ -n "$bundle_want" && "$got_bundle" != "$bundle_want" ]]; then
+		[[ -n "$receipt_fail" ]] || receipt_reason="BUNDLE_RECEIPT_MISSING"
+		receipt_fail="${receipt_fail:+$receipt_fail }Your verdict carries no bundle_receipt, or the wrong one. $bundle_reread"
+	fi
 	# verdict-schema.json constrains `verdict` and `severity` independently and
 	# never couples them, so an APPROVE filed over a CRITICAL finding validates.
 	# Nothing downstream re-derives the verdict — rc-verify-evidence.sh copies it
@@ -830,7 +888,7 @@ for raw in "${raw_files[@]}"; do
 		detail='Verdict/severity mismatch: verdict is "APPROVE" while findings still contain a CRITICAL or HIGH entry. A reviewer holding an unresolved CRITICAL or HIGH finding must return "REQUEST CHANGES". Either change the verdict to "REQUEST CHANGES", or — if the finding does not hold at that severity — drop it or lower its severity to MEDIUM/LOW and keep "APPROVE". Whichever you choose, say so in prose alongside the block: dropping the finding without a word erases it from the review entirely.'
 		if [[ -n "$receipt_fail" ]]; then
 			detail="$receipt_fail Also: $detail"
-			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RECEIPT_MISSING" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "$receipt_reason" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		else
 			invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "VERDICT_INCOHERENT" --arg d "$detail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		fi
@@ -870,7 +928,7 @@ for raw in "${raw_files[@]}"; do
 			# CONTEXT_MISSING is the orchestrator's to fix and costs no re-dispatch, so it
 			# is never folded into a reviewer's.
 			if [[ -n "$receipt_fail" && "${gate_out%%$'\t'*}" != "CONTEXT_MISSING" ]]; then
-				gate_out=$'RECEIPT_MISSING\t'"$receipt_fail Also: ${gate_out#*$'\t'}"
+				gate_out="$receipt_reason"$'\t'"$receipt_fail Also: ${gate_out#*$'\t'}"
 			fi
 			invalid_json=$(jq --arg a "$agent" --arg r "${gate_out%%$'\t'*}" --arg d "${gate_out#*$'\t'}" --arg p "$rel" \
 				'. + [{agent:$a, reason:$r, detail:$d, path:$p}]' <<<"$invalid_json")
@@ -885,7 +943,7 @@ for raw in "${raw_files[@]}"; do
 		fi
 	fi
 	if [[ -n "$receipt_fail" ]]; then
-		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "RECEIPT_MISSING" --arg d "$receipt_fail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
+		invalid_json=$(echo "$invalid_json" | jq --arg a "$agent" --arg r "$receipt_reason" --arg d "$receipt_fail" --arg p "$rel" '. + [{agent:$a, reason:$r, detail:$d, path:$p}]')
 		continue
 	fi
 	echo "$block" | jq . >"$(dirname "$raw")/$agent.json"
@@ -995,6 +1053,7 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
   "model": "optional: your own model ID, only if you know it",
   "context_check": {"file": "...", "line": 88, "evidence": "..."},
   "receipt": "rcpt-..., only when your prompt file names one",
+  "bundle_receipt": "bndl-..., only when your round's bundle names one",
   "findings": [ { "severity": "...", "file": "...", "line": 12, "evidence": "...",
   "constraint": "...", "description": "...", "recommendation": "...",
   "impact": "who is affected, and how, if this merges as-is",
@@ -1002,7 +1061,7 @@ Your response must be exactly one fenced ```json block matching verdict-schema.j
 These are the only keys permitted at either level — the schema sets
 "additionalProperties": false, so any other key is rejected, however useful it
 looks. Put anything you would have added into `description`. Optional keys are
-`model`, `context_check` and `receipt` at the top level and `line`, `title` and `constraint` in a finding.
+`model`, `context_check`, `receipt` and `bundle_receipt` at the top level and `line`, `title` and `constraint` in a finding.
 `impact` is required on every HIGH or CRITICAL finding and optional on MEDIUM
 and LOW. Every other key above is required.
 `context_check` is required on a code reviewer's APPROVE with no findings,
@@ -1014,14 +1073,17 @@ severities and the same evidence. This is a formatting repair, not a new review.
 For RECEIPT_MISSING alone, the fix is a re-read, not a re-review: open the prompt
 file the detail names, read it to its last line, and re-emit the SAME findings
 with the same severities plus the receipt that line names, in the top-level
-`receipt` field. If the detail also names a context_check or verdict/severity defect, fix that in the same re-emit: add the context_check quote, or, if looking past the diff turns up a defect, file it and set the verdict to match; resolve a verdict/severity mismatch as that detail directs.
+`receipt` field. When only the bundle receipt is owed (BUNDLE_RECEIPT_MISSING), the fix is a re-read too: open the
+bundle file the detail names, read it to its last section, and re-emit the SAME findings
+with the same severities plus the value that section names, in the top-level
+`bundle_receipt` field. When both are owed the detail says so: copy both. If the detail also names a context_check or verdict/severity defect, fix that in the same re-emit: add the context_check quote, or, if looking past the diff turns up a defect, file it and set the verdict to match; resolve a verdict/severity mismatch as that detail directs.
 For APPROVE_UNGROUNDED and APPROVE_COLLIDED alone, the fix is to look past the diff: add the
 `context_check` quote, or, if that look turns up a defect, file it and set the
 verdict to match.
 REM
 	jq -n --argjson invalid "$invalid_json" --arg rem "$remediation" --argjson valid "$valid_count" \
-		--arg sv "$schema_validation" --arg rc "$receipts" --argjson salv "$salvage_fields" \
-		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem, receipts:$rc}
+		--arg sv "$schema_validation" --arg rc "$receipts" --arg brc "$bundle_receipts" --argjson salv "$salvage_fields" \
+		'{status:"extract_error", valid:$valid, invalid:$invalid, remediation:$rem, receipts:$rc, bundle_receipts:$brc}
 		 + (if $sv == "" then {} else {schema_validation:$sv} end) + $salv'
 	exit 0
 fi
@@ -1040,7 +1102,7 @@ fi
 	json_output "nothing_to_do" "No verdict blocks found: no .raw.md file exists under verdicts/. Reviewers return their verdicts; the orchestrator writes each one verbatim to its .raw.md path. If those responses are still held, write them and re-run extraction instead of re-dispatching." "$extra"
 	exit 0
 }
-payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" --arg rc "$receipts" --argjson salv "$salvage_fields" \
-	'{valid:$v, schema_validation:$sv, receipts:$rc} + $salv')
+payload=$(jq -n --argjson v "$valid_count" --arg sv "$schema_validation" --arg rc "$receipts" --arg brc "$bundle_receipts" --argjson salv "$salvage_fields" \
+	'{valid:$v, schema_validation:$sv, receipts:$rc, bundle_receipts:$brc} + $salv')
 json_output "ok" "Extracted $valid_count verdict block(s)." "$payload"
 exit 0

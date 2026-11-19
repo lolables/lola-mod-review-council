@@ -123,6 +123,23 @@ assert_match_count "$guard" "1" "forge tooling line" -xF "Forge tooling: gh"
 assert_match_count "$guard" "1" "project packs line" -xF "Project packs: none"
 assert_match_count "$guard" "1" "constitution line" -xF "Constitution: none"
 assert_match_count "$guard" "0" "a code prompt has no spec scope" -xF "## Spec Scope"
+rm -rf "$s"
+
+# RC-290: on a large PR the instruction to open the bundle sat after the whole
+# inline diff (line 3063 of a 158 KB prompt) and reviewers never reached it, so
+# `## Bundle` must come before `## Diff` and the wording must match that order.
+echo "Test: a code prompt names the bundle before the diff (RC-290)"
+ap_ready
+bash "$ASSEMBLE" "$s" >/dev/null
+guard=$(<"$s/prompts/dispatch/divisor-guard-code.md")
+bundle_line=$(grep -nx -m1 '## Bundle' <<<"$guard" | cut -d: -f1)
+diff_line=$(grep -nx -m1 '## Diff' <<<"$guard" | cut -d: -f1)
+[[ -n "$bundle_line" && -n "$diff_line" && "$bundle_line" -lt "$diff_line" ]] && got=yes || got=no
+assert_equals "$got" "yes" "## Bundle (line ${bundle_line:-none}) precedes ## Diff (line ${diff_line:-none})"
+assert_match_count "$guard" "1" "the bundle text points forward to the diff" -F "The diff below shows what changed"
+assert_match_count "$guard" "0" "nothing still points back at a diff above" -F "The diff above shows what changed"
+bundle_section=$(awk '$0 == "## Bundle" {on=1; next} on && /^## /{exit} on' <<<"$guard")
+assert_match_count "$bundle_section" "1" "the bundle section says the verdict echoes bundle_receipt" -F "\`bundle_receipt\`"
 assert_match_count "$guard" "1" "framing names branch and base" -xF "The following files changed on branch \`feat\` vs \`main\`:"
 # shellcheck disable=SC2016 # the literal characters, not an expansion.
 assert_match_count "$guard" "0" "no placeholder left unfilled" -E '\{(agent-name|review_root|references_dir|bundle_path|branch|base|language|framework|scope_value|scope_dir)\}'

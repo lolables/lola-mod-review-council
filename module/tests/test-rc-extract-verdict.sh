@@ -2014,6 +2014,251 @@ out=$(bash "$SCRIPT" "$s" 2>/dev/null)
 assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "an odd prompt path only changes the detail text"
 rm -rf "$s"
 
+# --- Bundle receipt (#108) ---------------------------------------------------
+# rc-build-context.sh ends each round's bundle with a token and records it per
+# round in prompts/context.json. A code verdict must echo its own round's token
+# as `bundle_receipt`: a reviewer that never opened the bundle cannot know it.
+BNDL_GOOD="bndl-0123456789abcdef"
+BNDL_OTHER="bndl-fedcba9876543210"
+
+# bundle_context <session> <verdict_dir:token>...: write prompts/context.json
+# with one round per argument. An empty token leaves the round without the
+# field, as a context.json written before the receipt existed does.
+bundle_context() {
+	local s="$1" spec rounds="[]"
+	shift
+	mkdir -p "$s/prompts"
+	for spec in "$@"; do
+		rounds=$(jq -c --arg d "${spec%%:*}" --arg t "${spec#*:}" \
+			'. + [{subsystem: null, batch: 1, bundle: "prompts/\(if $d == "" then "" else $d + "/" end)batch1-context.md", verdict_dir: $d, gate: "waived", files: []}
+				+ (if $t == "" then {} else {bundle_receipt: $t} end)]' <<<"$rounds")
+	done
+	jq -nc --argjson r "$rounds" '{rounds: $r}' >"$s/prompts/context.json"
+}
+
+echo "Test: a code verdict echoing its bundle's receipt is accepted and bundle_receipts is checked (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"bundle_receipt\":\"$BNDL_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "matching bundle_receipt accepted"
+assert_jq_str "$out" '.bundle_receipts' "checked" "output says the bundle check ran"
+rm -rf "$s"
+
+echo "Test: a code verdict with no bundle_receipt is BUNDLE_RECEIPT_MISSING, names the bundle and hides the token (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "extract_error" "missing bundle_receipt rejected"
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "reason names the bundle receipt"
+assert_jq_str "$out" '.bundle_receipts' "checked" "extract_error output carries bundle_receipts too"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "detail names the bundle path" -F "prompts/batch1-context.md"
+assert_match_count "$out" 0 "the expected token is never printed" -F "$BNDL_GOOD"
+remediation=$(jq -r '.remediation' <<<"$out")
+assert_match_count "$remediation" 1 "remediation calls it a re-read" -F "(BUNDLE_RECEIPT_MISSING), the fix is a re-read too"
+assert_match_count "$remediation" 1 "remediation lists the key" -F '"bundle_receipt"'
+[[ ! -e "$s/verdicts/divisor-guard-code.json" ]] && gone=yes || gone=no
+assert_equals "$gone" "yes" "no verdict json is written for a rejected bundle_receipt"
+rm -rf "$s"
+
+echo "Test: a wrong bundle_receipt is BUNDLE_RECEIPT_MISSING (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"bundle_receipt\":\"$BNDL_OTHER\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "another round's token rejected"
+rm -rf "$s"
+
+echo "Test: the dispatch receipt does not stand in for the bundle_receipt (RC-289)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\",\"bundle_receipt\":\"$RCPT_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "a rcpt- token is off the bndl- pattern"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_GOOD\",\"bundle_receipt\":\"$BNDL_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "both receipts right is accepted"
+rm -rf "$s"
+
+echo "Test: a code REQUEST CHANGES with findings still needs its bundle_receipt (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "the check is not APPROVE-only"
+rm -rf "$s"
+
+echo "Test: a spec verdict needs no bundle_receipt and may carry one (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+mkdir -p "$s/verdicts"
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n{"agent":"divisor-guard-spec","files_read":[],"verdict":"APPROVE","findings":[]}\n```\n' >"$s/verdicts/divisor-guard-spec.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "spec verdict without bundle_receipt accepted"
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n{"agent":"divisor-guard-spec","files_read":[],"verdict":"APPROVE","findings":[],"bundle_receipt":"%s"}\n```\n' "$BNDL_OTHER" >"$s/verdicts/divisor-guard-spec.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a spec verdict's bundle_receipt is allowed and never compared"
+rm -rf "$s"
+
+echo "Test: no context.json means no bundle check and bundle_receipts unchecked (RC-289)"
+s=$(mk)
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a session without context.json still extracts"
+assert_jq_str "$out" '.bundle_receipts' "unchecked" "the skipped check is reported"
+rm -rf "$s"
+
+echo "Test: a round with no bundle_receipt field is not checked (RC-289)"
+s=$(mk)
+bundle_context "$s" ":"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a context.json from before the receipt is accepted"
+assert_jq_str "$out" '.bundle_receipts' "unchecked" "a pre-#108 context.json is reported unchecked"
+rm -rf "$s"
+
+echo "Test: an unparseable context.json is unchecked and rejects nothing here (RC-289)"
+s=$(mk)
+mkdir -p "$s/prompts"
+printf 'not json\n' >"$s/prompts/context.json"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a code REQUEST CHANGES without bundle_receipt is accepted"
+assert_jq_str "$out" '.bundle_receipts' "unchecked" "the check that could not run is not claimed"
+rm -rf "$s"
+
+echo "Test: a verdict in a directory no round writes to is left to the context gate (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/stray/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "no round, no bundle_receipt verdict (CONTEXT_MISSING is the gate's, for bare APPROVEs)"
+rm -rf "$s"
+
+echo "Test: a wrong dispatch receipt and a missing bundle_receipt get one rejection naming both (RC-289)"
+s=$(receipt_session verdicts/divisor-guard-code.raw.md)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"receipt\":\"$RCPT_OTHER\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid | length' "1" "one rejection, one re-dispatch"
+assert_jq_str "$out" '.invalid[0].reason' "RECEIPT_MISSING" "the dispatch receipt's reason wins when both are owed"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail names the prompt file" -F "prompts/dispatch/divisor-guard-code.md"
+assert_match_count "$detail" 1 "the detail names the bundle" -F "prompts/batch1-context.md"
+assert_match_count "$detail" 1 "the detail carries the bundle sentence" -F "Your verdict carries no bundle_receipt, or the wrong one."
+assert_match_count "$out" 0 "neither token is printed" -F "$BNDL_GOOD"
+rm -rf "$s"
+
+echo "Test: a bundle_receipt failure beside a verdict/severity mismatch carries both (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+body=$(incoherent_block divisor-guard-code)
+write_raw "$s" divisor-guard-code "$body"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "the bundle receipt is reported"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail also carries the mismatch" -F "Verdict/severity mismatch"
+rm -rf "$s"
+
+echo "Test: a bundle_receipt failure beside a missing context_check carries both (RC-289)"
+s=$(gate_session)
+jq --arg t "$BNDL_GOOD" '.rounds[0].bundle_receipt = $t' "$s/prompts/context.json" >"$s/c" && mv "$s/c" "$s/prompts/context.json"
+approve_with "$s" ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "the bundle receipt is reported"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail also carries the context-check requirement" -F "must carry \`context_check\`"
+assert_match_count "$detail" 1 "the detail names the bundle" -F "prompts/batch1-context.md"
+rm -rf "$s"
+
+echo "Test: a refused bundle_receipt reserves no context_check line (RC-289)"
+s=$(gate_session)
+jq --arg t "$BNDL_GOOD" '.rounds[0].bundle_receipt = $t' "$s/prompts/context.json" >"$s/c" && mv "$s/c" "$s/prompts/context.json"
+# shellcheck disable=SC2016 # literal markdown fence, not command substitution.
+printf '```json\n{"agent":"divisor-sre-code","files_read":["a.go"],"verdict":"APPROVE","findings":[],"bundle_receipt":"%s","context_check":{"file":"a.go","line":12,"evidence":"l12"}}\n```\n' "$BNDL_GOOD" >"$s/verdicts/divisor-sre-code.raw.md"
+approve_with "$s" '{"file":"a.go","line":12,"evidence":"l12"}'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid | length' "1" "only the reviewer owing a bundle_receipt is refused"
+assert_jq_str "$out" '.invalid[0].agent' "divisor-guard-code" "the refused reviewer is named"
+assert_jq_str "$out" '.valid' "1" "the other reviewer's identical quote was not displaced"
+rm -rf "$s"
+
+echo "Test: a schema-invalid verdict also missing its bundle_receipt is told both (RC-289)"
+s=$(mk)
+bundle_context "$s" ":$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md '"extra":1'
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "the format defect is the reason"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail adds the bundle re-read" -F "prompts/batch1-context.md"
+assert_match_count "$out" 0 "the expected token is never printed" -F "$BNDL_GOOD"
+receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "\"bundle_receipt\":\"$BNDL_GOOD\",\"extra\":1"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 0 "a correct bundle_receipt adds nothing" -F "prompts/batch1-context.md"
+printf 'I reviewed it and it looks fine.\n' >"$s/verdicts/divisor-guard-code.raw.md"
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "NO_JSON_BLOCK" "no block is still NO_JSON_BLOCK"
+detail=$(jq -r '.invalid[0].detail // ""' <<<"$out")
+assert_match_count "$detail" 1 "the detail names the bundle to re-read" -F "prompts/batch1-context.md"
+rm -rf "$s"
+
+echo "Test: a batched path is held to its own round's bundle_receipt (RC-289)"
+s=$(mk)
+bundle_context "$s" "batch1:$BNDL_GOOD" "batch2:$BNDL_OTHER"
+receipt_verdict "$s" verdicts/batch2/divisor-guard-code.raw.md "\"bundle_receipt\":\"$BNDL_OTHER\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "batch2 accepts batch2's token"
+receipt_verdict "$s" verdicts/batch2/divisor-guard-code.raw.md "\"bundle_receipt\":\"$BNDL_GOOD\""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "batch1's token is wrong for batch2"
+detail=$(jq -r '.invalid[0].detail' <<<"$out")
+assert_match_count "$detail" 1 "the detail names batch2's bundle" -F "prompts/batch2/batch1-context.md"
+rm -rf "$s"
+
+echo "Test: a bundle_receipt off the pattern is SCHEMA_INVALID on either validation path (RC-289)"
+bndl_nojs_mask=$(mktemp -d)
+bndl_nojs=$(path_without_command jsonschema "$bndl_nojs_mask")
+for bad in bndl-XYZ "bndl-0123456789ABCDEF" "bndl-0123456789abcdef0" $'bndl-0123456789abcdef\n'; do
+	s=$(mk)
+	member=$(jq -nr --arg r "$bad" '"\"bundle_receipt\":" + ($r | tojson)')
+	receipt_verdict "$s" verdicts/divisor-guard-code.raw.md "$member"
+	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "$(printf '%q' "$bad") rejected"
+	out=$(PATH="$bndl_nojs" bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.invalid[0].reason' "SCHEMA_INVALID" "$(printf '%q' "$bad") rejected without the validator"
+	rm -rf "$s"
+done
+rm -rf "$bndl_nojs_mask"
+
+echo "Test: rounds without a token are unchecked while a tokened round beside them is held to it (RC-289)"
+s=$(mk)
+bundle_context "$s" "batch1:$BNDL_GOOD" "batch2:"
+receipt_verdict "$s" verdicts/batch2/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.status' "ok" "a verdict in the tokenless round is accepted"
+assert_jq_str "$out" '.bundle_receipts' "checked" "one tokened round makes the status checked"
+receipt_verdict "$s" verdicts/batch1/divisor-guard-code.raw.md ""
+out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+assert_jq_str "$out" '.invalid[0].reason' "BUNDLE_RECEIPT_MISSING" "a verdict in the tokened round is rejected"
+rm -rf "$s"
+
+echo "Test: a non-string token or a round without a bundle is treated as no token (RC-289)"
+s=$(mk)
+bundle_context "$s" "batch1:$BNDL_GOOD" "batch2:$BNDL_GOOD" "batch3:$BNDL_GOOD"
+jq '.rounds[1].bundle_receipt = 7 | del(.rounds[2].bundle)' "$s/prompts/context.json" >"$s/c" && mv "$s/c" "$s/prompts/context.json"
+for d in batch2 batch3; do
+	receipt_verdict "$s" "verdicts/$d/divisor-guard-code.raw.md" ""
+	out=$(bash "$SCRIPT" "$s" 2>/dev/null)
+	assert_jq_str "$out" '.status' "ok" "$d: unusable token or bundle is unchecked, not rejected"
+	rm -f "$s/verdicts/$d/divisor-guard-code.raw.md" "$s/verdicts/$d/divisor-guard-code.json"
+done
+rm -rf "$s"
+
 # --- Salvage (--salvage) ------------------------------------------------------
 # After the one re-dispatch round the orchestrator re-runs the extractor with
 # --salvage. A block whose only defects are in the repairable set (unknown keys,

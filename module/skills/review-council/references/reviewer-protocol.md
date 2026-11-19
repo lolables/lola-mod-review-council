@@ -112,7 +112,8 @@ Six rules govern the block, and they apply before you copy the shape below:
   is no key for extra context: put it in `description`.
 - **Required vs optional.** `agent`, `files_read`, `verdict` and `findings` are
   all required; `model` and `context_check` are the optional top-level keys, and
-  so is `receipt`, which is required whenever your prompt names one (below).
+  so is `receipt`, which is required whenever your prompt names one (below),
+  and `bundle_receipt`, required on code verdicts when your bundle names one.
   Inside a finding, `severity`, `file`, `evidence`, `description` and
   `recommendation` are required; `line`, `title` and `constraint` are optional,
   and so is `impact` below HIGH.
@@ -148,6 +149,12 @@ Six rules govern the block, and they apply before you copy the shape below:
   top-level `receipt` field. It shows you read the prompt to its end; a verdict
   without it, or with another prompt's, is returned to you. If your prompt names no
   receipt, leave the field out.
+- **`bundle_receipt` is required on every code verdict when your round's bundle
+  names one.** A bundle that ends with a `## Bundle receipt` section names a token
+  of the form `bndl-` plus 16 hex digits. Copy it exactly from the bundle's last
+  section into the top-level `bundle_receipt` field. It shows you opened the
+  bundle; a verdict without it, or with another round's, is returned to you. If
+  your bundle names none, and in every spec review, leave the field out.
 
 ```json
 {

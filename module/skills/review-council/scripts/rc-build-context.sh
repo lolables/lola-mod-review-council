@@ -12,8 +12,10 @@ rc_trap_errors
 #
 #   preamble.md                 pasted verbatim at the top of every prompt
 #   [<sub>/]batch<N>-context.md one bundle of changed-file text per round,
-#                               handed to the reviewer by path
-#   context.json                the round index rc-extract-verdict.sh reads
+#                               handed to the reviewer by path, ending in a
+#                               receipt token the verdict must echo (#108)
+#   context.json                the round index rc-extract-verdict.sh reads,
+#                               with each round's bundle_receipt
 #
 # and a `## Phase: Context` block in tracking.md. Runs after
 # rc-plan-batches.sh and reads its batch-plan.json. No forge calls.
@@ -331,10 +333,27 @@ while IFS= read -r entry; do
 		fi
 	} >"$bundle"
 
+	# The receipt is a function of the bundle's content alone, so a Step 2.7
+	# rebuild of unchanged files keeps the token and verdicts already dispatched
+	# stay valid. It goes last so it is reached only by opening the bundle;
+	# echoing it proves the bundle was opened, not that it was read in full.
+	h=$(rc_sha256 "$bundle")
+	if [[ ! "$h" =~ ^[0-9a-f]{64}$ ]]; then
+		json_output "error" "could not hash $bundle_rel: no usable sha256sum or shasum, or the bundle is unreadable."
+		exit 1
+	fi
+	bundle_receipt="bndl-${h:0:16}"
+	{
+		echo ""
+		echo "## Bundle receipt"
+		echo ""
+		echo "Your verdict's top-level \`bundle_receipt\` field is \`$bundle_receipt\`. A code verdict without it is returned to you."
+	} >>"$bundle"
+
 	rounds_json=$(jq -c --arg s "$sub" --argjson b "$batch" --arg bundle "$bundle_rel" \
-		--arg vd "$verdict_dir" --arg g "$gate" --argjson files "$files_json" \
+		--arg vd "$verdict_dir" --arg g "$gate" --arg br "$bundle_receipt" --argjson files "$files_json" \
 		'. + [{subsystem: (if $s == "" then null else $s end), batch: $b, bundle: $bundle,
-		       verdict_dir: $vd, gate: $g, files: $files}]' <<<"$rounds_json")
+		       verdict_dir: $vd, gate: $g, bundle_receipt: $br, files: $files}]' <<<"$rounds_json")
 done <<<"$plan_rounds"
 
 jq -n --argjson rounds "$rounds_json" '{rounds: $rounds}' >"$prompts_tmp/context.json"

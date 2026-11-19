@@ -74,7 +74,7 @@ No diff available. Read the files directly for review.
 
 ## Bundle
 
-Your primary input is `{bundle_path}`. Read it in full before anything else: it holds the full text of every changed file in this round, with line numbers. Files listed under "Read directly" are not in it; open those yourself. The diff above shows what changed; focus your analysis there, and use the bundle for everything around it. Do not report on files you have not read. See reviewer-protocol.md for evidence discipline rules.
+Your primary input is `{bundle_path}`. Read it in full before anything else: it holds the full text of every changed file in this round, with line numbers. Files listed under "Read directly" are not in it; open those yourself. The bundle names a `bundle_receipt` value in its last section; your verdict must echo it. The diff below shows what changed; focus your analysis there, and use the bundle for everything around it. Do not report on files you have not read. See reviewer-protocol.md for evidence discipline rules.
 
 ## Changeset untrusted
 
@@ -159,11 +159,11 @@ Return your verdict (**APPROVE** or **REQUEST CHANGES**) with all findings. Ever
 
 ## Output contract: code
 
-Your response is one fenced ```json block and nothing else. Its `agent` field is exactly `{agent-name}`. Its required top-level keys are `agent`, `files_read` (every file you opened), `verdict` (`APPROVE` or `REQUEST CHANGES`) and `findings`, plus `receipt`, the token at the end of this prompt; `model` and `context_check` are the only optional ones. The key set is closed at both levels: no `summary`, `category` or any other key, because the validator rejects the whole verdict for one. Put extra context in a finding's `description`. The full shape is in the "Output Format" section of `reviewer-protocol.md`.
+Your response is one fenced ```json block and nothing else. Its `agent` field is exactly `{agent-name}`. Its required top-level keys are `agent`, `files_read` (every file you opened), `verdict` (`APPROVE` or `REQUEST CHANGES`) and `findings`, plus `receipt`, the token at the end of this prompt, and `bundle_receipt`, the value your bundle names in its last section; `model` and `context_check` are the only optional ones. The key set is closed at both levels: no `summary`, `category` or any other key, because the validator rejects the whole verdict for one. Put extra context in a finding's `description`. The full shape is in the "Output Format" section of `reviewer-protocol.md`.
 
 ## Output contract: spec
 
-Your response is one fenced ```json block and nothing else. Its `agent` field is exactly `{agent-name}`. Its required top-level keys are `agent`, `files_read` (every file you opened), `verdict` (`APPROVE` or `REQUEST CHANGES`) and `findings`, plus `receipt`, the token at the end of this prompt; `model` is the only optional one, and `context_check` belongs to code reviews, so leave it out. The key set is closed at both levels: no `summary`, `category` or any other key, because the validator rejects the whole verdict for one. Put extra context in a finding's `description`. The full shape is in the "Output Format" section of `reviewer-protocol.md`.
+Your response is one fenced ```json block and nothing else. Its `agent` field is exactly `{agent-name}`. Its required top-level keys are `agent`, `files_read` (every file you opened), `verdict` (`APPROVE` or `REQUEST CHANGES`) and `findings`, plus `receipt`, the token at the end of this prompt; `model` is the only optional one, and `context_check` belongs to code reviews, so leave it out. `bundle_receipt` is a code-review key too: a spec review has no bundle, so omit it. The key set is closed at both levels: no `summary`, `category` or any other key, because the validator rejects the whole verdict for one. Put extra context in a finding's `description`. The full shape is in the "Output Format" section of `reviewer-protocol.md`.
 
 ## Context check
 

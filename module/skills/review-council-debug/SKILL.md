@@ -229,7 +229,7 @@ Validate JSON output:
 - On `extract_error`, does the per-agent `reason` (`NO_JSON_BLOCK` /
   `SCHEMA_INVALID` / `VERDICT_INCOHERENT` / `APPROVE_UNGROUNDED` /
   `APPROVE_COLLIDED` / `CONTEXT_MISSING` / `AGENT_MISMATCH` / `RESERVED_AGENT` /
-  `RECEIPT_MISSING` / `RECEIPT_MISFILED` / `DISPATCH_UNINDEXED`) and `remediation`
+  `RECEIPT_MISSING` / `BUNDLE_RECEIPT_MISSING` / `RECEIPT_MISFILED` / `DISPATCH_UNINDEXED`) and `remediation`
   text give an LLM orchestrator enough to re-dispatch that one agent? A
   `VERDICT_INCOHERENT` block is schema-valid — it declares APPROVE over a
   CRITICAL or HIGH finding — so do not expect `jsonschema validate` to
@@ -519,6 +519,13 @@ Test these scenarios for robustness:
   `rc-assemble-prompts.sh` (Step 2.8) with `--keep-receipts`, not to
   re-dispatch. A malformed `dispatch.json` is the one case whose `detail` says
   to re-dispatch every reviewer, after re-running Step 2.8 without the flag.
+- **Bundle receipt**: a mock session whose `prompts/context.json` has no round
+  with `bundle_receipt` reports `bundle_receipts: "unchecked"`. To exercise the
+  check, add `bundle_receipt` (`bndl-` plus 16 hex digits) to a round. A code
+  verdict with no `bundle_receipt` or the wrong one expects
+  `reason: "BUNDLE_RECEIPT_MISSING"` (one re-dispatch; the `detail` names the
+  bundle to re-read). When the prompt receipt is also missing, expect
+  `RECEIPT_MISSING` with a `detail` naming both files. Spec verdicts are not checked.
 - **Misfiled verdict**: a schema-valid block whose `agent` differs from its
   filename. Expect `reason: "AGENT_MISMATCH"` with a `detail` naming both
   agents, and no `<agent>.json` written for that file.

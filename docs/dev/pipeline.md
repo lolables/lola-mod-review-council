@@ -228,9 +228,14 @@ flowchart TD
    receipt belonging to another dispatch is `RECEIPT_MISFILED`, unless that dispatch's raw file already carries it
    (then the reviewer read the wrong prompt, and it is `RECEIPT_MISSING`), and a raw file the index does not list (or a malformed
    index) is `DISPATCH_UNINDEXED`; both are the orchestrator's faults, fixed by moving the file or re-running
-   Steps 2.7 and 2.8 with `--keep-receipts`, with nothing re-dispatched. Only a malformed index that cannot be
+   Steps 2.7 and 2.8 with `--keep-receipts`, with nothing re-dispatched (apart from any round whose bundle changed in the rebuild, which gets a new `bundle_receipt` and is re-dispatched under `BUNDLE_RECEIPT_MISSING`; unchanged rounds keep their verdicts). Only a malformed index that cannot be
    restored costs a re-dispatch of every reviewer, as its receipts are lost. The receipt shows the reviewer reached the end of its prompt, not that it read
    every line. The extractor reports `receipts: "checked"` or, without an index, `"unchecked"`.
+   Code verdicts carry a second token, `bundle_receipt`, from the last section of their round's bundle. It shows the reviewer obtained the token from the bundle, not that it read the bundle in full. It is a
+   SHA-256 of the bundle body, recorded per round in `prompts/context.json`, so a rebuild of unchanged content keeps
+   it and `--keep-receipts` has nothing to preserve. A missing or wrong one is `BUNDLE_RECEIPT_MISSING` and folds into
+   the same single re-dispatch; when both tokens are owed the reason is `RECEIPT_MISSING` and the `detail` names both
+   files. It is reported as `bundle_receipts: "checked"` or `"unchecked"`, and spec verdicts are never checked.
    Known limits. The gate raises the cost of a no-look APPROVE; it does not prove the review's depth, and a
    reviewer that files any finding, even a LOW, is not gated at all. #101 accepted both when it chose this gate
    (issue option (b)); inlining the files is what makes depth cheap. The one-line-per-round rule blocks one

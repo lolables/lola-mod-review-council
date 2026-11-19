@@ -184,7 +184,10 @@ flowchart TD
    minimum 2; `lib/context-lines.sh` deals unique-text lines outside the hunks across the round's code reviewers so
    no two can quote the same one); a spec prompt holds the artifact list and spec sections, and no
    preamble, bundle, diff or context check. The agent's `-code` or `-spec` suffix picks which; any other suffix is an
-   error. A deep run renders each subsystem's own council, framed from `subsystems.json`, and is refused when
+   error. When `context.json` has more than one round, every prompt, code or spec, also lists the changed files of
+   the other rounds (`batch N: path`, or `<subsystem> batch N: path` in a deep run), so a reviewer can read a related
+   file on demand; evidence verification resolves paths against the review root, not the round, so a finding may
+   cite one. A deep run renders each subsystem's own council, framed from `subsystems.json`, and is refused when
    `diff.patch` has a section no round names. Prior run context comes from the previous pass's `verdicts/findings.json`
    at iteration 2 or later. Every prompt ends with a `## Receipt` naming a token unique to the dispatch. Re-running
    `rc-build-context.sh` deletes `prompts/dispatch/`, so this step always follows it, including on iteration re-entry.

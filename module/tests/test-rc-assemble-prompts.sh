@@ -113,6 +113,7 @@ assert_jq "$idx" '[.dispatches[].raw] | join("|")' \
 assert_jq "$idx" '[.dispatches[].prompt] | join("|")' \
 	"prompts/dispatch/divisor-guard-code.md|prompts/dispatch/divisor-curator-code.md" "prompt paths"
 guard=$(<"$s/prompts/dispatch/divisor-guard-code.md")
+assert_match_count "$guard" "0" "an unbatched prompt has no other-files section" -F "Other files in this changeset"
 assert_match_count "$guard" "1" "the agent is named" -xF "You are \`divisor-guard-code\`."
 assert_match_count "$guard" "1" "its focus area comes from the Focus areas table" -F "Intent drift, zero-waste, constitution"
 assert_match_count "$guard" "1" "the Go Guard detection hint is included" -F "Check for interface pollution"
@@ -293,6 +294,12 @@ assert_match_count "$(<"$b1")" "0" "b.go's added line is cut out of batch 1" -xF
 b2="$s/prompts/dispatch/batch2/divisor-guard-code.md"
 assert_match_count "$(<"$b2")" "1" "batch 2 holds b.go's added line" -xF "+line 2"
 assert_match_count "$(<"$b1")" "1" "batch 1 names its own bundle" -F "\`$s/prompts/batch1-context.md\`"
+assert_match_count "$(<"$b1")" "1" "batch 1 has the other-files section" -xF "## Other files in this changeset"
+assert_match_count "$(<"$b1")" "1" "batch 1 names b.go with its batch" -xF "batch 2: b.go"
+assert_match_count "$(<"$b1")" "0" "batch 1 does not list its own file as another round's" -F "batch 1: a.go"
+assert_match_count "$(<"$b2")" "1" "batch 2 names a.go with its batch" -xF "batch 1: a.go"
+other=$(awk '/^## Other files in this changeset$/ {on = 1; next} on && /^```/ {n++; if (n == 2) exit; next} on && n == 1' "$b1")
+assert_equals "$other" "batch 2: b.go" "batch 1 holds exactly the other round's file inside one fence"
 rm -rf "$s"
 
 echo "Test: --inline-persona puts the persona after the preamble and before the review"
@@ -806,6 +813,7 @@ assert_match_count "$p" "1" "spec scope says review artifacts, not code" -F "Rev
 assert_match_count "$p" "1" "spec scope sources governance from the Constitution line" -F "Governance comes only from the \`Constitution:\` line"
 assert_match_count "$p" "1" "artifacts framing" -xF "The following spec artifacts are in scope:"
 assert_match_count "$p" "1" "the artifact is listed" -xF "docs/spec.md"
+assert_match_count "$p" "0" "an unbatched spec prompt has no other-files section" -F "Other files in this changeset"
 assert_match_count "$p" "1" "the rest of Review artifacts follows the list" -F "**Read every artifact before producing any findings.**"
 assert_match_count "$p" "1" "the checkout framing names the review root" -F "Files in this changeset live under \`$s/tree\`."
 assert_match_count "$p" "0" "a checkout gets no in-place paragraph" -F "The artifacts under review, and any AGENTS.md"
@@ -836,6 +844,29 @@ assert_match_count "$p" "0" "in place: the code in-place paragraph is not repeat
 rm "$s/review-config/severity.md"
 out=$(bash "$ASSEMBLE" "$s") || true
 assert_jq_str "$out" '.status' "error" "a spec prompt without the session's severity pack is an error"
+rm -rf "$s"
+
+echo "Test: a batched in-place spec prompt keeps the in-place notice inside Review Artifacts"
+s=$(AP_COUNCIL="divisor-guard-spec" ap_session docs/a.md docs/b.md)
+mkdir -p "$s/tree/docs"
+seq 1 20 | sed 's/^/line /' >"$s/tree/docs/a.md"
+seq 1 20 | sed 's/^/line /' >"$s/tree/docs/b.md"
+add_hunk "$s" docs/a.md 3 4
+add_hunk "$s" docs/b.md 3 4
+ap_track "$s" "Mode" "spec (spec files changed)"
+jq '.mode = "spec" | .suffix = "spec"' "$s/session-manifest.json" >"$s/m.json"
+mv "$s/m.json" "$s/session-manifest.json"
+jq -n '{applied: true, byte_budget: 131072, file_cap: 1,
+	batches: [{batch: 1, subsystem: null, files: ["docs/a.md"], bytes: 0},
+	          {batch: 2, subsystem: null, files: ["docs/b.md"], bytes: 0}]}' >"$s/batch-plan.json"
+ap_build "$s"
+printf -- '- Review root: .\n' >"$s/session.txt"
+bash "$ASSEMBLE" "$s" >/dev/null
+f="$s/prompts/dispatch/batch1/divisor-guard-spec.md"
+notice_line=$(grep -nF "The artifacts under review, and any AGENTS.md" "$f" | head -n 1 | cut -d: -f1)
+other_line=$(grep -nxF "## Other files in this changeset" "$f" | head -n 1 | cut -d: -f1)
+[[ -n "$notice_line" && -n "$other_line" && "$notice_line" -lt "$other_line" ]] && ordered=yes || ordered=no
+assert_equals "$ordered" "yes" "the in-place notice precedes the other-files section"
 rm -rf "$s"
 
 echo "Test: an agent that is neither a code nor a spec reviewer is an error"
@@ -946,6 +977,13 @@ assert_match_count "$(<"$b2")" "1" "batch 2 lists b.go" -xF "b.go"
 assert_match_count "$(<"$b2")" "0" "batch 2 does not list a.go" -xF "a.go"
 assert_match_count "$(<"$b2")" "1" "batch 2 diff holds b.go's added line" -xF "+line 2"
 assert_match_count "$(<"$b2")" "0" "batch 2 diff omits a.go" -F "b/a.go"
+other=$(awk '/^## Other files in this changeset$/ {on = 1; next} on && /^```/ {n++; if (n == 2) exit; next} on && n == 1' \
+	"$s/prompts/dispatch/core/batch1/divisor-guard-code.md")
+assert_equals "$other" "$(printf 'core batch 2: b.go\ndocs batch 1: docs/x.md\ndocs batch 1: docs/y.md\nmisc batch 1: c.go')" \
+	"a deep round lists every other round's files, labelled and in round order"
+spec_other=$(<"$s/prompts/dispatch/docs/divisor-curator-spec.md")
+assert_match_count "$spec_other" "1" "a spec round has the other-files section" -xF "## Other files in this changeset"
+assert_match_count "$spec_other" "1" "a spec round names another subsystem's file" -xF "core batch 1: a.go"
 rm -rf "$s"
 
 echo "Test: deep-mode inputs that would mis-render are errors"

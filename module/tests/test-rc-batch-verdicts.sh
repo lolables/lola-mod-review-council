@@ -155,6 +155,38 @@ else
 fi
 rm -rf "$s" "$src"
 
+echo "Test 4: a finding in one round may cite a file that belongs to another"
+# Each round's prompt lists the other rounds' files so a reviewer can read a
+# related file (a test, a caller) on demand. That is only safe if evidence
+# verification resolves paths against the review root, not the round: a batch 1
+# finding quoting a batch 2 file must verify, not fail as FILE_NOT_FOUND.
+s=$(new_session)
+mkdir -p "$s/verdicts/batch1"
+cat >"$s/verdicts/batch1/divisor-testing-code.raw.md" <<'RAW'
+```json
+{"agent":"divisor-testing-code","files_read":["a.go","tests/a_test.go"],"verdict":"REQUEST CHANGES",
+ "findings":[{"severity":"HIGH","file":"tests/a_test.go","line":1,"evidence":"assert.True(t, true)","description":"assertion cannot fail","recommendation":"assert on the result","impact":"The test passes whatever a.go does."}]}
+```
+RAW
+write_waived_context "$s"
+result=$(bash "$EXTRACT" "$s")
+assert_json_field "$result" "status" "ok" "extract cross-round status ok"
+src=$(mktemp -d)
+mkdir -p "$src/tests"
+echo 'package a' >"$src/a.go"
+echo 'assert.True(t, true)' >"$src/tests/a_test.go"
+result=$(cd "$src" && bash "$VERIFY" "$s" .)
+assert_json_field "$result" "status" "ok" "verify cross-round status ok"
+vc=$(echo "$result" | jq '.verified')
+if [[ "$vc" -eq 1 ]]; then
+	echo "  PASS: finding citing another round's file verified"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: verified $vc — evidence check is round-restricted"
+	FAIL=$((FAIL + 1))
+fi
+rm -rf "$s" "$src"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

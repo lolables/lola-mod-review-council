@@ -1,0 +1,19 @@
+module/skills/review-council/phases/delegate.md
+  s_58465dc2eb35ab::t_9ba311f5547713 195,197-199,225-230,267,407,411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "f7caaf73aa17f19d4850d6913ed57362f21e20ca",
+  "prompts": {},
+  "sessions": {
+    "s_58465dc2eb35ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60e140f8-ff07-41f1-a3d2-7f6d4ef993c9",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

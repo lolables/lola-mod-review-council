@@ -952,6 +952,36 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-287: CI runs the unit layer as one job per shard, each named `unit-i/n` in
+# .github/workflows/test.yml and run with UNIT_SHARD=i/n, because the whole
+# layer reached the 20-minute limit on macOS. The runner guarantees n shards
+# cover the selection, but only if all n run: a shard dropped from the list, or
+# one left at an old n after the count changed, leaves a share of the suites
+# untested in CI with every job green. So the entries must be exactly 1/n..n/n.
+echo "Test: CI unit shards are exactly 1/n through n/n (RC-287)"
+rc287_entries=""
+[[ -f "$TEST_WORKFLOW" ]] &&
+	rc287_entries=$(tr -s ' ,[]' '\n' <"$TEST_WORKFLOW" |
+		sed -n 's/^"unit-\([^"]*\)"$/\1/p' | sort -u)
+rc287_line="${rc287_entries//$'\n'/ }"
+rc287_counts=$(sed -n 's|^[0-9]*/\([0-9]*\)$|\1|p' <<<"$rc287_entries" | sort -u)
+rc287_expected=""
+if [[ "$rc287_counts" =~ ^[1-9][0-9]*$ ]]; then
+	rc287_expected=$(for ((i = 1; i <= rc287_counts; i++)); do echo "$i/$rc287_counts"; done | sort -u)
+fi
+if [[ -z "$rc287_entries" ]]; then
+	echo "  FAIL: extracted no \"unit-i/n\" layers from test.yml — the file is missing or"
+	echo "        changed shape, and this guard is comparing nothing"
+	FAIL=$((FAIL + 1))
+elif [[ -n "$rc287_expected" && "$rc287_entries" == "$rc287_expected" ]]; then
+	echo "  PASS: unit runs as a complete set of shards ($rc287_line)"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: CI's unit shards do not cover the layer: $rc287_line"
+	echo "        expected 1/n through n/n with one n; a missing shard is suites CI never runs"
+	FAIL=$((FAIL + 1))
+fi
+
 # RC-025: Disposition is the one phase where attacker-authored text — PR comments
 # anyone can post — reaches something that edits state. The subagent that reads
 # them cannot read `disposition.md`: Step 2 says so in as many words, and its file
@@ -3537,6 +3567,214 @@ if grep -qF 'Lines to choose your' "$SCRIPT_DIR/../skills/review-council/scripts
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: the context-check lines block or its key is undocumented"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-279: #136: the arbiter graded a no-tests finding HIGH or MEDIUM on identical
+# facts because nothing told it whether a suite existed. Preparation now records
+# `Test suite:` in tracking.md; Step 4 must pass that line, code mode only (a
+# spec has no test gap), and the agent body must name it as a script-computed fact.
+echo "Test: the arbiter prompt carries the repository test-suite line (RC-279)"
+rc279_missing=0
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF 'the `Test suite:` line of `${session_dir}/tracking.md`' <<<"$verify_flat"; then
+	echo "  missing: verify.md Step 4 does not list the Test suite line"
+	rc279_missing=$((rc279_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
+if ! grep -qF 'code mode only: the `Test suite:` line' <<<"$verify_flat"; then
+	echo "  missing: verify.md does not limit the Test suite line to code mode"
+	rc279_missing=$((rc279_missing + 1))
+fi
+if ! grep -qF '**Test suite** line' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter Inputs does not name the Test suite line"
+	rc279_missing=$((rc279_missing + 1))
+fi
+if ! grep -qF 'Computed by script from the repository' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter Inputs does not say the line is script-computed"
+	rc279_missing=$((rc279_missing + 1))
+fi
+if [[ "$rc279_missing" -eq 0 ]]; then
+	echo "  PASS: the arbiter prompt carries the repository test-suite line"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc279_missing phrase(s) missing (RC-279)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-280: a finding that new code ships with no tests is graded from the Test suite
+# line, not from the arbiter's mood: none found is MEDIUM, a suite that exists
+# is HIGH, unknown leaves the filed severity alone.
+echo "Test: the arbiter grades a no-tests finding from the Test suite line (RC-280)"
+rc280_missing=0
+if ! grep -qF 'new code ships with no tests' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter has no rule for a no-tests finding"
+	rc280_missing=$((rc280_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF '`none found` -> **MEDIUM**' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter does not grade none found as MEDIUM"
+	rc280_missing=$((rc280_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF '`<N> test files` -> **HIGH**' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter does not grade an existing suite as HIGH"
+	rc280_missing=$((rc280_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF 'no Test suite line at all (old session, preparation failure) -> keep the filed severity' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter does not keep the filed severity on unknown"
+	rc280_missing=$((rc280_missing + 1))
+fi
+if [[ "$rc280_missing" -eq 0 ]]; then
+	echo "  PASS: the arbiter grades a no-tests finding from the Test suite line"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc280_missing phrase(s) missing (RC-280)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-281: the unexercised defect a missing-tests finding names is judged in its own
+# finding, never used to raise or lower the test gap; and the rule that
+# downgrades a coverage preference cannot fire when the repository has no suite.
+echo "Test: a missing-tests finding is a test gap only; the comprehensive-suite rule needs a suite (RC-281)"
+rc281_missing=0
+if ! grep -qF 'graded as a test gap only' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter does not confine a missing-tests finding to the test gap"
+	rc281_missing=$((rc281_missing + 1))
+fi
+if ! grep -qF 'judged in its own finding' <<<"$arbiter_flat"; then
+	echo "  missing: arbiter does not send the named defect to its own finding"
+	rc281_missing=$((rc281_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF 'Never when the Test suite line says `none found`' <<<"$arbiter_flat"; then
+	echo "  missing: comprehensive-suite rule is usable on none found"
+	rc281_missing=$((rc281_missing + 1))
+fi
+if [[ "$rc281_missing" -eq 0 ]]; then
+	echo "  PASS: a missing-tests finding is a test gap only; the comprehensive-suite rule needs a suite"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc281_missing phrase(s) missing (RC-281)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-282: the shipped severity pack's Tester guidance carries the same split the
+# arbiter applies: MEDIUM with no suite to extend, HIGH when new code skips an
+# existing suite.
+echo "Test: severity.md grades new code without tests by whether a suite exists (RC-282)"
+rc282_missing=0
+if ! grep -qF 'Tester, new code with no tests' <<<"$severity_flat"; then
+	echo "  missing: severity.md has no new-code-without-tests case"
+	rc282_missing=$((rc282_missing + 1))
+fi
+if ! grep -qF 'MEDIUM when the repository has no test suite to extend' <<<"$severity_flat"; then
+	echo "  missing: severity.md does not grade no-suite as MEDIUM"
+	rc282_missing=$((rc282_missing + 1))
+fi
+if ! grep -qF 'HIGH when a suite exists and the new code skips it' <<<"$severity_flat"; then
+	echo "  missing: severity.md does not grade a skipped suite as HIGH"
+	rc282_missing=$((rc282_missing + 1))
+fi
+if ! grep -qF 'Optional test expansion stays below HIGH' <<<"$severity_flat"; then
+	echo "  missing: severity.md does not keep optional test expansion below HIGH"
+	rc282_missing=$((rc282_missing + 1))
+fi
+if ! grep -qF 'executable logic' <<<"$severity_flat"; then
+	echo "  missing: severity.md does not limit the case to executable logic"
+	rc282_missing=$((rc282_missing + 1))
+fi
+if [[ "$rc282_missing" -eq 0 ]]; then
+	echo "  PASS: severity.md grades new code without tests by whether a suite exists"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc282_missing phrase(s) missing (RC-282)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-283: the validation gate rejects a correction to HIGH without a non-blank
+# `impact`, so a raise under the no-tests rule must carry one that names the
+# unguarded behaviour; the rule must say so and how it composes with the
+# existing impact backstop, or the raise dies in apply-validation.jq.
+echo "Test: a no-tests raise to HIGH carries a concrete impact (RC-283)"
+rc283_missing=0
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF 'carries `corrections.impact` naming the unguarded behaviour' <<<"$arbiter_flat"; then
+	echo "  missing: the HIGH raise does not carry corrections.impact"
+	rc283_missing=$((rc283_missing + 1))
+fi
+if ! grep -qF 'if no such behaviour can be named, grade **MEDIUM**' <<<"$arbiter_flat"; then
+	echo "  missing: no fallback to MEDIUM when no behaviour can be named"
+	rc283_missing=$((rc283_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code spans lifted from the doc.
+if ! grep -qF 'composes with the "HIGH whose `impact` names no concrete consequence" rule' <<<"$arbiter_flat"; then
+	echo "  missing: the rule is not tied to the impact backstop"
+	rc283_missing=$((rc283_missing + 1))
+fi
+if [[ "$rc283_missing" -eq 0 ]]; then
+	echo "  PASS: the raise carries an impact and composes with the backstop"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc283_missing phrase(s) missing (RC-283)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-284: the no-tests rule grades only changes that add or change executable
+# logic with no test beside it; docs, config and partial-coverage complaints
+# keep their filed severity or fall under the coverage-preference rule.
+echo "Test: the no-tests rule is limited to untested executable logic (RC-284)"
+rc284_missing=0
+if ! grep -qF 'adds or changes executable non-test logic and adds no test file or test case for it' <<<"$arbiter_flat"; then
+	echo "  missing: the trigger is not limited to untested executable logic"
+	rc284_missing=$((rc284_missing + 1))
+fi
+if ! grep -qF 'Docs, config, comments, generated or vendored files' <<<"$arbiter_flat"; then
+	echo "  missing: out-of-scope change kinds are not named"
+	rc284_missing=$((rc284_missing + 1))
+fi
+if [[ "$rc284_missing" -eq 0 ]]; then
+	echo "  PASS: the rule names its trigger and its exclusions"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc284_missing phrase(s) missing (RC-284)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-285: the false-positive retract list once said missing-tests findings are
+# "not here: real but non-blocking", contradicting a HIGH grade for a skipped
+# suite. It must send them to the Test suite line instead.
+echo "Test: the retract list does not call a missing-tests finding non-blocking (RC-285)"
+if grep -qF 'is graded from the Test suite line under Calibration' <<<"$arbiter_flat" &&
+	! grep -qF 'missing-tests findings are not here: real but non-blocking' <<<"$arbiter_flat"; then
+	echo "  PASS: the retract list defers missing-tests findings to Calibration"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: the retract list contradicts the no-tests rule (RC-285)"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-286: tracking.md can lack the Test suite line (a session from before it
+# existed, or a preparation failure). The arbiter must read that as unknown,
+# and verify.md must say the line is passed without its list marker, as the
+# arbiter quotes it.
+echo "Test: an absent Test suite line is unknown; the line is passed without its marker (RC-286)"
+rc286_missing=0
+if ! grep -qF 'or no Test suite line at all' <<<"$arbiter_flat"; then
+	echo "  missing: the arbiter does not treat an absent line as unknown"
+	rc286_missing=$((rc286_missing + 1))
+fi
+# shellcheck disable=SC2016 # literal markdown code span lifted from the doc.
+if ! grep -qF 'the leading `- ` list marker dropped' <<<"$verify_flat"; then
+	echo "  missing: verify.md does not say the list marker is dropped"
+	rc286_missing=$((rc286_missing + 1))
+fi
+if [[ "$rc286_missing" -eq 0 ]]; then
+	echo "  PASS: absent line is unknown and the passed line matches the arbiter's quote"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: $rc286_missing phrase(s) missing (RC-286)"
 	FAIL=$((FAIL + 1))
 fi
 

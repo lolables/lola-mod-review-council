@@ -41,6 +41,8 @@ Minor style or docs improvement. Non-blocking.
 | MEDIUM   | Broad file permissions, missing error context, redundant read         | Missing fixture spec, shallow assertions (err == nil only), test isolation concern, convention deviation | Scope creep with maintenance cost only (gold plating), stale cross-reference, metadata inconsistency                                                      | Missing operational docs, incomplete platform support, unquantified perf requirement    |
 | LOW      | Comment suggesting future security review, minor naming inconsistency | Minor test naming issue, optional observability enhancement                                              | Minor wording improvement, optional cross-reference                                                                                                       | Style improvement in errors, optional health check, minor doc gap                       |
 
+**Tester, new code with no tests: graded by whether a suite exists.** New executable logic with no tests is MEDIUM when the repository has no test suite to extend, HIGH when a suite exists and the new code skips it; a HIGH names the unguarded behaviour (what can now break untested and who is hurt), not "no coverage". Docs, config and partial-coverage complaints are out of scope. The defect the missing test would have caught is its own finding and does not move this one. Optional test expansion stays below HIGH.
+
 **Guard scope creep: MEDIUM unless one criterion holds.** HIGH only when extra
 scope (a) adds trust or attack surface — network calls, permissions,
 untrusted-input parsing, new dependencies; (b) commits a contract users or

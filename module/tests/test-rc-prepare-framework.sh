@@ -75,7 +75,8 @@ module foo
 
 require github.com/gin-gonic/gin v1.9.0
 MOD
-		git add go.mod
+		: >x_test.go
+		git add go.mod x_test.go
 		git commit -qm "add gin dependency"
 		sha=$(git rev-parse HEAD)
 		git update-ref refs/pull/7/head "$sha"
@@ -150,6 +151,10 @@ else
 fi
 
 assert_json_field "$result" "framework" "gin" "framework detected as gin from review_root, not CWD"
+# The launch dir holds no files, so a count of 1 can only come from the clone.
+suite_sess=$(jq -r '.session_dir // empty' <<<"$result")
+suite=$(sed -nE '/^- Test suite:/{s/^- Test suite:[[:space:]]*//;p;q;}' "$suite_sess/tracking.md")
+assert_equals "$suite" "1 test files" "the test suite is counted in review_root, not the launch dir"
 # The PR head the forge reported is what the posted marker names.
 session_dir=$(echo "$result" | jq -r '.session_dir // empty')
 head_line=$(grep -E '^Head SHA:' "$session_dir/session.txt" || true)

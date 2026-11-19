@@ -95,6 +95,73 @@ assert_equals "$first_line" "--> test-alpha.sh (1/2)" "the first suite is announ
 beta_announced=$(grep -cxF -- '--> test-beta.sh (2/2)' <<<"$out") || beta_announced=0
 assert_equals "$beta_announced" "1" "the second suite is announced with its position"
 
+make_suite gamma 0 0
+make_suite delta 0 0
+four=("$work/test-alpha.sh" "$work/test-beta.sh" "$work/test-gamma.sh" "$work/test-delta.sh")
+
+# ran() for each name, concatenated: one plain call, for the same SC2312 reason.
+ran_each() { # name... -> yes|no per name
+	local name
+	for name in "$@"; do
+		ran "$name"
+	done
+}
+
+echo "Test 6: shards are disjoint and together run every suite once"
+# CI runs the unit layer as one job per shard. A suite that falls in no shard
+# never runs in CI, and nothing else would say so.
+rm -f "$work"/ran-*
+UNIT_SHARD=1/2 bash "$RUNNER" "${four[@]}" >/dev/null 2>&1 && status=0 || status=$?
+assert_equals "$status" "0" "shard 1/2 exits 0"
+first=$(ran_each alpha beta gamma delta)
+assert_equals "$first" "yesnoyesno" "shard 1/2 runs the 1st and 3rd suites (round-robin)"
+rm -f "$work"/ran-*
+UNIT_SHARD=2/2 bash "$RUNNER" "${four[@]}" >/dev/null 2>&1 && status=0 || status=$?
+assert_equals "$status" "0" "shard 2/2 exits 0"
+second=$(ran_each alpha beta gamma delta)
+assert_equals "$second" "noyesnoyes" "shard 2/2 runs the 2nd and 4th suites"
+
+echo "Test 7: a sharded run says it is a shard, and counts only its suites"
+# "Suites run: 2" alone would read as the whole selection.
+out=$(UNIT_SHARD=2/2 bash "$RUNNER" "${four[@]}" 2>&1) || true
+shard_lines=$(grep -cxE 'Shard: +2/2 \(2 of 4 suites\)' <<<"$out") || shard_lines=0
+assert_equals "$shard_lines" "1" "the summary names the shard and the full count"
+summary_lines=$(grep -cE '^Suites run: +2$' <<<"$out") || summary_lines=0
+assert_equals "$summary_lines" "1" "the summary counts the shard's suites"
+first_line=$(head -1 <<<"$out")
+assert_equals "$first_line" "--> test-beta.sh (1/2)" "positions count within the shard"
+
+echo "Test 8: a malformed shard is an error that runs nothing"
+# A typo in the workflow must fail its job, not run an empty or partial shard
+# that reports success.
+for spec in 0/2 3/2 2 a/b 1/0 1/2/3 ' 1/2' 01/2; do
+	rm -f "$work"/ran-*
+	UNIT_SHARD="$spec" bash "$RUNNER" "${four[@]}" >/dev/null 2>&1 && status=0 || status=$?
+	assert_equals "$status" "1" "UNIT_SHARD='$spec' fails the run"
+	ran_any=$(ran_each alpha beta gamma delta)
+	assert_equals "$ran_any" "nononono" "UNIT_SHARD='$spec' runs no suite"
+done
+
+echo "Test 9: a shard left with no suites is an error"
+# More shards than suites means the split no longer fits the tree; "0 failed"
+# from an empty shard would be true and say nothing.
+UNIT_SHARD=3/3 bash "$RUNNER" "$work/test-alpha.sh" "$work/test-beta.sh" >/dev/null 2>&1 &&
+	status=0 || status=$?
+assert_equals "$status" "1" "an empty shard fails the run"
+
+echo "Test 10: suites do not inherit the runner's shard"
+# The shard applies to this run's selection only. CI sets UNIT_SHARD for the
+# whole job, and a suite that starts the runner itself (this file does) would
+# otherwise shard its own fixtures: shard 3/3 of two fixtures is empty and fails.
+cat >"$work/test-env.sh" <<-EOF
+	#!/usr/bin/env bash
+	printf '%s' "\${UNIT_SHARD-unset}" >"$work/seen-shard"
+	echo "Results: 1 passed, 0 failed"
+EOF
+UNIT_SHARD=1/1 bash "$RUNNER" "$work/test-env.sh" >/dev/null 2>&1 || true
+seen=$(cat "$work/seen-shard" 2>/dev/null) || seen="suite did not run"
+assert_equals "$seen" "unset" "a suite sees no UNIT_SHARD"
+
 # Discovery with no arguments is not re-tested here: it is what `task test:unit`
 # runs on every CI leg, and asserting it would mean executing all 40 real
 # suites — minutes, to re-check a path already covered by every run.

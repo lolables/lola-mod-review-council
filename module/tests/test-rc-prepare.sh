@@ -892,6 +892,110 @@ assert_json_field "$result" "references_dir" "$skill_real/references" "reference
 assert_json_field "$result" "agents_dir" "$agents_real" "agents_dir is the real agents directory"
 discard_fixture "$tmpdir"
 
+# --- Test suite fact in tracking.md (#136) ---
+#
+# The arbiter calibrates "no tests for new code" differently when the repo has
+# no suite at all, so preparation records what the whole review root holds —
+# never the scoped changeset.
+
+# A repo on a feature branch that changes src/app.go, with <files> committed
+# alongside it. Each file is created empty.
+make_suite_repo() { # dir files...
+	local dir="$1" f
+	shift
+	setup_repo "$dir" feature ""
+	(
+		cd "$dir" || exit 1
+		mkdir -p src
+		echo "package src" >src/app.go
+		for f in "$@"; do
+			mkdir -p "$(dirname "$f")"
+			: >"$f"
+		done
+		git add -A
+		git commit -qm "add src and tests"
+	)
+}
+
+suite_tracking() { # dir args... -> prints the Test suite value
+	local dir="$1" sess
+	shift
+	sess=$(cd "$dir" && AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" "$@" 2>/dev/null | jq -r '.session_dir // empty')
+	sed -nE '/^- Test suite:/{s/^- Test suite:[[:space:]]*//;p;q;}' "$sess/tracking.md"
+}
+
+echo "Test: a repo with no test files records none found"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir"
+suite=$(suite_tracking "$tmpdir" --mode code)
+assert_equals "$suite" "none found" "no test files reads none found"
+discard_fixture "$tmpdir"
+
+echo "Test: a repo with test files records their count, never their paths"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir" tests/foo.sh a_test.go
+suite=$(suite_tracking "$tmpdir" --mode code)
+assert_equals "$suite" "2 test files" \
+	"both test files are counted"
+discard_fixture "$tmpdir"
+
+echo "Test: committed vendor and node_modules test files are not the project's suite"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir" vendor/dep/dep_test.go node_modules/pkg/index.test.js
+suite=$(suite_tracking "$tmpdir" --mode code)
+assert_equals "$suite" "none found" "third-party tests do not count"
+(cd "$tmpdir" && : >real_test.go && git add real_test.go && git commit -qm "real test")
+suite=$(suite_tracking "$tmpdir" --mode code)
+assert_equals "$suite" "1 test files" "only the project's own test file counts"
+discard_fixture "$tmpdir"
+
+echo "Test: a scope with no tests still reports the repo's tests"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir" tests/foo.sh
+suite=$(suite_tracking "$tmpdir" --mode code --scope paths --scope-value src)
+assert_equals "$suite" "1 test files" \
+	"the scope does not narrow the suite"
+discard_fixture "$tmpdir"
+
+echo "Test: an untracked test file counts"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir"
+: >"$tmpdir/new_test.go"
+suite=$(suite_tracking "$tmpdir" --mode code)
+assert_equals "$suite" "1 test files" \
+	"a file git has not seen yet is still a test"
+discard_fixture "$tmpdir"
+
+echo "Test: a filename with a newline cannot inject a tracking line"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir"
+: >"$tmpdir/"$'x_test.go\n- Injected: yes'
+sess=$(cd "$tmpdir" && AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null | jq -r '.session_dir // empty')
+injected=$(grep -c '^- Injected:' "$sess/tracking.md" || true)
+assert_equals "$injected" "0" "no injected line in tracking.md"
+suite_lines=$(grep -c '^- Test suite:' "$sess/tracking.md" || true)
+assert_equals "$suite_lines" "1" "exactly one Test suite line"
+suite_lines=$(grep -cE '^- Test suite: [0-9]+ test files$' "$sess/tracking.md" || true)
+assert_equals "$suite_lines" "1" "the Test suite line is a bare count"
+discard_fixture "$tmpdir"
+
+echo "Test: a failed file listing is reported, not read as no tests"
+tmpdir=$(mktemp -d)
+make_suite_repo "$tmpdir" tests/foo.sh
+mkdir "$tmpdir/.bin"
+real_git=$(command -v git)
+cat >"$tmpdir/.bin/git" <<SHIM
+#!/bin/sh
+[ "\$1" = ls-files ] && exit 1
+exec $real_git "\$@"
+SHIM
+chmod +x "$tmpdir/.bin/git"
+sess=$(cd "$tmpdir" && PATH="$tmpdir/.bin:$PATH" AGENTS_DIR="$SCRIPT_DIR/../agents" bash "$SCRIPT" --mode code 2>/dev/null | jq -r '.session_dir // empty')
+suite=$(sed -nE '/^- Test suite:/{s/^- Test suite:[[:space:]]*//;p;q;}' "$sess/tracking.md")
+assert_equals "$suite" "unknown (listing failed)" \
+	"a failing git ls-files is not none found"
+discard_fixture "$tmpdir"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

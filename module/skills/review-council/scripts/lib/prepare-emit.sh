@@ -122,6 +122,33 @@ fi
 # SECTION 15: Initialize Tracking File
 # ============================================================================
 
+# How many test files the whole review root holds (#136), not the scoped
+# changeset: the arbiter reads "new code has no tests" differently in a repo with
+# no suite. Only a count is recorded — a path is author-controlled text and this
+# line is read back as a script fact. A failed listing is "unknown": claiming
+# "none found" would tell the arbiter the repo has no tests.
+test_suite_count=0
+test_suite_listing_failed=false
+if [[ "$review_root" != "." ]]; then
+	# A PR or URL review reads the materialized clone, not the launch directory.
+	repo_files=$(cd -- "$review_root" && rc_walk_files .) || test_suite_listing_failed=true
+elif $rc_no_git; then
+	repo_files=$(rc_walk_files .) || test_suite_listing_failed=true
+else
+	repo_files=$({ git ls-files && git ls-files --others --exclude-standard; } 2>/dev/null | rc_unquote_lines) ||
+		test_suite_listing_failed=true
+fi
+while IFS= read -r repo_file; do
+	[[ -n "$repo_file" ]] && ! rc_smart_excluded "$repo_file" && rc_is_test "$repo_file" "${repo_file##*/}" && test_suite_count=$((test_suite_count + 1))
+done <<<"$repo_files"
+if $test_suite_listing_failed; then
+	test_suite_line="unknown (listing failed)"
+elif [[ $test_suite_count -eq 0 ]]; then
+	test_suite_line="none found"
+else
+	test_suite_line="${test_suite_count} test files"
+fi
+
 {
 	echo "# Review Council Session Tracking"
 	echo ""
@@ -148,6 +175,7 @@ fi
 	echo "- Config source: ${config_source}"
 	echo "- Project packs: ${project_packs}"
 	echo "- Severity pack: ${severity_pack}"
+	echo "- Test suite: ${test_suite_line}"
 	echo "- Docs repo: ${docs_repo}"
 	echo "- Knowledge tool: ${knowledge_tool}"
 	echo "- Config changed by changeset: ${config_changed_line}"

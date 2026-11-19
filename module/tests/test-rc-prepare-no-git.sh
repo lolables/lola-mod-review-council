@@ -368,6 +368,53 @@ fi
 chmod 755 "$work/src/locked"
 rm -rf "$work"
 
+# --- Test suite fact in tracking.md (#136) ---
+
+suite_line_of() { # <result json> -> prints the session's "- Test suite:" value
+	local sess
+	sess=$(jq -r '.session_dir // empty' <<<"$1")
+	sed -nE '/^- Test suite:/{s/^- Test suite:[[:space:]]*//;p;q;}' "$sess/tracking.md"
+}
+
+echo "Test 21: outside git the suite is read from the whole directory, not the scope"
+work=$(make_plain_dir)
+result=$(prepare_in "$work" --mode code --scope paths --scope-value src)
+suite=$(suite_line_of "$result")
+assert_equals "$suite" "none found" "a directory with no test files reads none found"
+mkdir "$work/tests"
+: >"$work/tests/foo.sh"
+result=$(prepare_in "$work" --mode code --scope paths --scope-value src)
+suite=$(suite_line_of "$result")
+assert_equals "$suite" "1 test files" "a scope outside tests/ still sees them"
+rm -rf "$work"
+
+echo "Test 22: a filename with a newline cannot inject a tracking line outside git"
+work=$(make_plain_dir)
+: >"$work/"$'x_test.go\n- Injected: yes'
+result=$(prepare_in "$work" --mode code --scope paths --scope-value src)
+sess=$(jq -r '.session_dir // empty' <<<"$result")
+injected=$(grep -c '^- Injected:' "$sess/tracking.md" || true)
+assert_equals "$injected" "0" "no injected line in tracking.md"
+suite_lines=$(grep -c '^- Test suite:' "$sess/tracking.md" || true)
+assert_equals "$suite_lines" "1" "exactly one Test suite line"
+suite_lines=$(grep -cE '^- Test suite: [0-9]+ test files$' "$sess/tracking.md" || true)
+assert_equals "$suite_lines" "1" "the Test suite line is a bare count"
+rm -rf "$work"
+
+echo "Test 23: an unreadable directory makes the suite unknown, not none found"
+work=$(make_plain_dir)
+mkdir -p "$work/locked"
+chmod 000 "$work/locked"
+if [[ -r "$work/locked" ]]; then
+	echo "  SKIP: running with privileges that read a mode-000 directory"
+else
+	result=$(prepare_in "$work" --mode code --scope paths --scope-value src)
+	suite=$(suite_line_of "$result")
+	assert_equals "$suite" "unknown (listing failed)" "a partial walk is not none found"
+fi
+chmod 755 "$work/locked"
+rm -rf "$work"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

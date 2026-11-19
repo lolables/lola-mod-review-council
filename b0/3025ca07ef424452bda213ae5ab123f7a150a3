@@ -1,0 +1,21 @@
+docs/dev/pipeline.md
+  s_2f0532f7c9398f::t_f213e07730d71a 186-190
+module/skills/review-council/phases/delegate.md
+  s_2f0532f7c9398f::t_f213e07730d71a 381-383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b03025ca07ef424452bda213ae5ab123f7a150a3",
+  "prompts": {},
+  "sessions": {
+    "s_2f0532f7c9398f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c65ab20c-701e-481f-bb01-a837e27222d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

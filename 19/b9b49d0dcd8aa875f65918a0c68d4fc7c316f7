@@ -1,0 +1,40 @@
+module/tests/test-rc-doc-guards.sh
+  s_70523161be82d8::t_7489ee9047c161 3461-3470,3472-3482
+  s_70523161be82d8::t_7b9c9a46a8a06c 3471
+module/skills/review-council-debug/SKILL.md
+  s_70523161be82d8::t_06d0892498ebeb 232,522-528
+module/skills/review-council/phases/delegate.md
+  s_70523161be82d8::t_06d0892498ebeb 561-569
+module/skills/review-council/references/reviewer-protocol.md
+  s_70523161be82d8::t_06d0892498ebeb 115-116,152-157
+module/tests/test-rc-assemble-prompts.sh
+  s_70523161be82d8::t_fd2f5f7e3eef56 141-142
+  s_70523161be82d8::t_f25592989294ab 126-140
+module/skills/review-council/phases/verify.md
+  s_70523161be82d8::t_06d0892498ebeb 227-228,281-286,313-318,322-323
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_70523161be82d8::t_deff2c6aec6b71 671-672
+  s_70523161be82d8::t_f826592e4fa30a 673-677
+module/skills/review-council/references/dispatch-prompt.md
+  s_70523161be82d8::t_43dc9309e28ac3 77,162,166
+docs/dev/pipeline.md
+  s_70523161be82d8::t_06d0892498ebeb 234-238
+module/skills/review-council/SKILL.md
+  s_70523161be82d8::t_a36ca30a7a75de 672-673
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "19b9b49d0dcd8aa875f65918a0c68d4fc7c316f7",
+  "prompts": {},
+  "sessions": {
+    "s_70523161be82d8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a123cbfa-9fad-4a31-abac-2b665040bf30",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

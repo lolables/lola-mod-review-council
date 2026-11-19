@@ -1,0 +1,25 @@
+module/skills/review-council/references/dispatch-prompt.md
+  s_2f0532f7c9398f::t_b153fcc0702fc2 92-100
+module/tests/test-rc-assemble-prompts.sh
+  s_2f0532f7c9398f::t_4cf1079f604cd0 297-300,302,957-963
+  s_2f0532f7c9398f::t_28435ad5910d92 116,816
+  s_2f0532f7c9398f::t_935533301b591c 301
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_2f0532f7c9398f::t_b153fcc0702fc2 201,531-543,684-690,752-758
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "b71c42cf4652e64f8c0d78b8385e1056e2cfc22d",
+  "prompts": {},
+  "sessions": {
+    "s_2f0532f7c9398f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c65ab20c-701e-481f-bb01-a837e27222d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

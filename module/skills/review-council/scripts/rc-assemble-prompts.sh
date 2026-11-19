@@ -536,7 +536,8 @@ while IFS= read -r round; do
 	# byte-identical to before.
 	other_text=""
 	if [[ "$round_count" -gt 1 ]]; then
-		other_files=$(jq -r --arg s "$sub" --argjson b "$(jq '.batch' <<<"$round")" '
+		round_batch=$(jq '.batch' <<<"$round")
+		other_files=$(jq -r --arg s "$sub" --argjson b "$round_batch" '
 			.rounds[] | select(((.subsystem // "") == $s and .batch == $b) | not)
 			| "\(if .subsystem then "\(.subsystem) " else "" end)batch \(.batch)" as $label
 			| .files[] | "\($label): \(.path)"' "$context_file")

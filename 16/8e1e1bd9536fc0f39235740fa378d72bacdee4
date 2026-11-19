@@ -1,0 +1,32 @@
+module/skills/review-council/phases/verify.md
+  s_58465dc2eb35ab::t_6763cd7b44781f 268-269,297,300
+module/skills/review-council/phases/delegate.md
+  s_58465dc2eb35ab::t_6763cd7b44781f 72,557-558,563-564,568-569
+docs/dev/pipeline.md
+  s_58465dc2eb35ab::t_c9ae701ca7f4a9 33-38,240
+module/skills/review-council/SKILL.md
+  s_58465dc2eb35ab::t_e76daa4213d40b 424,427-430,1105-1106
+  s_58465dc2eb35ab::t_c1310db56827bc 622,625-627,630-631,633,676,699-702
+  s_58465dc2eb35ab::t_3f6f2dc33f285f 632,634-675,677-683,685-686,689-696,703-716,719-720
+  s_58465dc2eb35ab::t_f15f460a93638e 698
+module/tests/test-rc-doc-guards.sh
+  s_58465dc2eb35ab::t_681eef3af75ab3 3104-3105,3108,3173-3175,3177-3178,3393,3397-3401,3403-3407,3410,3414,3420,3515-3516,3518,3537-3547,3549-3557
+  s_58465dc2eb35ab::t_7e8078da2857f1 3176,3415-3416,3548
+  s_58465dc2eb35ab::t_bb6b4a5a875840 3558-3560
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "168e1e1bd9536fc0f39235740fa378d72bacdee4",
+  "prompts": {},
+  "sessions": {
+    "s_58465dc2eb35ab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "60e140f8-ff07-41f1-a3d2-7f6d4ef993c9",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

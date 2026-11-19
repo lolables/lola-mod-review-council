@@ -1,0 +1,21 @@
+.taskfiles/scripts/run-unit-tests.sh
+  s_557f3ad1747a9a::t_4d17ae76960772 73-75
+module/tests/test-run-unit-tests.sh
+  s_557f3ad1747a9a::t_8385e175df5fc5 152-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "c094f8d4d4c23ea5e8d82d7d5670b8836b1f14cd",
+  "prompts": {},
+  "sessions": {
+    "s_557f3ad1747a9a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "340cd5c8-ed03-449d-8a44-af96c35fe972",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

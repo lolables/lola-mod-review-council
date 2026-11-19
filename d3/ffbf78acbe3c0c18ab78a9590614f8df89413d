@@ -1,0 +1,35 @@
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_2f0532f7c9398f::t_c3c8ff76f6fdbe 537,543,545,686
+  s_2f0532f7c9398f::t_b153fcc0702fc2 201,531-536,538-542,544
+  s_2f0532f7c9398f::t_cae6c7981b809b 753
+module/tests/test-rc-batch-verdicts.sh
+  s_2f0532f7c9398f::t_8c5a30db3858ab 158-189
+docs/dev/pipeline.md
+  s_2f0532f7c9398f::t_f213e07730d71a 187-190
+module/skills/review-council/references/dispatch-prompt.md
+  s_2f0532f7c9398f::t_b153fcc0702fc2 92-100
+module/skills/review-council/phases/delegate.md
+  s_2f0532f7c9398f::t_f213e07730d71a 381-383
+  s_2f0532f7c9398f::t_faf86dd6b8be90 339-344
+module/tests/test-rc-assemble-prompts.sh
+  s_2f0532f7c9398f::t_28435ad5910d92 116,816
+  s_2f0532f7c9398f::t_5257c6c4a91007 849-871
+  s_2f0532f7c9398f::t_4cf1079f604cd0 297-300,980-986
+  s_2f0532f7c9398f::t_c3c8ff76f6fdbe 301-302
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3ffbf78acbe3c0c18ab78a9590614f8df89413d",
+  "prompts": {},
+  "sessions": {
+    "s_2f0532f7c9398f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c65ab20c-701e-481f-bb01-a837e27222d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

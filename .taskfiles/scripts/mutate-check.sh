@@ -2174,6 +2174,14 @@ check_mutation "RC-204 a verdict missing its dispatch's receipt is accepted" \
 	's/^\([[:space:]]*\)if \[\[ "\$got_receipt" != "\$want_receipt" \]\]; then$/\1if false; then/' \
 	test-rc-extract-verdict.sh
 
+# The bundle receipt (#108): a code verdict must echo the token its round's
+# bundle ends with. Comparing nothing accepts a verdict from a reviewer that
+# never opened the bundle it was told to read first.
+check_mutation "RC-289 a code verdict missing its bundle's receipt is accepted" \
+	rc-extract-verdict.sh \
+	's/^\([[:space:]]*\)if \[\[ -n "\$bundle_want" \&\& "\$got_bundle" != "\$bundle_want" \]\]; then$/\1if false; then/' \
+	test-rc-extract-verdict.sh
+
 # --salvage only repairs a listed set of defects; the repaired block must
 # still pass full validation. Skipping it for a repaired block accepts a
 # finding with no evidence because it also carried a stray key.

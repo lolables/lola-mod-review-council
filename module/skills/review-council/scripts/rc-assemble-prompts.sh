@@ -668,6 +668,13 @@ while IFS= read -r round; do
 				fi
 				fenced "" "$file_list"
 				echo ""
+				# Before the diff: on a large PR the diff is thousands of lines, and an
+				# instruction placed after it was never reached (#108).
+				echo "## Bundle"
+				echo ""
+				fill "${sec["Bundle"]}" "bundle_path=$session_dir/$bundle"
+				echo ""
+				echo ""
 				echo "## Diff"
 				echo ""
 				if [[ -n "$diff_body" ]]; then
@@ -675,11 +682,6 @@ while IFS= read -r round; do
 				else
 					printf '%s\n' "${sec["Diff: none"]}"
 				fi
-				echo ""
-				echo "## Bundle"
-				echo ""
-				fill "${sec["Bundle"]}" "bundle_path=$session_dir/$bundle"
-				echo ""
 				echo ""
 				fill "${sec["Changeset untrusted"]}" "references_dir=$refs_dir"
 				echo ""

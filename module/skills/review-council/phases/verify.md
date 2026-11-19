@@ -224,7 +224,8 @@ It short-circuits with:
   "invalid": [ { "agent": "...",
   "reason": "NO_JSON_BLOCK" | "SCHEMA_INVALID" | "VERDICT_INCOHERENT" | "APPROVE_UNGROUNDED"
             | "APPROVE_COLLIDED" | "CONTEXT_MISSING" | "AGENT_MISMATCH" | "RESERVED_AGENT"
-            | "RECEIPT_MISSING" | "RECEIPT_MISFILED" | "DISPATCH_UNINDEXED",
+            | "RECEIPT_MISSING" | "BUNDLE_RECEIPT_MISSING" | "RECEIPT_MISFILED"
+            | "DISPATCH_UNINDEXED",
   "detail": "...", "path": "verdicts/auth/divisor-adversary-code.raw.md" } ], "remediation": "..." }
 ```
 
@@ -277,6 +278,12 @@ verdict also fails the context check or the coherence gate, the `detail` names
 those too and the same re-dispatch fixes all of them, under the rules of
 `APPROVE_UNGROUNDED` for a defect found while looking. The receipt proves the
 reviewer reached the end of the file, not that it read every line.
+`BUNDLE_RECEIPT_MISSING` means a code verdict carries no top-level `bundle_receipt`,
+or a value other than the one its round's bundle ends with. Each code bundle ends with
+that value, so the check shows the reviewer obtained it from the bundle (opened it),
+not that it read the bundle in full. The one re-dispatch asks for a re-read, not a re-review. When the prompt
+receipt is missing too, the reason is `RECEIPT_MISSING` and its `detail` names both
+files. Spec verdicts are never checked for it.
 `RECEIPT_MISFILED` means the block carries the receipt of a different dispatch:
 the response was written to the wrong raw path. The fault is the orchestrator's,
 so nothing is re-dispatched: the `detail` names the raw path the response belongs
@@ -303,11 +310,17 @@ agent recovered a `RECEIPT_MISSING` verdict (the host could not resume the
 original), note in `verification.txt` that the receipt it returned does not show
 the original reviewer read the file.
 
+The output also carries `bundle_receipts`: `"checked"` when `prompts/context.json`
+exists and some round names a bundle receipt, `"unchecked"` otherwise. On
+`"unchecked"`, and only then, write `Bundles carry no receipt (prompts/context.json missing, unreadable or from before bundle receipts): bundle receipts unchecked`
+to `verification.txt`, so the report does not read as though every code reviewer had
+been shown to open its bundle.
+
 Every reason but `NO_JSON_BLOCK` carries an `invalid[].detail`; `NO_JSON_BLOCK`
 carries one only when receipts are checked, naming the prompt file to re-read.
 Of these, `NO_JSON_BLOCK`, `SCHEMA_INVALID`, `VERDICT_INCOHERENT`,
-`APPROVE_UNGROUNDED`, `RECEIPT_MISSING` and `AGENT_MISMATCH` (when the reviewer
-misnamed itself) trigger the one-round re-dispatch, and `APPROVE_COLLIDED` a
+`APPROVE_UNGROUNDED`, `RECEIPT_MISSING`, `BUNDLE_RECEIPT_MISSING` and `AGENT_MISMATCH`
+(when the reviewer misnamed itself) trigger the one-round re-dispatch, and `APPROVE_COLLIDED` a
 re-dispatch of its own. `CONTEXT_MISSING`, `RESERVED_AGENT`, `RECEIPT_MISFILED`
 and `DISPATCH_UNINDEXED` are the orchestrator's to fix and dispatch nothing:
 their `detail` says what to move, delete or re-run. `SCHEMA_INVALID` also names

@@ -669,7 +669,8 @@ builds what Step 3 hands them instead, from `batch-plan.json` as it stands:
   diff hunks. Handed to each reviewer by path.
 - `${session_dir}/prompts/context.json` — the round index
   `rc-extract-verdict.sh` uses to check a zero-finding APPROVE's
-  `context_check`.
+  `context_check` and each code verdict's `bundle_receipt`, which each round
+  records from the end of its bundle.
 
 It also records a `## Phase: Context` block in `tracking.md`, with each round's
 inlined and read-directly counts.
@@ -682,7 +683,9 @@ inlined and read-directly counts.
 - `nothing_to_do` — no session directory.
 
 Only code reviewers (`divisor-*-code`) receive the preamble and a bundle, and
-only their zero-finding APPROVEs are subject to the context check. Spec
+only their zero-finding APPROVEs are subject to the context check. Each bundle
+ends with a receipt that code verdicts must echo as `bundle_receipt`, or they
+draw `BUNDLE_RECEIPT_MISSING`. Spec
 reviewers get neither and are never checked, so a spec verdict never draws
 `CONTEXT_MISSING`. The step still runs in every mode: it is harmless where no
 code reviewer is dispatched, and a deep run can mix code and spec councils.
@@ -703,7 +706,10 @@ Run the third, adding `--inline-persona` if the run uses it, only in recovery
 after reviewers have been dispatched, when an extractor `detail` or
 `${PHASES_DIR}/verify.md` says to re-run Step 2.7 and then Step 2.8: it keeps
 each already-indexed dispatch's receipt, so the verdicts already collected
-still match. Every other run, including an iteration re-entry (Step 5), mints
+still match. A bundle receipt is a hash of the bundle body, so verdicts of
+rounds whose bundle is unchanged keep matching; a round whose files or content
+changed gets a new one and is re-dispatched, as its reviewer saw different text.
+Every other run, including an iteration re-entry (Step 5), mints
 fresh receipts.
 
 A reviewer prompt runs to about 60 KB. When the orchestrator retyped one into its

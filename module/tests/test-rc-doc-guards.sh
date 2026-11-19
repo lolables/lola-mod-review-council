@@ -516,20 +516,29 @@ fi
 # writing a guard for it. This replaces RC-018's VERDICT_INCOHERENT-only check.
 # Codes reach `--arg r` either as a literal or, from the #101 context gate, as
 # the head of a `<CODE>\t<detail>` string the caller splits, written with
-# `printf '<CODE>\t` or as `$'<CODE>\t'`. Both shapes
-# are discovered, and any other `--arg r`, quoted or bare, fails the guard: a
-# code routed some third way would otherwise escape it unseen.
+# `printf '<CODE>\t` or as `$'<CODE>\t'`. The bundle receipt (#108) shares the
+# read receipt's three fold sites, so its reason is picked once into
+# `receipt_reason="<CODE>"` and passed as `--arg r "$receipt_reason"`; each such
+# assignment is discovered too. Every shape above is discovered, and any other
+# `--arg r`, quoted or bare, fails the guard: a code routed some third way would
+# otherwise escape it unseen.
 debug_flat=$(tr '\n' ' ' <"$SCRIPT_DIR/../skills/review-council-debug/SKILL.md" | tr -s ' ')
 echo "Test: every extractor reason code is enumerated in each document (RC-066)"
 rc066_src="$SKILLS/scripts/rc-extract-verdict.sh"
 rc066_literal=$(grep -oE -- '--arg r "[A-Z_]+"' "$rc066_src" | sed -E 's/.*"([A-Z_]+)"/\1/')
 rc066_gate=$(grep -oE "(printf '|[$]')[A-Z_]+\\\\t" "$rc066_src" | sed -E "s/^(printf '|[$]')([A-Z_]+).*/\2/" || true)
-rc066_reasons=$(printf '%s\n%s\n' "$rc066_literal" "$rc066_gate" | sed '/^$/d' | sort -u)
+rc066_code_lines=$(grep -vE -- '^[[:space:]]*#' "$rc066_src" || true)
+rc066_picked=$(grep -oE -- 'receipt_reason="[A-Z_]+"' <<<"$rc066_code_lines" | sed -E 's/.*"([A-Z_]+)"/\1/' || true)
+rc066_odd_picks=$(grep -oE -- 'receipt_reason=[^ ]*' <<<"$rc066_code_lines" | grep -vE -- '^receipt_reason="[A-Z_]+"$' || true)
+rc066_reasons=$(printf '%s\n%s\n%s\n' "$rc066_literal" "$rc066_gate" "$rc066_picked" | sed '/^$/d' | sort -u)
 # shellcheck disable=SC2016 # literal shell text searched for, not expanded.
-rc066_unknown=$(grep -oE -- '--arg r ("[^"]*"|[^" ][^ ]*)' "$rc066_src" | grep -vE -- '--arg r "[A-Z_]+"$' | grep -vF -- '--arg r "${gate_out%%' || true)
+rc066_unknown=$(grep -oE -- '--arg r ("[^"]*"|[^" ][^ ]*)' "$rc066_src" | grep -vE -- '--arg r "[A-Z_]+"$' | grep -vF -e '--arg r "${gate_out%%' -e '--arg r "$receipt_reason"' || true)
 rc066_missing=""
 if [[ -n "$rc066_unknown" ]]; then
 	rc066_missing+=" (undiscoverable: ${rc066_unknown//$'\n'/; })"
+fi
+if [[ -n "$rc066_odd_picks" ]]; then
+	rc066_missing+=" (undiscoverable: ${rc066_odd_picks//$'\n'/; })"
 fi
 declare -A rc066_docs=([verify]="$verify_flat" [delegate]="$delegate_flat" [debug]="$debug_flat")
 for reason in $rc066_reasons; do
@@ -3446,6 +3455,28 @@ if grep -qF 'Prompts not assembled (Step 2.8 skipped): receipts unchecked' <<<"$
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: verify.md lost the verification.txt lines for unchecked receipts or a fresh-agent recovery"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-291: a code verdict must echo its bundle's receipt (#108), and every document
+# that tells a reviewer or the orchestrator what a verdict carries must say so.
+# The orchestrator-facing documents must also keep the logging line for sessions
+# whose bundles name no receipt, and say what a double miss reports.
+echo "Test: the docs carry the bundle receipt (RC-291)"
+rc291_missing=""
+for rc291_doc in "$DELEGATE_MD" "$VERIFY_MD" "$PROTOCOL_MD"; do
+	grep -qE 'BUNDLE_RECEIPT_MISSING|bundle_receipt' "$rc291_doc" || rc291_missing+=" $(basename "$rc291_doc")"
+done
+rc291_code=$(awk '$0 == "## Output contract: code" {on=1; next} on && /^## /{exit} on' "$DISPATCH_PROMPT_MD")
+# shellcheck disable=SC2016 # literal markdown, not an expansion.
+grep -qF '`bundle_receipt`' <<<"$rc291_code" || rc291_missing+=" dispatch-prompt.md(code contract)"
+grep -qF 'Bundles carry no receipt (prompts/context.json missing, unreadable or from before bundle receipts): bundle receipts unchecked' <<<"$verify_flat" || rc291_missing+=" verify.md(unchecked log line)"
+grep -qF 'both receipts' <<<"$delegate_flat" || rc291_missing+=" delegate.md(double miss)"
+if [[ -z "$rc291_missing" ]]; then
+	echo "  PASS: reviewers and the orchestrator are told about bundle_receipt"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: bundle receipt undocumented in:$rc291_missing"
 	FAIL=$((FAIL + 1))
 fi
 

@@ -558,6 +558,15 @@ below — never chain the next stage with `&&`.
     prompt file and change nothing else in the rejected block it is given.
     Record in `verification.txt` that a receipt recovered by a fresh agent does
     not show the original reviewer read the file.
+  - `BUNDLE_RECEIPT_MISSING` gets the same one re-dispatch: the round's
+    `prompts/context.json` entry names a `bundle_receipt` and a code verdict
+    carries no top-level `bundle_receipt`, or the wrong one. The `detail` names
+    the bundle file to open and read to its last section. Relay `detail` and
+    `remediation` verbatim and never pass the token yourself. The repair is a
+    re-read, not a re-review: same findings, same severities, plus the field.
+    When both receipts are owed, the reason is `RECEIPT_MISSING`, not this one,
+    and its `detail` names both files, the prompt and the bundle; relay that
+    `detail` whole, since the re-dispatch fixes both receipts at once.
   - For `RECEIPT_MISFILED` entries, dispatch nothing: the block carries another
     dispatch's receipt, so you wrote a response to the wrong raw path. The
     `detail` names the raw path the response belongs to; move the file there and
@@ -569,7 +578,10 @@ below — never chain the next stage with `&&`.
     `dispatch.json`, or the index is malformed. Move the raw file to its
     planned path (the entry's `raw`); if the plan changed, run SKILL.md Step 2.7
     and then Step 2.8 with `--keep-receipts`, so the verdicts already collected
-    keep matching their receipts. Then re-run the extractor. A malformed index
+    keep matching their receipts. A round whose bundle changed in the rebuild
+    gets a new `bundle_receipt`, so its earlier verdict fails
+    `BUNDLE_RECEIPT_MISSING` and that round is re-dispatched; unchanged rounds
+    keep their verdicts. Then re-run the extractor. A malformed index
     cannot give its receipts back: restore it, or else run Step 2.7, then Step
     2.8 without `--keep-receipts`, and re-dispatch every reviewer, as the
     `detail` says.
@@ -577,7 +589,9 @@ below — never chain the next stage with `&&`.
     fault. The `detail` names the cause: no usable `prompts/context.json` (run
     SKILL.md Step 2.7, then Step 2.8 with `--keep-receipts`: Step 2.7 deletes
     the prompt files, and without the flag Step 2.8 would mint new receipts
-    that no collected verdict carries), a raw file in a directory no round
+    that no collected verdict carries; a round whose bundle changed gets a new
+    `bundle_receipt` and its earlier verdict is re-dispatched, unchanged rounds
+    keep theirs), a raw file in a directory no round
     writes to (move it to its round's planned verdict path), or a review root
     that no longer exists (restore it). Then re-run the extractor.
   - For `AGENT_MISMATCH` entries, read the `detail` before re-dispatching:

@@ -327,6 +327,77 @@ assert_idempotent "re-building leaves the session unchanged" "$s" bash "$BUILD" 
 assert_match_count "$(<"$s/tracking.md")" "1" "one tracking block" -x "## Phase: Context"
 rm -rf "$s"
 
+# Hash of a bundle's content above its receipt section, computed apart from the
+# script: sed drops the heading and everything after, then the one blank line
+# the receipt appends is stripped so the bytes match what the script hashed.
+body_receipt() { # bundle
+	local h
+	h=$(sed '/^## Bundle receipt$/,$d' "$1" | sed '$d' | sha256sum)
+	printf 'bndl-%s' "${h:0:16}"
+}
+
+# Every round's bundle ends with its own token, which matches context.json and
+# the independently computed hash of that bundle's content.
+assert_round_receipts() { # session label
+	local s="$1" label="$2" n rel want last count
+	count=$(jq '.rounds | length' "$s/prompts/context.json")
+	for ((n = 0; n < count; n++)); do
+		rel=$(jq -r ".rounds[$n].bundle" "$s/prompts/context.json")
+		want=$(body_receipt "$s/$rel")
+		last=$(grep -v '^$' "$s/$rel" | tail -n 1)
+		assert_jq "$s/prompts/context.json" ".rounds[$n].bundle_receipt" "$want" "$label round $n token matches its own bundle"
+		assert_match_count "$last" "1" "$label round $n bundle ends with its own token" -F "\`$want\`"
+	done
+}
+
+echo "Test: RC-288 each bundle ends with a receipt token derived from its content"
+s=$(ctx_session go go-module a.go)
+seq 1 20 | sed 's/^/line /' >"$s/tree/a.go"
+add_hunk "$s" a.go 5 8
+bash "$BUILD" "$s" >/dev/null
+b="$s/prompts/batch1-context.md"
+last=$(grep -v '^$' "$b" | tail -n 1)
+token=$(jq -r '.rounds[0].bundle_receipt' "$s/prompts/context.json")
+assert_match_count "$token" "1" "context.json records a bndl-<16 hex> token" -xE 'bndl-[0-9a-f]{16}'
+assert_match_count "$last" "1" "the bundle's last non-empty line carries that token" -F "\`$token\`"
+want=$(body_receipt "$b")
+assert_equals "$token" "$want" "token is the SHA-256 prefix of the content above the receipt"
+echo "Test: RC-288 rebuilding unchanged content keeps the token"
+bash "$BUILD" "$s" >/dev/null
+assert_jq "$s/prompts/context.json" '.rounds[0].bundle_receipt' "$token" "token is stable across rebuilds"
+echo "Test: RC-288 changing a changed file's content changes the token"
+printf 'edited\n' >>"$s/tree/a.go"
+bash "$BUILD" "$s" >/dev/null
+new=$(jq -r '.rounds[0].bundle_receipt' "$s/prompts/context.json")
+assert_match_count "$new" "0" "edited file yields a different token" -xF "$token"
+want=$(body_receipt "$b")
+assert_equals "$new" "$want" "the new token matches the rebuilt bundle"
+rm -rf "$s"
+
+echo "Test: RC-288 every round's bundle carries its own receipt"
+s=$(ctx_session go go-module a.go b.go)
+printf 'x\n' >"$s/tree/a.go"
+printf 'y\n' >"$s/tree/b.go"
+jq -n '{byte_budget: 131072, batches: [
+	{batch: 1, subsystem: null, files: ["a.go"]}, {batch: 2, subsystem: null, files: ["b.go"]}]}' >"$s/batch-plan.json"
+bash "$BUILD" "$s" >/dev/null
+assert_round_receipts "$s" "batched"
+assert_jq "$s/prompts/context.json" '.rounds | map(.bundle_receipt) | unique | length' "2" "rounds with different files get different tokens"
+rm -rf "$s"
+
+echo "Test: RC-288 deep-mode subsystem bundles each carry their own receipt"
+s=$(ctx_session go go-module a.go b.go c.go)
+printf 'x\n' >"$s/tree/a.go"
+printf 'y\n' >"$s/tree/b.go"
+printf 'z\n' >"$s/tree/c.go"
+jq -n '{byte_budget: 131072, batches: [
+	{batch: 1, subsystem: "core", files: ["a.go"]}, {batch: 2, subsystem: "core", files: ["b.go"]},
+	{batch: 1, subsystem: "cli", files: ["c.go"]}]}' >"$s/batch-plan.json"
+bash "$BUILD" "$s" >/dev/null
+assert_jq "$s/prompts/context.json" '.rounds | length' "3" "three deep-mode rounds"
+assert_round_receipts "$s" "deep"
+rm -rf "$s"
+
 echo "Test: a missing batch plan is an error, not a quiet skip"
 s=$(ctx_session go go-module a.go)
 rm "$s/batch-plan.json"

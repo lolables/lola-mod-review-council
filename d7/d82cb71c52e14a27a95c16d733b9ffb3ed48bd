@@ -1,0 +1,19 @@
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_e77a465a620479::t_3a83780e21cec0 539-540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "d7d82cb71c52e14a27a95c16d733b9ffb3ed48bd",
+  "prompts": {},
+  "sessions": {
+    "s_e77a465a620479": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4232cf18-6745-47c4-a37f-be0926f58f68",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

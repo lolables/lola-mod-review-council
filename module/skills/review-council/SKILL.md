@@ -1483,26 +1483,9 @@ writes subsequent phases.
 
 ## Extension Points
 
-Configure optional integrations in project's AGENTS.md or CLAUDE.md:
-
-```text
-## Review Council Configuration
-
-- Constitution: ./path/to/governance.md
-- Knowledge tool: my_semantic_search
-- Docs repo: myorg/docs
-- Quality tool: my_quality_reporter
-- Max comments: 3
-- Comment limit: 65536
-- Persona selection: on
-- Pin personas: adversary, guard
-- Subsystem triage: off
-- Batch bytes: 131072
-- Batch size: 50
-- Context check lines: 6
-- Severity override: guard<=LOW
-- Council accounts: ci-bot[bot]
-```
+Optional integrations are configured in a "Review Council Configuration" section
+of the project's AGENTS.md or CLAUDE.md. The README "Extension Points" section
+holds the example block and the table of every key, its purpose and default.
 
 All extension points optional, degrade gracefully when omitted.
 No Constitution path configured: constitution-specific checks skipped.

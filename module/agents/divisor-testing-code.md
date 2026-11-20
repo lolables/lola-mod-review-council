@@ -149,6 +149,14 @@ Applies to tests the changeset adds or modifies. Every test is upkeep: it must c
 
 A dead test that leaves changed code with no coverage at all is a coverage gap, not an economy finding: rate it under criterion 2, where it can reach HIGH.
 
+### 7. Test Double Fidelity
+
+A green test proves nothing if its fake, mock, stub, or in-memory driver is more lenient than the production implementation it replaces. For each test double the changeset adds or that its new tests rely on, read the production counterpart (it is often outside the changeset), then name one concrete input or state that production rejects or handles differently and the double accepts. Examples: the double accepts a cancelled context, ignores a uniqueness constraint, returns rows a row-level-security policy would hide, or never returns the error the real client returns.
+
+- A finding must cite both the double and the production implementation with file:line. No production counterpart to read, or no concrete divergence to name? No finding.
+- A double that is deliberately simpler but not more permissive on the path under test is not a finding.
+- Remedy: one shared contract test suite run against both the double and the real implementation.
+
 ## Severity Calibration
 
 | Condition                                                                                                              | Severity |
@@ -162,6 +170,8 @@ A dead test that leaves changed code with no coverage at all is a coverage gap, 
 | Shallow assertions on critical behavior                                                                                | MEDIUM   |
 | Missing property/fuzz/contract tests for untrusted input or public API contract                                        | MEDIUM   |
 | Test Economy pattern (criterion 6) in a test the changeset adds or modifies                                            | MEDIUM   |
+| Test double hides a correctness, security, or data-integrity path the changeset introduced (criterion 7)               | HIGH     |
+| Test double more permissive than production on any other path under test (criterion 7)                                 | MEDIUM   |
 | Filler tests on non-critical behavior (can never fail, assert only obvious outcomes)                                   | LOW      |
 | Missing property/fuzz/contract tests (general case)                                                                    | LOW      |
 | Test architecture improvements on well-tested code                                                                     | LOW      |

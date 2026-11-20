@@ -3842,6 +3842,24 @@ else
 	FAIL=$((FAIL + 1))
 fi
 
+# RC-293: issue #73. The testing persona asked whether a test can fail but never
+# whether the test double is more lenient than the production code it replaces,
+# so a fake that accepts what production rejects passed review. The criterion
+# must exist, must send the reviewer to the production counterpart, and must
+# require both sides cited; the lenient-only rule keeps faithful fakes quiet.
+echo "Test: the testing persona checks test doubles against production (RC-293)"
+rc293_missing=""
+for rc293_phrase in '### 7. Test Double Fidelity' 'read the production counterpart' 'cite both the double and the production implementation' 'not more permissive on the path under test'; do
+	grep -qF -- "$rc293_phrase" <<<"$testing_flat" || rc293_missing+=" [$rc293_phrase]"
+done
+if [[ -z "$rc293_missing" ]]; then
+	echo "  PASS: criterion 7 names the production counterpart, both citations and the calibration"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: divisor-testing-code.md lacks:$rc293_missing"
+	FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [[ $FAIL -eq 0 ]] && exit 0 || exit 1

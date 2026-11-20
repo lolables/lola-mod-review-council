@@ -1,0 +1,28 @@
+task_version: "2"
+description: |
+  Noise canary for the testing persona's "Test Double Fidelity" criterion
+  (issue #73). The feature branch adds a Registrar service and an
+  in-memory fakeStore for its tests. The fake is faithful to the
+  production FileStore: it rejects a cancelled context before changing
+  state, enforces email uniqueness through the shared normalizeEmail key,
+  and returns the same ErrDuplicate / ErrNotFound sentinels. A contract
+  suite runs against both implementations. go vet and go test are green.
+
+  A review that sees a fake must not invent a divergence from
+  production. APPROVE is the correct outcome.
+pre_run: bash "$LOLA_TEST_SETS_DIR/case-041-test-double-fidelity/scaffold.sh" "$PWD"
+timeout_seconds: 1800
+followup_messages:
+  - |
+    Emit a structured summary of the review you just performed.
+    Use this exact format:
+
+    VERDICT: <APPROVE or REQUEST CHANGES>
+    FINDINGS_COUNT: <number>
+    FINDINGS:
+    - <severity>: <one-line description>
+    - <severity>: <one-line description>
+    FALSE_POSITIVES: <number you believe are false positives, if any>
+    FILES_CITED: <every file path cited in a finding, comma-separated>
+    SCOPE_USED: <describe what files/commits were in scope>
+    FLAGS_PASSED: <list the flags you passed to rc-prepare.sh>

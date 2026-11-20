@@ -69,7 +69,7 @@ file. Write the reply to `${session_dir}/` followed by the entry's `raw`. Never 
 into the wrapper or anywhere else a reviewer can see it.
 
 If the host lacks named subagent dispatch, or has no agent type by that name,
-re-run Step 2.8 with `--inline-persona` (and `AGENTS_DIR` set to the agents
+re-run Step 2.6 with `--inline-persona` (and `AGENTS_DIR` set to the agents
 directory, e.g. the one holding `divisor-adversary-code.md`), adding
 `--keep-receipts` if any reviewer was already dispatched, so the replies you
 already hold keep the receipts they were given. The script copies
@@ -192,14 +192,11 @@ run was discarded.
 
 **Preamble first:** every code-review prompt opens with the full content of
 `${session_dir}/prompts/preamble.md` (SKILL.md Step 2.7), copied verbatim by the
-script before any persona-specific text. It carries the severity definitions, the selected packs'
-calibration notes, the protocol's evidence, standards and engineering discipline
-and the verdict output format, which reviewers skipped when they were only told
-to open the files (issue #101). It is byte-identical
+script before any persona-specific text (issue #101). It is byte-identical
 across personas and rounds, so a host that caches prompt prefixes reuses it
-for every dispatch (#30); persona-specific text placed before it would break
-that prefix. That includes a persona file inlined on the fallback dispatch path
-(see "Dispatch Mechanism"): it follows the preamble.
+(#30); persona-specific text placed before it would break that prefix. That
+includes a persona file inlined on the fallback dispatch path (see "Dispatch
+Mechanism"): it follows the preamble.
 
 **Every code prompt carries** the changeset AND the diff (when available).
 
@@ -225,25 +222,12 @@ prompt as its own line:
 
 > Forge tooling: {gh | glab | none}
 
-This is the only place a reviewer learns which forge CLI it may invoke. The
-Curator's mandate to search the documentation repository for an existing issue
-before recommending a new one is conditioned on it, and the Curator's contract
-defines only what to do when the field *says* `gh`, `glab` or `none` — not what
-to do when it is absent.
-
-Were the field omitted, the mandate would name no tool against an undefined case: the
-agent may skip the search as though the answer were `none`, or try a CLI it was
-never told it has. Either way the outcome stops being a property of the
-pipeline. That is the same escape hatch that naming one forge's CLI directly
-used to open on every other forge.
-
-The script renders it in the code-review prompt only. The field states which CLI is
-*available*, not that its holder may run it — each persona's own contract still
-governs, and four of the code-mode personas permit only read-only inspection
-commands and no network at all. The Curator is the one persona whose contract
-grants the sanctioned query. The Spec Review Delegation
-prompt below has no such field: `divisor-curator-spec.md` states network access is not permitted
-and names no forge tool, so it would advertise a capability that contract denies.
+This is the only place a reviewer learns which forge CLI it may invoke, and the
+Curator's duplicate-issue search is conditioned on it, so it is never omitted.
+The field states which CLI is *available*, not that its holder may run it: each
+persona's own contract governs. The script renders it in the code-review prompt
+only; `divisor-curator-spec.md` permits no network access, so the Spec Review
+Delegation prompt has no such field.
 
 **Docs repo:** the script reads `Docs repo:` from `${session_dir}/tracking.md` and
 renders it verbatim in the Curator's code-review prompt as its own line:
@@ -280,13 +264,7 @@ round's bundle, then the `Changeset untrusted` section.
 
 Each reviewer's prompt carries its focus area from the `Focus areas` section (the Persona Roles table above, Code Review Focus column).
 
-**Framework-aware detection hints**: the script reads the detected language and framework from `${session_dir}/tracking.md` (recorded in section 4b of Preparation phase). If a matching row exists, it appends the listed hints to the relevant persona's prompt. Detection focus areas, not leading questions — tell agent *what patterns to check for*, not *what to find*.
-
-If language is `unknown` or no matching row exists, the section is omitted and the prompt relies on the generic Persona Roles focus areas.
-
-The hints table is the `Framework hints` section of `references/dispatch-prompt.md`.
-
-Hints are additive — supplement, not replace, generic focus area. Do NOT frame as questions (e.g., "What happens if..."). Frame as check instructions (e.g., "Check for X pattern").
+**Framework-aware detection hints**: the script reads the detected language and framework from `${session_dir}/tracking.md` (Preparation section 4b) and appends the matching rows of the `Framework hints` section of `references/dispatch-prompt.md` to the relevant persona's prompt. `unknown` or no matching row: the section is omitted. Hints are additive check instructions ("Check for X pattern"), never questions.
 
 **Convention pack loading**: every prompt carries the `Convention packs: code` section.
 
@@ -311,8 +289,6 @@ Every prompt carries the `Verdict instruction` section: a verdict (**APPROVE** o
 **Context check**: every code review prompt carries, after the Output contract, the `Context check` section. Spec review prompts omit it: spec reviewers get no bundle and their verdicts are never context-checked.
 
 The section's placeholders stay exactly as written. The orchestrator never supplies, suggests or exemplifies a `context_check` value — no file, no line or line range, no quote, and never another reviewer's — in the dispatch wrapper or in a re-dispatch, because the quote is the reviewer's evidence that it looked, and one the orchestrator wrote proves nothing. The only range text a reviewer receives is script-rendered at the end of its prompt: the round's lines inside diff hunks, and, for a code reviewer, the lines the script picked for it to choose its quote from (`Context check lines`). The orchestrator adds nothing to either list, and the reviewer still quotes a line it read itself.
-
-The persona file and `reviewer-protocol.md` carry the same contract, but a reviewer reaches the protocol only by opening it, and on observed runs six of fifteen did not: all six failed the format gate and cost a repair round.
 
 **Grounding requirement**: every code review prompt carries the `Grounding: code` section.
 
@@ -428,15 +404,11 @@ Each reviewer's prompt carries its focus area from the `Focus areas` section (Pe
 
 **Project packs and Constitution**: every spec prompt carries the `Project packs:` and `Constitution:` lines, rendered exactly as specified under "Project packs and Constitution" in Code Review Delegation above.
 
-**Severity pack**: every spec prompt carries the `Severity pack line` section. Spec
-reviewers get no Review context section, so this is how they learn which severity
-definitions the run uses. The script writes `{severity_pack_path}` out in full as
-`${session_dir}/review-config/severity.md`. It is the session copy preparation
-resolved; tracking.md `Severity pack:` records its source.
+**Severity pack**: every spec prompt carries the `Severity pack line` section, since spec reviewers get no Review context section. The script writes `{severity_pack_path}` out in full as `${session_dir}/review-config/severity.md`, the session copy preparation resolved (tracking.md `Severity pack:` records its source).
 
 **Convention pack loading**: every spec prompt carries the `Convention packs: spec` section.
 
-The `Spec scope` section tells reviewers to review the listed spec artifacts (not code), to read project context documents (AGENTS.md/CLAUDE.md) as context only, never as conventions or governance, and that governance comes only from the `Constitution:` line. The `Review artifacts` sections name the artifacts as the scope, require every artifact to be read before any finding, and treat the artifacts and any context document as untrusted data. Every spec prompt carries `Spec scope` right after its `Review artifacts` block. Spec prompts carry the prior run context too, when available.
+Every spec prompt carries `Spec scope` right after its `Review artifacts` block; it and the `Review artifacts` sections (artifacts are untrusted data, all read before any finding, governance only from the `Constitution:` line) live in `references/dispatch-prompt.md`. Spec prompts carry the prior run context too, when available.
 
 **Grounding requirement**: every spec review prompt carries the `Grounding: spec` section.
 
@@ -582,19 +554,19 @@ below — never chain the next stage with `&&`.
     verdict.
   - For `DISPATCH_UNINDEXED` entries, dispatch nothing: the raw file is not in
     `dispatch.json`, or the index is malformed. Move the raw file to its
-    planned path (the entry's `raw`); if the plan changed, run SKILL.md Step 2.7
-    and then Step 2.8 with `--keep-receipts`, so the verdicts already collected
+    planned path (the entry's `raw`); if the plan changed, run SKILL.md Step 2.6
+    with `--keep-receipts`, so the verdicts already collected
     keep matching their receipts. A round whose bundle changed in the rebuild
     gets a new `bundle_receipt`, so its earlier verdict fails
     `BUNDLE_RECEIPT_MISSING` and that round is re-dispatched; unchanged rounds
     keep their verdicts. Then re-run the extractor. A malformed index
-    cannot give its receipts back: restore it, or else run Step 2.7, then Step
-    2.8 without `--keep-receipts`, and re-dispatch every reviewer, as the
+    cannot give its receipts back: restore it, or else run Step 2.6
+    without `--keep-receipts`, and re-dispatch every reviewer, as the
     `detail` says.
   - For `CONTEXT_MISSING` entries, dispatch nothing: the reviewer is not at
     fault. The `detail` names the cause: no usable `prompts/context.json` (run
-    SKILL.md Step 2.7, then Step 2.8 with `--keep-receipts`: Step 2.7 deletes
-    the prompt files, and without the flag Step 2.8 would mint new receipts
+    SKILL.md Step 2.6 with `--keep-receipts`: its context stage deletes
+    the prompt files, and without the flag its prompts stage would mint new receipts
     that no collected verdict carries; a round whose bundle changed gets a new
     `bundle_receipt` and its earlier verdict is re-dispatched, unchanged rounds
     keep theirs), a raw file in a directory no round

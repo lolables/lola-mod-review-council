@@ -421,14 +421,13 @@ Determine current state from tracking file:
 - All phases complete and verdict recorded: report existing verdict, stop.
 - Delegation or Verification in progress: resume from next incomplete phase.
   Delegation `pending`: resume at the first round with no `complete` line.
-- Starting fresh: proceed to Step 2.1, and run Steps 2.1 through 2.8 in
+- Starting fresh: proceed to Step 2.1, and run Steps 2.1 through 2.6 in
   order before Step 3. Each carries its own skip condition — 2.1 and 2.4 are
   deep-mode only, 2.3 is opt-in, 2.5 needs `ci-status.txt` — but 2.2 (Council
-  Selection), 2.6 (Batch Plan), 2.7 (Reviewer Context) and 2.8 (Dispatch
-  Prompts) run at every effort level. 2.2 decides who is dispatched, without
-  2.7 every code reviewer's zero-finding APPROVE fails closed as
-  `CONTEXT_MISSING`, and without 2.8 there is no prompt file to dispatch, so
-  jumping straight to Step 3 is never correct.
+  Selection) and 2.6 (Dispatch Preparation) run at every effort level. 2.2
+  decides who is dispatched; without 2.6 there is no `context.json`, so every
+  code reviewer's zero-finding APPROVE fails closed as `CONTEXT_MISSING`, and no
+  prompt file to dispatch, so jumping straight to Step 3 is never correct.
 
 Enables re-entry: if skill invoked mid-run, resumes without
 repeating completed work.
@@ -620,139 +619,105 @@ If `${session_dir}/ci-status.txt` does not exist, skip this step.
 
 **Update tracking:** Set Phase: Quality Gates status to `complete`.
 
-### Step 2.6: BATCH PLAN (scripted, all efforts)
+### Step 2.6: DISPATCH PREPARATION (scripted, all efforts)
 
 ```bash
-bash "${SCRIPTS_DIR}/rc-plan-batches.sh" "${session_dir}"
+bash "${SCRIPTS_DIR}/rc-prepare-dispatch.sh" "${session_dir}"
+AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-prepare-dispatch.sh" "${session_dir}" --inline-persona
+bash "${SCRIPTS_DIR}/rc-prepare-dispatch.sh" "${session_dir}" --keep-receipts
 ```
 
-A delegation round costs context, and context is measured in bytes. The script
-owns the split and every figure behind it: it apportions `diff.patch` across the
-changeset, fills each batch to the byte budget and the file cap from
-`tracking.md`, writes `${session_dir}/batch-plan.json` and
-`${session_dir}/batches.txt`, and records a `## Phase: Batch Plan` block. Do not
-re-derive the split, extend a batch, or merge two of them — Step 3 dispatches
-`batch-plan.json` as it stands.
+One command, one turn, three stages in order. Other docs and script messages
+name them Step 2.6 (Batch Plan, `rc-plan-batches.sh`), Step 2.7 (Reviewer
+Context, `rc-build-context.sh`), Step 2.8 (Dispatch Prompts,
+`rc-assemble-prompts.sh`). Never run the three scripts yourself in sequence.
+Wrapper stops at first stage whose status is not `ok`, printing that script's
+JSON and exit code unchanged: act on it per the stage below. Success prints
+`batching` (`applied`, `reason`, `batch_count`, `context_bytes`), `context` and
+`prompts` summaries. Bad flag or second positional argument is an `error`
+before any stage runs.
 
-- `ok` — the plan is written. One batch means the changeset fits one dispatch;
-  that is a decision, recorded as `Batching: not applied`, not a skipped step.
-- `nothing_to_do` — no session or no changeset to plan over. Dispatch the whole
-  changeset in one round.
+Run the first form. Second instead when host cannot dispatch the council's
+agents by name (`${PHASES_DIR}/delegate.md` "Dispatch Mechanism"). Third,
+adding `--inline-persona` if the run uses it, only in recovery after reviewers
+were dispatched, when an extractor `detail` or `${PHASES_DIR}/verify.md` says
+re-run Step 2.7 then Step 2.8: it keeps each already-indexed dispatch's receipt,
+so verdicts already collected still match. A bundle receipt hashes the bundle
+body, so verdicts of rounds with unchanged bundle keep matching; a round whose
+files or content changed gets a new one and is re-dispatched, as its reviewer
+saw different text. Every other run, including iteration re-entry (Step 5),
+mints fresh receipts.
 
-**This step never blocks and never asks.** A batching decision that could not be
-computed is not grounds to withhold a review.
+**Stage 2.6, batch plan.** Context is measured in bytes; the script owns the
+split. Apportions `diff.patch` across the changeset, fills each batch to the
+byte budget and file cap from `tracking.md`, writes
+`${session_dir}/batch-plan.json` and `batches.txt`, records
+`## Phase: Batch Plan`. Do not re-derive the split, extend a batch, or merge
+two: Step 3 dispatches `batch-plan.json` as it stands. One batch is a decision
+(`Batching: not applied`), not a skipped step. Never blocks, never asks; an
+uncomputable batching decision is not grounds to withhold a review. **When
+`batching.applied` is true, tell the user in one line**, naming `batch_count`
+and `context_bytes`: four rounds cost four times the dispatches, and the
+operator should learn that from the run, not the bill.
 
-**Tell the user when the changeset was split**, in one line, naming the batch
-count and the measurement — a review delivered in four rounds costs four times
-the dispatches, and the operator should learn that from the run rather than from
-the bill.
+**Stage 2.7, reviewer context.** Reviewers skip documents they are only told to
+open (issue #101), so this builds what Step 3 hands them, under
+`${session_dir}/prompts/`: `preamble.md` (severity definitions, selected packs'
+calibration notes, protocol evidence/standards/discipline, verdict output
+format; top of every code-review prompt); `[<subsystem>/]batch{N}-context.md`
+(per round: line-numbered text of changed files up to per-file and per-bundle
+caps, files left out listed under "Read directly" with reason, each file's lines
+inside diff hunks; handed over by path); `context.json` (round index
+`rc-extract-verdict.sh` uses to check a zero-finding APPROVE's `context_check`
+and each code verdict's `bundle_receipt`). Records `## Phase: Context`.
+`error` (batch plan, review root or shipped reference section missing, or
+subsystem name unsafe as a path): fix what the message names, re-run; do not
+dispatch without it. Without `context.json` every zero-finding APPROVE from a
+code reviewer is refused as `CONTEXT_MISSING`. Only code reviewers
+(`divisor-*-code`) get preamble and bundle and face the context check; each
+bundle ends with a receipt their verdicts must echo as `bundle_receipt`, or draw
+`BUNDLE_RECEIPT_MISSING`. Spec reviewers get neither, never draw
+`CONTEXT_MISSING`. Runs in every mode: a deep run can mix code and spec
+councils.
 
-Proceed to Step 2.7 (Reviewer Context).
-
-### Step 2.7: REVIEWER CONTEXT (scripted, all efforts)
-
-```bash
-bash "${SCRIPTS_DIR}/rc-build-context.sh" "${session_dir}"
-```
-
-Reviewers skip documents they are only told to open (issue #101), so this step
-builds what Step 3 hands them instead, from `batch-plan.json` as it stands:
-
-- `${session_dir}/prompts/preamble.md` — severity definitions, the selected
-  packs' calibration notes, the protocol's evidence, standards and engineering
-  discipline, and the verdict output format. Step 2.8 renders it at the top of
-  every code-review prompt.
-- `${session_dir}/prompts/[<subsystem>/]batch{N}-context.md` — one bundle per
-  round holding the line-numbered text of that round's changed files, up to a
-  per-file and a per-bundle size cap. Files left out are listed under its
-  "Read directly" heading with the reason. Each file names its lines inside
-  diff hunks. Handed to each reviewer by path.
-- `${session_dir}/prompts/context.json` — the round index
-  `rc-extract-verdict.sh` uses to check a zero-finding APPROVE's
-  `context_check` and each code verdict's `bundle_receipt`, which each round
-  records from the end of its bundle.
-
-It also records a `## Phase: Context` block in `tracking.md`, with each round's
-inlined and read-directly counts.
-
-- `ok` — proceed.
-- `error` — the batch plan, the review root or a shipped reference section is
-  missing, or a subsystem name is unsafe as a path. Fix what the message names
-  and re-run; do not dispatch without it. Without `context.json`, every
-  zero-finding APPROVE from a code reviewer is refused as `CONTEXT_MISSING`.
-- `nothing_to_do` — no session directory.
-
-Only code reviewers (`divisor-*-code`) receive the preamble and a bundle, and
-only their zero-finding APPROVEs are subject to the context check. Each bundle
-ends with a receipt that code verdicts must echo as `bundle_receipt`, or they
-draw `BUNDLE_RECEIPT_MISSING`. Spec
-reviewers get neither and are never checked, so a spec verdict never draws
-`CONTEXT_MISSING`. The step still runs in every mode: it is harmless where no
-code reviewer is dispatched, and a deep run can mix code and spec councils.
-
-Proceed to Step 2.8 (Dispatch Prompts).
-
-### Step 2.8: DISPATCH PROMPTS (scripted, all efforts)
-
-```bash
-bash "${SCRIPTS_DIR}/rc-assemble-prompts.sh" "${session_dir}"
-AGENTS_DIR="${AGENTS_DIR}" bash "${SCRIPTS_DIR}/rc-assemble-prompts.sh" "${session_dir}" --inline-persona
-bash "${SCRIPTS_DIR}/rc-assemble-prompts.sh" "${session_dir}" --keep-receipts
-```
-
-Run the first form. Run the second instead when the host cannot dispatch the
-council's agents by name (`${PHASES_DIR}/delegate.md` "Dispatch Mechanism").
-Run the third, adding `--inline-persona` if the run uses it, only in recovery
-after reviewers have been dispatched, when an extractor `detail` or
-`${PHASES_DIR}/verify.md` says to re-run Step 2.7 and then Step 2.8: it keeps
-each already-indexed dispatch's receipt, so the verdicts already collected
-still match. A bundle receipt is a hash of the bundle body, so verdicts of
-rounds whose bundle is unchanged keep matching; a round whose files or content
-changed gets a new one and is re-dispatched, as its reviewer saw different text.
-Every other run, including an iteration re-entry (Step 5), mints
-fresh receipts.
-
-A reviewer prompt runs to about 60 KB. When the orchestrator retyped one into its
+**Stage 2.8, dispatch prompts.** A reviewer prompt runs ~60 KB. Retyped into a
 dispatch call, it garbled four diff hunks on a live run (openvox-ca#570) and the
-run was discarded. This step renders each prompt to a file, so Step 3 hands the
-reviewer a path and never the content. It runs after Step 2.7 and reads what that
-step wrote. It writes:
+run was discarded. Each prompt is rendered to a file; Step 3 hands the reviewer
+a path, never content. Writes:
 
 - `${session_dir}/prompts/dispatch/[<verdict_dir>/]<agent>.md` — one complete
-  prompt per reviewer per round: for a code reviewer the preamble, the persona
-  file when `--inline-persona` is set, the changeset, the diff, the bundle path,
-  the session's context sections and the round's lines inside diff hunks; for a
-  spec reviewer the artifact list and its spec sections (no preamble, bundle,
-  diff or context check). Each ends with a `## Receipt` line naming a token
-  unique to that dispatch. The reviewer agent is `*-code` or `*-spec` by its
-  name; any other suffix is an `error`.
-- `${session_dir}/dispatch.json` — the index Step 3 dispatches from, at the
-  session root so that re-running Step 2.7 (which replaces `prompts/`) keeps it:
+  prompt per reviewer per round. Code reviewer: preamble, persona file when
+  `--inline-persona`, changeset, diff, bundle path, session's context sections,
+  round's lines inside diff hunks. Spec reviewer: artifact list and spec
+  sections (no preamble, bundle, diff or context check). Each ends with a
+  `## Receipt` line naming a token unique to that dispatch. Agent is `*-code` or
+  `*-spec` by name; any other suffix is an `error`.
+- `${session_dir}/dispatch.json` — the index Step 3 dispatches from, at session
+  root so re-running Step 2.7 (replaces `prompts/`) keeps it:
   `{"dispatches": [{"agent", "raw", "prompt", "receipt"}]}`. `raw` and `prompt`
-  are paths relative to `${session_dir}`: the orchestrator writes that
-  dispatch's reply to `${session_dir}/` plus `raw`, and hands the reviewer
-  `${session_dir}/` plus `prompt`. `rc-extract-verdict.sh` reads `raw` and
-  `receipt` to check each verdict.
+  are paths relative to `${session_dir}`: write that dispatch's reply to
+  `${session_dir}/` plus `raw`, hand the reviewer `${session_dir}/` plus
+  `prompt`. `rc-extract-verdict.sh` reads `raw` and `receipt` to check each
+  verdict.
 
-It also records a `## Phase: Prompts` block in `tracking.md`. In a deep run each
-subsystem's own council gets its own prompts, framed by `subsystems.json`.
+Records `## Phase: Prompts`; in a deep run each subsystem's own council gets its
+own prompts, framed by `subsystems.json`. `error` names fault and step to
+re-run: earlier stage's output missing or inconsistent with this one's (Step
+2.7, council selection, decomposition, preparation); reviewer or subsystem name
+not a safe path component; reviewer neither `*-code` nor `*-spec`; `AGENTS_DIR`
+or persona file missing under `--inline-persona`; deep run with a code reviewer
+where `diff.patch` has a section no round names (`phases/decompose.md`
+Completeness Check). Fix what it names, re-run; do not dispatch without it.
+Under `--keep-receipts` a malformed existing `dispatch.json` is an `error` too:
+restore it, or re-run without the flag and re-dispatch every reviewer, as the
+message says.
 
-- `ok` — proceed.
-- `error` — the message names the fault and the step to re-run: an earlier
-  step's output is missing or inconsistent with this one's (Step 2.7, council
-  selection, decomposition, preparation), a reviewer or subsystem name is not a
-  safe path component, a reviewer is neither `*-code` nor `*-spec`,
-  `AGENTS_DIR` or the persona file is missing under `--inline-persona`, or, in a
-  deep run with a code reviewer, `diff.patch` has a section no round names
-  (`phases/decompose.md` Completeness Check). Fix what it names and re-run; do
-  not dispatch without it.
-  Under `--keep-receipts`, an existing `dispatch.json` that is malformed is an
-  `error` too: restore it, or re-run without the flag and re-dispatch every
-  reviewer, as the message says.
-- `nothing_to_do` — no session directory.
+`nothing_to_do` from any stage: no session directory (or no changeset); nothing
+was built, nothing to dispatch.
 
 Re-running Step 2.7 replaces `prompts/` and deletes `prompts/dispatch/`, so Step
-2.8 always follows Step 2.7, including on an iteration re-entry (Step 5).
+2.8 always follows it, including on iteration re-entry (Step 5); the wrapper
+keeps that order.
 
 Proceed to Step 3 (Delegation).
 
@@ -1137,8 +1102,8 @@ reached, and the session is interactive — present the verified findings and as
 "Would you like me to fix these issues and re-review?"
 
 - **User says yes:** Fix findings, increment the iteration counter, and return
-  to Step 2.7 (Reviewer Context), then Step 2.8 (Dispatch Prompts), then Step 3
-  (Delegation). Re-running `rc-build-context.sh` puts the fixed files in the bundles; skip it and the
+  to Step 2.6 (Dispatch Preparation, without `--keep-receipts`), then Step 3
+  (Delegation). Re-running it rebuilds the bundles with the fixed files; skip it and the
   next reviewers read pre-fix text, while their quotes are checked against the
   edited tree. `diff.patch`, and with it every hunk range, is still the
   original change's: iteration has never re-captured the diff, so reviewers
@@ -1483,26 +1448,9 @@ writes subsequent phases.
 
 ## Extension Points
 
-Configure optional integrations in project's AGENTS.md or CLAUDE.md:
-
-```text
-## Review Council Configuration
-
-- Constitution: ./path/to/governance.md
-- Knowledge tool: my_semantic_search
-- Docs repo: myorg/docs
-- Quality tool: my_quality_reporter
-- Max comments: 3
-- Comment limit: 65536
-- Persona selection: on
-- Pin personas: adversary, guard
-- Subsystem triage: off
-- Batch bytes: 131072
-- Batch size: 50
-- Context check lines: 6
-- Severity override: guard<=LOW
-- Council accounts: ci-bot[bot]
-```
+Optional integrations are configured in a "Review Council Configuration" section
+of the project's AGENTS.md or CLAUDE.md. The README "Extension Points" section
+holds the example block and the table of every key, its purpose and default.
 
 All extension points optional, degrade gracefully when omitted.
 No Constitution path configured: constitution-specific checks skipped.

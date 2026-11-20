@@ -1,0 +1,41 @@
+.lola-eval/tests/case-041-test-double-fidelity/starter/filestore.go
+  s_700099d989db6b::t_cb412559feab7f 1-81
+.lola-eval/tests/case-041-test-double-fidelity/starter/go.mod
+  s_700099d989db6b::t_cb412559feab7f 1-3
+.lola-eval/tests/case-041-test-double-fidelity/starter/.gitignore
+  s_700099d989db6b::t_cb412559feab7f 1-4
+.lola-eval/tests/case-041-test-double-fidelity/starter/store.go
+  s_700099d989db6b::t_cb412559feab7f 1-31
+.lola-eval/tests/case-041-test-double-fidelity/scaffold.sh
+  s_700099d989db6b::t_8711d351541251 1-228
+.lola-eval/tests/case-041-test-double-fidelity/prompt.md
+  s_700099d989db6b::t_350f17e1d7d83b 1-6
+.lola-eval/tests/case-041-test-double-fidelity/rubric.md
+  s_700099d989db6b::t_350f17e1d7d83b 1-112
+module/tests/test-rc-doc-guards.sh
+  s_700099d989db6b::t_222a76a36efc7b 3845-3862
+.lola-eval/tests/case-041-test-double-fidelity/starter/filestore_test.go
+  s_700099d989db6b::t_cb412559feab7f 1-51
+.lola-eval/tests/case-041-test-double-fidelity/task.yaml
+  s_700099d989db6b::t_350f17e1d7d83b 1-28
+.lola-eval/tests/case-041-test-double-fidelity/starter/README.md
+  s_700099d989db6b::t_cb412559feab7f 1-12
+module/agents/divisor-testing-code.md
+  s_700099d989db6b::t_989e7c510fdd1d 152-159,173-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1fa1516d7f593d9bbfc9210360472235c3d2a10c",
+  "prompts": {},
+  "sessions": {
+    "s_700099d989db6b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "91ad0f5b-9f86-47af-9a6e-9183b5b44ca0",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

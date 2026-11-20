@@ -69,7 +69,7 @@ file. Write the reply to `${session_dir}/` followed by the entry's `raw`. Never 
 into the wrapper or anywhere else a reviewer can see it.
 
 If the host lacks named subagent dispatch, or has no agent type by that name,
-re-run Step 2.8 with `--inline-persona` (and `AGENTS_DIR` set to the agents
+re-run Step 2.6 with `--inline-persona` (and `AGENTS_DIR` set to the agents
 directory, e.g. the one holding `divisor-adversary-code.md`), adding
 `--keep-receipts` if any reviewer was already dispatched, so the replies you
 already hold keep the receipts they were given. The script copies
@@ -554,19 +554,19 @@ below — never chain the next stage with `&&`.
     verdict.
   - For `DISPATCH_UNINDEXED` entries, dispatch nothing: the raw file is not in
     `dispatch.json`, or the index is malformed. Move the raw file to its
-    planned path (the entry's `raw`); if the plan changed, run SKILL.md Step 2.7
-    and then Step 2.8 with `--keep-receipts`, so the verdicts already collected
+    planned path (the entry's `raw`); if the plan changed, run SKILL.md Step 2.6
+    with `--keep-receipts`, so the verdicts already collected
     keep matching their receipts. A round whose bundle changed in the rebuild
     gets a new `bundle_receipt`, so its earlier verdict fails
     `BUNDLE_RECEIPT_MISSING` and that round is re-dispatched; unchanged rounds
     keep their verdicts. Then re-run the extractor. A malformed index
-    cannot give its receipts back: restore it, or else run Step 2.7, then Step
-    2.8 without `--keep-receipts`, and re-dispatch every reviewer, as the
+    cannot give its receipts back: restore it, or else run Step 2.6
+    without `--keep-receipts`, and re-dispatch every reviewer, as the
     `detail` says.
   - For `CONTEXT_MISSING` entries, dispatch nothing: the reviewer is not at
     fault. The `detail` names the cause: no usable `prompts/context.json` (run
-    SKILL.md Step 2.7, then Step 2.8 with `--keep-receipts`: Step 2.7 deletes
-    the prompt files, and without the flag Step 2.8 would mint new receipts
+    SKILL.md Step 2.6 with `--keep-receipts`: its context stage deletes
+    the prompt files, and without the flag its prompts stage would mint new receipts
     that no collected verdict carries; a round whose bundle changed gets a new
     `bundle_receipt` and its earlier verdict is re-dispatched, unchanged rounds
     keep theirs), a raw file in a directory no round

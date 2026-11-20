@@ -30,6 +30,12 @@ conditional:
 | **Iterate**           | `SKILL.md` "Step 5: ITERATION CHECK" (interactive sessions only)   | Offer to fix remaining findings and re-review             |
 | **Post**              | `rc-render-comment.sh` + `rc-post-comment.sh` (opt-in, PR only)    | Publish or update the verdict comment on the PR           |
 
+Batch Plan, Reviewer Context and Dispatch Prompts run as one command, `rc-prepare-dispatch.sh` (`SKILL.md`
+"Step 2.6"), because every orchestrator turn re-reads the skill docs (issue #107). The wrapper runs the three scripts
+in order, stops at the first one whose status is not `ok`, and prints that script's JSON and exit code unchanged;
+on success it prints a combined `batching` / `context` / `prompts` summary. `--inline-persona` and `--keep-receipts`
+pass through to `rc-assemble-prompts.sh`.
+
 The paths in that table are relative to the installed skill root (`.claude/skills/review-council/`, or
 `module/skills/review-council/` in this repository): `rc-*.sh` scripts live in `scripts/`, phase files in `phases/`.
 The two quoted step names are headings inside that same `SKILL.md` — search for them there rather than counting
@@ -231,7 +237,7 @@ flowchart TD
    receipt belonging to another dispatch is `RECEIPT_MISFILED`, unless that dispatch's raw file already carries it
    (then the reviewer read the wrong prompt, and it is `RECEIPT_MISSING`), and a raw file the index does not list (or a malformed
    index) is `DISPATCH_UNINDEXED`; both are the orchestrator's faults, fixed by moving the file or re-running
-   Steps 2.7 and 2.8 with `--keep-receipts`, with nothing re-dispatched (apart from any round whose bundle changed in the rebuild, which gets a new `bundle_receipt` and is re-dispatched under `BUNDLE_RECEIPT_MISSING`; unchanged rounds keep their verdicts). Only a malformed index that cannot be
+   `rc-prepare-dispatch.sh` with `--keep-receipts`, with nothing re-dispatched (apart from any round whose bundle changed in the rebuild, which gets a new `bundle_receipt` and is re-dispatched under `BUNDLE_RECEIPT_MISSING`; unchanged rounds keep their verdicts). Only a malformed index that cannot be
    restored costs a re-dispatch of every reviewer, as its receipts are lost. The receipt shows the reviewer reached the end of its prompt, not that it read
    every line. The extractor reports `receipts: "checked"` or, without an index, `"unchecked"`.
    Code verdicts carry a second token, `bundle_receipt`, from the last section of their round's bundle. It shows the reviewer obtained the token from the bundle, not that it read the bundle in full. It is a

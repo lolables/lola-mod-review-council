@@ -265,8 +265,8 @@ round in which no file has such a line, and when there is no diff (`--scope
 all`). `CONTEXT_MISSING` means the extractor could not
 run that check: the session has no usable `prompts/context.json` or review
 root, or the raw file sits in a directory no round writes to. The fault is the
-orchestrator's, so nothing is re-dispatched: run SKILL.md Step 2.7 and then Step
-2.8 with `--keep-receipts` (so the verdicts already collected keep matching their
+orchestrator's, so nothing is re-dispatched: run SKILL.md Step 2.6
+with `--keep-receipts` (so the verdicts already collected keep matching their
 receipts), or move the file to its round's planned verdict path, as the `detail`
 says, and re-run the extractor.
 `RECEIPT_MISSING` means `${session_dir}/dispatch.json` exists (SKILL.md Step 2.8) and the
@@ -294,10 +294,10 @@ before receipts, so a block that names another agent never reaches this check.
 `DISPATCH_UNINDEXED` means the extractor could not match the raw file to
 `dispatch.json`: the file is not in the index, or the index is malformed.
 The fault is the orchestrator's, so nothing is re-dispatched: move the raw file to
-its planned path, or, if the plan changed, run SKILL.md Step 2.7 and then Step 2.8
+its planned path, or, if the plan changed, run SKILL.md Step 2.6
 with `--keep-receipts`, as the `detail` says, and re-run the extractor. A
 malformed index is the exception: unless it can be restored, its receipts are
-lost, and the `detail` says to re-run Step 2.8 without `--keep-receipts` and
+lost, and the `detail` says to re-run Step 2.6 without `--keep-receipts` and
 re-dispatch every reviewer.
 
 The extractor's output also carries `receipts`: `"checked"` when it verified

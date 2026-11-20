@@ -3101,10 +3101,11 @@ fi
 
 # RC-174: issue #101. Reviewers skipped the documents their agent files listed.
 # The fixed preamble and the round bundle travel in the prompt instead, and
-# SKILL.md must run the script that builds them.
+# SKILL.md must run the script that builds them. Since #107 that is the
+# rc-prepare-dispatch.sh wrapper, which runs rc-build-context.sh as stage 2.7.
 echo "Test: delegation pastes the preamble and hands over the round bundle (RC-174)"
 # shellcheck disable=SC2016 # literal markdown, not expansions.
-if grep -qF 'bash "${SCRIPTS_DIR}/rc-build-context.sh" "${session_dir}"' "$SKILL_MD" &&
+if grep -qF 'bash "${SCRIPTS_DIR}/rc-prepare-dispatch.sh" "${session_dir}"' "$SKILL_MD" &&
 	grep -qF 'prompts/preamble.md' <<<"$delegate_flat" &&
 	grep -qF 'Your primary input is' <<<"$dispatch_flat" &&
 	! grep -qF 'Read every file in this changeset before producing any findings' <<<"$delegate_flat"; then
@@ -3169,9 +3170,12 @@ fi
 # bare APPROVE fails closed as CONTEXT_MISSING, and the bundles of changed-file
 # text. A fresh start that stops the pre-delegation run at 2.5 skips it, and an
 # iteration that returns straight to Step 3 hands reviewers pre-fix text.
-echo "Test: re-entry and iteration both run Steps 2.7 and 2.8 before delegating (RC-182)"
-if grep -qF 'run Steps 2.1 through 2.8 in order before Step 3' <<<"$skill_flat" &&
-	grep -qF 'return to Step 2.7 (Reviewer Context), then Step 2.8 (Dispatch Prompts)' <<<"$skill_flat"; then
+echo "Test: re-entry and iteration both run Step 2.6 before delegating (RC-182)"
+# Since #107 Step 2.6 (Dispatch Preparation) runs the batch plan, reviewer
+# context and dispatch prompts stages, so 2.6 is the last step before Step 3.
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+if grep -qF 'run Steps 2.1 through 2.6 in order before Step 3' <<<"$skill_flat" &&
+	grep -qF 'return to Step 2.6 (Dispatch Preparation, without `--keep-receipts`)' <<<"$skill_flat"; then
 	echo "  PASS: no path reaches delegation without fresh reviewer context"
 	PASS=$((PASS + 1))
 else
@@ -3386,30 +3390,34 @@ fi
 
 # RC-205..208: the orchestrator used to retype ~60 KB reviewer prompts into its
 # dispatch call and garbled four diff hunks (openvox-ca#570). Prompts are now
-# rendered by rc-assemble-prompts.sh (SKILL.md Step 2.8) and dispatched by path,
+# rendered by rc-assemble-prompts.sh (stage 2.8 of SKILL.md Step 2.6) and dispatched by path,
 # so the docs the orchestrator follows must run that step, give the fixed
 # wrapper, forbid retyping a prompt or relaying a receipt, and name what the
 # extractor now returns.
-echo "Test: SKILL.md Step 2.8 runs rc-assemble-prompts.sh between Step 2.7 and Step 3 (RC-205)"
-rc205_prompts=$(grep -n '^### Step 2.8: DISPATCH PROMPTS (scripted, all efforts)$' "$SKILL_MD" | cut -d: -f1)
-rc205_context=$(grep -n '^### Step 2.7: ' "$SKILL_MD" | cut -d: -f1)
+# Since #107 the assembler is stage 2.8 of Step 2.6, run through the wrapper, so
+# the section between Step 2.5 and Step 3 must name both the wrapper and the stage.
+echo "Test: SKILL.md Step 2.6 runs the assembler stage between Step 2.5 and Step 3 (RC-205)"
+rc205_prep=$(grep -n '^### Step 2.6: DISPATCH PREPARATION (scripted, all efforts)$' "$SKILL_MD" | cut -d: -f1)
+rc205_gates=$(grep -n '^### Step 2.5: ' "$SKILL_MD" | cut -d: -f1)
 rc205_deleg=$(grep -n '^### Step 3: ' "$SKILL_MD" | cut -d: -f1)
-if [[ -n "$rc205_prompts" && -n "$rc205_context" && -n "$rc205_deleg" ]] &&
-	((rc205_context < rc205_prompts && rc205_prompts < rc205_deleg)) &&
-	sed -n "${rc205_prompts},$((rc205_deleg - 1))p" "$SKILL_MD" | grep -qF 'rc-assemble-prompts.sh'; then
-	echo "  PASS: Step 2.8 invokes the assembler between Steps 2.7 and 3"
+if [[ -n "$rc205_prep" && -n "$rc205_gates" && -n "$rc205_deleg" ]] &&
+	((rc205_gates < rc205_prep && rc205_prep < rc205_deleg)) &&
+	sed -n "${rc205_prep},$((rc205_deleg - 1))p" "$SKILL_MD" | grep -qF 'rc-assemble-prompts.sh' &&
+	sed -n "${rc205_prep},$((rc205_deleg - 1))p" "$SKILL_MD" | grep -qF 'rc-prepare-dispatch.sh'; then
+	echo "  PASS: Step 2.6 runs the prompt assembler between Steps 2.5 and 3"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: SKILL.md lacks a Step 2.8 heading invoking rc-assemble-prompts.sh between Steps 2.7 and 3"
+	echo "  FAIL: SKILL.md lacks a Step 2.6 heading running rc-prepare-dispatch.sh (and naming rc-assemble-prompts.sh) between Steps 2.5 and 3"
 	FAIL=$((FAIL + 1))
 fi
 
-echo "Test: SKILL.md re-runs Step 2.8 wherever it re-runs Step 2.7 (RC-205)"
-if grep -qF 'then Step 2.8 (Dispatch Prompts), then Step 3' "$SKILL_MD"; then
+echo "Test: SKILL.md re-runs the whole of Step 2.6 on iteration re-entry (RC-205)"
+# shellcheck disable=SC2016 # literal markdown, not an expansion.
+if grep -qF 'without `--keep-receipts`), then Step 3 (Delegation). Re-running it rebuilds the bundles' <<<"$skill_flat"; then
 	echo "  PASS: iteration re-entry re-renders the prompts"
 	PASS=$((PASS + 1))
 else
-	echo "  FAIL: iteration re-entry re-runs Step 2.7 without Step 2.8, so dispatch/ would be gone"
+	echo "  FAIL: iteration re-entry skips Step 2.6, so dispatch/ would be gone"
 	FAIL=$((FAIL + 1))
 fi
 
@@ -3504,9 +3512,10 @@ fi
 # receipts, failing every verdict already collected. The index now sits at the
 # session root and recovery re-renders with --keep-receipts. Every doc that
 # routes a recovery through Step 2.8 must say so, and none may name the old path.
-echo "Test: recovery re-runs Step 2.8 with --keep-receipts and the index is at the session root (RC-210)"
+# Since #107 the recovery command is the Step 2.6 wrapper with --keep-receipts.
+echo "Test: recovery re-runs Step 2.6 with --keep-receipts and the index is at the session root (RC-210)"
 rc210_missing=""
-rc210_step28=$(awk '/^### Step 2.8: /{on=1} on&&/^### Step 3: /{exit} on' "$SKILL_MD")
+rc210_step28=$(awk '/^### Step 2.6: /{on=1} on&&/^### Step 3: /{exit} on' "$SKILL_MD")
 # shellcheck disable=SC2016 # literal markdown, not expansions.
 grep -qF '"${session_dir}" --keep-receipts' <<<"$rc210_step28" || rc210_missing+=" SKILL.md-Step-2.8-form"
 # shellcheck disable=SC2016 # literal markdown, not expansions.
@@ -3522,6 +3531,30 @@ if [[ -z "$rc210_missing" ]]; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: receipt-keeping recovery missing or stale index path in:$rc210_missing"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-292: issue #107. Each of the three pre-dispatch scripts was its own
+# orchestrator turn, and every turn re-reads the skill docs. Step 2.6 runs them
+# through rc-prepare-dispatch.sh in one; a SKILL.md that tells the orchestrator
+# to invoke the three itself again brings back two turns per run.
+echo "Test: SKILL.md runs the pre-dispatch scripts through the one wrapper (RC-292)"
+rc292_missing=""
+rc292_step=$(awk '/^### Step 2.6: /{on=1} on&&/^### Step 3: /{exit} on' "$SKILL_MD")
+# shellcheck disable=SC2016 # literal markdown, not expansions.
+for rc292_form in '"${session_dir}"' '"${session_dir}" --inline-persona' '"${session_dir}" --keep-receipts'; do
+	grep -qF "rc-prepare-dispatch.sh\" $rc292_form" <<<"$rc292_step" || rc292_missing+=" form[$rc292_form]"
+done
+# shellcheck disable=SC2016 # literal markdown, not an expansion.
+grep -qF 'Wrapper stops at first stage whose status is not `ok`' <<<"$rc292_step" || rc292_missing+=" stop-at-first-non-ok"
+grep -qF 'Never run the three scripts yourself in sequence' <<<"$rc292_step" || rc292_missing+=" no-manual-sequence"
+rc292_direct=$(grep -nE 'bash "\$\{SCRIPTS_DIR\}/rc-(plan-batches|build-context|assemble-prompts)\.sh"' "$SKILL_MD" || true)
+[[ -z "$rc292_direct" ]] || rc292_missing+=" direct-invocation:$rc292_direct"
+if [[ -z "$rc292_missing" ]]; then
+	echo "  PASS: Step 2.6 is one command"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: SKILL.md Step 2.6 no longer runs one wrapper:$rc292_missing"
 	FAIL=$((FAIL + 1))
 fi
 

@@ -257,9 +257,9 @@ check_mutation "RC-12 remote .git suffix strip" \
 
 # The language tally counted every extension, so CI YAML outvoted the source.
 check_mutation "RC-13 language tally source filter" \
-	lib/prepare-changes.sh \
-	's/^[[:space:]]*\*) continue ;;.*$/*) bucket="$ext" ;;/' \
-	test-rc-prepare-framework.sh
+	rc-resolve-packs.sh \
+	's/^[[:space:]]*\[\[ -n "\$owner" \]\] && pack_count\[\$owner\]=\$((\${pack_count\[\$owner\]:-0}/owner="${owner:-$e}"; pack_count[$owner]=$((${pack_count[$owner]:-0}/' \
+	test-rc-resolve-packs.sh
 
 # APPROVE filed over a CRITICAL or HIGH finding was accepted as coherent.
 check_mutation "RC-14 verdict/severity coupling" \
@@ -2275,6 +2275,31 @@ check_mutation "RC-277 part 1's marker block carries the ledger line" \
 	rc-render-comment.sh \
 	's#\[\[ "\$1" -ne 1 \]\] || _RC_OUT="\${_RC_LEDGER_LINE:-}\${_RC_OUT}"#:#' \
 	test-rc-render-comment.sh
+
+# Pack discovery (#76). Hints come from external packs, so the row shape and the
+# length bound are the only thing between pack text and a reviewer's prompt.
+check_mutation "RC-330 a reviewer hint need not read as a check-for row" \
+	rc-assemble-prompts.sh \
+	's#if (hint !~ /^Check for / || length(hint) > 400#if (length(hint) > 400#' \
+	test-rc-assemble-prompts.sh
+
+check_mutation "RC-331 a reviewer hint may be any length" \
+	rc-assemble-prompts.sh \
+	's# || length(hint) > 400 ||# ||#' \
+	test-rc-assemble-prompts.sh
+
+# The reviewers' calibration comes from the packs the run resolved, wherever
+# they live, not from the shipped copy of the same name.
+check_mutation "RC-332 the preamble reads the shipped pack, not the resolved one" \
+	rc-build-context.sh \
+	's#md_section "\$pack" "Calibration Notes"#md_section "$refs_dir/$(basename "$pack")" "Calibration Notes"#' \
+	test-rc-build-context.sh
+
+# Every prompt names the packs the run resolved.
+check_mutation "RC-333 the delegation prompts omit the Packs line" \
+	rc-assemble-prompts.sh \
+	's#echo "Packs: \$packs_line"#:#' \
+	test-rc-assemble-prompts.sh
 
 total=$((caught + missed + broken + applied))
 echo ""

@@ -6,6 +6,7 @@ source "$SCRIPT_DIR/helpers.sh"
 SCRIPTS="$SCRIPT_DIR/../skills/review-council/scripts"
 PREPARE_DISPATCH="$SCRIPTS/rc-prepare-dispatch.sh"
 SEVERITY="$SCRIPT_DIR/../skills/review-council/references/severity.md"
+REFS="$SCRIPT_DIR/../skills/review-council/references"
 
 # Issue #107: the orchestrator re-reads the skill docs on every turn, so the
 # three scripts it ran back to back (batch plan, reviewer context, dispatch
@@ -49,6 +50,7 @@ pd_session() { # file...
 - Review root: ${root}
 
 EOF
+	write_packs_tsv "$s" "$REFS" go go-module
 	: >"$s/diff.patch"
 	printf '%s\n' "$@" >"$s/changeset.txt"
 	for f in "$@"; do

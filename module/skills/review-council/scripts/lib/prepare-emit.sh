@@ -185,6 +185,16 @@ fi
 	echo "- Base: ${display_base}"
 	echo "- Language: ${language}"
 	echo "- Framework: ${framework}"
+	# Values are single-line: packs are untrusted text and tracking.md is read
+	# first match wins.
+	# shellcheck disable=SC2312 # rc_single_line ends in printf: it cannot fail.
+	echo "- Language pack: $(rc_single_line "$language_pack")"
+	# shellcheck disable=SC2312 # rc_single_line ends in printf: it cannot fail.
+	echo "- Framework pack: $(rc_single_line "$framework_pack")"
+	# shellcheck disable=SC2312 # rc_single_line ends in printf: it cannot fail.
+	echo "- Additional packs: $(rc_single_line "$additional_packs")"
+	# shellcheck disable=SC2312 # rc_single_line ends in printf: it cannot fail.
+	echo "- Skipped packs: $(rc_single_line "$skipped_packs")"
 	echo "- Review root: ${review_root}"
 	echo "- Post intent: ${post_comment}"
 	echo "- Post auto-send: ${post_auto_send}"
@@ -430,6 +440,8 @@ jq -n \
 	--arg mode "$mode" \
 	--arg language "$language" \
 	--arg framework "$framework" \
+	--arg language_pack "$language_pack" \
+	--arg framework_pack "$framework_pack" \
 	--arg review_instructions "$review_instructions" \
 	--arg scope_type "${scope_type:-changed}" \
 	--arg scope_value "${input_value:-}" \
@@ -450,6 +462,8 @@ jq -n \
     mode: $mode,
     language: $language,
     framework: $framework,
+    language_pack: $language_pack,
+    framework_pack: $framework_pack,
     review_instructions: $review_instructions,
     scope_type: $scope_type,
     scope_value: $scope_value,

@@ -1,6 +1,8 @@
 ---
 pack_id: lang-go
 language: Go
+extensions: [go]
+contract: 1
 version: 3.0.0
 ---
 
@@ -36,6 +38,16 @@ Self-contained Go pack. Do not load base.md alongside.
 - **Contract testing**: `pact-go` for service contracts
 - **Benchmark**: `go test -bench`
 - **Race detection**: `go test -race` (flag missing race detection in concurrent code tests)
+
+## Reviewer hints
+
+Patterns each persona checks for in a Go change. They are prompts to look, not findings.
+
+| Persona | Detection Hints |
+|---------|-----------------|
+| Adversary | Check for `sql.Query`/`sql.Exec` with string interpolation (SQL injection); `exec.Command` with user-controlled arguments (command injection); hardcoded credentials in source |
+| Guard | Check for interface pollution (interfaces with >5 methods or single-implementation interfaces); package-level mutable globals; circular package dependencies |
+| Tester | Check for missing error-path tests; table-driven tests that only check the happy path; test helpers that swallow errors. Check for integration tests that assert only `require.NoError` + `require.NotNil` (or `assert.NoError` + `assert.NotNil`) without verifying response struct fields — compare assertion depth across tests in the same file to find inconsistencies |
 
 ## Custom Rules
 

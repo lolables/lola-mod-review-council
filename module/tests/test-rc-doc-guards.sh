@@ -3356,7 +3356,7 @@ for rc202_name in \
 	'Verdict instruction' 'Output contract: code' 'Output contract: spec' 'Context check' \
 	'Grounding: code' 'Grounding: spec' 'Severity calibration: code' 'Severity calibration: spec' \
 	'Model self-report' 'Review artifacts' 'Review artifacts: in place' \
-	'Severity pack line' 'Framework hints' 'Focus areas' 'Prior run context' 'Spec scope'; do
+	'Severity pack line' 'Focus areas' 'Prior run context' 'Spec scope'; do
 	rc202_count=$(grep -cxF "## $rc202_name" "$DISPATCH_PROMPT_MD" || true)
 	if [[ "$rc202_count" -ne 1 ]]; then
 		echo "  missing or duplicated: '## $rc202_name' appears $rc202_count times"
@@ -3364,7 +3364,7 @@ for rc202_name in \
 	fi
 done
 if [[ $rc202_missing -eq 0 ]]; then
-	echo "  PASS: all 34 sections present exactly once"
+	echo "  PASS: all 33 sections present exactly once"
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: $rc202_missing dispatch-prompt.md section(s) missing or duplicated (RC-202)"
@@ -3857,6 +3857,94 @@ if [[ -z "$rc293_missing" ]]; then
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: divisor-testing-code.md lacks:$rc293_missing"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-324..327: issue #76. Reviewer hints, the pack lookup chain and the language
+# table lived in prose the model interpreted; preparation now resolves packs
+# and the prompt lists them. The docs must not keep a second copy of either.
+echo "Test: dispatch-prompt.md carries no Framework hints table (RC-324)"
+if ! grep -qxF '## Framework hints' "$DISPATCH_PROMPT_MD" && ! grep -qF 'Detection Hints' "$DISPATCH_PROMPT_MD"; then
+	echo "  PASS: no Framework hints section or hint table"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: dispatch-prompt.md still holds a hints table; hints live in the packs"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: reviewer-protocol.md sends reviewers to the Packs line, not a lookup chain (RC-325)"
+rc325_missing=""
+# shellcheck disable=SC2016 # literal markdown code spans, not expansions.
+for rc325_phrase in 'Load the paths on the `Packs:` line of your delegation prompt' 'Do not search for packs yourself' 'Never load `.review-council/packs/` from the reviewed tree' 'skip `severity.md`' 'on the `Severity pack:` line of your delegation prompt'; do
+	grep -qF -- "$rc325_phrase" <<<"$protocol_flat" || rc325_missing+=" [$rc325_phrase]"
+done
+# shellcheck disable=SC2016
+for rc325_gone in 'Identify primary language from `tracking.md`' 'Load packs from resolution chain' 'User packs at `$XDG_CONFIG_HOME'; do
+	if grep -qF -- "$rc325_gone" <<<"$protocol_flat"; then rc325_missing+=" [still has: $rc325_gone]"; fi
+done
+if [[ -z "$rc325_missing" ]]; then
+	echo "  PASS: the protocol points at the Packs line and keeps its safety rules"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: reviewer-protocol.md:$rc325_missing"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: every former Framework hints row now lives in its pack's Reviewer hints (RC-326)"
+rc326_missing=""
+# file|distinctive text of one former row
+while IFS='|' read -r rc326_file rc326_text; do
+	rc326_section=$(awk '$0 == "## Reviewer hints" { on = 1; next } on && /^## / { exit } on' "$SKILLS/references/$rc326_file")
+	grep -qF -- "$rc326_text" <<<"$rc326_section" || rc326_missing+=" [$rc326_file: $rc326_text]"
+	if grep -qF -- "$rc326_text" "$DISPATCH_PROMPT_MD" "$DELEGATE_MD"; then rc326_missing+=" [still in docs: $rc326_text]"; fi
+done <<'ROWS'
+lang-go.md|Check for `sql.Query`
+lang-go.md|Check for interface pollution
+lang-go.md|Check for missing error-path tests
+lang-typescript.md|Check for `any` type usage
+fw-react.md|Check for prop drilling
+fw-react.md|Check for `dangerouslySetInnerHTML`
+fw-react.md|Check for tests that mock everything
+lang-python.md|Check for `eval()`
+lang-python.md|Check for circular imports
+lang-python.md|Check for `assert True`
+lang-rust.md|Check for `unsafe` blocks
+lang-rust.md|Check for unnecessary `clone()`
+lang-java.md|Check for SQL injection via string concatenation in JDBC
+lang-java.md|Check for god classes
+ROWS
+if [[ -z "$rc326_missing" ]]; then
+	echo "  PASS: all 14 former hint rows are in their packs and nowhere in the docs"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: hint rows misplaced:$rc326_missing"
+	FAIL=$((FAIL + 1))
+fi
+
+echo "Test: no document hard-codes the pack lookup it no longer performs (RC-327)"
+rc327_missing=""
+# shellcheck disable=SC2016
+grep -qF 'the `Packs:` line' "$DISPATCH_PROMPT_MD" || rc327_missing+=" [dispatch-prompt.md does not name the Packs line]"
+# shellcheck disable=SC2016
+grep -qF '`Packs:` line listing the paths preparation resolved' <<<"$delegate_flat" || rc327_missing+=" [delegate.md does not describe the Packs line]"
+# shellcheck disable=SC2016
+if grep -qE 'lang-\{language\}|fw-\{framework\}' "$DISPATCH_PROMPT_MD" "$DELEGATE_MD"; then rc327_missing+=" [a prompt template still derives pack names from Language/Framework]"; fi
+if [[ -z "$rc327_missing" ]]; then
+	echo "  PASS: delegation docs name the Packs line and derive no pack name"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: pack docs:$rc327_missing"
+	FAIL=$((FAIL + 1))
+fi
+
+# RC-328: the pack resolver is runtime code, so its docs must not name a host
+# tool (CLAUDE.md "Tool Agnosticism").
+echo "Test: pack resolution docs and scripts name no host tool (RC-328)"
+if ! grep -qiE 'claude code|opencode|cursor|windsurf|gemini' "$SKILLS/scripts/rc-resolve-packs.sh" "$SKILLS/references/reviewer-protocol.md" "$DISPATCH_PROMPT_MD"; then
+	echo "  PASS: no host tool named"
+	PASS=$((PASS + 1))
+else
+	echo "  FAIL: a runtime pack document names a specific host tool"
 	FAIL=$((FAIL + 1))
 fi
 

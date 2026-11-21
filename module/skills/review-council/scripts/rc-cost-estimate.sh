@@ -125,8 +125,8 @@ bytes_of() { # file... -> total bytes
 }
 
 # The convention packs every reviewer prompt carries, selected the way
-# phases/delegate.md selects them: the three universal ones plus whichever
-# language and framework packs preparation recorded. The severity pack is the
+# phases/delegate.md selects them: the three universal ones plus every pack
+# preparation selected (language, framework and additional). The severity pack is the
 # run's session copy, which preparation resolved and which may be the project's
 # or the user's rather than the shipped one. Measuring the files on disk
 # rather than assuming a size is what keeps the estimate honest as the packs
@@ -134,13 +134,13 @@ bytes_of() { # file... -> total bytes
 references_dir=$(cd "$(dirname "$0")/../references" 2>/dev/null && pwd) || references_dir=""
 pack_bytes=0
 if [[ -n "$references_dir" ]]; then
-	language=$(rc_parse_kv "$tracking_file" "Language")
-	framework=$(rc_parse_kv "$tracking_file" "Framework")
 	packs=("$references_dir/base.md" "$references_dir/reviewer-protocol.md" "$session_dir/review-config/severity.md")
-	lang_slug=$(printf '%s' "$language" | tr '[:upper:]' '[:lower:]')
-	fw_slug=$(printf '%s' "$framework" | tr '[:upper:]' '[:lower:]')
-	[[ -n "$lang_slug" ]] && packs+=("$references_dir/lang-${lang_slug}.md")
-	[[ -n "$fw_slug" ]] && packs+=("$references_dir/fw-${fw_slug}.md")
+	# The packs preparation resolved, wherever they came from. No packs.tsv (a
+	# session prepared before packs were resolved) adds none: a lower estimate.
+	# shellcheck disable=SC2310 # `|| true` is deliberate: no packs.tsv means no packs, a lower estimate.
+	while IFS= read -r pack_file; do
+		[[ -n "$pack_file" ]] && packs+=("$pack_file")
+	done < <(rc_selected_packs "$session_dir" || true)
 	pack_bytes=$(bytes_of "${packs[@]}")
 fi
 

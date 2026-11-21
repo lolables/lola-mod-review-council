@@ -1,0 +1,40 @@
+module/tests/test-rc-assemble-prompts.sh
+  s_7cd9e3cafbf9d2::t_d1f3e080b7d029 905
+module/skills/review-council/scripts/rc-assemble-prompts.sh
+  s_7cd9e3cafbf9d2::t_d1f3e080b7d029 156
+module/skills/review-council/scripts/rc-resolve-packs.sh
+  s_7cd9e3cafbf9d2::t_0b767b9c1c9027 113
+  s_7cd9e3cafbf9d2::t_bc82f51792bc1a 214
+  s_7cd9e3cafbf9d2::t_39be9038117c83 117,269
+  s_7cd9e3cafbf9d2::t_2e762a4286a134 135
+module/skills/review-council/scripts/rc-cost-estimate.sh
+  s_7cd9e3cafbf9d2::t_ffee4d2db8ae81 140
+.taskfiles/scripts/mutate-check.sh
+  s_7cd9e3cafbf9d2::t_f0ee1ba87dfce2 261
+  s_7cd9e3cafbf9d2::t_4ea19affc6994b 260,262
+module/skills/review-council/scripts/lib/prepare-emit.sh
+  s_7cd9e3cafbf9d2::t_d1f3e080b7d029 190,192,194,196
+module/tests/test-rc-prepare-packs.sh
+  s_7cd9e3cafbf9d2::t_d1f3e080b7d029 107,122,137
+module/tests/test-rc-resolve-packs.sh
+  s_7cd9e3cafbf9d2::t_4ea19affc6994b 159-165
+  s_7cd9e3cafbf9d2::t_542c828a724ddd 9
+module/skills/review-council/scripts/rc-build-context.sh
+  s_7cd9e3cafbf9d2::t_d1f3e080b7d029 89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "165dce486efd365092f836a2e31fe9eb2a67e67b",
+  "prompts": {},
+  "sessions": {
+    "s_7cd9e3cafbf9d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53523a1a-a160-4cb7-bea8-e65fd06e5157",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}

@@ -144,14 +144,27 @@ tooling=$(rc_parse_kv "$tracking_file" "Tooling")
 docs_repo=$(rc_parse_kv "$tracking_file" "Docs repo")
 packs_raw=$(rc_parse_kv "$tracking_file" "Project packs")
 constitution_raw=$(rc_parse_kv "$tracking_file" "Constitution")
-language=$(rc_parse_kv "$tracking_file" "Language")
-framework=$(rc_parse_kv "$tracking_file" "Framework")
 scope_dir=$(rc_parse_kv "$tracking_file" "Scope dir")
 context_lines=$(rc_config_int "$tracking_file" "Context check lines" "$RC_DEFAULT_CONTEXT_CHECK_LINES" "rc-assemble-prompts" "$RC_CONTEXT_CHECK_LINES_MIN")
 missing=()
 for pair in "Scope=$scope" "Tooling=$tooling" "Docs repo=$docs_repo" "Project packs=$packs_raw" \
-	"Constitution=$constitution_raw" "Language=$language" "Framework=$framework" "Scope dir=$scope_dir"; do
+	"Constitution=$constitution_raw" "Scope dir=$scope_dir"; do
 	[[ -n "${pair#*=}" ]] || missing+=("${pair%%=*}")
+done
+# The packs preparation resolved (language, framework, additional), read from
+# packs.tsv, never re-derived from Language/Framework. Every prompt lists them.
+# shellcheck disable=SC2310 # the exit status IS the answer: no packs.tsv means preparation did not finish.
+if ! packs_out=$(rc_selected_packs "$session_dir"); then
+	json_output "error" "review-config/resolved/packs.tsv is missing: preparation did not finish; re-run it."
+	exit 1
+fi
+pack_paths=()
+while IFS= read -r pack_path; do
+	if [[ -n "$pack_path" ]]; then pack_paths+=("$pack_path"); fi
+done <<<"$packs_out"
+packs_line="none"
+for pack_path in ${pack_paths[@]+"${pack_paths[@]}"}; do
+	if [[ "$packs_line" == "none" ]]; then packs_line="$pack_path"; else packs_line+=", $pack_path"; fi
 done
 scope_value=$(rc_parse_kv "$tracking_file" "Scope value")
 branch=$(rc_parse_kv "$tracking_file" "Branch")
@@ -204,7 +217,7 @@ for name in \
 	'Verdict instruction' 'Output contract: code' 'Output contract: spec' 'Context check' \
 	'Grounding: code' 'Grounding: spec' 'Severity calibration: code' 'Severity calibration: spec' \
 	'Model self-report' 'Review artifacts' 'Review artifacts: in place' 'Spec scope' 'Severity pack line' \
-	'Framework hints' 'Focus areas'; do
+	'Focus areas'; do
 	# shellcheck disable=SC2310 # the failure is handled: it names the section.
 	if ! body=$(section_body "$name"); then
 		json_output "error" "references/dispatch-prompt.md has no '## $name' section; restore it from the module."
@@ -301,23 +314,34 @@ focus_for() { # base code|spec
 		NF >= 6 && trim($2) == want { print trim($col); exit }' <<<"${sec["Focus areas"]}"
 }
 
-# Framework hints rows for this persona whose Language/Framework cell matches
-# the session: `Go` matches language go, `TypeScript/React` needs framework
-# react too. Persona Tester is the divisor-testing-* agents.
+# Reviewer hints for this persona from every resolved pack's `## Reviewer hints`
+# table (| Persona | Detection Hints |), in pack order. Persona Tester is the
+# divisor-testing-* agents. Packs can be authored outside this repository, so a
+# row is kept only when it has the shape of a hint -- starts "Check for ", one
+# line, at most 400 characters -- and at most 5 rows count per pack and persona;
+# anything else is dropped and reported on stderr, never passed to a reviewer.
 hints_for() { # base
-	awk -F'|' -v base="$1" -v lang="${language,,}" -v fw="${framework,,}" '
-		function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-		NF < 5 { next }
-		{
-			label = trim($2); key = label; gsub(/\*/, "", key); key = tolower(key)
-			p = tolower(trim($3)); if (p == "tester") p = "testing"
-			if ("divisor-" p != base) next
-			n = split(key, kp, "/")
-			if (kp[1] != lang || (n > 1 && kp[2] != fw)) next
-			hint = $4
-			for (i = 5; i < NF; i++) hint = hint "|" $i
-			print "- " label ": " trim(hint)
-		}' <<<"${sec["Framework hints"]}"
+	local pack
+	for pack in ${pack_paths[@]+"${pack_paths[@]}"}; do
+		awk -F'|' -v base="$1" -v label="$(basename "$pack" .md)" '
+			function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+			$0 == "## Reviewer hints" { on = 1; next }
+			on && /^## / { exit }
+			!on || NF < 4 { next }
+			{
+				p = tolower(trim($2)); if (p == "tester") p = "testing"
+				if ("divisor-" p != base) next
+				hint = $3
+				for (i = 4; i < NF; i++) hint = hint "|" $i
+				hint = trim(hint)
+				gsub(/[[:cntrl:]]/, " ", hint)
+				if (hint !~ /^Check for / || length(hint) > 400 || ++n > 5) {
+					print "rc-assemble-prompts: dropped hint in " label ": not a bounded \"Check for\" row" > "/dev/stderr"
+					next
+				}
+				print "- " label ": " hint
+			}' "$pack"
+	done
 }
 
 if [[ "$review_root" == "." ]]; then
@@ -674,6 +698,7 @@ while IFS= read -r round; do
 					echo "Docs repo: $docs_repo"
 				fi
 				echo ""
+				echo "Packs: $packs_line"
 				echo "Project packs: $packs_dir"
 				echo "Constitution: $constitution"
 				echo ""
@@ -705,7 +730,7 @@ while IFS= read -r round; do
 				echo ""
 				echo "## Convention packs"
 				echo ""
-				fill "${sec["Convention packs: code"]}" "references_dir=$refs_dir" "language=$language" "framework=$framework"
+				fill "${sec["Convention packs: code"]}" "references_dir=$refs_dir"
 				echo ""
 				echo ""
 				printf '%s' "$pr_text$optional_text"
@@ -733,6 +758,7 @@ while IFS= read -r round; do
 				if [[ "$review_root" != "." ]]; then
 					printf '%s\n\n' "$root_text"
 				fi
+				echo "Packs: $packs_line"
 				echo "Project packs: $packs_dir"
 				echo "Constitution: $constitution"
 				fill "${sec["Severity pack line"]}" "severity_pack_path=$severity_pack"
@@ -757,7 +783,7 @@ while IFS= read -r round; do
 				printf '%s\n\n' "${sec["Spec scope"]}"
 				echo "## Convention packs"
 				echo ""
-				fill "${sec["Convention packs: spec"]}" "references_dir=$refs_dir" "language=$language" "framework=$framework"
+				fill "${sec["Convention packs: spec"]}" "references_dir=$refs_dir"
 				echo ""
 				echo ""
 				printf '%s' "$optional_text"

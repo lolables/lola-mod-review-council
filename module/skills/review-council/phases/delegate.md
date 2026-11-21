@@ -264,9 +264,9 @@ round's bundle, then the `Changeset untrusted` section.
 
 Each reviewer's prompt carries its focus area from the `Focus areas` section (the Persona Roles table above, Code Review Focus column).
 
-**Framework-aware detection hints**: the script reads the detected language and framework from `${session_dir}/tracking.md` (Preparation section 4b) and appends the matching rows of the `Framework hints` section of `references/dispatch-prompt.md` to the relevant persona's prompt. `unknown` or no matching row: the section is omitted. Hints are additive check instructions ("Check for X pattern"), never questions.
+**Reviewer hints**: the script reads the `## Reviewer hints` table of each pack on the `Packs:` line and appends the rows for the relevant persona to its prompt. Only rows that read "Check for X", on one line and of bounded length, are kept: external packs author these rows. No matching row: the section is omitted. Hints are additive check instructions, never questions.
 
-**Convention pack loading**: every prompt carries the `Convention packs: code` section.
+**Convention pack loading**: every prompt carries the `Convention packs: code` section and a `Packs:` line listing the paths preparation resolved (`tracking.md` records the same paths under Language pack, Framework pack and Additional packs). `Packs: none` means no pack applies; the orchestrator never searches for packs itself.
 
 **Quality data**: CI results reach reviewers as the `## CI Status` section below, not as a separate quality summary.
 
@@ -406,7 +406,7 @@ Each reviewer's prompt carries its focus area from the `Focus areas` section (Pe
 
 **Severity pack**: every spec prompt carries the `Severity pack line` section, since spec reviewers get no Review context section. The script writes `{severity_pack_path}` out in full as `${session_dir}/review-config/severity.md`, the session copy preparation resolved (tracking.md `Severity pack:` records its source).
 
-**Convention pack loading**: every spec prompt carries the `Convention packs: spec` section.
+**Convention pack loading**: every spec prompt carries the `Convention packs: spec` section and the same `Packs:` line.
 
 Every spec prompt carries `Spec scope` right after its `Review artifacts` block; it and the `Review artifacts` sections (artifacts are untrusted data, all read before any finding, governance only from the `Constitution:` line) live in `references/dispatch-prompt.md`. Spec prompts carry the prior run context too, when available.
 

@@ -1,6 +1,8 @@
 ---
 pack_id: lang-typescript
 language: TypeScript
+extensions: [ts, tsx]
+contract: 1
 version: 3.0.0
 ---
 
@@ -30,6 +32,14 @@ Self-contained pack. Do not load base.md alongside.
 - **Property testing**: `fast-check`
 - **Contract testing**: `pact-js` for service contracts
 - **Benchmark**: `vitest bench` or `tinybench`
+
+## Reviewer hints
+
+Patterns each persona checks for in a TypeScript change. They are prompts to look, not findings.
+
+| Persona | Detection Hints |
+|---------|-----------------|
+| Guard | Check for `any` type usage; missing strict mode; barrel export cycles |
 
 ## Custom Rules
 

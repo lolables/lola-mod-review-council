@@ -404,6 +404,45 @@ else
 	cp -- "${RC_LIB_DIR}/../../references/severity.md" "${config_dir}/severity.md"
 fi
 
+# --- Language, framework and additional packs ---
+#
+# Decided by rc-resolve-packs.sh from the packs' own frontmatter, over the
+# project packs copied above (the base revision's, never the reviewed tree),
+# the user's, and the shipped references. It runs here, not with the changeset
+# capture, because the project packs only exist now.
+resolved_refs=$(CDPATH='' cd -- "${RC_LIB_DIR}/../../references" && pwd -P)
+resolved_user_packs="/nonexistent"
+[[ -z "$config_home" ]] || resolved_user_packs="${config_home}/review-council/packs"
+resolved_project_packs="none"
+[[ "$project_packs" == "none" ]] || resolved_project_packs="${config_dir}/packs"
+mkdir -p "${config_dir}/resolved"
+bash "${RC_LIB_DIR}/../rc-resolve-packs.sh" --refs "$resolved_refs" \
+	--project-packs "$resolved_project_packs" --user-packs "$resolved_user_packs" \
+	--changeset "${session_dir}/changeset.txt" --review-root "$review_root" \
+	--out "${config_dir}/resolved"
+language="unknown"
+framework="none"
+language_pack="none"
+framework_pack="none"
+additional_packs=""
+skipped_packs=""
+while IFS=$'\t' read -r pack_kind pack_name pack_file pack_source pack_status pack_reason; do
+	case "${pack_status}:${pack_kind}" in
+	selected:language)
+		language="${pack_name#lang-}"
+		language_pack="${pack_file} (${pack_source})"
+		;;
+	selected:framework)
+		framework="${pack_name#fw-}"
+		framework_pack="${pack_file} (${pack_source})"
+		;;
+	selected:additional) additional_packs+="${additional_packs:+, }${pack_file} (${pack_source})" ;;
+	skipped:*) skipped_packs+="${skipped_packs:+; }${pack_name} (${pack_source}: ${pack_reason})" ;;
+	*) ;;
+	esac
+done <"${config_dir}/resolved/packs.tsv"
+: "${additional_packs:=none}" "${skipped_packs:=none}"
+
 # --- Integrations the orchestrator and reviewers act on ---
 #
 # Carried through tracking.md so no reviewer reads them out of a context file

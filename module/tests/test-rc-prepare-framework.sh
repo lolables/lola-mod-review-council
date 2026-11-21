@@ -6,21 +6,21 @@ SCRIPT="$SCRIPT_DIR/../skills/review-council/scripts/rc-prepare.sh"
 # shellcheck source=module/tests/helpers.sh
 source "$SCRIPT_DIR/helpers.sh"
 
-# Framework content-probes (go.mod, requirements.txt, ...) must read the
+# Framework content-probes (a fw-* pack's `probe:` file, e.g. package.json) must read the
 # materialized clone (review_root), not the launch dir (CWD). In url/PR scope
 # review_root is a separate clone directory produced by rc-clone-target.sh, so
-# a probe that reads "go.mod" (CWD-relative) silently misses content that only
+# a probe that reads "package.json" (CWD-relative) silently misses content that only
 # exists under review_root.
 #
-# This test builds a real local "source" git repo containing a go.mod that
-# depends on gin, registers a `refs/pull/7/head` ref on it (mirroring a GitHub
+# This test builds a real local "source" git repo containing a package.json that
+# depends on react, registers a `refs/pull/7/head` ref on it (mirroring a GitHub
 # PR head ref), and points a faked `gh repo clone` at that local repo so
 # rc-clone-target.sh's real git fetch/checkout machinery materializes it into
 # review_root -- no network involved. The launch dir (CWD when rc-prepare.sh
-# runs) has no go.mod at all, so a CWD-relative probe can never see "gin".
+# runs) has no package.json at all, so a CWD-relative probe can never see "react".
 
 # Fake gh: answers the PR metadata/diff calls rc-prepare.sh makes, and routes
-# `gh repo clone` to a real local `git clone` of our gin fixture instead of
+# `gh repo clone` to a real local `git clone` of our react fixture instead of
 # GitHub, so rc-clone-target.sh's subsequent real `git fetch`/`checkout` of
 # `pull/7/head` materializes review_root off-network. The PR's headRefOid is
 # that ref's real commit: preparation passes it on as --head-sha, and the
@@ -38,14 +38,14 @@ JSON
 	;;
 "pr diff")
 	cat <<'DIFF'
-diff --git a/go.mod b/go.mod
+diff --git a/package.json b/package.json
 index 0000000..1111111 100644
---- a/go.mod
-+++ b/go.mod
+--- a/package.json
++++ b/package.json
 @@ -1,1 +1,3 @@
- module foo
-+
-+require github.com/gin-gonic/gin v1.9.0
+ {
++  "dependencies": {"react": "18.0.0"}
+ }
 DIFF
 	;;
 "repo clone")
@@ -61,7 +61,7 @@ GH
 }
 
 # Build the local fixture repo that stands in for the materialized clone: a
-# go.mod that depends on gin, with a refs/pull/7/head ref rc-clone-target.sh's
+# package.json that depends on react, with a refs/pull/7/head ref rc-clone-target.sh's
 # real `git fetch origin pull/7/head` can resolve locally.
 make_source_repo() {
 	local dir="$1"
@@ -70,14 +70,10 @@ make_source_repo() {
 		cd "$dir"
 		git_init_sandbox
 		git checkout -q -b main
-		cat >go.mod <<'MOD'
-module foo
-
-require github.com/gin-gonic/gin v1.9.0
-MOD
+		printf '{"dependencies":{"react":"18.0.0"}}\n' >package.json
 		: >x_test.go
-		git add go.mod x_test.go
-		git commit -qm "add gin dependency"
+		git add package.json x_test.go
+		git commit -qm "add react dependency"
 		sha=$(git rev-parse HEAD)
 		git update-ref refs/pull/7/head "$sha"
 	)
@@ -119,7 +115,7 @@ run_language_detect() {
 
 url="https://github.com/acme/widgets/pull/7"
 
-echo "Test 1: framework probe reads review_root's go.mod, not the launch dir's"
+echo "Test 1: framework probe reads review_root's package.json, not the launch dir's"
 launch_dir=$(mktemp -d) # no go.mod here at all
 source_repo=$(mktemp -d)
 bindir=$(mktemp -d)
@@ -134,23 +130,23 @@ result=$(cd "$launch_dir" && PATH="$bindir:$PATH" XDG_CACHE_HOME="$cache" AGENTS
 assert_json_field "$result" "status" "ok" "prepare reaches status ok"
 
 review_root=$(echo "$result" | jq -r '.review_root // empty')
-if [[ -n "$review_root" ]] && [[ "$review_root" != "." ]] && [[ -f "$review_root/go.mod" ]]; then
-	echo "  PASS: review_root was materialized with the gin fixture's go.mod"
+if [[ -n "$review_root" ]] && [[ "$review_root" != "." ]] && [[ -f "$review_root/package.json" ]]; then
+	echo "  PASS: review_root was materialized with the react fixture's package.json"
 	PASS=$((PASS + 1))
 else
 	echo "  FAIL: review_root ('$review_root') was not materialized as expected"
 	FAIL=$((FAIL + 1))
 fi
 
-if [[ -f "$launch_dir/go.mod" ]]; then
-	echo "  FAIL: test setup bug -- launch dir unexpectedly has a go.mod"
+if [[ -f "$launch_dir/package.json" ]]; then
+	echo "  FAIL: test setup bug -- launch dir unexpectedly has a package.json"
 	FAIL=$((FAIL + 1))
 else
-	echo "  PASS: launch dir has no go.mod (a CWD-relative probe can't see gin)"
+	echo "  PASS: launch dir has no package.json (a CWD-relative probe can't see react)"
 	PASS=$((PASS + 1))
 fi
 
-assert_json_field "$result" "framework" "gin" "framework detected as gin from review_root, not CWD"
+assert_json_field "$result" "framework" "react" "framework detected as react from review_root, not CWD"
 # The launch dir holds no files, so a count of 1 can only come from the clone.
 suite_sess=$(jq -r '.session_dir // empty' <<<"$result")
 suite=$(sed -nE '/^- Test suite:/{s/^- Test suite:[[:space:]]*//;p;q;}' "$suite_sess/tracking.md")
@@ -212,7 +208,7 @@ bindir=$(mktemp -d)
 cache=$(mktemp -d)
 mr_sha=3333333333333333333333333333333333333333
 mkdir -p "$srv/tree/p-${mr_sha}-${mr_sha}"
-printf 'module foo\n\nrequire github.com/gin-gonic/gin v1.9.0\n' >"$srv/tree/p-${mr_sha}-${mr_sha}/go.mod"
+printf '{"dependencies":{"react":"18.0.0"}}\n' >"$srv/tree/p-${mr_sha}-${mr_sha}/package.json"
 tar -czf "$srv/archive.tgz" -C "$srv/tree" "p-${mr_sha}-${mr_sha}"
 cat >"$bindir/glab" <<GLAB
 #!/usr/bin/env bash
@@ -223,15 +219,15 @@ case "\$1 \$2" in
 	echo '{"title":"Add gin route","description":"Body","target_branch":"main","source_branch":"feature-head","sha":"${mr_sha}","web_url":"https://git.example.org/g/sub/p/-/merge_requests/7","state":"opened"}'
 	;;
 "mr diff")
-	printf 'diff --git a/go.mod b/go.mod\nindex 0000000..1111111 100644\n--- a/go.mod\n+++ b/go.mod\n@@ -1,1 +1,3 @@\n module foo\n+\n+require github.com/gin-gonic/gin v1.9.0\n'
+	printf 'diff --git a/package.json b/package.json\nindex 0000000..1111111 100644\n--- a/package.json\n+++ b/package.json\n@@ -1,1 +1,2 @@\n {\n+\"dependencies\": {\"react\": \"18.0.0\"}\n'
 	;;
 "api --hostname")
 	[[ "\$3" == "git.example.org" ]] || exit 1
 	case "\${*: -1}" in
 	"projects/g%2Fsub%2Fp/merge_requests/7") echo '{"sha":"${mr_sha}"}' ;;
 	"projects/g%2Fsub%2Fp/repository/archive.tar.gz?sha=${mr_sha}") cat "$srv/archive.tgz" ;;
-	"projects/g%2Fsub%2Fp/merge_requests/7/diffs?per_page=100") echo '[{"new_path":"go.mod"}]' ;;
-	"projects/g%2Fsub%2Fp/repository/files/go.mod/raw?ref=${mr_sha}") cat "$srv/tree/p-${mr_sha}-${mr_sha}/go.mod" ;;
+	"projects/g%2Fsub%2Fp/merge_requests/7/diffs?per_page=100") echo '[{"new_path":"package.json"}]' ;;
+	"projects/g%2Fsub%2Fp/repository/files/package.json/raw?ref=${mr_sha}") cat "$srv/tree/p-${mr_sha}-${mr_sha}/package.json" ;;
 	*) exit 0 ;;
 	esac
 	;;
@@ -264,7 +260,7 @@ case "$run_root" in
 	FAIL=$((FAIL + 1))
 	;;
 esac
-assert_json_field "$result" "framework" "gin" "framework read from the materialized merge request"
+assert_json_field "$result" "framework" "react" "framework read from the materialized merge request"
 session_dir=$(echo "$result" | jq -r '.session_dir // empty')
 head_line=$(grep -E '^Head SHA:' "$session_dir/session.txt" || true)
 assert_equals "$head_line" "Head SHA:     ${mr_sha}" "session.txt records the MR head sha"
@@ -318,7 +314,7 @@ rm -rf "$launch_dir" "$source_repo" "$bindir" "$cache"
 # rc-error on a healthy run teaches readers to ignore the line.
 echo ""
 echo "Test 8: framework detection reports no rc-error on stderr"
-for case_spec in "go-module:go.mod main.go" "none:main.go"; do
+for case_spec in "none:go.mod main.go" "none:main.go"; do
 	want_framework=${case_spec%%:*}
 	read -ra files <<<"${case_spec#*:}"
 	work=$(mktemp -d)

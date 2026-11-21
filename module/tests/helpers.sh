@@ -192,6 +192,23 @@ new_session() {
 	printf '%s' "$s"
 }
 
+# Leave the packs.tsv preparation's rc-resolve-packs.sh writes, for a
+# hand-built session: a `selected` row for <refs_dir>/lang-<language>.md and
+# fw-<framework>.md where those files exist, none otherwise. Dispatch-time
+# scripts read their packs from it, never from tracking.md's Language/Framework.
+# Usage: write_packs_tsv <session_dir> <refs_dir> <language> <framework>
+write_packs_tsv() {
+	local s="$1" refs="$2" lang="$3" fw="$4"
+	mkdir -p "$s/review-config/resolved"
+	: >"$s/review-config/resolved/packs.tsv"
+	if [[ -f "$refs/lang-${lang}.md" ]]; then
+		printf 'language\tlang-%s\t%s/lang-%s.md\tshipped\tselected\t\n' "$lang" "$refs" "$lang" >>"$s/review-config/resolved/packs.tsv"
+	fi
+	if [[ -f "$refs/fw-${fw}.md" ]]; then
+		printf 'framework\tfw-%s\t%s/fw-%s.md\tshipped\tselected\t\n' "$fw" "$refs" "$fw" >>"$s/review-config/resolved/packs.tsv"
+	fi
+}
+
 # Write a prompts/context.json that waives the #101 context check for every
 # verdict directory the session has. For suites whose subject is not that gate:
 # without an index the extractor refuses every zero-finding APPROVE as

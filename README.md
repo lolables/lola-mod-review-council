@@ -580,6 +580,9 @@ these packs:
 | `base.md`              | Any        | Ships empty; anchor for project-level custom rules |
 | `lang-go.md`           | Go         | Self-contained Go conventions                      |
 | `lang-typescript.md`   | TypeScript | Self-contained TypeScript conventions              |
+| `lang-python.md`       | Python     | Reviewer hints only; no calibration notes yet      |
+| `lang-rust.md`         | Rust       | Reviewer hints only; no calibration notes yet      |
+| `lang-java.md`         | Java       | Reviewer hints only; no calibration notes yet      |
 | `fw-react.md`          | React      | React framework conventions (additive)             |
 | `reviewer-protocol.md` | Any        | Shared reviewer procedures and output format       |
 | `model-guidance.md`    | Any        | Model selection guidance and eval data             |
@@ -590,20 +593,51 @@ The `references/` directory also holds the JSON schemas the scripts validate
 against — `verdict-schema.json`, `consolidation-schema.json`,
 `triage-schema.json` and `validation-schema.json`. Those are machine contracts, not packs.
 
-Pack filenames encode their type: `lang-{language}.md` for standalone language packs, `fw-{framework}.md` for
-additive framework packs that load alongside the language pack.
+Pack filenames encode their type: `lang-{name}.md` for standalone language packs, `fw-{name}.md` for
+additive framework packs that load alongside the language pack. Any other `.md` file in the user or project packs
+directory is an additive pack that loads on every review.
 
 ### Customization
 
-Packs are resolved in priority order (later wins):
+Packs are searched in three places, highest precedence first:
 
-1. **Module packs** — shipped with this module (read-only)
-2. **User packs** — `$XDG_CONFIG_HOME/review-council/packs/`
-3. **Project packs** — `.review-council/packs/` in your repo, as committed on the base branch (see
+1. **Project packs** — `.review-council/packs/` in your repo, as committed on the base branch (see
    [Where configuration is read from](#where-configuration-is-read-from))
+2. **User packs** — `$XDG_CONFIG_HOME/review-council/packs/` (default `~/.config/review-council/packs/`)
+3. **Module packs** — shipped with this module (read-only)
 
-To override a shipped pack, create a file with the same name at a higher priority level. To add a new pack, drop a new
-`.md` file into either location.
+To override a shipped pack, create a file with the same name at a higher level: the highest-precedence copy that
+loads replaces the others whole, with no merging. To add a language or framework, drop a `lang-*.md` or `fw-*.md`
+file into the user or project location; no module edit is needed. Only regular files named like
+`lang-hcl.md` are read; symlinks and other names are ignored.
+
+#### Writing a language or framework pack
+
+A pack declares when it applies in YAML frontmatter at the top of the file:
+
+| Key         | Pack     | Meaning                                                                           |
+|-------------|----------|-----------------------------------------------------------------------------------|
+| `contract`  | both     | Required. Must be `1`, the layout this module reads (Calibration Notes, `cr-XXXX` IDs) |
+| `pack_id`   | both     | Optional. When present it must equal the file name without `.md`                  |
+| `version`   | both     | Free text, for your own bookkeeping                                               |
+| `language`  | `lang-*` | Display name, e.g. `HCL`                                                          |
+| `extensions`| `lang-*` | Required. Lowercase, no dot: `extensions: [tf, hcl]`                              |
+| `framework` | `fw-*`   | Required. The file name without `fw-`: `fw-react.md` has `framework: react`       |
+| `probe`     | `fw-*`   | Required. A file name and the text it must contain: `probe: package.json '"react"'` |
+
+The language is the pack whose extensions cover the most changed files; where two packs claim an extension the
+higher-precedence one wins. A framework pack applies when its probe file is among the changed files and contains the
+probe text. A pack with a missing or unsupported `contract`, or malformed keys, is skipped with a reason on stderr
+and in `tracking.md` (`Skipped packs:`); a lower-precedence copy of the same name is then tried. The packs a run
+loaded are recorded in `tracking.md` as `Language pack:`, `Framework pack:` and `Additional packs:`, and each
+reviewer prompt lists them on a `Packs:` line.
+
+Every language and framework pack needs a `## Calibration Notes` section; a pack without one is skipped like any
+other invalid pack. A
+pack may add a `## Reviewer hints` section, a table of `| Persona | Detection Hints |` rows (`Adversary`, `Guard`,
+`Tester`, ...) that are added to that persona's prompt. A hint must begin `Check for `, fit on one line and stay
+within 400 characters; at most five rows per persona are used from one pack, and other rows are dropped with a
+warning.
 
 `severity.md` is resolved once per run: the project's, else the user's, else the shipped one, and every reviewer and
 the arbiter use that one. To make a reviewer advisory or always blocking without rewriting the definitions, use the
@@ -959,6 +993,8 @@ for and how to write a test that actually tests something.
 Measuring whether a tool or module change makes reviews cheaper or better is
 a different job from adding an eval case; [docs/dev/ab-evaluations.md](docs/dev/ab-evaluations.md)
 covers how to run one without fooling yourself.
+How a review picks its packs is in [docs/dev/pack-resolution.md](docs/dev/pack-resolution.md).
+
 The banner and icon are hand-edited SVGs; [docs/dev/branding.md](docs/dev/branding.md)
 explains their geometry and how to regenerate the PNGs.
 

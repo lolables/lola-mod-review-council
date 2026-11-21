@@ -1,6 +1,6 @@
-# prepare-changes.sh — changeset capture, language and framework detection.
+# prepare-changes.sh — changeset capture.
 #
-# Sections 9-10 of the preparation pipeline, sourced by rc-prepare.sh in order.
+# Section 9 of the preparation pipeline, sourced by rc-prepare.sh in order.
 # Not executable on its own: these are straight-line statements over the
 # globals the caller and the earlier fragments set, exactly as they were
 # when this was one 1,400-line file. An `exit` on a skip path still ends
@@ -383,87 +383,3 @@ fi
 
 # Clean up cached PR diff
 rm -f "${pr_diff_cache:-}" 2>/dev/null
-
-# ============================================================================
-# SECTION 10: Detect Language and Framework
-# ============================================================================
-
-language="unknown"
-framework="unknown"
-
-# Count file extensions.
-#
-# Only extensions the language mapping below can resolve are counted, and family
-# members are folded into one bucket before the tally. Counting every extension
-# let three CI YAMLs outvote two Go files, and split `ts` against `tsx`; either
-# way the plurality could resolve to `unknown`, which loads the empty base.md and
-# silently discards the language pack -- including its Calibration Notes, which
-# suppress that language's known false positives.
-declare -A ext_count
-while IFS= read -r file; do
-	[[ -z "$file" ]] && continue
-	ext="${file##*.}"
-	[[ "$ext" == "$file" ]] && continue # No extension
-	case "$ext" in
-	go) bucket="go" ;;
-	ts | tsx) bucket="typescript" ;;
-	js | jsx) bucket="javascript" ;;
-	py) bucket="python" ;;
-	rs) bucket="rust" ;;
-	java) bucket="java" ;;
-	*) continue ;; # No convention pack or detection hints key off this extension.
-	esac
-	ext_count[$bucket]=$((${ext_count[$bucket]:-0} + 1))
-done <<<"$changeset_files"
-
-# Determine language (sort by count descending, then bucket alphabetically for deterministic tie-breaking)
-max_count=0
-max_bucket=""
-for bucket in $(for k in "${!ext_count[@]}"; do echo "${ext_count[$k]} $k"; done | sort -k1,1rn -k2,2 | awk '{print $2}'); do
-	count=${ext_count[$bucket]}
-	if [[ $count -gt $max_count ]]; then
-		max_count=$count
-		max_bucket="$bucket"
-	fi
-done
-
-if [[ -n "$max_bucket" ]]; then
-	language="$max_bucket"
-fi
-
-# Detect framework
-#
-# These probes read file CONTENT/existence off disk, so they must resolve
-# against review_root (the materialized clone in PR/url scope), not CWD
-# (the launch dir, which is unrelated to the repo under review in that
-# scope). $changeset_files stays as-is -- it's the diff's file list, not a
-# disk read.
-if echo "$changeset_files" | grep -q "package.json"; then
-	if [[ -f "${review_root}/package.json" ]]; then
-		if grep -q '"react"' "${review_root}/package.json" 2>/dev/null; then
-			framework="react"
-		elif grep -q '"vue"' "${review_root}/package.json" 2>/dev/null; then
-			framework="vue"
-		elif grep -q '"angular"' "${review_root}/package.json" 2>/dev/null; then
-			framework="angular"
-		fi
-	fi
-elif echo "$changeset_files" | grep -q "go.mod"; then
-	framework="go-module"
-	[[ -f "${review_root}/go.mod" ]] && grep -q "github.com/gin-gonic/gin" "${review_root}/go.mod" 2>/dev/null && framework="gin"
-	[[ -f "${review_root}/go.mod" ]] && grep -q "github.com/labstack/echo" "${review_root}/go.mod" 2>/dev/null && framework="echo"
-elif echo "$changeset_files" | grep -q "Cargo.toml"; then
-	framework="rust-cargo"
-elif echo "$changeset_files" | grep -qE "pyproject\.toml|setup\.py"; then
-	framework="python"
-	if echo "$changeset_files" | grep -q "requirements.txt"; then
-		if [[ -f "${review_root}/requirements.txt" ]]; then
-			grep -q "flask" "${review_root}/requirements.txt" 2>/dev/null && framework="flask"
-			grep -q "django" "${review_root}/requirements.txt" 2>/dev/null && framework="django"
-		fi
-	fi
-fi
-
-if [[ "$framework" == "unknown" ]]; then
-	framework="none"
-fi

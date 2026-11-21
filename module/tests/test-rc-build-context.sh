@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/helpers.sh"
 BUILD="$SCRIPT_DIR/../skills/review-council/scripts/rc-build-context.sh"
 SEVERITY="$SCRIPT_DIR/../skills/review-council/references/severity.md"
+REFS="$SCRIPT_DIR/../skills/review-council/references"
 
 # Issue #101: reviewers skipped the documents their agent files told them to
 # read, and rarely opened the files under review. This script delivers both:
@@ -26,6 +27,7 @@ ctx_session() { # language framework file...
 	cp "$SEVERITY" "$s/review-config/severity.md"
 	printf -- '- Review root: %s\n' "$s/tree" >"$s/session.txt"
 	printf '## Phase: Preparation\n\n- Language: %s\n- Framework: %s\n\n' "$lang" "$fw" >"$s/tracking.md"
+	write_packs_tsv "$s" "$REFS" "$lang" "$fw"
 	: >"$s/diff.patch"
 	printf '%s\n' "$@" >"$s/changeset.txt"
 	# On stdin, not --args: jq parses a file named like "-l" as an option.
@@ -114,11 +116,52 @@ second=$(cksum <"$s/prompts/preamble.md")
 assert_equals "$second" "$first" "same bytes on a re-run"
 rm -rf "$s"
 
-echo "Test: a language value that is not a plain token selects no pack"
-s=$(ctx_session "../../etc/go" unknown a.go)
+echo "Test: tracking.md's Language selects nothing; only packs.tsv does"
+s=$(ctx_session "../../etc/go" go a.go)
 printf 'package a\n' >"$s/tree/a.go"
 bash "$BUILD" "$s" >/dev/null
 assert_match_count "$(<"$s/prompts/preamble.md")" "0" "no pack read through a crafted Language" -xF "## Calibration Notes"
+rm -rf "$s"
+
+echo "Test: a session with no packs.tsv is an error, not a guess from Language (RC-315)"
+s=$(ctx_session go go-module a.go)
+printf 'package a\n' >"$s/tree/a.go"
+rm -rf "$s/review-config/resolved"
+rc=0
+out=$(bash "$BUILD" "$s" 2>&1) || rc=$?
+assert_equals "$rc" "1" "exits non-zero"
+assert_match_count "$out" "1" "names the file preparation should have written" -F "packs.tsv"
+rm -rf "$s"
+
+echo "Test: a user language pack with no shipped copy is loaded (RC-316)"
+s=$(ctx_session hcl none main.tf)
+printf 'x\n' >"$s/tree/main.tf"
+mkdir -p "$s/review-config/resolved" "$s/user"
+printf -- '---\npack_id: lang-hcl\nlanguage: HCL\nextensions: [tf]\ncontract: 1\n---\n\n## Calibration Notes\n\n> HCL-SENTINEL-NOTE\n' >"$s/user/lang-hcl.md"
+printf 'language\tlang-hcl\t%s\tuser\tselected\t\n' "$s/user/lang-hcl.md" >"$s/review-config/resolved/packs.tsv"
+bash "$BUILD" "$s" >/dev/null
+assert_match_count "$(<"$s/prompts/preamble.md")" "1" "its Calibration Notes reach the preamble" -F "HCL-SENTINEL-NOTE"
+rm -rf "$s"
+
+echo "Test: a user lang-go.md replaces the shipped one whole (RC-317)"
+s=$(ctx_session go none a.go)
+printf 'package a\n' >"$s/tree/a.go"
+mkdir -p "$s/user"
+printf -- '---\npack_id: lang-go\nlanguage: Go\nextensions: [go]\ncontract: 1\n---\n\n## Calibration Notes\n\n> USER-GO-SENTINEL\n' >"$s/user/lang-go.md"
+printf 'language\tlang-go\t%s\tuser\tselected\t\n' "$s/user/lang-go.md" >"$s/review-config/resolved/packs.tsv"
+bash "$BUILD" "$s" >/dev/null
+assert_match_count "$(<"$s/prompts/preamble.md")" "1" "the user pack's notes are in" -F "USER-GO-SENTINEL"
+assert_match_count "$(<"$s/prompts/preamble.md")" "0" "the shipped pack's notes are not" -F "Nil pointers"
+rm -rf "$s"
+
+echo "Test: an additive pack in packs.tsv adds no calibration to the preamble (RC-318)"
+s=$(ctx_session go none a.go)
+printf 'package a\n' >"$s/tree/a.go"
+mkdir -p "$s/proj"
+printf '# Team pack\n\nTEAM-SENTINEL\n' >"$s/proj/team.md"
+printf 'additional\tteam\t%s\tproject\tselected\t\n' "$s/proj/team.md" >>"$s/review-config/resolved/packs.tsv"
+bash "$BUILD" "$s" >/dev/null
+assert_match_count "$(<"$s/prompts/preamble.md")" "0" "additive packs stay on demand" -F "TEAM-SENTINEL"
 rm -rf "$s"
 
 echo "Test: a shipped pack missing its Calibration Notes stops the build"
@@ -128,6 +171,7 @@ cp -R "$SCRIPT_DIR/../skills/review-council" "$fake/review-council"
 sed '/^## Calibration Notes$/d' "$fake/review-council/references/lang-go.md" >"$fake/lang-go.md"
 mv "$fake/lang-go.md" "$fake/review-council/references/lang-go.md"
 s=$(ctx_session go go-module a.go)
+write_packs_tsv "$s" "$fake/review-council/references" go go-module
 printf 'package a\n' >"$s/tree/a.go"
 rc=0
 out=$(bash "$fake/review-council/scripts/rc-build-context.sh" "$s" 2>&1) || rc=$?
@@ -472,6 +516,7 @@ fake=$(mktemp -d)
 cp -R "$SCRIPT_DIR/../skills/review-council" "$fake/review-council"
 sed '/^## Calibration Notes$/d' "$fake/review-council/references/lang-go.md" >"$fake/lang-go.md"
 mv "$fake/lang-go.md" "$fake/review-council/references/lang-go.md"
+write_packs_tsv "$s" "$fake/review-council/references" go go-module
 rc=0
 bash "$fake/review-council/scripts/rc-build-context.sh" "$s" >/dev/null 2>&1 || rc=$?
 assert_equals "$rc" "1" "the rebuild fails"

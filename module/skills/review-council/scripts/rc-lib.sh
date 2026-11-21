@@ -553,6 +553,19 @@ rc_parse_kv() {
 		sed -E 's/[[:space:]]+$//' || true
 }
 
+# The packs a run loads, one path per line, in the order rc-resolve-packs.sh
+# wrote them (language, framework, additional): the `selected` rows of
+# <session_dir>/review-config/resolved/packs.tsv, narrowed to the kinds named
+# after the session (all three when none are). Returns 1 when preparation left
+# no packs.tsv, so a caller can tell "no packs selected" from "never resolved".
+rc_selected_packs() {
+	local tsv="$1/review-config/resolved/packs.tsv" kinds="language framework additional"
+	shift
+	(($# == 0)) || kinds="$*"
+	[[ -f "$tsv" ]] || return 1
+	awk -F'\t' -v kinds=" ${kinds} " '$5 == "selected" && index(kinds, " " $1 " ") { print $3 }' "$tsv"
+}
+
 # An integer setting from a session's tracking.md, at least <min> (default 1).
 # A missing key takes the default silently, the fail-open reading a session
 # prepared before the key existed needs; an unusable value is reported on stderr

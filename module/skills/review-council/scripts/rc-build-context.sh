@@ -80,21 +80,23 @@ md_section() { # file heading
 #
 # Byte-identical for every persona and every round of a run: #30 found the
 # five delegation prompts diverging at byte 28, which defeats prefix caching.
-# Packs are selected by reviewer-protocol.md "Pack Loading Rules" — the
-# language pack, else base.md, then the framework pack — but base.md carries
-# no calibration section, so only lang-/fw- packs contribute. Project and user
-# packs stay on demand. Language and Framework are tokens rc-prepare.sh picks
-# from a fixed list; anything else in tracking.md selects nothing rather than
-# becoming part of a path.
-language=$(rc_parse_kv "$tracking_file" "Language")
-framework=$(rc_parse_kv "$tracking_file" "Framework")
+# Packs are the language and framework packs rc-resolve-packs.sh selected during
+# preparation (project, then user, then shipped; the first copy that loads wins
+# whole), read from review-config/resolved/packs.tsv. base.md carries no
+# calibration section, so only lang-/fw- packs contribute. Additive packs stay
+# on demand. tracking.md's Language and Framework are labels only: they never
+# become part of a path.
+# shellcheck disable=SC2310 # the exit status IS the answer: no packs.tsv means preparation did not finish.
+if ! pack_paths=$(rc_selected_packs "$session_dir" language framework); then
+	json_output "error" "review-config/resolved/packs.tsv is missing: preparation did not finish; re-run it."
+	exit 1
+fi
 packs=()
-for candidate in "lang-${language}.md" "fw-${framework}.md"; do
-	token="${candidate#*-}"
-	token="${token%.md}"
-	[[ "$token" =~ ^[a-z0-9][a-z0-9-]*$ ]] || continue
-	[[ -f "$refs_dir/$candidate" ]] && packs+=("$candidate")
-done
+while IFS= read -r pack_path; do
+	if [[ -n "$pack_path" ]]; then packs+=("$pack_path"); fi
+done <<<"$pack_paths"
+pack_names=()
+for pack in ${packs[@]+"${packs[@]}"}; do pack_names+=("$(basename "$pack")"); done
 
 prompts_tmp=$(mktemp -d "$session_dir/.prompts.XXXXXX")
 # A failed build (a pack missing its section, a full disk) must not leave the
@@ -127,16 +129,16 @@ done
 	echo ""
 	printf '%s\n' "$severity_text"
 	for pack in ${packs[@]+"${packs[@]}"}; do
-		notes=$(md_section "$refs_dir/$pack" "Calibration Notes")
+		notes=$(md_section "$pack" "Calibration Notes")
 		echo ""
 		echo "---"
 		echo ""
-		echo "**From \`references/${pack}\`:**"
+		echo "**From \`$(basename "$pack")\`:**"
 		echo ""
 		# fw-react.md carries a severity table of its own. It is optional:
 		# only Calibration Notes is required of every lang-/fw- pack.
-		if grep -qx '## Severity Calibration' "$refs_dir/$pack"; then
-			sev_cal=$(md_section "$refs_dir/$pack" "Severity Calibration")
+		if grep -qx '## Severity Calibration' "$pack"; then
+			sev_cal=$(md_section "$pack" "Severity Calibration")
 			printf '%s\n\n' "$sev_cal"
 		fi
 		printf '%s\n' "$notes"
@@ -381,7 +383,7 @@ if [[ -f "$tracking_file" ]]; then
 		echo "## Phase: Context"
 		echo ""
 		echo "- Preamble: prompts/preamble.md"
-		echo "- Packs: ${packs[*]:-none}"
+		echo "- Packs: ${pack_names[*]:-none}"
 		if [[ -n "$round_lines" ]]; then
 			printf '%s\n' "$round_lines"
 		fi
@@ -390,7 +392,7 @@ if [[ -f "$tracking_file" ]]; then
 fi
 
 # The file list stays in context.json; stdout carries per-round counts only.
-summary=$(jq -n --argjson rounds "$rounds_json" --arg packs "${packs[*]+"${packs[*]}"}" \
+summary=$(jq -n --argjson rounds "$rounds_json" --arg packs "${pack_names[*]+"${pack_names[*]}"}" \
 	'{preamble: "prompts/preamble.md", packs: ($packs | split(" ") | map(select(length > 0))),
 	  rounds: [$rounds[] | {bundle, verdict_dir, gate,
 	    inlined: ([.files[] | select(.inlined)] | length),

@@ -1317,6 +1317,10 @@ writes subsequent phases.
 - Base: {main | master | none (explicit range)}
 - Language: {language}
 - Framework: {framework | none}
+- Language pack: {path (project | user | shipped) | none}
+- Framework pack: {path (project | user | shipped) | none}
+- Additional packs: {paths (source), comma-separated | none}
+- Skipped packs: {name (source: reason); ... | none}
 - Review root: {. | path}
 - Post intent: {yes | no}
 - Post auto-send: {yes | no}
@@ -1550,6 +1554,10 @@ trims, analysis prose before evidence and CRITICAL last, and says so in a
 line beginning `Trimmed to fit the`. The full verdict is always in
 `report.md` in the session directory. See README "Oversized verdicts".
 
-Convention packs define project-specific coding standards. Override or
+Convention packs define project-specific coding standards. Add, override or
 extend shipped packs by committing files to `.review-council/packs/` on the
 base branch, or placing them in `$XDG_CONFIG_HOME/review-council/packs/`.
+`rc-resolve-packs.sh` (run by `rc-prepare.sh`) picks the language and framework
+packs from the packs' own frontmatter, project before user before shipped, and
+records the paths in tracking.md; reviewers load the paths on the `Packs:` line
+of their prompt.

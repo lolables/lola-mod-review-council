@@ -49,6 +49,15 @@ forbid() {
 	fi
 }
 
+echo "Test: the pack resolver is inside the portability scan (RC-329)"
+# It reads untrusted pack text with grep/awk on every run, the code most likely
+# to pick up a GNU-only regex; a renamed or moved script must not drop out.
+rc329_found="no"
+for rc329_t in "${TARGETS[@]}"; do
+	[[ "$rc329_t" == */skills/review-council/scripts/rc-resolve-packs.sh ]] && rc329_found="yes"
+done
+assert_equals "$rc329_found" "yes" "rc-resolve-packs.sh is a scan target"
+
 echo "Test: no Linux-only shell constructs or path assumptions (macOS ships a BSD userland)"
 
 forbid '/(usr/)?s?bin/\*' \

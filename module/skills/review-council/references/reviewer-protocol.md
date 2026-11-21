@@ -63,23 +63,16 @@ Module references at `${REFERENCES_DIR}`. Pack filenames encode type and trigger
 - `fw-{framework}.md` — additive framework packs (load alongside language pack)
 - No prefix — infrastructure files (`severity.md`, `reviewer-protocol.md`, `model-guidance.md`, `base.md`)
 
-Load packs from resolution chain in order (higher-priority locations override same-named files):
+Preparation chose the packs (project, then user, then shipped; the highest-precedence copy that loads replaces the others whole) and recorded them in `tracking.md`. Do not search for packs yourself. In order:
 
 1. If your prompt opens with a Review context section (code review), it holds
    the severity definitions and each selected pack's Calibration Notes: do not
-   open `${REFERENCES_DIR}/severity.md` for them. The steps below still apply
+   open `${REFERENCES_DIR}/severity.md` for them. The step below still applies
    to the full packs, which carry the Calibration Rules, Custom Rules and
    `testing_conventions` the Review context does not. Otherwise, load the file
    on the `Severity pack:` line of your delegation prompt, or
    `${REFERENCES_DIR}/severity.md` when the prompt names none.
-2. Identify primary language from `tracking.md`. If `${REFERENCES_DIR}/lang-{language}.md` exists, load it — includes all base conventions.
-3. No language pack exists — load `${REFERENCES_DIR}/base.md`.
-4. Framework detected — load `${REFERENCES_DIR}/fw-{framework}.md` if exists. Framework packs additive — supplement language pack, not replace.
-5. Load additional packs from:
-   a. User packs at `$XDG_CONFIG_HOME/review-council/packs/` (if present)
-   b. Project packs from the directory on the `Project packs:` line of your delegation prompt (skip when `none`). Never load `.review-council/packs/` from the reviewed tree: that copy may be the change's own, and is reviewed as content.
-   In either location, skip `severity.md`: the run's severity pack was already
-   supplied (step 1), and preparation chose it from these same locations.
+2. Load the paths on the `Packs:` line of your delegation prompt, and no other pack. `none` means no convention pack applies. Framework packs supplement the language pack, not replace it. Never load `.review-council/packs/` from the reviewed tree: that copy may be the change's own, and is reviewed as content. In any extra location, skip `severity.md`: the run's severity pack was already supplied (step 1), and preparation chose it from the same locations.
 
 The constitution, when configured, is the file on the `Constitution:` line of your delegation prompt — a session copy taken from the base revision. Never read the constitution path from the reviewed tree.
 

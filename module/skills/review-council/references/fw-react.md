@@ -1,6 +1,8 @@
 ---
 pack_id: fw-react
-framework: React
+framework: react
+probe: package.json '"react"'
+contract: 1
 version: 1.0.0
 description: "React-specific conventions. Additive — load alongside lang-typescript.md."
 ---
@@ -35,6 +37,16 @@ Additive framework pack for React. Load alongside `lang-typescript.md`.
 > **Prop drilling vs. composition**: Not all multi-level prop passing is drilling. If each intermediate component uses prop (e.g., `theme` prop for styling at every level), that is composition. Drilling is when intermediaries pass props through without using them.
 >
 > **Error boundaries and third-party components**: Error boundaries only catch errors in React render cycle (render, lifecycle methods, constructors). They miss event handlers, async code, SSR. Do not flag missing error boundaries for event handler failures; use standard try/catch there.
+
+## Reviewer hints
+
+Patterns each persona checks for in a React change. They are prompts to look, not findings.
+
+| Persona | Detection Hints |
+|---------|-----------------|
+| Guard | Check for prop drilling (props passed through 3+ component levels unchanged); god components (>200 lines or >5 state hooks with mixed concerns); circular module imports |
+| Adversary | Check for `dangerouslySetInnerHTML` with unsanitized input; missing error boundary components (crash propagation risk); inline event handlers with user data; missing CSRF tokens on forms |
+| Tester | Check for tests that mock everything (no integration coverage); missing accessibility attribute tests |
 
 ## Custom Rules
 

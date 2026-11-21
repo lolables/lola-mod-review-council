@@ -92,6 +92,27 @@ else
 fi
 discard_fixture "$flat" "$split"
 
+echo "Test 3b: the estimate measures the packs preparation selected, wherever they live"
+without=$(mk_session deep 5)
+with=$(mk_session deep 5)
+head -c 40000 /dev/zero | tr '\0' 'x' >"$with/team-pack.md"
+head -c 40000 /dev/zero | tr '\0' 'x' >"$with/lang-hcl.md"
+head -c 40000 /dev/zero | tr '\0' 'x' >"$with/lang-skipped.md"
+mkdir -p "$with/review-config/resolved"
+{
+	printf 'language\tlang-hcl\t%s\tuser\tselected\t\n' "$with/lang-hcl.md"
+	printf 'additional\tteam-pack\t%s\tproject\tselected\t\n' "$with/team-pack.md"
+	printf 'language\tlang-skipped\t%s\tuser\tavailable\tnot the language of this change\n' "$with/lang-skipped.md"
+} >"$with/review-config/resolved/packs.tsv"
+bash "$ESTIMATE" "$without" >/dev/null
+bash "$ESTIMATE" "$with" >/dev/null
+wo=$(jq -r '.input_tokens_first_pass' "$without/cost-estimate.json")
+wi=$(jq -r '.input_tokens_first_pass' "$with/cost-estimate.json")
+# Two selected 40000-byte packs add 20000 tokens to each of 5 dispatches; the
+# unselected third adds nothing. A shipped-directory lookup by label would add 0.
+assert_equals "$((wi - wo))" "100000" "selected language and additional packs are counted, an unselected one is not"
+discard_fixture "$without" "$with"
+
 echo "Test 4: worst case is the first pass times the iteration cap"
 s=$(mk_session deep 5)
 bash "$ESTIMATE" "$s" >/dev/null

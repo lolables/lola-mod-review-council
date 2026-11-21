@@ -1,0 +1,38 @@
+README.md
+  s_d105e03cd4befb::t_d7f9ea1ecb98c0 635-636
+module/tests/test-rc-prepare-packs.sh
+  s_d105e03cd4befb::t_da22a1b489027a 56
+  s_d105e03cd4befb::t_557746e4a9b1c0 89
+  s_d105e03cd4befb::t_bc57db6d139edc 129
+docs/dev/pack-resolution.md
+  s_d105e03cd4befb::t_aa687fee6548c1 22-24
+  s_d105e03cd4befb::t_dd757fa4941e8e 30-32
+module/tests/test-rc-resolve-packs.sh
+  s_d105e03cd4befb::t_518b24391aa349 133-157
+  s_d105e03cd4befb::t_4b01a43e4ba1c4 36-37
+module/tests/test-rc-cost-estimate.sh
+  s_d105e03cd4befb::t_ec0c76999c61c9 95-115
+module/skills/review-council/scripts/rc-resolve-packs.sh
+  s_d105e03cd4befb::t_3ef6ff94b66f3f 156-161
+  s_d105e03cd4befb::t_c61c463a57734b 280
+  s_d105e03cd4befb::t_0bcac46a774ebb 223
+module/skills/review-council/scripts/rc-cost-estimate.sh
+  s_d105e03cd4befb::t_5ac9e817f78a1a 138-142
+  s_d105e03cd4befb::t_12c8a36c8a7ac3 128-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.6",
+  "base_commit_sha": "af95d3370a62f30aae65aa8a051fb1bf8818d324",
+  "prompts": {},
+  "sessions": {
+    "s_d105e03cd4befb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "32f34e1a-46fa-48c1-97db-191ae2bde471",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "LLM (riotbox) <llm@riotbox>"
+    }
+  }
+}
